@@ -5,14 +5,16 @@ import {
   Plus, X, ArrowRight, Check, ExternalLink, Clock, Trash2,
   Target, Pin, Wand2, Loader2, CalendarDays, Star, ChevronDown, ChevronRight,
   Rocket, MoveRight, MoonStar, Lightbulb, Users, MessageCircle, RefreshCw,
-  Compass, ArrowUpRight,
+  Compass, ArrowUpRight, Link2, ListChecks, AlertTriangle,
 } from "lucide-react";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
-import type { Task, Job, Learn, Win, Event, Hustle, Contact } from "@shared/schema";
+import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack } from "@shared/schema";
+import { type TrackedEntity, getTrackId, WIN_CATEGORIES, type WinCategory } from "@shared/domainState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 
 type Step = { text: string; done: boolean };
@@ -156,6 +158,103 @@ function Empty({ icon: Icon, text }: { icon: typeof Sun; text: string }) {
 }
 function Loading() {
   return <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />)}</div>;
+}
+
+/* ---------------- P3.5 shared: track coherence + card actions + clarity ---------------- */
+const ENTITY_QUERY: Record<TrackedEntity, string> = {
+  jobs: "/api/jobs", learn: "/api/learn", contacts: "/api/contacts", hustles: "/api/hustles", tasks: "/api/tasks",
+};
+
+function useCareerTracks() {
+  return useQuery<CareerTrack[]>({ queryKey: ["/api/career-tracks"] });
+}
+
+// A small pill showing the linked track, or an "unlinked" warning when none.
+function TrackChip({ trackId, tracks }: { trackId: number | null; tracks: CareerTrack[] }) {
+  if (!trackId) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground" data-testid="badge-unlinked">
+        <AlertTriangle className="w-2.5 h-2.5" /> unlinked
+      </span>
+    );
+  }
+  const t = tracks.find((x) => x.id === trackId);
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" data-testid="badge-track">
+      <Compass className="w-2.5 h-2.5" /> {t?.name || `Track ${trackId}`}
+    </span>
+  );
+}
+
+// Popover control to link/unlink an entity to a career track in place.
+function LinkTrackControl({ entity, id, trackId, tracks }: { entity: TrackedEntity; id: number; trackId: number | null; tracks: CareerTrack[] }) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  async function link(next: number | null) {
+    await mutateAndInvalidate("PATCH", `/api/${entity}/${id}/link-track`, { trackId: next }, [ENTITY_QUERY[entity], "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked"]);
+    setOpen(false);
+    toast({ title: next ? "Linked to track." : "Unlinked.", description: next ? "It'll show up under this path in Strategy." : "Removed from its track." });
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button data-testid={`button-link-track-${entity}-${id}`} className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1">
+          <Link2 className="w-3.5 h-3.5" /> {trackId ? "Track" : "Link track"}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-1.5" align="start">
+        <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a track</p>
+        <div className="space-y-0.5">
+          {tracks.map((t) => (
+            <button key={t.id} onClick={() => link(t.id)} data-testid={`option-track-${t.id}`}
+              className={`w-full text-left text-sm px-2 py-1.5 rounded-md hover-elevate ${trackId === t.id ? "text-primary font-medium" : ""}`}>
+              {t.name}
+            </button>
+          ))}
+          {trackId && (
+            <button onClick={() => link(null)} className="w-full text-left text-sm px-2 py-1.5 rounded-md text-muted-foreground hover-elevate">Unlink</button>
+          )}
+          {tracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No tracks yet.</p>}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Consistent actions row for source cards: Create next task / View linked tasks / Link track.
+function CardActions({ entity, id, trackId, tracks, onViewTasks }: { entity: Exclude<TrackedEntity, "tasks">; id: number; trackId: number | null; tracks: CareerTrack[]; onViewTasks: () => void }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  async function createNext() {
+    setBusy(true);
+    try {
+      const r = await mutateAndInvalidate("POST", `/api/${entity}/${id}/create-next-task`, {}, ["/api/tasks"]);
+      toast({ title: r?.reused ? "Already on your list." : "Next task created.", description: r?.reused ? "There's already an open task for this." : "Find it in your inbox / brain dump." });
+    } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5 pt-2 border-t border-card-border">
+      <button onClick={createNext} disabled={busy} data-testid={`button-create-next-${entity}-${id}`} className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create next task
+      </button>
+      <button onClick={onViewTasks} data-testid={`button-view-tasks-${entity}-${id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <ListChecks className="w-3.5 h-3.5" /> View linked tasks
+      </button>
+      <LinkTrackControl entity={entity} id={id} trackId={trackId} tracks={tracks} />
+    </div>
+  );
+}
+
+// Small constraint badge used in card clarity strips.
+function ConstraintBadge({ text, tone = "muted" }: { text: string; tone?: "muted" | "warn" }) {
+  const cls = tone === "warn" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground";
+  return <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{text}</span>;
+}
+
+// Count of open (not done) tasks serving a given source — for "View linked tasks".
+function useLinkedTaskCount(tasks: Task[], sourceType: string, sourceId: number) {
+  return tasks.filter((t) => t.sourceType === sourceType && t.sourceId === sourceId && !t.done).length;
 }
 
 /* ================= TODAY (day-first hero) ================= */
@@ -386,6 +485,12 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               );
             })}
           </div>
+          {/* Completed today — each can be explicitly promoted to a categorised win */}
+          {doneToday.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {doneToday.map((t) => <DoneTaskRow key={t.id} t={t} />)}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -401,11 +506,26 @@ type StrategyTrack = {
   proofAssets: number; proofLive: number;
   bottleneck: string; nextMove: string;
 };
+type TrackDiagnostic = {
+  id: number; slug: string; name: string; status: string; priority: number; whyItFits: string;
+  counts: { jobs: number; learn: number; contacts: number; hustles: number; tasks: number };
+  signals: { directionGap: number; readinessGap: number; proofGap: number; warmthGap: number; executionGap: number };
+  bottleneck: string; bottleneckLabel: string; recommendedMove: string;
+};
+type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
+const BOTTLENECK_LABEL: Record<string, string> = {
+  direction: "Direction", readiness: "Readiness", proof: "Proof", warmth: "Warmth", execution: "Execution", none: "Healthy",
+};
 function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data, isLoading } = useQuery<{ tracks: StrategyTrack[]; insights: string[] }>({ queryKey: ["/api/strategy"] });
+  const { data: diag } = useQuery<{ tracks: TrackDiagnostic[] }>({ queryKey: ["/api/strategy/diagnostics"] });
+  const { data: unlinked } = useQuery<{ items: UnlinkedItem[]; counts: Record<string, number> }>({ queryKey: ["/api/strategy/unlinked"] });
+  const { data: careerTracks = [] } = useCareerTracks();
   if (isLoading) return <Loading />;
   const tracks = data?.tracks || [];
   const insights = data?.insights || [];
+  const diagById = new Map((diag?.tracks || []).map((d) => [d.id, d] as const));
+  const unlinkedItems = unlinked?.items || [];
   const active = tracks.filter((t) => t.status === "active");
   const watching = tracks.filter((t) => t.status !== "active");
 
@@ -416,27 +536,44 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     </div>
   );
 
-  const Card = ({ t }: { t: StrategyTrack }) => (
-    <div className="rounded-xl border border-card-border bg-card p-4" data-testid={`track-${t.slug}`}>
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <h3 className="font-semibold text-sm leading-snug">{t.name}</h3>
-          {t.whyItFits && <p className="text-xs text-muted-foreground mt-0.5">{t.whyItFits}</p>}
+  const Card = ({ t }: { t: StrategyTrack }) => {
+    const d = diagById.get(t.id);
+    // Prefer the computed diagnostic (the five bottleneck types); fall back to the
+    // legacy /api/strategy bottleneck text if diagnostics haven't loaded.
+    const bottleneckLabel = d ? d.bottleneckLabel : t.bottleneck;
+    const recommendedMove = d ? d.recommendedMove : t.nextMove;
+    const health = d?.bottleneck ?? "none";
+    return (
+      <div className="rounded-xl border border-card-border bg-card p-4" data-testid={`track-${t.slug}`}>
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-sm leading-snug">{t.name}</h3>
+            {t.whyItFits && <p className="text-xs text-muted-foreground mt-0.5">{t.whyItFits}</p>}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <span className={`rounded-full text-[11px] font-semibold px-2 py-0.5 ${health === "none" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`} data-testid={`track-health-${t.slug}`}>{BOTTLENECK_LABEL[health] || health}</span>
+            {t.topFit > 0 && <span className="rounded-full bg-primary/10 text-primary text-[11px] font-semibold px-2 py-0.5">fit {t.topFit}</span>}
+          </div>
         </div>
-        {t.topFit > 0 && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[11px] font-semibold px-2 py-0.5">fit {t.topFit}</span>}
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          <Stat label="Roles" value={t.roles} dim={t.roles === 0} />
+          <Stat label="Learning" value={t.learning} dim={t.learning === 0} />
+          <Stat label="Contacts" value={t.contacts} dim={t.contacts === 0} />
+          <Stat label="Proof" value={t.proofLive ? `${t.proofLive}/${t.proofAssets}` : t.proofAssets} dim={t.proofAssets === 0} />
+        </div>
+        <div className="rounded-lg bg-muted/60 px-3 py-2">
+          <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Bottleneck:</span> {bottleneckLabel}</p>
+          <p className="text-xs text-primary mt-1 inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> {recommendedMove}</p>
+        </div>
       </div>
-      <div className="grid grid-cols-4 gap-2 mb-3">
-        <Stat label="Roles" value={t.roles} dim={t.roles === 0} />
-        <Stat label="Learning" value={t.learning} dim={t.learning === 0} />
-        <Stat label="Contacts" value={t.contacts} dim={t.contacts === 0} />
-        <Stat label="Proof" value={t.proofLive ? `${t.proofLive}/${t.proofAssets}` : t.proofAssets} dim={t.proofAssets === 0} />
-      </div>
-      <div className="rounded-lg bg-muted/60 px-3 py-2">
-        <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Bottleneck:</span> {t.bottleneck}</p>
-        <p className="text-xs text-primary mt-1 inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> {t.nextMove}</p>
-      </div>
-    </div>
-  );
+    );
+  };
+
+  const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "learn", contacts: "network", hustles: "hustle" };
+  const ENTITY_LABEL: Record<UnlinkedItem["entity"], string> = { jobs: "Job", learn: "Learn", contacts: "Contact", hustles: "Proof" };
+  async function linkUnlinked(it: UnlinkedItem, trackId: number) {
+    await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked"]);
+  }
 
   return (
     <div>
@@ -466,6 +603,37 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             {watching.map((t) => <Card key={t.id} t={t} />)}
           </div>
         </>
+      )}
+
+      {/* Unlinked bucket — orphaned source items, fixable in place */}
+      {unlinkedItems.length > 0 && (
+        <div className="mb-6">
+          <GroupLabel count={unlinkedItems.length}><AlertTriangle className="w-4 h-4 text-destructive" /> Unlinked — no track yet</GroupLabel>
+          <p className="text-xs text-muted-foreground mb-2">These live items aren't tied to a path, so they don't count toward any track's health. Link each one.</p>
+          <div className="space-y-2">
+            {unlinkedItems.map((it) => (
+              <div key={`${it.entity}-${it.id}`} className="flex items-center gap-2 rounded-lg border border-card-border bg-card px-3 py-2" data-testid={`unlinked-${it.entity}-${it.id}`}>
+                <span className="text-[10px] rounded-full bg-muted text-muted-foreground px-1.5 py-0.5 shrink-0">{ENTITY_LABEL[it.entity]}</span>
+                <span className="flex-1 text-sm truncate">{it.title}</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0" data-testid={`button-link-unlinked-${it.entity}-${it.id}`}><Link2 className="w-3.5 h-3.5" /> Link</button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-1.5" align="end">
+                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a track</p>
+                    <div className="space-y-0.5">
+                      {careerTracks.map((t) => (
+                        <button key={t.id} onClick={() => linkUnlinked(it, t.id)} className="w-full text-left text-sm px-2 py-1.5 rounded-md hover-elevate">{t.name}</button>
+                      ))}
+                      {careerTracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No tracks yet.</p>}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <button onClick={() => onOpenTab(ENTITY_TAB[it.entity])} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Open"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -622,6 +790,27 @@ function MiniTaskRow({ t }: { t: Task }) {
   );
 }
 
+/* Completed task row with an explicit "Promote to win" affordance (WS5). */
+function DoneTaskRow({ t }: { t: Task }) {
+  const { toast } = useToast();
+  const winCategory: WinCategory =
+    t.category === "job" || t.category === "interview" ? "job_progress"
+    : t.category === "learning" ? "learning"
+    : t.category === "substack" || t.category === "hustle" || t.category === "afterline" ? "proof_asset"
+    : t.sourceType === "contact" ? "network" : "admin";
+  async function promote() {
+    await mutateAndInvalidate("POST", "/api/wins", { text: t.title.replace(/^✨\s*/, ""), kind: "source", winCategory }, ["/api/wins", "/api/stats"]);
+    toast({ title: "Logged as a win 🎉", description: `Filed under ${WIN_CATEGORY_LABEL[winCategory]}.` });
+  }
+  return (
+    <div className="group flex items-center gap-2 py-0.5 text-sm text-muted-foreground" data-testid={`done-task-${t.id}`}>
+      <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+      <span className="flex-1 line-through truncate">{t.title.replace(/^✨\s*/, "")}</span>
+      <button onClick={promote} data-testid={`button-promote-win-task-${t.id}`} className="opacity-0 group-hover:opacity-100 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0"><Trophy className="w-3 h-3" /> Promote to win</button>
+    </div>
+  );
+}
+
 /* ---------------- BRAIN DUMP ---------------- */
 const SORT_LABELS: Record<string, string> = { today: "Today", job: "Jobs", learn: "Learn", hustle: "Hustle" };
 function BrainDumpView() {
@@ -725,6 +914,8 @@ function sortJobs(a: Job, b: Job): number {
 }
 function JobsView() {
   const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
+  const { data: tracks = [] } = useCareerTracks();
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", company: "", location: "", url: "", note: "", nextStep: "", deadline: "" });
   async function add() {
@@ -768,7 +959,7 @@ function JobsView() {
               <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
                 <div className="flex items-center justify-between mb-2.5 px-1"><h2 className="font-semibold text-sm">{col.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div>
                 <div className="space-y-2">
-                  {items.map((j) => <JobCard key={j.id} j={j} onMove={move} onRemove={() => remove(j.id)} />)}
+                  {items.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} onMove={move} onRemove={() => remove(j.id)} />)}
                   {items.length === 0 && <p className="text-xs text-muted-foreground px-1 py-3">Add roles you want to apply for.</p>}
                 </div>
               </div>
@@ -782,8 +973,11 @@ function JobsView() {
     </div>
   );
 }
-function JobCard({ j, onMove, onRemove }: { j: Job; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
+function JobCard({ j, tracks, tasks, onMove, onRemove }: { j: Job; tracks: CareerTrack[]; tasks: Task[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
+  const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
+  const trackId = getTrackId("jobs", j);
+  const linked = useLinkedTaskCount(tasks, "job", j.id);
   return (
     <div className="group rounded-lg border border-card-border bg-card p-3" data-testid={`job-${j.id}`}>
       <div className="flex items-start justify-between gap-2">
@@ -791,22 +985,33 @@ function JobCard({ j, onMove, onRemove }: { j: Job; onMove: (j: Job, d: 1 | -1) 
         <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-job-${j.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
       {(j.company || j.location) && <p className="text-xs text-muted-foreground mt-0.5">{[j.company, j.location].filter(Boolean).join(" · ")}</p>}
-      {/* Chips: deadline + caveat flag, scannable */}
-      {(j.deadline || j.flag) && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-          {j.deadline && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-medium ${deadlineTone(j.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(j.deadline)}</span>}
-          {j.flag && <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{j.flag}</span>}
-        </div>
-      )}
+      {/* Clarity strip: track chip + canonical state + constraint badges */}
+      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+        <TrackChip trackId={trackId} tracks={tracks} />
+        {j.deadline && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${deadlineTone(j.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(j.deadline)}</span>}
+        {j.applicationWindowStatus === "closing" && <ConstraintBadge text="window closing" tone="warn" />}
+        {j.eligibilityRisk && j.eligibilityRisk !== "" && <ConstraintBadge text={`eligibility: ${j.eligibilityRisk}`} tone="warn" />}
+        {(j.status === "wishlist" && (j.applicationReadiness === "none")) && <ConstraintBadge text="not started" />}
+        {j.flag && <ConstraintBadge text={j.flag} />}
+      </div>
       {j.note && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{j.note}</p>}
       {j.nextStep && <p className="text-xs mt-2 inline-flex items-center gap-1 rounded-md bg-accent text-accent-foreground px-1.5 py-0.5"><ArrowRight className="w-3 h-3" /> {j.nextStep}</p>}
-      <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-card-border">
+      <div className="flex items-center justify-between mt-2.5">
         <div className="flex items-center gap-1">
           {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">←</button>}
           {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">{JOB_COLS[idx + 1].label} →</button>}
         </div>
-        {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
+        <div className="flex items-center gap-2">
+          {(j.status === "applied" || j.status === "interviewing") && (
+            <button data-testid={`button-promote-win-job-${j.id}`}
+              onClick={async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win 🎉", description: "Application progress counts." }); }}
+              className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1"><Trophy className="w-3.5 h-3.5" /> Promote to win</button>
+          )}
+          {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
+        </div>
       </div>
+      <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
+        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
     </div>
   );
 }
@@ -819,6 +1024,8 @@ const OUTREACH_COLS = [
 ] as const;
 function NetworkView() {
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
+  const { data: tracks = [] } = useCareerTracks();
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { toast } = useToast();
   const [sug, setSug] = useState<{ who: string; sector: string; why: string } | null>(null);
   const [sugLoading, setSugLoading] = useState(false);
@@ -877,7 +1084,7 @@ function NetworkView() {
               <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
                 <div className="flex items-center justify-between mb-2.5 px-1"><h2 className="font-semibold text-sm">{col.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div>
                 <div className="space-y-2">
-                  {items.map((c) => <ContactCard key={c.id} c={c} onName={setName} onMove={moveStatus} onRemove={() => remove(c.id)} />)}
+                  {items.map((c) => <ContactCard key={c.id} c={c} tracks={tracks} tasks={tasks} onName={setName} onMove={moveStatus} onRemove={() => remove(c.id)} />)}
                   {items.length === 0 && <p className="text-xs text-muted-foreground px-1 py-2">—</p>}
                 </div>
               </div>
@@ -888,24 +1095,34 @@ function NetworkView() {
     </div>
   );
 }
-function ContactCard({ c, onName, onMove, onRemove }: { c: Contact; onName: (c: Contact, n: string) => void; onMove: (c: Contact, s: string) => void; onRemove: () => void }) {
+function ContactCard({ c, tracks, tasks, onName, onMove, onRemove }: { c: Contact; tracks: CareerTrack[]; tasks: Task[]; onName: (c: Contact, n: string) => void; onMove: (c: Contact, s: string) => void; onRemove: () => void }) {
+  const { toast } = useToast();
   const [name, setNameLocal] = useState(c.name || "");
   const idx = OUTREACH_COLS.findIndex((s) => s.id === c.status);
+  const trackId = getTrackId("contacts", c);
+  const linked = useLinkedTaskCount(tasks, "contact", c.id);
   return (
     <div className="group rounded-lg border border-card-border bg-card p-3" data-testid={`contact-${c.id}`}>
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium leading-snug">{c.who}</p>
         <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-contact-${c.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
-      {c.sector && <span className="inline-block text-[11px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5 mt-1">{c.sector}</span>}
+      {/* Clarity strip: track chip + sector + constraint badges */}
+      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+        <TrackChip trackId={trackId} tracks={tracks} />
+        {c.sector && <span className="inline-flex items-center text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{c.sector}</span>}
+        {!c.askType && <ConstraintBadge text="no ask type" tone="warn" />}
+      </div>
       {c.why && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{c.why}</p>}
       <input value={name} onChange={(e) => setNameLocal(e.target.value)} onBlur={() => name !== c.name && onName(c, name)}
         placeholder="Add a name…" data-testid={`input-contact-name-${c.id}`}
         className="mt-2 w-full text-xs bg-transparent border-b border-input pb-1 focus:outline-none focus:border-primary" />
-      <div className="flex items-center gap-1 mt-2.5 pt-2 border-t border-card-border">
+      <div className="flex items-center gap-1 mt-2.5">
         {idx > 0 && <button onClick={() => onMove(c, OUTREACH_COLS[idx - 1].id)} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate" data-testid={`button-contact-back-${c.id}`}>←</button>}
         {idx < OUTREACH_COLS.length - 1 && <button onClick={() => onMove(c, OUTREACH_COLS[idx + 1].id)} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate" data-testid={`button-contact-fwd-${c.id}`}>{OUTREACH_COLS[idx + 1].label} →</button>}
       </div>
+      <CardActions entity="contacts" id={c.id} trackId={trackId} tracks={tracks}
+        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
     </div>
   );
 }
@@ -920,6 +1137,8 @@ function learnGroup(l: Learn): "open" | "watch" | "resource" {
 }
 function LearnView() {
   const { data: items = [], isLoading } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
+  const { data: tracks = [] } = useCareerTracks();
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [showForm, setShowForm] = useState(false);
   const [showShelf, setShowShelf] = useState(false);
   const [form, setForm] = useState({ title: "", category: "", url: "", note: "" });
@@ -940,7 +1159,7 @@ function LearnView() {
   const done = shelf.filter((l) => l.done);
 
   function CardList({ list }: { list: Learn[] }) {
-    return <div className="grid gap-2.5 sm:grid-cols-2">{list.map((l) => <LearnCard key={l.id} l={l} onToggle={() => toggle(l)} onToggleActive={() => toggleActive(l)} onRemove={() => remove(l.id)} />)}</div>;
+    return <div className="grid gap-2.5 sm:grid-cols-2">{list.map((l) => <LearnCard key={l.id} l={l} tracks={tracks} tasks={tasks} onToggle={() => toggle(l)} onToggleActive={() => toggleActive(l)} onRemove={() => remove(l.id)} />)}</div>;
   }
 
   return (
@@ -984,9 +1203,12 @@ function LearnView() {
     </div>
   );
 }
-function LearnCard({ l, onToggle, onToggleActive, onRemove }: { l: Learn; onToggle: () => void; onToggleActive: () => void; onRemove: () => void }) {
+function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l: Learn; tracks: CareerTrack[]; tasks: Task[]; onToggle: () => void; onToggleActive: () => void; onRemove: () => void }) {
+  const { toast } = useToast();
   // Strip the status suffix from the category for a clean track label.
   const track = (l.category || "").split("·")[0].trim();
+  const trackId = getTrackId("learn", l);
+  const linked = useLinkedTaskCount(tasks, "learn", l.id);
   return (
     <div className={`group rounded-xl border bg-card p-4 ${l.active && !l.done ? "border-primary/40" : "border-card-border"} ${l.done ? "opacity-60" : ""}`} data-testid={`learn-${l.id}`}>
       <div className="flex items-start gap-2.5">
@@ -998,12 +1220,19 @@ function LearnCard({ l, onToggle, onToggleActive, onRemove }: { l: Learn; onTogg
             <button onClick={onToggleActive} aria-label={l.active ? "Park this" : "Make active"} title={l.active ? "Park this" : "Make active"} data-testid={`button-active-learn-${l.id}`}
               className={`shrink-0 ${l.active ? "text-primary" : "text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100"}`}><Star className="w-4 h-4" fill={l.active ? "currentColor" : "none"} /></button>
           </div>
-          {track && <div className="mt-1"><span className="text-xs rounded-md bg-accent text-accent-foreground px-1.5 py-0.5">{track}</span></div>}
+          {/* Clarity strip: track chip + track label + missing-output constraint */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <TrackChip trackId={trackId} tracks={tracks} />
+            {track && <span className="text-[10px] rounded-md bg-accent text-accent-foreground px-1.5 py-0.5">{track}</span>}
+            {!l.requiredOutput && <ConstraintBadge text="no output" tone="warn" />}
+          </div>
           {l.note && <p className="text-xs text-muted-foreground mt-2 leading-snug">{l.note}</p>}
           <div className="flex items-center gap-3 mt-2">
             {l.url && <a href={l.url} target="_blank" rel="noopener noreferrer" data-testid={`link-learn-${l.id}`} className="text-xs text-primary inline-flex items-center gap-1 hover:underline">Open <ExternalLink className="w-3 h-3" /></a>}
             <button onClick={onRemove} data-testid={`button-delete-learn-${l.id}`} className="opacity-0 group-hover:opacity-100 text-xs text-muted-foreground hover:text-destructive inline-flex items-center gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
           </div>
+          <CardActions entity="learn" id={l.id} trackId={trackId} tracks={tracks}
+            onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
         </div>
       </div>
     </div>
@@ -1018,6 +1247,8 @@ const HUSTLE_STAGES = [
 ] as const;
 function HustleView() {
   const { data: hustles = [], isLoading } = useQuery<Hustle[]>({ queryKey: ["/api/hustles"] });
+  const { data: tracks = [] } = useCareerTracks();
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", note: "", nextStep: "" });
   async function add() {
@@ -1058,7 +1289,7 @@ function HustleView() {
             {active.map(({ stage, items }) => (
               <div key={stage.id} className="rounded-xl border border-border bg-muted/30 p-3">
                 <div className="mb-2.5 px-1"><div className="flex items-center justify-between"><h2 className="font-semibold text-sm">{stage.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div><p className="text-xs text-muted-foreground">{stage.hint}</p></div>
-                <div className="space-y-2">{items.map((h) => <HustleCard key={h.id} h={h} onMove={move} onRemove={() => remove(h.id)} />)}</div>
+                <div className="space-y-2">{items.map((h) => <HustleCard key={h.id} h={h} tracks={tracks} tasks={tasks} onMove={move} onRemove={() => remove(h.id)} />)}</div>
               </div>
             ))}
           </div>
@@ -1068,32 +1299,47 @@ function HustleView() {
     </div>
   );
 }
-function HustleCard({ h, onMove, onRemove }: { h: Hustle; onMove: (h: Hustle, d: 1 | -1) => void; onRemove: () => void }) {
+function HustleCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tracks: CareerTrack[]; tasks: Task[]; onMove: (h: Hustle, d: 1 | -1) => void; onRemove: () => void }) {
+  const { toast } = useToast();
   const idx = HUSTLE_STAGES.findIndex((s) => s.id === h.stage);
+  const trackId = getTrackId("hustles", h);
+  const linked = useLinkedTaskCount(tasks, "hustle", h.id);
   return (
     <div className="group rounded-lg border border-card-border bg-card p-3" data-testid={`hustle-${h.id}`}>
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-medium text-sm leading-snug">{h.title}</h3>
         <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-hustle-${h.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
+      {/* Clarity strip: track chip + stage + idea constraint */}
+      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+        <TrackChip trackId={trackId} tracks={tracks} />
+        {h.stage === "idea" && <ConstraintBadge text="still an idea" />}
+      </div>
       {h.note && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{h.note}</p>}
       {h.nextStep && <p className="text-xs mt-2 inline-flex items-center gap-1 rounded-md bg-accent text-accent-foreground px-1.5 py-0.5"><ArrowRight className="w-3 h-3" /> {h.nextStep}</p>}
-      <div className="flex items-center gap-1 mt-2.5 pt-2 border-t border-card-border">
+      <div className="flex items-center gap-1 mt-2.5">
         {idx > 0 && <button onClick={() => onMove(h, -1)} data-testid={`button-hustle-back-${h.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">←</button>}
         {idx < HUSTLE_STAGES.length - 1 && <button onClick={() => onMove(h, 1)} data-testid={`button-hustle-fwd-${h.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">{HUSTLE_STAGES[idx + 1].label} →</button>}
       </div>
+      <CardActions entity="hustles" id={h.id} trackId={trackId} tracks={tracks}
+        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
     </div>
   );
 }
 
 /* ---------------- WINS ---------------- */
+const WIN_CATEGORY_LABEL: Record<WinCategory, string> = {
+  job_progress: "Job progress", learning: "Learning", network: "Network",
+  proof_asset: "Proof asset", mindset: "Mindset", admin: "Admin",
+};
 function WinsView() {
   const { data: wins = [], isLoading } = useQuery<Win[]>({ queryKey: ["/api/wins"] });
   const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
   const [text, setText] = useState("");
+  const [category, setCategory] = useState<WinCategory>("mindset");
   async function add() {
     if (!text.trim()) return;
-    await mutateAndInvalidate("POST", "/api/wins", { text: text.trim() }, ["/api/wins", "/api/stats"]);
+    await mutateAndInvalidate("POST", "/api/wins", { text: text.trim(), winCategory: category }, ["/api/wins", "/api/stats"]);
     setText("");
   }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/wins/${id}`, undefined, ["/api/wins", "/api/stats"]); }
@@ -1108,6 +1354,7 @@ function WinsView() {
       <div className="group flex items-center gap-3 rounded-lg border border-card-border bg-card px-3.5 py-3" data-testid={`win-${w.id}`}>
         <Trophy className="w-4 h-4 text-primary shrink-0" />
         <span className="flex-1 text-sm">{w.text}</span>
+        {w.winCategory && <span className="hidden sm:inline-flex shrink-0 text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{WIN_CATEGORY_LABEL[w.winCategory as WinCategory] || w.winCategory}</span>}
         <span className="text-xs text-muted-foreground shrink-0">{dayLabel(w.createdAt)}</span>
         <button onClick={() => remove(w.id)} aria-label="Delete" data-testid={`button-delete-win-${w.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
       </div>
@@ -1123,8 +1370,12 @@ function WinsView() {
           </div>
         )}
       </div>
-      <div className="flex gap-2 mb-5">
-        <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="What went well? Anything counts…" className="h-11" data-testid="input-win" />
+      <div className="flex flex-wrap gap-2 mb-3">
+        <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="What went well? Anything counts…" className="h-11 flex-1 min-w-[12rem]" data-testid="input-win" />
+        <select value={category} onChange={(e) => setCategory(e.target.value as WinCategory)} data-testid="select-win-category"
+          className="h-11 rounded-md border border-input bg-background px-3 text-sm">
+          {WIN_CATEGORIES.map((c) => <option key={c} value={c}>{WIN_CATEGORY_LABEL[c]}</option>)}
+        </select>
         <Button className="h-11 px-4" onClick={add} data-testid="button-add-win"><Trophy className="w-4 h-4 mr-1" /> Log win</Button>
       </div>
       {isLoading ? <Loading /> : wins.length === 0 ? (

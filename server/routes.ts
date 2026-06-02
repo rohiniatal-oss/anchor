@@ -1,9 +1,11 @@
 import type { Express } from "express";
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
-import { storage } from "./storage";
+import { storage, type TrackEntity } from "./storage";
 import OpenAI from "openai";
 import { recommend, planDay } from "./brain";
+import { createNextTask, type NextTaskSourceType } from "./nextTask";
+import { getTrackDiagnostics, getUnlinkedItems } from "./strategy";
 import {
   insertTaskSchema, insertEventSchema, insertJobSchema,
   insertLearnSchema, insertHustleSchema, insertWinSchema, insertContactSchema,
@@ -467,7 +469,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
     await storage.updateTask(id, { done: true, status: "done", pinned: false } as any);
-    await storage.createWin({ text: task.title, kind: "planned" } as any);
+    const winCategory =
+      task.category === "job" || task.category === "interview" ? "job_progress"
+      : task.category === "learning" ? "learning"
+      : task.category === "substack" || task.category === "hustle" || task.category === "afterline" ? "proof_asset"
+      : task.sourceType === "contact" ? "network"
+      : "admin";
+    await storage.createWin({ text: task.title, kind: "planned", winCategory } as any);
     await storage.logActivity({ eventType: "completed", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: id } as any);
     if (task.sourceType === "job" && task.sourceId) {
       const jb = (await storage.getJobs()).find((x) => x.id === task.sourceId);
@@ -587,6 +595,44 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
     res.json({ tracks: rows, insights });
   });
+
+  // ═══ P3.5: NEXT-TASK ENGINE — every source can spawn a provenance-carrying task ═══
+  // Maps an entity route segment to the source type the engine understands.
+  const NEXT_TASK_SOURCES: Record<string, NextTaskSourceType> = {
+    jobs: "job", learn: "learn", contacts: "contact", hustles: "hustle",
+  };
+  for (const [seg, sourceType] of Object.entries(NEXT_TASK_SOURCES)) {
+    app.post(`/api/${seg}/:id/create-next-task`, async (req, res) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+      const result = await createNextTask({ sourceType, sourceId: id });
+      if (!result) return res.status(404).json({ error: "Source not found" });
+      res.json({ ...result.task, reused: result.reused });
+    });
+  }
+
+  // ═══ P3.5: TRACK COHERENCE — link any source/task to a career track in place ═══
+  const LINK_ENTITIES = new Set<TrackEntity>(["jobs", "learn", "contacts", "hustles", "tasks"]);
+  app.patch("/api/:entity/:id/link-track", async (req, res) => {
+    const entity = String(req.params.entity) as TrackEntity;
+    if (!LINK_ENTITIES.has(entity)) return res.status(400).json({ error: "Unknown entity" });
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const raw = req.body?.trackId;
+    if (raw !== null && raw !== undefined && !Number.isFinite(Number(raw)))
+      return res.status(400).json({ error: "trackId must be a number or null" });
+    const trackId = raw === null || raw === undefined ? null : Number(raw);
+    const updated = await storage.linkTrack(entity, id, trackId);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  });
+
+  // Career tracks list (for the in-card Link track control).
+  app.get("/api/career-tracks", async (_req, res) => res.json(await storage.getCareerTracks()));
+
+  // ═══ P3.5: STRATEGY DIAGNOSTICS — per-track bottlenecks + unlinked bucket ═══
+  app.get("/api/strategy/diagnostics", async (_req, res) => res.json({ tracks: await getTrackDiagnostics() }));
+  app.get("/api/strategy/unlinked", async (_req, res) => res.json(await getUnlinkedItems()));
 
   // Events read
   app.get("/api/events", async (req, res) => res.json(await storage.getEvents(String(req.query.day || ""))));

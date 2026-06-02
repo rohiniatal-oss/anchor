@@ -7,12 +7,14 @@ import {
   Rocket, MoveRight, MoonStar, Lightbulb, Users, MessageCircle, RefreshCw,
   Compass, ArrowUpRight, Link2, ListChecks, AlertTriangle,
   Lock, Pencil, ArrowUp, ArrowDown, Ban, CheckCircle2,
+  MessageSquare, Flame, Send,
 } from "lucide-react";
+import { NETWORK_LANES, OPEN_LANE, ALL_LANE_KEYS, laneForSourceNetwork, laneLabel } from "@shared/networkLanes";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
 import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack, JobPipelineStep } from "@shared/schema";
-import { type TrackedEntity, getTrackId, WIN_CATEGORIES, type WinCategory } from "@shared/domainState";
+import { type TrackedEntity, getTrackId, getRelationshipStrength, WIN_CATEGORIES, type WinCategory } from "@shared/domainState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -917,6 +919,7 @@ function JobsView() {
   const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+  const { data: contacts = [] } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", company: "", location: "", url: "", note: "", nextStep: "", deadline: "" });
   async function add() {
@@ -960,7 +963,7 @@ function JobsView() {
               <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
                 <div className="flex items-center justify-between mb-2.5 px-1"><h2 className="font-semibold text-sm">{col.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div>
                 <div className="space-y-2">
-                  {items.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} onMove={move} onRemove={() => remove(j.id)} />)}
+                  {items.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} onMove={move} onRemove={() => remove(j.id)} />)}
                   {items.length === 0 && <p className="text-xs text-muted-foreground px-1 py-3">Add roles you want to apply for.</p>}
                 </div>
               </div>
@@ -983,7 +986,10 @@ const ELIGIBILITY_LABEL: Record<string, string> = {
   phd: "PhD required", likely_ineligible: "Likely ineligible",
 };
 const STEP_STATUS_TONE: Record<string, string> = {
-  done: "bg-primary/10 text-primary", skipped: "bg-amber-500/15 text-amber-700 dark:text-amber-400", todo: "bg-muted text-muted-foreground",
+  done: "bg-primary/10 text-primary",
+  blocked: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  skipped: "bg-muted text-muted-foreground line-through",
+  todo: "bg-muted text-muted-foreground",
 };
 function JobStepRail({ j }: { j: Job }) {
   const { toast } = useToast();
@@ -1093,7 +1099,8 @@ function JobStepRail({ j }: { j: Job }) {
                 ) : (
                   <p className={`text-xs leading-snug ${s.status === "done" ? "line-through text-muted-foreground" : ""}`}>{s.stepLabel}</p>
                 )}
-                {s.status === "skipped" && s.note && <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5 inline-flex items-center gap-1"><Ban className="w-2.5 h-2.5" /> {s.note}</p>}
+                {s.status === "blocked" && <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5 inline-flex items-center gap-1"><Ban className="w-2.5 h-2.5" /> blocked{s.note ? `: ${s.note}` : ""}</p>}
+                {s.status === "skipped" && <p className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1"><X className="w-2.5 h-2.5" /> skipped{s.note ? `: ${s.note}` : ""}</p>}
                 {s.taskId && !editing && <p className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1"><ListChecks className="w-2.5 h-2.5" /> task created</p>}
               </div>
               {editing ? (
@@ -1102,14 +1109,16 @@ function JobStepRail({ j }: { j: Job }) {
                   <button onClick={() => reorder(s, 1)} disabled={i === steps.length - 1} data-testid={`button-step-down-${s.id}`} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown className="w-3.5 h-3.5" /></button>
                   <button onClick={() => del(s)} data-testid={`button-step-delete-${s.id}`} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
                 </div>
-              ) : s.status !== "done" ? (
+              ) : (s.status === "done" || s.status === "skipped") ? (
+                <button onClick={() => setStatus(s, "todo")} title="Reopen" data-testid={`button-step-reopen-${s.id}`} className="shrink-0 text-muted-foreground hover:text-foreground"><RefreshCw className="w-3.5 h-3.5" /></button>
+              ) : (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button onClick={() => materialize(s)} disabled={busy} title="Create a task from this step" data-testid={`button-step-materialize-${s.id}`} className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-0.5 disabled:opacity-60"><Plus className="w-3 h-3" /> Task</button>
                   <button onClick={() => setStatus(s, "done")} title="Mark done" data-testid={`button-step-done-${s.id}`} className="text-muted-foreground hover:text-primary"><CheckCircle2 className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => block(s)} title="Mark blocked" data-testid={`button-step-block-${s.id}`} className="text-muted-foreground hover:text-amber-600"><Ban className="w-3.5 h-3.5" /></button>
+                  {s.status === "blocked"
+                    ? <button onClick={() => setStatus(s, "todo")} title="Unblock" data-testid={`button-step-unblock-${s.id}`} className="text-muted-foreground hover:text-foreground"><RefreshCw className="w-3.5 h-3.5" /></button>
+                    : <button onClick={() => block(s)} title="Mark blocked" data-testid={`button-step-block-${s.id}`} className="text-muted-foreground hover:text-amber-600"><Ban className="w-3.5 h-3.5" /></button>}
                 </div>
-              ) : (
-                <button onClick={() => setStatus(s, "todo")} title="Reopen" data-testid={`button-step-reopen-${s.id}`} className="shrink-0 text-muted-foreground hover:text-foreground"><RefreshCw className="w-3.5 h-3.5" /></button>
               )}
             </div>
           ))}
@@ -1126,7 +1135,7 @@ function JobStepRail({ j }: { j: Job }) {
   );
 }
 
-function JobCard({ j, tracks, tasks, onMove, onRemove }: { j: Job; tracks: CareerTrack[]; tasks: Task[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
+function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
   const trackId = getTrackId("jobs", j);
@@ -1164,18 +1173,98 @@ function JobCard({ j, tracks, tasks, onMove, onRemove }: { j: Job; tracks: Caree
         </div>
       </div>
       <JobStepRail j={j} />
+      <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
       <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
         onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
     </div>
   );
 }
 
-/* ---------------- NETWORK (outreach pipeline) ---------------- */
+// P4.2 — the key cross-module tie. When a live job has a WEAK warm path
+// (warmPathScore low/empty OR no contact linked to its track), surface a
+// lightweight inline prompt with candidate contacts in the matching warm
+// lane(s) for that track, each with one-click "Create outreach task" (the
+// shared createNextTask, sourceType "contact"). Warmth shown where a job
+// needs it — not an isolated CRM.
+const LOW_WARM_PATH = 40;
+function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null; contacts: Contact[] }) {
+  const { toast } = useToast();
+  const [busyId, setBusyId] = useState<number | null>(null);
+  // Only meaningful for a live role.
+  if (j.status === "closed") return null;
+
+  const trackContacts = trackId != null ? contacts.filter((c) => getTrackId("contacts", c) === trackId) : [];
+  const warmTrackContacts = trackContacts.filter((c) => c.status === "messaged" || c.status === "replied" || getRelationshipStrength(c) !== "cold");
+  const weak = ((j.warmPathScore ?? 0) < LOW_WARM_PATH) || warmTrackContacts.length === 0;
+  if (!weak) return null;
+
+  // Candidate contacts: those already on this track, else any non-cold contact
+  // (sorted by warmest lane relevance is overkill — keep it lightweight).
+  const pool = trackContacts.length > 0 ? trackContacts : contacts;
+  const candidates = pool
+    .filter((c) => c.status !== "replied")
+    .slice(0, 3);
+
+  async function outreach(c: Contact) {
+    setBusyId(c.id);
+    try {
+      const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
+      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in your inbox / today list." });
+    } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
+    finally { setBusyId(null); }
+  }
+
+  return (
+    <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-amber-50/40 dark:bg-amber-950/10 -mx-1 px-2 pb-2" data-testid={`warmpath-${j.id}`}>
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1.5">
+        <Flame className="w-3.5 h-3.5" /> No warm path
+      </div>
+      {candidates.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No contacts in this lane yet — add someone in Network to warm this role.</p>
+      ) : (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">{trackContacts.length > 0 ? "Reach someone on this track:" : "Reach a warm contact to open a path:"}</p>
+          {candidates.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-2" data-testid={`warmpath-candidate-${j.id}-${c.id}`}>
+              <span className="text-xs min-w-0 truncate">{c.who || c.name || "contact"}</span>
+              <button onClick={() => outreach(c)} disabled={busyId === c.id} data-testid={`button-warmpath-outreach-${j.id}-${c.id}`} className="shrink-0 text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-0.5 disabled:opacity-60">
+                {busyId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Outreach task
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- NETWORK (P4.2: a WARMTH view over warm lanes) ----------------
+   Not a contact archive. Contacts are grouped into warm lanes (a presentation
+   layer over the free-text sourceNetwork) and each card leads with the ASK and
+   the person's TYPE; the name is user-filled and visually secondary. The warmth
+   signals — overdue follow-up (amber pulse) and replied (slate-green tint) —
+   stay prominent. Every card's primary verb is "Create next task" (outreach via
+   the shared createNextTask machinery, sourceType "contact"). */
 const OUTREACH_COLS = [
   { id: "to_contact", label: "To reach" },
   { id: "messaged", label: "Messaged" },
   { id: "replied", label: "Replied" },
 ] as const;
+const ASK_LABEL: Record<string, string> = {
+  soft: "soft intro", referral: "referral", advice: "advice",
+  reconnect: "reconnect", follow_up: "follow-up",
+};
+const STRENGTH_TONE: Record<string, string> = {
+  strong: "bg-primary/15 text-primary",
+  warm: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200",
+  cold: "bg-muted text-muted-foreground",
+};
+// Overdue when a follow-up date is set and in the past.
+function isFollowUpOverdue(c: Contact): boolean {
+  const d = daysUntil(c.nextFollowUpDate || "");
+  return d !== null && d < 0;
+}
+
 function NetworkView() {
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
   const { data: tracks = [] } = useCareerTracks();
@@ -1195,22 +1284,28 @@ function NetworkView() {
   async function addSug() {
     if (!sug) return;
     await mutateAndInvalidate("POST", "/api/networking/accept", sug, ["/api/contacts"]);
-    toast({ title: "Added to your outreach list.", description: "Pop in a name when one comes to mind." });
+    toast({ title: "Added to your warm list.", description: "Pop in a name when one comes to mind." });
     const next = [...seen, sug.who]; setSeen(next); fetchSug(next);
   }
   function another() { if (!sug) return; const next = [...seen, sug.who]; setSeen(next); fetchSug(next); }
-  async function setName(c: Contact, name: string) { await mutateAndInvalidate("PATCH", `/api/contacts/${c.id}`, { name }, ["/api/contacts"]); }
-  async function moveStatus(c: Contact, status: string) { await mutateAndInvalidate("PATCH", `/api/contacts/${c.id}`, { status }, ["/api/contacts"]); }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/contacts/${id}`, undefined, ["/api/contacts"]); }
+  async function patch(c: Contact, body: Record<string, unknown>) {
+    await mutateAndInvalidate("PATCH", `/api/contacts/${c.id}`, body, ["/api/contacts", "/api/strategy/diagnostics"]);
+  }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/contacts/${id}`, undefined, ["/api/contacts", "/api/strategy/diagnostics"]); }
+
+  // Group contacts into warm lanes via the tolerant normalizer; "Open" last.
+  const byLane = new Map<string, Contact[]>(ALL_LANE_KEYS.map((k) => [k, []]));
+  for (const c of contacts) byLane.get(laneForSourceNetwork(c.sourceNetwork))!.push(c);
+  const activeLaneKeys = ALL_LANE_KEYS.filter((k) => (byLane.get(k)!.length > 0) || k !== OPEN_LANE);
 
   return (
     <div>
-      <SectionHeading title="Network" sub="Warm intros beat cold applications. Coach suggests who to reach — tied to your target roles — and you track each from 'to reach' through to a reply." />
+      <SectionHeading title="Network" sub="A warmth view, not a contact list. People sit in your warm lanes; each card leads with the ask and timing. Coach suggests who to reach — tied to your target roles — and you warm the path from first message to reply." />
 
       {/* Coach's one networking suggestion */}
       {(sugLoading || sug) && (
-        <div className="mb-6 rounded-xl border border-accent-foreground/15 bg-accent/40 p-4" data-testid="network-suggestion">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent-foreground mb-2">
+        <div className="mb-6 rounded-xl border border-slate-300/60 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/40 p-4" data-testid="network-suggestion">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-2">
             <Lightbulb className="w-4 h-4" /> Who to reach next
           </div>
           {sugLoading ? (
@@ -1229,18 +1324,30 @@ function NetworkView() {
       )}
 
       {isLoading ? <Loading /> : contacts.length === 0 ? (
-        <Empty icon={Users} text="No one on your list yet. Add Coach's suggestion above to start your outreach pipeline." />
+        <Empty icon={Users} text="No one on your warm list yet. Add Coach's suggestion above to start warming a path." />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-3">
-          {OUTREACH_COLS.map((col) => {
-            const items = contacts.filter((c) => c.status === col.id);
+        <div className="space-y-5">
+          {activeLaneKeys.map((key) => {
+            const items = byLane.get(key)!;
+            const overdue = items.filter(isFollowUpOverdue).length;
             return (
-              <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
-                <div className="flex items-center justify-between mb-2.5 px-1"><h2 className="font-semibold text-sm">{col.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div>
-                <div className="space-y-2">
-                  {items.map((c) => <ContactCard key={c.id} c={c} tracks={tracks} tasks={tasks} onName={setName} onMove={moveStatus} onRemove={() => remove(c.id)} />)}
-                  {items.length === 0 && <p className="text-xs text-muted-foreground px-1 py-2">—</p>}
+              <div key={key} className="rounded-xl border border-border bg-muted/30 p-3" data-testid={`lane-${key}`}>
+                <div className="flex items-center justify-between mb-2.5 px-1">
+                  <h2 className="font-semibold text-sm flex items-center gap-1.5">
+                    <Flame className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" /> {laneLabel(key)}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    {overdue > 0 && <span className="text-[10px] font-medium rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 px-1.5 py-0.5">{overdue} overdue</span>}
+                    <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
+                  </div>
                 </div>
+                {items.length === 0 ? (
+                  <p className="text-xs text-muted-foreground px-1 py-1">No one in this lane yet.</p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {items.map((c) => <ContactCard key={c.id} c={c} tracks={tracks} tasks={tasks} onPatch={patch} onRemove={() => remove(c.id)} />)}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1249,35 +1356,117 @@ function NetworkView() {
     </div>
   );
 }
-function ContactCard({ c, tracks, tasks, onName, onMove, onRemove }: { c: Contact; tracks: CareerTrack[]; tasks: Task[]; onName: (c: Contact, n: string) => void; onMove: (c: Contact, s: string) => void; onRemove: () => void }) {
+
+function ContactCard({ c, tracks, tasks, onPatch, onRemove }: { c: Contact; tracks: CareerTrack[]; tasks: Task[]; onPatch: (c: Contact, body: Record<string, unknown>) => Promise<void>; onRemove: () => void }) {
   const { toast } = useToast();
   const [name, setNameLocal] = useState(c.name || "");
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draft, setDraft] = useState(c.messageDraft || "");
+  const [savingDraft, setSavingDraft] = useState(false);
   const idx = OUTREACH_COLS.findIndex((s) => s.id === c.status);
   const trackId = getTrackId("contacts", c);
   const linked = useLinkedTaskCount(tasks, "contact", c.id);
+  const overdue = isFollowUpOverdue(c);
+  const replied = c.status === "replied";
+  const strength = getRelationshipStrength(c);
+
+  async function saveDraft() {
+    setSavingDraft(true);
+    try { await onPatch(c, { messageDraft: draft }); toast({ title: "Draft saved.", description: "It's on this contact, ready to send." }); setDraftOpen(false); }
+    finally { setSavingDraft(false); }
+  }
+
+  const tone = replied
+    ? "border-emerald-300/60 bg-emerald-50/60 dark:border-emerald-800/60 dark:bg-emerald-950/30"
+    : overdue
+      ? "border-amber-400/70 bg-amber-50/50 dark:border-amber-700/60 dark:bg-amber-950/20 animate-pulse"
+      : "border-card-border bg-card";
+
   return (
-    <div className="group rounded-lg border border-card-border bg-card p-3" data-testid={`contact-${c.id}`}>
+    <div className={`group rounded-lg border p-3 ${tone}`} data-testid={`contact-${c.id}`}>
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium leading-snug">{c.who}</p>
+        {/* ASK-FIRST: the ask leads, then the type descriptor (primary). */}
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {c.askType
+              ? <span className="inline-flex items-center gap-1 rounded-full bg-slate-700 text-slate-100 px-1.5 py-0.5 text-[10px] font-medium" data-testid={`ask-${c.id}`}><Send className="w-2.5 h-2.5" /> {ASK_LABEL[c.askType] || c.askType}</span>
+              : <ConstraintBadge text="set an ask" tone="warn" />}
+            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${STRENGTH_TONE[strength]}`}>{strength}</span>
+            {overdue && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 text-[10px] font-semibold" data-testid={`overdue-${c.id}`}><Clock className="w-2.5 h-2.5" /> overdue</span>}
+          </div>
+          <p className="text-sm font-medium leading-snug mt-1.5" data-testid={`contact-who-${c.id}`}>{c.who || "Someone worth reaching"}</p>
+        </div>
         <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-contact-${c.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
-      {/* Clarity strip: track chip + sector + constraint badges */}
+
+      {/* Clarity strip: track + targets + timing */}
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
         <TrackChip trackId={trackId} tracks={tracks} />
-        {c.sector && <span className="inline-flex items-center text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{c.sector}</span>}
-        {!c.askType && <ConstraintBadge text="no ask type" tone="warn" />}
+        {(c.targetOrg || c.targetRole) && <span className="inline-flex items-center text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{[c.targetRole, c.targetOrg].filter(Boolean).join(" · ")}</span>}
+        {c.nextFollowUpDate && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${overdue ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-muted text-muted-foreground"}`}><CalendarDays className="w-2.5 h-2.5" /> {formatDeadline(c.nextFollowUpDate)}</span>}
       </div>
+
       {c.why && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{c.why}</p>}
-      <input value={name} onChange={(e) => setNameLocal(e.target.value)} onBlur={() => name !== c.name && onName(c, name)}
+
+      {/* Name — user-filled, visually SECONDARY (muted, below the type). Never auto-invented. */}
+      <input value={name} onChange={(e) => setNameLocal(e.target.value)} onBlur={() => name !== c.name && onPatch(c, { name })}
         placeholder="Add a name…" data-testid={`input-contact-name-${c.id}`}
-        className="mt-2 w-full text-xs bg-transparent border-b border-input pb-1 focus:outline-none focus:border-primary" />
+        className="mt-2 w-full text-xs text-muted-foreground bg-transparent border-b border-input pb-1 focus:outline-none focus:border-primary" />
+
+      {/* Draft message inline editor — persists to messageDraft. */}
+      {draftOpen && (
+        <div className="mt-2" data-testid={`draft-editor-${c.id}`}>
+          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3}
+            placeholder="Draft your outreach message…" data-testid={`textarea-draft-${c.id}`}
+            className="w-full text-xs bg-background border border-input rounded-md p-2 focus:outline-none focus:border-primary" />
+          <div className="flex items-center gap-2 mt-1.5">
+            <Button size="sm" className="h-7 px-2 text-xs" onClick={saveDraft} disabled={savingDraft} data-testid={`button-save-draft-${c.id}`}>
+              {savingDraft ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save draft"}
+            </Button>
+            <button onClick={() => { setDraft(c.messageDraft || ""); setDraftOpen(false); }} className="text-xs text-muted-foreground hover:text-foreground">cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Status progression */}
       <div className="flex items-center gap-1 mt-2.5">
-        {idx > 0 && <button onClick={() => onMove(c, OUTREACH_COLS[idx - 1].id)} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate" data-testid={`button-contact-back-${c.id}`}>←</button>}
-        {idx < OUTREACH_COLS.length - 1 && <button onClick={() => onMove(c, OUTREACH_COLS[idx + 1].id)} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate" data-testid={`button-contact-fwd-${c.id}`}>{OUTREACH_COLS[idx + 1].label} →</button>}
+        {idx > 0 && <button onClick={() => onPatch(c, { status: OUTREACH_COLS[idx - 1].id })} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate" data-testid={`button-contact-back-${c.id}`}>←</button>}
+        {idx < OUTREACH_COLS.length - 1 && <button onClick={() => onPatch(c, { status: OUTREACH_COLS[idx + 1].id })} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate" data-testid={`button-contact-fwd-${c.id}`}>{OUTREACH_COLS[idx + 1].label} →</button>}
       </div>
-      <CardActions entity="contacts" id={c.id} trackId={trackId} tracks={tracks}
-        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
+
+      {/* Actions row: Create next task / Draft message / Link track / View linked tasks */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5 pt-2 border-t border-card-border">
+        <CreateNextContactTask c={c} />
+        <button onClick={() => setDraftOpen((o) => !o)} data-testid={`button-draft-message-${c.id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+          <MessageSquare className="w-3.5 h-3.5" /> {c.messageDraft ? "Edit message" : "Draft message"}
+        </button>
+        <LinkTrackControl entity="contacts" id={c.id} trackId={trackId} tracks={tracks} />
+        <button data-testid={`button-view-tasks-contacts-${c.id}`} onClick={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+          <ListChecks className="w-3.5 h-3.5" /> View linked tasks
+        </button>
+      </div>
     </div>
+  );
+}
+
+// "Create next task" for a contact — outreach task via the shared createNextTask
+// machinery (sourceType "contact"), carrying provenance + dedupe. Standalone so
+// the contact card's ask-first action row stays readable.
+function CreateNextContactTask({ c }: { c: Contact }) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    setBusy(true);
+    try {
+      const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
+      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in your inbox / today list." });
+    } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
+    finally { setBusy(false); }
+  }
+  return (
+    <button onClick={go} disabled={busy} data-testid={`button-create-next-contacts-${c.id}`} className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create next task
+    </button>
   );
 }
 

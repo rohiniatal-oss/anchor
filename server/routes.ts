@@ -535,8 +535,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       // Bottleneck: the single weakest link on this track (in priority order).
       let bottleneck = "", nextMove = "";
-      if (tJobs.length === 0 && tLearn.length === 0) {
+      if (tJobs.length === 0 && tLearn.length === 0 && tProof.length === 0) {
         bottleneck = "No live opportunities yet"; nextMove = "Add a role or a learning item to this track";
+      } else if (tProof.length > 0 && tJobs.length === 0 && tLearn.length === 0) {
+        // A proof / thought-leadership track: the work IS the proof asset.
+        bottleneck = tProofLive.length === 0 ? "Proof asset still just an idea" : "Keep the proof asset moving";
+        nextMove = tProofLive.length === 0 ? "Move your proof asset past the idea stage" : "Ship the next piece of your proof asset";
       } else if (tJobs.length > 0 && tApplied.length === 0) {
         bottleneck = `${tJobs.length} role${tJobs.length > 1 ? "s" : ""} saved, none submitted`;
         nextMove = "Submit your strongest application on this track";

@@ -143,6 +143,7 @@ export const wins = sqliteTable("wins", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   text: text("text").notNull(),
   kind: text("kind").notNull().default("manual"), // manual|planned|spontaneous|coach|source|mvd
+  winCategory: text("win_category").notNull().default("mindset"), // job_progress|learning|network|proof_asset|mindset|admin
   createdAt: integer("created_at").notNull(),
 });
 

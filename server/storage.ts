@@ -58,7 +58,13 @@ export interface IStorage {
   logActivity(a: InsertActivityLog): Promise<void>;
   getCareerTracks(): Promise<CareerTrack[]>;
   createCareerTrack(t: InsertCareerTrack): Promise<CareerTrack>;
+  linkTrack(entity: TrackEntity, id: number, trackId: number | null): Promise<any | undefined>;
 }
+
+// Entities that carry a track link. Hustles store it in proofAssetForTrack;
+// everything else in relatedTrackId.
+export type TrackEntity = "jobs" | "learn" | "contacts" | "hustles" | "tasks";
+const TRACK_TABLES = { jobs, learn, contacts, hustles, tasks } as const;
 
 export class DatabaseStorage implements IStorage {
   async getTasks() { return db.select().from(tasks).orderBy(asc(tasks.sort), asc(tasks.id)).all(); }
@@ -105,6 +111,11 @@ export class DatabaseStorage implements IStorage {
   async logActivity(a: InsertActivityLog) { db.insert(activityLog).values({ ...a, timestamp: Date.now() }).run(); }
   async getCareerTracks() { return db.select().from(careerTracks).orderBy(desc(careerTracks.priority)).all(); }
   async createCareerTrack(t: InsertCareerTrack) { return db.insert(careerTracks).values({ ...t, createdAt: Date.now() }).returning().get(); }
+  async linkTrack(entity: TrackEntity, id: number, trackId: number | null) {
+    const table = TRACK_TABLES[entity];
+    const patch = entity === "hustles" ? { proofAssetForTrack: trackId } : { relatedTrackId: trackId };
+    return db.update(table).set(patch as any).where(eq(table.id, id)).returning().get();
+  }
 }
 
 export const storage = new DatabaseStorage();

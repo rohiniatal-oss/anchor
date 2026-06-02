@@ -464,39 +464,50 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         <p className="mb-6 text-sm text-muted-foreground inline-flex items-center gap-1.5"><Check className="w-4 h-4 text-primary" /> Coach's pick is in your day.</p>
       )}
 
-      {/* The rest of the day — secondary, below the fold */}
-      {(today.filter((t) => !t.pinned).length > 0 || doneToday.length > 0) && (
-        <div className="mt-2">
-          <div className="flex items-center justify-between mb-2.5">
-            <GroupLabel>The rest of today</GroupLabel>
-            {stats && stats.doneThisWeek > 0 && (
-              <span className="text-xs text-muted-foreground inline-flex items-center gap-1" data-testid="text-momentum">
-                <Trophy className="w-3.5 h-3.5 text-primary" /> {stats.doneThisWeek} done this week
-              </span>
+      {/* Also on your list — ONE secondary list, deduped against the plan above.
+          No morning/afternoon/evening buckets: the plan IS the order, so a second
+          time-of-day model would just compete with it. We only show tasks the plan
+          hasn't already surfaced, so nothing appears twice. */}
+      {(() => {
+        // A task is already "in the plan" if a plan item is backed by it, or points
+        // at the same source object (e.g. the same job/learn/hustle).
+        const planTaskIds = new Set(activeItems.map((it) => it.taskId).filter(Boolean) as number[]);
+        const planSourceKeys = new Set(
+          activeItems.filter((it) => it.sourceType && it.sourceId != null).map((it) => `${it.sourceType}:${it.sourceId}`)
+        );
+        const alsoToday = today.filter((t) =>
+          !t.pinned &&
+          !planTaskIds.has(t.id) &&
+          !(t.sourceType && t.sourceId != null && planSourceKeys.has(`${t.sourceType}:${t.sourceId}`))
+        );
+        if (alsoToday.length === 0 && doneToday.length === 0) return null;
+        return (
+          <div className="mt-2">
+            <div className="flex items-center justify-between mb-2.5">
+              <GroupLabel>{alsoToday.length > 0 ? "Also on your list" : "Done today"}</GroupLabel>
+              {stats && stats.doneThisWeek > 0 && (
+                <span className="text-xs text-muted-foreground inline-flex items-center gap-1" data-testid="text-momentum">
+                  <Trophy className="w-3.5 h-3.5 text-primary" /> {stats.doneThisWeek} done this week
+                </span>
+              )}
+            </div>
+            {alsoToday.length > 0 && (
+              <div className="rounded-xl border border-card-border bg-card p-3.5">
+                <p className="text-xs text-muted-foreground/70 mb-2">Not part of today's order — pick one up only if you have room.</p>
+                <div className="space-y-1">
+                  {alsoToday.map((t) => <MiniTaskRow key={t.id} t={t} />)}
+                </div>
+              </div>
+            )}
+            {/* Completed today — each can be explicitly promoted to a categorised win */}
+            {doneToday.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {doneToday.map((t) => <DoneTaskRow key={t.id} t={t} />)}
+              </div>
             )}
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {["morning", "afternoon", "evening"].map((block) => {
-              const items = today.filter((t) => t.block === block && !t.pinned);
-              return (
-                <div key={block} className="rounded-xl border border-card-border bg-card p-3.5">
-                  <div className="flex items-center gap-1.5 mb-2"><Clock className="w-3.5 h-3.5 text-muted-foreground" /><h2 className="font-medium text-xs uppercase tracking-wide text-muted-foreground capitalize">{block}</h2></div>
-                  <div className="space-y-1">
-                    {items.map((t) => <MiniTaskRow key={t.id} t={t} />)}
-                    {items.length === 0 && <p className="text-xs text-muted-foreground/60 py-0.5">—</p>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {/* Completed today — each can be explicitly promoted to a categorised win */}
-          {doneToday.length > 0 && (
-            <div className="mt-3 space-y-1">
-              {doneToday.map((t) => <DoneTaskRow key={t.id} t={t} />)}
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -192,17 +192,14 @@ test("strategy front-door returns the unified payload off one engine", async () 
   assert.deepEqual(legacy.json.tracks.map((t: any) => t.id), fd.json.tracks.map((t: any) => t.id));
 });
 
-// P4.6a #6 — Coach is a THIN layer: the brain SELECTS the move deterministically,
-// the LLM only explains it. With no real LLM the call falls back to the brain's
-// own pick, so the coach still returns the deterministically-chosen action.
-test("coach returns the brain's deterministically-selected move", async () => {
+// The brain SELECTS the single highest-leverage move deterministically.
+test("brain recommends a deterministically-selected move", async () => {
   await h.storage.createJob({ title: "Policy lead", company: "GovAI", status: "wishlist", roleArchetype: "policy" } as any);
-  const r = await api(h.base, "POST", "/api/coach", { exclude: [] });
+  const r = await api(h.base, "POST", "/api/brain/recommend", { energy: "medium" });
   assert.equal(r.status, 200);
-  assert.ok(r.json.suggestion, "a suggestion is returned");
-  assert.ok(typeof r.json.suggestion.title === "string" && r.json.suggestion.title.length > 0, "move has a brain-derived title");
-  assert.ok(["job", "substack", "interview", "health", "learning", "hustle", "afterline", "admin"].includes(r.json.suggestion.category));
-  assert.equal(r.json.suggestion.sourceType, "job", "move carries its brain source type");
+  assert.ok(r.json.pick, "a pick is returned");
+  assert.ok(typeof r.json.pick.title === "string" && r.json.pick.title.length > 0, "move has a brain-derived title");
+  assert.equal(r.json.pick.source, "job", "move carries its brain source type");
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -290,19 +287,19 @@ test("an open fellowship is actionable; a gated/closed 2026 one is watch/closed"
   assert.equal(isOpportunityActionable(watch), false, "closed window is monitored, not actionable");
 });
 
-test("a watch/closed fellowship is not surfaced by the coach/brain", async () => {
+test("a watch/closed fellowship is not surfaced by the brain", async () => {
   await h.storage.createLearn({
     title: "IAPS Fellowship", type: "fellowship", category: "Fellowship · WATCH",
     note: "US work authorisation required; closed for 2026.", learnStatus: "watch",
   } as any);
   migrateFellowshipLearnRows();
 
-  const r = await api(h.base, "POST", "/api/coach", { exclude: [] });
+  const r = await api(h.base, "POST", "/api/brain/recommend", { energy: "medium" });
   assert.equal(r.status, 200);
   // Only a watch/closed fellowship exists — nothing actionable, so the brain has
   // no live move to surface from it.
-  if (r.json.suggestion) {
-    assert.notEqual(r.json.suggestion.title, "IAPS Fellowship", "closed fellowship is not recommended");
+  if (r.json.pick) {
+    assert.notEqual(r.json.pick.title, "IAPS Fellowship", "closed fellowship is not recommended");
   }
 });
 

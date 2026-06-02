@@ -61,14 +61,14 @@ function deadlineTone(d: string): string {
   return "bg-muted text-muted-foreground";
 }
 
-type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "hustle" | "wins";
+type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins";
 const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] = [
   { id: "strategy", label: "Strategy", icon: Compass, blurb: "Your paths, at a glance" },
   { id: "braindump", label: "Brain dump", icon: Sparkles, blurb: "Empty your head" },
   { id: "jobs", label: "Jobs", icon: Briefcase, blurb: "Your applications" },
   { id: "network", label: "Network", icon: Users, blurb: "People to reach" },
   { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
-  { id: "hustle", label: "Proof Assets", icon: Rocket, blurb: "Credibility you produce" },
+
   { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
 ];
 
@@ -133,7 +133,7 @@ export default function Home() {
         {tab === "jobs" && <JobsView />}
         {tab === "network" && <NetworkView />}
         {tab === "learn" && <LearnView />}
-        {tab === "hustle" && <ProofAssetsView />}
+
         {tab === "wins" && <WinsView />}
       </main>
     </div>
@@ -317,42 +317,6 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const activeItems = planItems.filter((it) => it.status === "planned" || it.status === "started");
   const isMVD = (it: PlanItemT) => plan?.minimumViableItemId === it.id;
 
-  // Daily Coach — ONE concrete next action. Tap to drop it into the day; "something
-  // else" swaps it. Not a list, no browsing.
-  type CoachSug = { title: string; category: string; size: string; why: string };
-  const [coach, setCoach] = useState<CoachSug | null>(null);
-  const [coachLoading, setCoachLoading] = useState(false);
-  const [coachDone, setCoachDone] = useState(false);
-  const [seen, setSeen] = useState<string[]>([]);
-  async function fetchCoach(exclude: string[]) {
-    setCoachLoading(true);
-    try {
-      const r = await mutateAndInvalidate("POST", "/api/coach", { exclude }, []);
-      setCoach(r?.suggestion || null);
-    } catch { setCoach(null); }
-    finally { setCoachLoading(false); }
-  }
-  useEffect(() => {
-    if (isLoading) return;
-    const key = `coach-${day}`;
-    if ((window as any).__coachRan === key) return;
-    (window as any).__coachRan = key;
-    fetchCoach([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, day]);
-  async function acceptCoach() {
-    if (!coach) return;
-    await mutateAndInvalidate("POST", "/api/coach/accept", coach, ["/api/tasks"]);
-    setCoachDone(true);
-    toast({ title: "Added to today.", description: "It's slotted into your day." });
-  }
-  function anotherCoach() {
-    if (!coach) return;
-    const next = [...seen, coach.title];
-    setSeen(next);
-    fetchCoach(next);
-  }
-
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 
   return (
@@ -439,30 +403,6 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             </div>
           )}
         </div>
-      )}
-
-      {/* Coach — ONE concrete next action, one tap into the day */}
-      {!coachDone && (coachLoading || coach) && (
-        <div className="mb-6 rounded-xl border border-accent-foreground/15 bg-accent/40 p-4" data-testid="coach-card">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-accent-foreground mb-2">
-            <Lightbulb className="w-4 h-4" /> Coach
-          </div>
-          {coachLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Thinking of your next move…</div>
-          ) : coach ? (
-            <div>
-              <p className="text-sm font-medium leading-snug">{coach.title}</p>
-              {coach.why && <p className="text-xs text-muted-foreground mt-0.5">{coach.why}</p>}
-              <div className="flex items-center gap-2 mt-3">
-                <Button size="sm" onClick={acceptCoach} data-testid="button-coach-accept"><Plus className="w-4 h-4 mr-1" /> Do this today</Button>
-                <button onClick={anotherCoach} data-testid="button-coach-another" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"><RefreshCw className="w-3.5 h-3.5" /> something else</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      )}
-      {coachDone && (
-        <p className="mb-6 text-sm text-muted-foreground inline-flex items-center gap-1.5"><Check className="w-4 h-4 text-primary" /> Coach's pick is in your day.</p>
       )}
 
       {/* Also on your list — ONE secondary list, deduped against the plan above.
@@ -642,7 +582,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     );
   };
 
-  const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "learn", contacts: "network", hustles: "hustle" };
+  const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "learn", contacts: "network", hustles: "strategy" };
   const ENTITY_LABEL: Record<UnlinkedItem["entity"], string> = { jobs: "Job", learn: "Learn", contacts: "Contact", hustles: "Proof" };
   async function linkUnlinked(it: UnlinkedItem, trackId: number) {
     await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", "/api/strategy/front-door"]);
@@ -709,7 +649,13 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
+      {/* Proof assets live HERE — they exist to make her credible for these tracks,
+          so they belong inside the big-picture view, not as a separate tab. */}
+      <div className="mt-8 pt-6 border-t border-card-border">
+        <ProofAssetsView />
+      </div>
+
+      <div className="flex flex-wrap gap-2 mt-8">
         <Button size="sm" variant="outline" onClick={() => onOpenTab("jobs")}><Briefcase className="w-4 h-4 mr-1" /> Jobs</Button>
         <Button size="sm" variant="outline" onClick={() => onOpenTab("network")}><Users className="w-4 h-4 mr-1" /> Network</Button>
         <Button size="sm" variant="outline" onClick={() => onOpenTab("today")}><Target className="w-4 h-4 mr-1" /> Back to Today</Button>
@@ -986,7 +932,7 @@ function BrainDumpView() {
               <div className="flex items-center gap-2">
                 <span className="flex-1 text-sm">
                   {t.title}
-                  {t.source === "coach" && <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-1.5 py-0.5 text-[10px] font-medium"><Lightbulb className="w-2.5 h-2.5" />from Coach</span>}
+
                 </span>
                 <div className="flex items-center gap-1 shrink-0">
                   <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => addToDay(t)} data-testid={`button-addday-${t.id}`}>Add to day</Button>
@@ -1506,9 +1452,9 @@ function NetworkView() {
 
   return (
     <div>
-      <SectionHeading title="Network" sub="A warmth view, not a contact list. People sit in your warm lanes; each card leads with the ask and timing. Coach suggests who to reach — tied to your target roles — and you warm the path from first message to reply." />
+      <SectionHeading title="Network" sub="A warmth view, not a contact list. People sit in your warm lanes; each card leads with the ask and timing. Anchor suggests who to reach — tied to your target roles — and you warm the path from first message to reply." />
 
-      {/* Coach's one networking suggestion */}
+      {/* One networking suggestion: who to reach next */}
       {(sugLoading || sug) && (
         <div className="mb-6 rounded-xl border border-slate-300/60 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800/40 p-4" data-testid="network-suggestion">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-2">
@@ -1530,7 +1476,7 @@ function NetworkView() {
       )}
 
       {isLoading ? <Loading /> : contacts.length === 0 ? (
-        <Empty icon={Users} text="No one on your warm list yet. Add Coach's suggestion above to start warming a path." />
+        <Empty icon={Users} text="No one on your warm list yet. Add the suggestion above to start warming a path." />
       ) : (
         <div className="space-y-5">
           {activeLaneKeys.map((key) => {

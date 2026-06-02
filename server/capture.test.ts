@@ -5,11 +5,18 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { makeHarness, api, type Harness } from "./spine.harness";
-import { classifyCapture } from "./capture";
+import type { classifyCapture as ClassifyCapture } from "./capture";
 
 let h: Harness;
+// Import lazily AFTER the harness sets ANCHOR_DB_PATH. A static import of
+// "./capture" pulls in "./storage", which opens its sqlite handle at module load
+// against the default data.db — before the harness can point it at the temp DB.
+let classifyCapture: typeof ClassifyCapture;
 
-before(async () => { h = await makeHarness(); });
+before(async () => {
+  h = await makeHarness();
+  ({ classifyCapture } = await import("./capture"));
+});
 after(async () => { await h.close(); });
 beforeEach(() => { h.reset(); });
 
@@ -109,6 +116,19 @@ test("routing a decision keeps it as an actionable inbox task", async () => {
   assert.equal(task.category, "admin");
   assert.match(task.doneWhen, /decision|next action/i);
   assert.match(task.sourceStatus, /routed:decision:task/);
+});
+
+test("routing to Today moves the task to the today list without a hardcoded block", async () => {
+  const cap = await h.storage.createTask({ title: "Finish the policy memo edits", list: "inbox", done: false, size: "deep" } as any);
+  const r = await api(h.base, "POST", `/api/capture/${cap.id}/route`, { route: "today" });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.moved, "today");
+
+  const task = (await h.storage.getTasks()).find((t) => t.id === cap.id)!;
+  assert.equal(task.list, "today");
+  // Phase 4.6a: never fabricate a time block. No slot context => block stays null.
+  assert.equal(task.block, null, "today route must not hardcode a morning/afternoon block");
+  assert.match(task.sourceStatus, /routed:today:task/);
 });
 
 test("legacy proof category alias still works while preserving capture", async () => {

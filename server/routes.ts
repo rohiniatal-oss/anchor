@@ -5,7 +5,8 @@ import { storage, type TrackEntity } from "./storage";
 import OpenAI from "openai";
 import { recommend, planDay } from "./brain";
 import { createNextTask, materializeJobStep, materializeProofStep, type NextTaskSourceType } from "./nextTask";
-import { getTrackDiagnostics, getUnlinkedItems } from "./strategy";
+import { getTrackDiagnostics, getUnlinkedItems, getEvidencePayload } from "./strategy";
+import { computeWinsSummary } from "./evidence";
 import {
   insertTaskSchema, insertEventSchema, insertJobSchema,
   insertLearnSchema, insertHustleSchema, insertWinSchema, insertContactSchema,
@@ -848,6 +849,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // ═══ P3.5: STRATEGY DIAGNOSTICS — per-track bottlenecks + unlinked bucket ═══
   app.get("/api/strategy/diagnostics", async (_req, res) => res.json({ tracks: await getTrackDiagnostics() }));
   app.get("/api/strategy/unlinked", async (_req, res) => res.json(await getUnlinkedItems()));
+
+  // ═══ P4.5: EVIDENCE LAYER — read-only derived metrics over wins + activityLog ═══
+  // Per-track diagnostics already carry compact per-track evidence (above); this
+  // endpoint exposes the full per-track + untracked-bucket metrics. No write path.
+  app.get("/api/strategy/evidence", async (_req, res) => res.json(await getEvidencePayload()));
+  // Compact wins summary (by-category + window counts + streak + derived track per win).
+  app.get("/api/wins/summary", async (_req, res) => res.json(await computeWinsSummary()));
 
   // Events read
   app.get("/api/events", async (req, res) => res.json(await storage.getEvents(String(req.query.day || ""))));

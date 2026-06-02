@@ -2,9 +2,10 @@ import { storage } from "./storage";
 import {
   isJobLive, getJobReadiness, isLearnDone, isLearnActive, getLearnStatus,
   isContactWarm, isProofLive, isTaskDone, getTaskReadiness, getTrackId,
-  getLearnOutputState,
+  getLearnOutputState, type WinCategory,
 } from "@shared/domainState";
 import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
+import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evidence";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the five bottleneck types, and a
@@ -29,6 +30,17 @@ export type TrackDiagnostic = {
     warmthGap: number;
     executionGap: number;
     learnProofGap: number; // P4.4 — opt-in, lowest priority; never the sole bottleneck driver
+    evidenceGap: number;   // P4.5 — soft "no evidence shipping" signal; lowest priority, never the loud primary
+  };
+  // P4.5 — compact, read-mostly evidence read for the per-track Strategy view.
+  // Evidence is a HEALTH input + tiebreaker; it never becomes the loud primary
+  // bottleneck on its own (stays below readiness/proof/warmth).
+  evidence: {
+    count: number;                 // wins in the rolling window attributed to the track
+    topCategory: WinCategory | null;
+    producingVsPlanning: TrackEvidence["producingVsPlanning"];
+    executionRatio: number | null;
+    lastEvidenceAt: number | null;
   };
   bottleneck: BottleneckType;
   bottleneckLabel: string;
@@ -53,6 +65,7 @@ function diagnoseTrack(
   jobs: Job[], learn: Learn[], contacts: Contact[], hustles: Hustle[], tasks: Task[],
   stepsByJob: Map<number, JobPipelineStep[]>,
   proofStepsByHustle: Map<number, ProofAssetStep[]>,
+  ev: TrackEvidence,
 ): TrackDiagnostic {
   const tJobs = jobs.filter((j) => getTrackId("jobs", j) === track.id);
   const tLiveJobs = tJobs.filter(isJobLive);
@@ -120,7 +133,16 @@ function diagnoseTrack(
   // priority — it can only surface as the recommended move once every structural
   // gap (direction/proof/warmth/readiness/execution) is clear. Opt-in only.
   const learnProofGap = learnNoOutput;
-  const signals = { directionGap, readinessGap, proofGap, warmthGap, executionGap, learnProofGap };
+
+  // P4.5 — evidence gap (SOFT, LOW PRIORITY): a track that has live work in
+  // motion (live jobs / active learn / live proof) but ZERO recent wins is
+  // "generating plans, not producing evidence". This is a track-HEALTH input and
+  // a tiebreaker — DELIBERATELY computed last and gated so it can only surface as
+  // the recommended move once every structural gap is clear. It is NOT folded
+  // into any other gap's math, so it can never become the loud primary blocker.
+  const hasLiveWork = liveObjects > 0 || tTasks.some((t) => !isTaskDone(t));
+  const evidenceGap = (hasLiveWork && ev.evidenceCount === 0) ? 1 : 0;
+  const signals = { directionGap, readinessGap, proofGap, warmthGap, executionGap, learnProofGap, evidenceGap };
 
   // ── Primary bottleneck (deterministic priority order) + recommended move ──
   let bottleneck: BottleneckType = "none";
@@ -169,20 +191,36 @@ function diagnoseTrack(
       ? "A proof-building learning item has no output yet"
       : `${learnProofGap} proof-building learning items have no output yet`;
     recommendedMove = "When you're ready, give one an output to make it count as proof";
+  } else if (evidenceGap > 0) {
+    // P4.5 — SOFTEST nudge, reached only when every structural gap is clear: the
+    // track has live work but nothing has shipped as evidence lately. Stays
+    // "execution"-typed and calm — a gentle "log/ship one win", never an alarm.
+    bottleneck = "execution";
+    bottleneckLabel = "Live work, no recent evidence";
+    recommendedMove = liveProof > 0
+      ? "Ship one proof output and log it as a win"
+      : "Log a win for this track to show it's moving";
   }
 
   return {
     id: track.id, slug: track.slug, name: track.name, status: track.status,
     priority: track.priority, whyItFits: track.whyItFits,
     counts: { jobs: tJobs.length, learn: tLearn.length, contacts: tContacts.length, hustles: tHustles.length, tasks: tTasks.length },
-    signals, bottleneck, bottleneckLabel, recommendedMove,
+    signals,
+    evidence: {
+      count: ev.evidenceCount, topCategory: ev.topCategory,
+      producingVsPlanning: ev.producingVsPlanning,
+      executionRatio: ev.executionRatio, lastEvidenceAt: ev.lastEvidenceAt,
+    },
+    bottleneck, bottleneckLabel, recommendedMove,
   };
 }
 
 export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
-  const [tracks, jobs, learn, contacts, hustles, tasks] = await Promise.all([
+  const [tracks, jobs, learn, contacts, hustles, tasks, evidence] = await Promise.all([
     storage.getCareerTracks(), storage.getJobs(), storage.getLearn(),
     storage.getContacts(), storage.getHustles(), storage.getTasks(),
+    computeEvidence(), // P4.5 — shared evidence layer, attribution lives in evidence.ts
   ]);
   // Pull each live job's pipeline steps so the rail feeds the readiness gap.
   const liveJobs = jobs.filter(isJobLive);
@@ -193,7 +231,50 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
   const proofStepLists = await Promise.all(hustles.map((h) => storage.getProofAssetSteps(h.id)));
   const proofStepsByHustle = new Map<number, ProofAssetStep[]>();
   hustles.forEach((h, i) => proofStepsByHustle.set(h.id, proofStepLists[i]));
-  return tracks.map((t) => diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob, proofStepsByHustle));
+  const emptyEv = (id: number): TrackEvidence => ({
+    trackId: id, evidenceCount: 0, evidenceCountAllTime: 0,
+    evidenceByCategory: { job_progress: 0, learning: 0, network: 0, proof_asset: 0, mindset: 0, admin: 0 },
+    topCategory: null, lastEvidenceAt: null, executionRatio: null, executionEvents: 0,
+    openTasks: 0, producingVsPlanning: "idle",
+  });
+  const diagnostics = tracks.map((t) =>
+    diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob, proofStepsByHustle,
+      evidence.byTrack.get(t.id) ?? emptyEv(t.id)));
+
+  // P4.5 — evidence is a TIEBREAKER for the per-track ranking, applied AFTER the
+  // existing priority order (track.priority, then bottleneck severity). It only
+  // separates tracks that are otherwise tied: a track with live work and no
+  // recent evidence sorts ahead of an equally-ranked one that's shipping. This
+  // nudges attention without overriding readiness/proof/warmth.
+  const severity: Record<BottleneckType, number> = {
+    direction: 5, proof: 4, warmth: 3, readiness: 2, execution: 1, none: 0,
+  };
+  return diagnostics.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    if (severity[b.bottleneck] !== severity[a.bottleneck]) return severity[b.bottleneck] - severity[a.bottleneck];
+    // tiebreaker: surface the evidence-starved track first
+    return (a.evidence.count) - (b.evidence.count);
+  });
+}
+
+// P4.5 — read-only per-track + untracked evidence metrics, exposed for the
+// Strategy dashboard. Reuses the single shared evidence layer (evidence.ts).
+export type EvidencePayload = {
+  windowDays: number;
+  tracks: (TrackEvidence & { name?: string; slug?: string })[];
+  untracked: TrackEvidence;
+};
+export async function getEvidencePayload(): Promise<EvidencePayload> {
+  const [tracks, evidence] = await Promise.all([storage.getCareerTracks(), computeEvidence()]);
+  const nameById = new Map(tracks.map((t) => [t.id, t] as const));
+  const trackRows: EvidencePayload["tracks"] = [];
+  evidence.byTrack.forEach((ev, key) => {
+    if (key === "untracked") return;
+    const t = nameById.get(key as number);
+    trackRows.push({ ...ev, name: t?.name, slug: t?.slug });
+  });
+  const untracked = evidence.byTrack.get("untracked")!;
+  return { windowDays: evidence.windowDays, tracks: trackRows, untracked };
 }
 
 export type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };

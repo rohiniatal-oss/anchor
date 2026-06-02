@@ -515,13 +515,43 @@ type StrategyTrack = {
 type TrackDiagnostic = {
   id: number; slug: string; name: string; status: string; priority: number; whyItFits: string;
   counts: { jobs: number; learn: number; contacts: number; hustles: number; tasks: number };
-  signals: { directionGap: number; readinessGap: number; proofGap: number; warmthGap: number; executionGap: number };
+  signals: { directionGap: number; readinessGap: number; proofGap: number; warmthGap: number; executionGap: number; learnProofGap?: number; evidenceGap?: number };
+  evidence?: {
+    count: number; topCategory: WinCategory | null;
+    producingVsPlanning: "producing" | "balanced" | "planning" | "idle";
+    executionRatio: number | null; lastEvidenceAt: number | null;
+  };
   bottleneck: string; bottleneckLabel: string; recommendedMove: string;
 };
 type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
 const BOTTLENECK_LABEL: Record<string, string> = {
   direction: "Direction", readiness: "Readiness", proof: "Proof", warmth: "Warmth", execution: "Execution", none: "Healthy",
 };
+// P4.5 — compact, in-palette evidence chips for the per-track Strategy view.
+// Read-mostly: count (rolling window), top winCategory, producing-vs-planning.
+// Slate-blue only, NO coral — these are calm signals, never alarms.
+const PVP_META: Record<"producing" | "balanced" | "planning" | "idle", { label: string; cls: string }> = {
+  producing: { label: "Producing", cls: "bg-primary/10 text-primary" },
+  balanced: { label: "Balanced", cls: "bg-slate-100 text-slate-600" },
+  planning: { label: "Planning, not producing", cls: "bg-slate-200 text-slate-700" },
+  idle: { label: "Idle", cls: "bg-muted text-muted-foreground" },
+};
+function EvidenceChips({ ev }: { ev: NonNullable<TrackDiagnostic["evidence"]> }) {
+  const pvp = PVP_META[ev.producingVsPlanning];
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="evidence-chips">
+      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 text-[10px] font-medium px-1.5 py-0.5" data-testid="evidence-count">
+        <Trophy className="w-3 h-3" /> {ev.count} {ev.count === 1 ? "win" : "wins"} · 28d
+      </span>
+      {ev.topCategory && (
+        <span className="inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid="evidence-top-category">
+          {WIN_CATEGORY_LABEL[ev.topCategory]}
+        </span>
+      )}
+      <span className={`inline-flex shrink-0 text-[10px] rounded-full px-1.5 py-0.5 ${pvp.cls}`} data-testid="evidence-pvp">{pvp.label}</span>
+    </div>
+  );
+}
 function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data, isLoading } = useQuery<{ tracks: StrategyTrack[]; insights: string[] }>({ queryKey: ["/api/strategy"] });
   const { data: diag } = useQuery<{ tracks: TrackDiagnostic[] }>({ queryKey: ["/api/strategy/diagnostics"] });
@@ -571,6 +601,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Bottleneck:</span> {bottleneckLabel}</p>
           <p className="text-xs text-primary mt-1 inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> {recommendedMove}</p>
         </div>
+        {d?.evidence && <EvidenceChips ev={d.evidence} />}
       </div>
     );
   };
@@ -2004,17 +2035,35 @@ const WIN_CATEGORY_LABEL: Record<WinCategory, string> = {
   job_progress: "Job progress", learning: "Learning", network: "Network",
   proof_asset: "Proof asset", mindset: "Mindset", admin: "Admin",
 };
+// P4.5 — in-palette (slate-blue) category swatch classes for the compact
+// evidence summary. NO coral; each stays a calm tint of the slate/primary range.
+const WIN_CATEGORY_SWATCH: Record<WinCategory, string> = {
+  job_progress: "bg-primary/15 text-primary",
+  learning: "bg-slate-200 text-slate-700",
+  network: "bg-slate-100 text-slate-600",
+  proof_asset: "bg-primary/10 text-primary",
+  mindset: "bg-slate-100 text-slate-500",
+  admin: "bg-muted text-muted-foreground",
+};
+type WinsSummary = {
+  total: number; thisWeek: number; thisMonth: number;
+  byCategory: Record<WinCategory, number>; byCategoryWeek: Record<WinCategory, number>;
+  streakDays: number; trackByWinId: Record<number, number | "untracked">;
+};
 function WinsView() {
   const { data: wins = [], isLoading } = useQuery<Win[]>({ queryKey: ["/api/wins"] });
   const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
+  const { data: summary } = useQuery<WinsSummary>({ queryKey: ["/api/wins/summary"] });
+  const { data: careerTracks = [] } = useCareerTracks();
+  const trackNameById = new Map(careerTracks.map((t) => [t.id, t.name] as const));
   const [text, setText] = useState("");
   const [category, setCategory] = useState<WinCategory>("mindset");
   async function add() {
     if (!text.trim()) return;
-    await mutateAndInvalidate("POST", "/api/wins", { text: text.trim(), winCategory: category }, ["/api/wins", "/api/stats"]);
+    await mutateAndInvalidate("POST", "/api/wins", { text: text.trim(), winCategory: category }, ["/api/wins", "/api/stats", "/api/wins/summary"]);
     setText("");
   }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/wins/${id}`, undefined, ["/api/wins", "/api/stats"]); }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/wins/${id}`, undefined, ["/api/wins", "/api/stats", "/api/wins/summary"]); }
   function dayLabel(ts: number) { return new Date(ts).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); }
 
   const weekAgo = Date.now() - 7 * 86400000;
@@ -2022,10 +2071,13 @@ function WinsView() {
   const earlier = wins.filter((w) => w.createdAt < weekAgo);
 
   function Row({ w }: { w: Win }) {
+    const tid = summary?.trackByWinId[w.id];
+    const trackName = tid && tid !== "untracked" ? trackNameById.get(tid) : undefined;
     return (
       <div className="group flex items-center gap-3 rounded-lg border border-card-border bg-card px-3.5 py-3" data-testid={`win-${w.id}`}>
         <Trophy className="w-4 h-4 text-primary shrink-0" />
         <span className="flex-1 text-sm">{w.text}</span>
+        {trackName && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid={`win-track-${w.id}`} title="Derived track">{trackName}</span>}
         {w.winCategory && <span className="hidden sm:inline-flex shrink-0 text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{WIN_CATEGORY_LABEL[w.winCategory as WinCategory] || w.winCategory}</span>}
         <span className="text-xs text-muted-foreground shrink-0">{dayLabel(w.createdAt)}</span>
         <button onClick={() => remove(w.id)} aria-label="Delete" data-testid={`button-delete-win-${w.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
@@ -2042,6 +2094,30 @@ function WinsView() {
           </div>
         )}
       </div>
+
+      {/* P4.5 — compact evidence summary: window counts + streak + by-category.
+          Calm and in-palette (slate-blue), NOT a hero dashboard. */}
+      {summary && summary.total > 0 && (
+        <div className="mb-4 rounded-xl border border-card-border bg-card px-4 py-3" data-testid="wins-summary">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+            <span data-testid="wins-week"><span className="font-semibold tabular-nums">{summary.thisWeek}</span> <span className="text-muted-foreground">this week</span></span>
+            <span data-testid="wins-month"><span className="font-semibold tabular-nums">{summary.thisMonth}</span> <span className="text-muted-foreground">this month</span></span>
+            {summary.streakDays > 0 && (
+              <span className="inline-flex items-center gap-1 text-primary" data-testid="wins-streak">
+                <Flame className="w-3.5 h-3.5" /> <span className="font-semibold tabular-nums">{summary.streakDays}</span>
+                <span className="text-muted-foreground">day{summary.streakDays > 1 ? "s" : ""} in a row</span>
+              </span>
+            )}
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-1.5" data-testid="wins-by-category">
+            {WIN_CATEGORIES.filter((c) => summary.byCategory[c] > 0).map((c) => (
+              <span key={c} className={`inline-flex items-center gap-1 text-[11px] rounded-full px-2 py-0.5 font-medium ${WIN_CATEGORY_SWATCH[c]}`} data-testid={`wins-cat-${c}`}>
+                {WIN_CATEGORY_LABEL[c]} <span className="tabular-nums opacity-80">{summary.byCategory[c]}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2 mb-3">
         <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="What went well? Anything counts…" className="h-11 flex-1 min-w-[12rem]" data-testid="input-win" />
         <select value={category} onChange={(e) => setCategory(e.target.value as WinCategory)} data-testid="select-win-category"

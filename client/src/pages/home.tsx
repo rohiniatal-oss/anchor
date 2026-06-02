@@ -156,7 +156,9 @@ function Loading() {
 }
 
 /* ================= TODAY (day-first hero) ================= */
-type PlanResp = { mode: string; plan: { slot: string; candidate: any; why: string }[]; note: string; busyMinutes: number };
+type PlanItemT = { id: number; slot: string; title: string; whySelected: string; doneWhen: string; status: string; sourceType: string; sourceId: number | null; taskId: number | null };
+type DayPlanT = { id: number; mode: string; note: string; status: string; minimumViableItemId: number | null; enoughForToday: boolean };
+const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "Later", bonus: "Bonus" };
 
 function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
@@ -169,13 +171,13 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const doneToday = tasks.filter((t) => t.list === "today" && t.done);
   const pinned = today.find((t) => t.pinned);
 
-  const [plan, setPlan] = useState<PlanResp | null>(null);
+  const [plan, setPlan] = useState<DayPlanT | null>(null);
+  const [planItems, setPlanItems] = useState<PlanItemT[]>([]);
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [showCapacity, setShowCapacity] = useState(false);
   const [energy, setEnergy] = useState("medium");
 
-  // Auto-plan whenever nothing is actively pinned yet (a dated task sitting in a
-  // block shouldn't suppress the plan hero — it just also shows in the grid).
+  // Load the PERSISTED plan (it lives in the DB now — survives reloads).
   useEffect(() => {
     if (isLoading || pinned || plan || loadingPlan) return;
     getPlan("medium");
@@ -185,16 +187,28 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   async function getPlan(e: string) {
     setLoadingPlan(true);
     try {
-      const r = await mutateAndInvalidate("POST", "/api/brain/plan", { energy: e, day }, []);
-      setPlan(r); setShowCapacity(false);
+      // Recompute when energy is explicitly chosen; otherwise just read current.
+      const r = e !== "medium" || showCapacity
+        ? await mutateAndInvalidate("POST", "/api/plan/recompute", { energy: e, day }, [])
+        : await mutateAndInvalidate("GET", `/api/plan/current?day=${day}&energy=${e}`, undefined, []);
+      setPlan(r?.plan || null); setPlanItems(Array.isArray(r?.items) ? r.items : []); setShowCapacity(false);
     } catch { toast({ title: "Couldn't shape the day", description: "Try again in a moment." }); }
     finally { setLoadingPlan(false); }
   }
-  async function startItem(it: { slot: string; candidate: any }) {
-    await mutateAndInvalidate("POST", "/api/brain/accept", { candidate: { ...it.candidate, block: it.slot }, pin: true }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
-    setPlan(null);
+  // Start an item: materialise it as the active focus, carrying its source context.
+  async function startItem(it: PlanItemT) {
+    const candidate = {
+      source: it.sourceType, sourceId: it.sourceId, title: it.title,
+      category: it.sourceType === "job" ? "job" : it.sourceType === "learn" ? "learning" : it.sourceType === "hustle" ? "hustle" : "admin",
+      size: "medium", deadline: "", doneWhen: it.doneWhen, block: "morning",
+    };
+    await mutateAndInvalidate("POST", "/api/brain/accept", { candidate, pin: true }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
+    setPlan(null); setPlanItems([]);
     toast({ title: "Started — this is your focus.", description: "Tiny steps next. One at a time." });
   }
+
+  const activeItems = planItems.filter((it) => it.status === "planned" || it.status === "started");
+  const isMVD = (it: PlanItemT) => plan?.minimumViableItemId === it.id;
 
   // Daily Coach — ONE concrete next action. Tap to drop it into the day; "something
   // else" swaps it. Not a list, no browsing.
@@ -260,11 +274,19 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
               <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Shaping your day…</div>
             </div>
-          ) : plan && plan.plan.length > 0 ? (
+          ) : plan && plan.enoughForToday ? (
+            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5 text-center" data-testid="done-enough">
+              <div className="inline-flex items-center gap-2 text-primary font-semibold"><Check className="w-5 h-5" /> Today counts.</div>
+              <p className="text-sm text-muted-foreground mt-1.5">You did the one thing that mattered. Anything else is a bonus — you can stop here.</p>
+              {activeItems.length > 0 && (
+                <button onClick={() => setPlan({ ...plan, enoughForToday: false })} className="mt-3 text-xs text-muted-foreground hover:text-foreground underline">show the rest anyway</button>
+              )}
+            </div>
+          ) : plan && activeItems.length > 0 ? (
             <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
-                  <Target className="w-4 h-4" /> Today's plan
+                  <Target className="w-4 h-4" /> Today, in order
                 </div>
                 <button onClick={() => setShowCapacity((s) => !s)} data-testid="button-replan" className="text-xs text-muted-foreground hover:text-foreground">
                   different kind of day?
@@ -282,19 +304,23 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                 </div>
               )}
               <div className="space-y-2">
-                {plan.plan.map((it, i) => (
-                  <button key={i} onClick={() => startItem(it)} data-testid={`plan-item-${i}`}
-                    className="group w-full text-left flex items-start gap-3 rounded-xl bg-card border border-card-border p-3.5 hover-elevate transition-colors">
-                    <span className="shrink-0 mt-0.5 rounded-md bg-primary/10 text-primary text-[11px] font-semibold px-2 py-1 capitalize">{it.slot}</span>
+                {activeItems.map((it, i) => (
+                  <button key={it.id} onClick={() => startItem(it)} data-testid={`plan-item-${i}`}
+                    className={`group w-full text-left flex items-start gap-3 rounded-xl bg-card border p-3.5 hover-elevate transition-colors ${isMVD(it) ? "border-primary/40" : "border-card-border"}`}>
+                    <span className={`shrink-0 mt-0.5 rounded-md text-[11px] font-semibold px-2 py-1 ${i === 0 ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>{SLOT_LABEL[it.slot] || it.slot}</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium leading-snug">{it.candidate.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{SIZE_LABEL[it.candidate.size] || "~45m"} · {it.why}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium leading-snug">{it.title}</p>
+                        {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
+                      </div>
+                      {it.whySelected && <p className="text-xs text-muted-foreground mt-0.5">{it.whySelected}</p>}
+                      {it.doneWhen && <p className="text-xs text-muted-foreground/80 mt-0.5 inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {it.doneWhen}</p>}
                     </div>
                     <span className="shrink-0 self-center text-muted-foreground group-hover:text-primary inline-flex items-center gap-1 text-xs font-medium">Start <ChevronRight className="w-4 h-4" /></span>
                   </button>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground mt-3 italic">{plan.note}</p>
+              {plan.note && <p className="text-xs text-muted-foreground mt-3 italic">{plan.note}</p>}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-border p-6 text-center">
@@ -388,9 +414,10 @@ function RightNow({ pinned }: { pinned: Task }) {
     await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
     toast({ title: next.some((s) => !s.done) ? "Nice — next step's up." : "All steps done — you did it." });
   }
+  // Completion goes through the real endpoint: marks done, logs a win, updates the
+  // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
-    await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { done: true, pinned: false, status: "done" }, ["/api/tasks"]);
-    await mutateAndInvalidate("POST", "/api/wins", { text: pinned.title }, ["/api/wins", "/api/stats"]);
+    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
     toast({ title: "Done — and logged as a win 🎉", description: "That's momentum. Pick your next thing when ready." });
   }
   async function unstick() {
@@ -405,12 +432,16 @@ function RightNow({ pinned }: { pinned: Task }) {
     toast({ title: "Made it smaller.", description: "Just the first tiny step now." });
   }
   async function moveBlock() {
-    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/skip`, { mode: "move" }, ["/api/tasks"]);
+    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/move-later`, { day: todayKey() }, ["/api/tasks"]);
     toast({ title: "Moved to later today.", description: "No problem — it'll be there when you're ready." });
   }
   async function park() {
-    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/skip`, { mode: "park" }, ["/api/tasks"]);
+    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/park`, { day: todayKey() }, ["/api/tasks"]);
     toast({ title: "Parked for another day.", description: "Letting it go for now is a fine choice." });
+  }
+  async function block() {
+    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/block`, { day: todayKey(), reason: "Marked blocked from Today" }, ["/api/tasks"]);
+    toast({ title: "Marked blocked.", description: "I'll stop surfacing it until it's unblocked." });
   }
 
   return (
@@ -419,6 +450,15 @@ function RightNow({ pinned }: { pinned: Task }) {
         <Pin className="w-4 h-4" fill="currentColor" /> Right now
       </div>
       <p className="font-semibold text-lg leading-snug mb-1">{pinned.title}</p>
+      {/* Source context: deadline, done-condition, and a direct link to the real thing */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
+        {pinned.deadline && <span className={`text-xs font-medium ${deadlineTone(pinned.deadline)}`}>{formatDeadline(pinned.deadline)}</span>}
+        {pinned.doneWhen && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {pinned.doneWhen}</span>}
+        {pinned.sourceUrl && (
+          <a href={pinned.sourceUrl} target="_blank" rel="noreferrer" data-testid="link-source"
+            className="text-xs text-primary hover:underline inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Open the posting</a>
+        )}
+      </div>
       {avoided && (
         <p className="text-xs rounded-lg bg-muted text-muted-foreground px-3 py-2 mb-2" data-testid="text-avoidance">
           This one's been slipping a few days — totally normal. Want it smaller, or park it kindly? No pressure.
@@ -465,6 +505,7 @@ function RightNow({ pinned }: { pinned: Task }) {
         <button onClick={shrink} data-testid="button-shrink" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><Wand2 className="w-3.5 h-3.5" /> Make it smaller</button>
         <button onClick={moveBlock} data-testid="button-move" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><MoveRight className="w-3.5 h-3.5" /> Move to later</button>
         <button onClick={park} data-testid="button-park" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><MoonStar className="w-3.5 h-3.5" /> Park for another day</button>
+        <button onClick={block} data-testid="button-block" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> I'm blocked</button>
       </div>
     </div>
   );

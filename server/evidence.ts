@@ -81,19 +81,21 @@ function trackForActivity(
   return null;
 }
 
-// Deterministically attribute a win to a track. The auto-create-on-completion
-// path (and "promote to win" from a completed task) sets win.text = task.title
-// and logs a "completed" activity event for that task at ~the same instant. So:
-// follow win -> nearest "completed" event with matching task title within a
-// short window -> task.relatedTrackId. No provenance column exists, so a title
-// match within WIN_MATCH_WINDOW_MS is the deterministic link. If no unambiguous
-// task link is found, the win is "untracked" (we never guess a track).
+// Deterministically attribute a win to a track. P5: PREFER the explicit
+// wins.trackId column (set from the originating task's relatedTrackId on win
+// creation) when present. Only LEGACY rows with no trackId fall back to the
+// 4.5 text-match: follow win -> nearest "completed" event with matching task
+// title within a short window -> task.relatedTrackId. If neither resolves, the
+// win is "untracked" (we never guess a track).
 function trackForWin(
   w: Win,
   completedEvents: ActivityLog[],
   tasksById: Map<number, Task>,
   taskTrack: Map<number, number | null>,
 ): number | null {
+  // P5 — explicit column wins. Null stays untracked (a valid, deliberate state).
+  if (w.trackId != null) return w.trackId;
+  // Legacy fallback: text-match against the completed event within the window.
   let best: ActivityLog | null = null;
   let bestDelta = Infinity;
   for (const e of completedEvents) {

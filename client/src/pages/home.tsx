@@ -505,26 +505,36 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 type TrackDiagnostic = {
   id: number; slug: string; name: string; status: string; priority: number; whyItFits: string;
   counts: { jobs: number; learn: number; contacts: number; hustles: number; tasks: number };
-  signals: { directionGap: number; readinessGap: number; proofGap: number; warmthGap: number; executionGap: number; learnProofGap?: number; evidenceGap?: number };
+  signals: { directionGap: number; readinessGap: number; proofGap: number; warmthGap: number; executionGap: number; learningGap?: number; learnProofGap?: number; evidenceGap?: number };
   evidence?: {
     count: number; topCategory: WinCategory | null;
     producingVsPlanning: "producing" | "balanced" | "planning" | "idle";
     executionRatio: number | null; lastEvidenceAt: number | null;
   };
+  learningGap?: {
+    requiredCount: number; evidencedCount: number; gapCount: number;
+    topGapLabel: string | null; topGapHasResource: boolean; recommendedMove: string | null;
+  } | null;
   bottleneck: string; bottleneckLabel: string; recommendedMove: string;
 };
 type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
 type StrategyInsight = { kind: string; text: string };
 // P4.6a #5 — the single unified Strategy payload (one diagnostics engine).
+type LearningGapSignal = {
+  trackId: number; trackName: string; gapDomains: string[];
+  topGap: { domain: string; label: string };
+  recommendedMove: string; hasResource: boolean;
+};
 type FrontDoor = {
   tracks: TrackDiagnostic[];
   topThree: TrackDiagnostic[];
   insights: StrategyInsight[];
   unlinked: { items: UnlinkedItem[]; counts: Record<string, number> };
   evidence?: unknown;
+  learningGap?: LearningGapSignal | null;
 };
 const BOTTLENECK_LABEL: Record<string, string> = {
-  direction: "Direction", readiness: "Readiness", proof: "Proof", warmth: "Warmth", execution: "Execution", none: "Healthy",
+  direction: "Direction", readiness: "Readiness", proof: "Proof", warmth: "Warmth", execution: "Execution", learning: "Capability", none: "Healthy",
 };
 // P4.5 — compact, in-palette evidence chips for the per-track Strategy view.
 // Read-mostly: count (rolling window), top winCategory, producing-vs-planning.
@@ -548,6 +558,28 @@ function EvidenceChips({ ev }: { ev: NonNullable<TrackDiagnostic["evidence"]> })
         </span>
       )}
       <span className={`inline-flex shrink-0 text-[10px] rounded-full px-1.5 py-0.5 ${pvp.cls}`} data-testid="evidence-pvp">{pvp.label}</span>
+    </div>
+  );
+}
+// P5 — compact, calm capability-gap chips for the per-track Strategy view.
+// Evidenced = slate-green (a quiet "covered"), gap = muted/neutral (NOT alarming).
+// Slate-blue/green palette only, NO coral — gaps are a structural read, not a nag.
+function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"]> }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="capability-chips">
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-medium px-1.5 py-0.5" data-testid="capability-evidenced">
+        {lg.evidencedCount}/{lg.requiredCount} capabilities
+      </span>
+      {lg.gapCount > 0 && (
+        <span className="inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid="capability-gap">
+          {lg.gapCount} gap{lg.gapCount === 1 ? "" : "s"}{lg.topGapLabel ? ` · ${lg.topGapLabel}` : ""}
+        </span>
+      )}
+      {lg.gapCount > 0 && lg.topGapLabel && (
+        <span className={`inline-flex shrink-0 text-[10px] rounded-full px-1.5 py-0.5 ${lg.topGapHasResource ? "bg-slate-100 text-slate-600" : "bg-slate-200 text-slate-700"}`} data-testid="capability-resource">
+          {lg.topGapHasResource ? "resource ready" : "no resource yet"}
+        </span>
+      )}
     </div>
   );
 }
@@ -593,6 +625,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           <p className="text-xs text-primary mt-1 inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> {t.recommendedMove}</p>
         </div>
         {t.evidence && <EvidenceChips ev={t.evidence} />}
+        {t.learningGap && <CapabilityChips lg={t.learningGap} />}
       </div>
     );
   };
@@ -1736,6 +1769,11 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
+  async function toggleProofIntent() {
+    const next = !l.proofIntent;
+    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { proofIntent: next }, ["/api/learn", "/api/strategy/diagnostics", "/api/strategy/front-door", "/api/strategy/learning-gaps"]);
+    if (next) toast({ title: "Flagged as proof-building.", description: "This now sits in the building lane. Give it an output when you're ready — no rush." });
+  }
   async function markEvidenced() {
     const v = evidenceDraft.trim();
     if (!v) return;
@@ -1797,9 +1835,14 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
                 <button onClick={() => { setEditingOutput(false); setOutputDraft(l.requiredOutput || ""); }} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
               </div>
             ) : (
-              <button onClick={() => setEditingOutput(true)} data-testid={`button-set-output-${l.id}`} className="text-[11px] text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-1">
-                <Plus className="w-3 h-3" /> Set a required output
-              </button>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+                <button onClick={() => setEditingOutput(true)} data-testid={`button-set-output-${l.id}`} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Set a required output
+                </button>
+                <button onClick={toggleProofIntent} data-testid={`button-proof-intent-${l.id}`} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                  <Hammer className="w-3 h-3" /> Mark as proof-building
+                </button>
+              </div>
             )
           )}
 
@@ -1830,6 +1873,13 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
               ) : (
                 <button onClick={() => setEvidencing(true)} data-testid={`button-mark-evidenced-${l.id}`} className="text-xs text-slate-600 dark:text-slate-300 hover:text-foreground inline-flex items-center gap-1">
                   <BadgeCheck className="w-3.5 h-3.5" /> Mark evidenced
+                </button>
+              )}
+              {/* Un-mark is offered ONLY when the producing lane was entered via proofIntent
+                  (no requiredOutput) — un-marking then returns the item to the silent reference state. */}
+              {l.proofIntent && !(l.requiredOutput && l.requiredOutput.trim()) && (
+                <button onClick={toggleProofIntent} data-testid={`button-unmark-proof-intent-${l.id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                  Back to reference
                 </button>
               )}
             </div>

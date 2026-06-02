@@ -6,6 +6,7 @@ import {
 } from "@shared/domainState";
 import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evidence";
+import { computeLearningGaps, topLearningGapSignal, type TrackLearningGap, type LearningGapSignal } from "./learningStrategy";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the five bottleneck types, and a
@@ -13,7 +14,7 @@ import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evid
 // (trackId null/0) collects orphaned source items so they stay fixable.
 // ─────────────────────────────────────────────────────────────────────────
 
-export type BottleneckType = "direction" | "readiness" | "proof" | "warmth" | "execution" | "none";
+export type BottleneckType = "direction" | "readiness" | "proof" | "warmth" | "execution" | "learning" | "none";
 
 export type TrackDiagnostic = {
   id: number;
@@ -29,6 +30,7 @@ export type TrackDiagnostic = {
     proofGap: number;
     warmthGap: number;
     executionGap: number;
+    learningGap: number;   // P5 — count of REQUIRED capability domains not yet evidenced; structural, ranks below readiness/proof/warmth and above the calm nudges
     learnProofGap: number; // P4.4 — opt-in, lowest priority; never the sole bottleneck driver
     evidenceGap: number;   // P4.5 — soft "no evidence shipping" signal; lowest priority, never the loud primary
   };
@@ -42,6 +44,18 @@ export type TrackDiagnostic = {
     executionRatio: number | null;
     lastEvidenceAt: number | null;
   };
+  // P5 — compact, read-mostly capability-gap read for the per-track Strategy view.
+  // A STRUCTURAL signal (a track missing a required capability), but it ranks below
+  // readiness/proof/warmth and never inflates them. Null when the track has no
+  // capability profile (no false alarms).
+  learningGap: {
+    requiredCount: number;
+    evidencedCount: number;
+    gapCount: number;
+    topGapLabel: string | null;     // highest-ranked unmet domain, null if none
+    topGapHasResource: boolean;     // a live Learn item already addresses the top gap
+    recommendedMove: string | null; // deterministic move, null when no gap
+  } | null;
   bottleneck: BottleneckType;
   bottleneckLabel: string;
   recommendedMove: string;
@@ -66,6 +80,7 @@ function diagnoseTrack(
   stepsByJob: Map<number, JobPipelineStep[]>,
   proofStepsByHustle: Map<number, ProofAssetStep[]>,
   ev: TrackEvidence,
+  lg: TrackLearningGap | undefined,
 ): TrackDiagnostic {
   const tJobs = jobs.filter((j) => getTrackId("jobs", j) === track.id);
   // Window-aware "live": a watch/closed fellowship (or any closed-window job) is
@@ -144,7 +159,15 @@ function diagnoseTrack(
   // into any other gap's math, so it can never become the loud primary blocker.
   const hasLiveWork = liveObjects > 0 || tTasks.some((t) => !isTaskDone(t));
   const evidenceGap = (hasLiveWork && ev.evidenceCount === 0) ? 1 : 0;
-  const signals = { directionGap, readinessGap, proofGap, warmthGap, executionGap, learnProofGap, evidenceGap };
+
+  // P5 — learning gap: count of REQUIRED capability domains for this track not yet
+  // evidenced. STRUCTURAL (a real capability hole), but it ranks BELOW
+  // readiness/proof/warmth and ABOVE the calm learn-proof / evidence nudges, so it
+  // never overrides a more urgent structural blocker. Zero when the track has no
+  // capability profile — no false alarms (Afterline: gaps are CAPABILITY coverage,
+  // never a demand to put AI content on the geopolitics proof asset).
+  const learningGap = lg ? lg.gapDomains.length : 0;
+  const signals = { directionGap, readinessGap, proofGap, warmthGap, executionGap, learningGap, learnProofGap, evidenceGap };
 
   // ── Primary bottleneck (deterministic priority order) + recommended move ──
   let bottleneck: BottleneckType = "none";
@@ -185,6 +208,19 @@ function diagnoseTrack(
     bottleneck = "execution";
     bottleneckLabel = `${executionGap} ready tasks, none done`;
     recommendedMove = "Pick the top ready task and finish one today";
+  } else if (learningGap > 0 && lg) {
+    // P5 — STRUCTURAL capability gap, reached only when no readiness/proof/warmth/
+    // execution blocker is louder. Names the top unmet domain and points at the
+    // sequenced Learn item if one exists, else flags the unfilled-gap slot.
+    const topGap = lg.rankedGaps[0];
+    const step = lg.sequence.find((s) => s.gapDomain === topGap.domain && s.learnId !== null);
+    bottleneck = "learning";
+    bottleneckLabel = learningGap === 1
+      ? `Missing a required capability: ${topGap.label}`
+      : `${learningGap} required capabilities not yet evidenced`;
+    recommendedMove = step
+      ? `Build ${topGap.label}: do the next step on "${step.title}"`
+      : `No resource yet for ${topGap.label} — find one`;
   } else if (learnProofGap > 0) {
     // LOWEST-PRIORITY, OPT-IN nudge: only reached when nothing structural is the
     // bottleneck. Stays "proof"-typed but is gentle — never the primary blocker.
@@ -214,7 +250,32 @@ function diagnoseTrack(
       producingVsPlanning: ev.producingVsPlanning,
       executionRatio: ev.executionRatio, lastEvidenceAt: ev.lastEvidenceAt,
     },
+    learningGap: buildLearningGapRead(lg),
     bottleneck, bottleneckLabel, recommendedMove,
+  };
+}
+
+// P5 — the compact per-track capability read for the Strategy view. Null when the
+// track has no capability profile (requiredDomains empty) so the UI shows nothing.
+function buildLearningGapRead(lg: TrackLearningGap | undefined): TrackDiagnostic["learningGap"] {
+  if (!lg || lg.requiredDomains.length === 0) return null;
+  const topGap = lg.rankedGaps[0] ?? null;
+  let topGapHasResource = false;
+  let recommendedMove: string | null = null;
+  if (topGap) {
+    const step = lg.sequence.find((s) => s.gapDomain === topGap.domain && s.learnId !== null);
+    topGapHasResource = !!step;
+    recommendedMove = step
+      ? `Build ${topGap.label}: do the next step on "${step.title}"`
+      : `No resource yet for ${topGap.label} — find one`;
+  }
+  return {
+    requiredCount: lg.requiredDomains.length,
+    evidencedCount: lg.evidencedDomains.length,
+    gapCount: lg.gapDomains.length,
+    topGapLabel: topGap ? topGap.label : null,
+    topGapHasResource,
+    recommendedMove,
   };
 }
 
@@ -239,17 +300,24 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
     topCategory: null, lastEvidenceAt: null, executionRatio: null, executionEvents: 0,
     openTasks: 0, producingVsPlanning: "idle",
   });
+  // P5 — per-track capability gaps (data-driven targets vs evidenced domains).
+  const learningGaps = await computeLearningGaps();
+  const lgByTrack = new Map<number, TrackLearningGap>();
+  for (const g of learningGaps.tracks) lgByTrack.set(g.trackId, g);
   const diagnostics = tracks.map((t) =>
     diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob, proofStepsByHustle,
-      evidence.byTrack.get(t.id) ?? emptyEv(t.id)));
+      evidence.byTrack.get(t.id) ?? emptyEv(t.id), lgByTrack.get(t.id)));
 
   // P4.5 — evidence is a TIEBREAKER for the per-track ranking, applied AFTER the
   // existing priority order (track.priority, then bottleneck severity). It only
   // separates tracks that are otherwise tied: a track with live work and no
   // recent evidence sorts ahead of an equally-ranked one that's shipping. This
   // nudges attention without overriding readiness/proof/warmth.
+  // Severity is the cross-track tiebreaker (applied after track.priority). The
+  // learning gap is STRUCTURAL but ranks below the readiness/proof/warmth/execution
+  // blockers and above "none" — matching its place in the per-track move chain.
   const severity: Record<BottleneckType, number> = {
-    direction: 5, proof: 4, warmth: 3, readiness: 2, execution: 1, none: 0,
+    direction: 6, proof: 5, warmth: 4, readiness: 3, execution: 2, learning: 1, none: 0,
   };
   return diagnostics.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
@@ -294,6 +362,9 @@ export type StrategyFrontDoor = {
   insights: StrategyInsight[];
   unlinked: { items: UnlinkedItem[]; counts: Record<string, number> };
   evidence: EvidencePayload;
+  // P5 — the single highest-priority active track with an open capability gap +
+  // its recommended move. Null when no active track has a gap. Read-only.
+  learningGap: LearningGapSignal | null;
 };
 
 // Cross-cutting insights READ OFF the diagnostics (single engine). Highest-signal
@@ -314,6 +385,11 @@ function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
   if (proofTrack)
     out.push({ kind: "proof", text: `${proofTrack.name}: ${proofTrack.bottleneckLabel.toLowerCase()}. One shipped output beats three half-read courses.` });
 
+  // P5 — structural capability gap, surfaced calmly and ranked below the above.
+  const learningTrack = active.find((t) => t.bottleneck === "learning" && t.learningGap);
+  if (learningTrack && learningTrack.learningGap?.recommendedMove)
+    out.push({ kind: "learning", text: `${learningTrack.name}: ${learningTrack.learningGap.recommendedMove}.` });
+
   if (out.length === 0 && active.length)
     out.push({ kind: "focus", text: `Most focus is on ${active[0].name}. That's your spine — keep it moving and let the rest stay light.` });
 
@@ -321,8 +397,8 @@ function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
 }
 
 export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
-  const [tracks, unlinked, evidence] = await Promise.all([
-    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(),
+  const [tracks, unlinked, evidence, learningGaps] = await Promise.all([
+    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(), computeLearningGaps(),
   ]);
   return {
     tracks,
@@ -330,6 +406,7 @@ export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
     insights: deriveInsights(tracks),
     unlinked,
     evidence,
+    learningGap: topLearningGapSignal(learningGaps.tracks),
   };
 }
 

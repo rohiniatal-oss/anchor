@@ -16,6 +16,7 @@ import { classifyProofAsset, PROOF_ASSET_KIND_LABEL, type ProofAssetKind } from 
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
+import { apiRequest } from "@/lib/queryClient";
 import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 import { type TrackedEntity, getTrackId, getRelationshipStrength, WIN_CATEGORIES, type WinCategory, getLearnOutputState, learnNeedsOutputNudge, type LearnOutputState, getLearnStatus, type LearnStatus, isFellowship } from "@shared/domainState";
 import { isFellowshipLearnRow } from "@shared/fellowshipLane";
@@ -1140,7 +1141,7 @@ function JobStepRail({ j }: { j: Job }) {
   const stepsKey = ["/api/jobs", j.id, "steps"];
   const { data: steps = [], isLoading } = useQuery<JobPipelineStep[]>({
     queryKey: stepsKey,
-    queryFn: async () => { const r = await fetch(`/api/jobs/${j.id}/steps`); return r.json(); },
+    queryFn: async () => { const r = await apiRequest("GET", `/api/jobs/${j.id}/steps`); const d = await r.json(); return Array.isArray(d) ? d : []; },
   });
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1938,7 +1939,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
   const stepsKey = ["/api/hustles", h.id, "steps"];
   const { data: steps = [], isLoading } = useQuery<ProofAssetStep[]>({
     queryKey: stepsKey,
-    queryFn: async () => { const r = await fetch(`/api/hustles/${h.id}/steps`); return r.json(); },
+    queryFn: async () => { const r = await apiRequest("GET", `/api/hustles/${h.id}/steps`); const d = await r.json(); return Array.isArray(d) ? d : []; },
   });
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);

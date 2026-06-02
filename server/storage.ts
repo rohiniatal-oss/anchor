@@ -1,6 +1,6 @@
 import {
   tasks, events, jobs, learn, hustles, wins, contacts,
-  dayPlans, dayPlanItems, activityLog,
+  dayPlans, dayPlanItems, activityLog, careerTracks,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
@@ -11,6 +11,7 @@ import {
   type DayPlan, type InsertDayPlan,
   type DayPlanItem, type InsertDayPlanItem,
   type ActivityLog, type InsertActivityLog,
+  type CareerTrack, type InsertCareerTrack,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -55,6 +56,8 @@ export interface IStorage {
   updatePlanItem(id: number, patch: Partial<InsertDayPlanItem>): Promise<DayPlanItem | undefined>;
   clearPlanItems(planId: number): Promise<void>;
   logActivity(a: InsertActivityLog): Promise<void>;
+  getCareerTracks(): Promise<CareerTrack[]>;
+  createCareerTrack(t: InsertCareerTrack): Promise<CareerTrack>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -100,6 +103,8 @@ export class DatabaseStorage implements IStorage {
   async updatePlanItem(id: number, patch: Partial<InsertDayPlanItem>) { return db.update(dayPlanItems).set(patch).where(eq(dayPlanItems.id, id)).returning().get(); }
   async clearPlanItems(planId: number) { db.delete(dayPlanItems).where(eq(dayPlanItems.planId, planId)).run(); }
   async logActivity(a: InsertActivityLog) { db.insert(activityLog).values({ ...a, timestamp: Date.now() }).run(); }
+  async getCareerTracks() { return db.select().from(careerTracks).orderBy(desc(careerTracks.priority)).all(); }
+  async createCareerTrack(t: InsertCareerTrack) { return db.insert(careerTracks).values({ ...t, createdAt: Date.now() }).returning().get(); }
 }
 
 export const storage = new DatabaseStorage();

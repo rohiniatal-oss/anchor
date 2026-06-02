@@ -6,8 +6,37 @@ import sqlite3, time, os
 DB = os.path.join(os.path.dirname(__file__), "data.db")
 now = int(time.time() * 1000)
 c = sqlite3.connect(DB)
-for t in ("tasks", "jobs", "learn", "hustles", "events", "wins"):
-    c.execute(f"DELETE FROM {t}")
+for t in ("tasks", "jobs", "learn", "hustles", "events", "wins", "career_tracks"):
+    try: c.execute(f"DELETE FROM {t}")
+    except Exception: pass
+
+# ── CAREER TRACKS ── the strategic spine. Everything links to one of these.
+# (slug, name, description, target_role_archetype, priority, status, why_it_fits)
+tracks = [
+    ("ai-gov-ops", "AI Governance — Ops & Chief of Staff",
+     "Senior operations / chief-of-staff roles inside top AI-governance orgs.", "chief_of_staff", 100, "active",
+     "Your Bain delivery + TBI advisory background maps directly onto running a mission-driven org."),
+    ("ai-gov-research", "AI Governance — Policy & Research",
+     "Policy-facing research roles on frontier AI and governance.", "research", 70, "active",
+     "Supply-chain security + strategy analysis is a credible bridge into governance research."),
+    ("geo-advisory", "Geopolitical Advisory",
+     "Geopolitical risk and strategy advisory to leadership.", "advisory", 80, "active",
+     "Direct continuation of your GCC government advisory at TBI."),
+    ("strategy-ops", "Strategy & Operations (general)",
+     "Strategy / ops / chief-of-staff outside the AI-gov niche.", "strategy_ops", 60, "active",
+     "Your consulting + product delivery record is a broad, safe fallback lane."),
+    ("gcc-advisory", "GCC / Government Advisory",
+     "Government and sovereign advisory in the Gulf.", "advisory", 50, "watch",
+     "Existing GCC relationships and regional credibility."),
+    ("thought-leadership", "Thought Leadership & Proof",
+     "Public credibility: writing, forecasting, the Substack and Afterline.", "", 65, "active",
+     "Proof assets that make every application and outreach more credible."),
+]
+track_id = {}
+for t in tracks:
+    cur = c.execute("""INSERT INTO career_tracks(slug,name,description,target_role_archetype,priority,status,why_it_fits,created_at)
+                       VALUES(?,?,?,?,?,?,?,?)""", (*t, now))
+    track_id[t[0]] = cur.lastrowid
 
 # (title, company, location, url, note, next_step, status, deadline, flag,
 #  role_archetype, fit_score, eligibility_risk, application_readiness, source_url)
@@ -47,10 +76,14 @@ jobs = [
      "Open the board and shortlist 3 roles that fit", "wishlist", "", "Ongoing",
      "", 50, "", "none"),
 ]
-for j in jobs:
+# Map each job (by index) to its career track.
+job_tracks = ["ai-gov-ops", "ai-gov-ops", "ai-gov-research", "ai-gov-research",
+              "ai-gov-research", "ai-gov-research", "ai-gov-research", "ai-gov-ops"]
+for idx, j in enumerate(jobs):
+    rtid = track_id.get(job_tracks[idx] if idx < len(job_tracks) else "", None)
     c.execute("""INSERT INTO jobs(title,company,location,url,note,next_step,status,deadline,flag,
-                 role_archetype,fit_score,eligibility_risk,application_readiness,source_url,created_at)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*j, j[3], now))
+                 role_archetype,fit_score,eligibility_risk,application_readiness,source_url,related_track_id,created_at)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*j, j[3], rtid, now))
 
 # (title, category, url, note, done, active, type, learn_status, application_deadline, required_output)
 learn = [
@@ -101,17 +134,29 @@ def _learn_row(l):
         defaults = ["resource", "watch", "", ""]
         base.append(defaults[len(base) - 6])
     return base
-for l in learn:
+# Map each learn item (by index) to a track. AI-gov courses/fellowships -> ai-gov-research;
+# forecasting/geopolitics craft -> geo-advisory; gravitas/consulting/leadership -> strategy-ops.
+learn_tracks = [
+    "ai-gov-research", "ai-gov-research", "ai-gov-research",  # Impact Accel, AGI Strategy, AI Gov
+    "ai-gov-research", "ai-gov-research", "ai-gov-research",  # Astra, GovAI Seasonal, ERA
+    "ai-gov-research", "ai-gov-research", "ai-gov-research", "ai-gov-research",  # Pivotal, Talos, IAPS, Horizon
+    "geo-advisory", "geo-advisory", "geo-advisory",          # Superforecasting, GJ Open, Foreign Affairs
+    "strategy-ops", "strategy-ops", "strategy-ops", "strategy-ops",  # Presence, Exec Presence, Pyramid, HBR
+]
+for idx, l in enumerate(learn):
     r = _learn_row(l)
-    c.execute("""INSERT INTO learn(title,category,url,note,done,active,type,learn_status,application_deadline,required_output,created_at)
-                 VALUES(?,?,?,?,?,?,?,?,?,?,?)""", (*r, now))
+    rtid = track_id.get(learn_tracks[idx] if idx < len(learn_tracks) else "", None)
+    c.execute("""INSERT INTO learn(title,category,url,note,done,active,type,learn_status,application_deadline,required_output,related_track_id,created_at)
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""", (*r, rtid, now))
 
 hustles = [
     ("Substack \u2014 geopolitical consequence analysis", "\u201cIf this, then what\u201d second-order consequence writing. Geopolitics-focused (not AI). Brand new \u2014 no presence yet.", "Decide your angle: what would you write about?", "idea"),
     ("Afterline", "Event / consequence-prediction app \u2014 the engine behind the Substack. NOT parked.", "Sketch the next core screen", "testing"),
 ]
 for h in hustles:
-    c.execute("INSERT INTO hustles(title,note,next_step,stage,created_at) VALUES(?,?,?,?,?)", (*h, now))
+    # Both proof assets serve the thought-leadership track.
+    c.execute("INSERT INTO hustles(title,note,next_step,stage,proof_asset_for_track,created_at) VALUES(?,?,?,?,?,?)",
+              (*h, track_id.get("thought-leadership"), now))
 
 # TWO dated application tasks live in Today (real deadlines -> drive plan urgency + chips).
 dated = [
@@ -137,8 +182,11 @@ contacts = [
     ("someone in the BlueDot / AI-safety community (Slack)", "AI safety",
      "You're already in the BlueDot community — a low-friction first message unlocks the fellowship network.", "to_contact"),
 ]
-for who, sector, why, status in contacts:
-    c.execute("INSERT INTO contacts(name,who,sector,why,status,note,created_at) VALUES('',?,?,?,?,'',?)", (who, sector, why, status, now))
+contact_tracks = ["ai-gov-ops", "ai-gov-research", "ai-gov-research"]
+for i, (who, sector, why, status) in enumerate(contacts):
+    rtid = track_id.get(contact_tracks[i] if i < len(contact_tracks) else "", None)
+    c.execute("INSERT INTO contacts(name,who,sector,why,status,note,related_track_id,created_at) VALUES('',?,?,?,?,'',?,?)",
+              (who, sector, why, status, rtid, now))
 
 c.commit()
 c.execute("PRAGMA wal_checkpoint(TRUNCATE)")

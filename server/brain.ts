@@ -126,9 +126,21 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
     }
   }
 
-  // Active learning — deadline CARRIED, requires an output.
+  // Dedupe across tabs: if a Today task already covers an opportunity (e.g.
+  // "Apply to the Impact Accelerator" task vs the Impact Accelerator learn item),
+  // don't surface both. The task wins — it's the actionable version.
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\b(apply to|finish|the|your|a|an|produce|free|week|6week|programme|program)\b/g, "").replace(/\s+/g, " ").trim();
+  const taskKeys = out.filter((c) => c.source === "task").map((c) => norm(c.title));
+  const isDuplicate = (title: string) => {
+    const k = norm(title);
+    if (!k || k.length < 6) return false;
+    return taskKeys.some((tk) => tk && (tk.includes(k) || k.includes(tk)) && Math.min(tk.length, k.length) >= 6);
+  };
+
+  // Active learning — deadline CARRIED, requires an output. Skip if a Today task
+  // already covers it (dedupe across tabs).
   for (const l of learn) {
-    if (l.active && !l.done && l.learnStatus !== "closed") {
+    if (l.active && !l.done && l.learnStatus !== "closed" && !isDuplicate(l.title)) {
       const dl = l.applicationDeadline || "";
       out.push({
         source: "learn", sourceId: l.id, taskId: null,

@@ -512,6 +512,78 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ ok: true });
   });
 
+  // ═══ P3: STRATEGY — per-track dashboard + bottleneck insights (computed) ═══
+  // The quiet strategic view. Connects jobs / learning / network / proof per
+  // career track, finds each track's bottleneck and next move, and surfaces
+  // 1-3 cross-cutting insights. Pure deterministic logic — no LLM, no fabrication.
+  app.get("/api/strategy", async (_req, res) => {
+    const [tracks, jobs, learn, hustles, contacts] = await Promise.all([
+      storage.getCareerTracks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(),
+    ]);
+
+    const liveJobStatuses = ["wishlist", "applied", "interviewing"];
+    const rows = tracks.map((t) => {
+      const tJobs = jobs.filter((j) => j.relatedTrackId === t.id && liveJobStatuses.includes(j.status) && j.eligibilityRisk !== "likely_ineligible");
+      const tApplied = tJobs.filter((j) => j.status === "applied" || j.status === "interviewing");
+      const tLearn = learn.filter((l) => l.relatedTrackId === t.id && !l.done && l.learnStatus !== "closed");
+      const tLearnActive = tLearn.filter((l) => l.active);
+      const tContacts = contacts.filter((c) => c.relatedTrackId === t.id);
+      const tWarm = tContacts.filter((c) => c.status === "messaged" || c.status === "replied");
+      const tProof = hustles.filter((h) => h.proofAssetForTrack === t.id);
+      const tProofLive = tProof.filter((h) => h.stage !== "idea");
+      const topFit = tJobs.reduce((m, j) => Math.max(m, j.fitScore ?? 0), 0);
+
+      // Bottleneck: the single weakest link on this track (in priority order).
+      let bottleneck = "", nextMove = "";
+      if (tJobs.length === 0 && tLearn.length === 0) {
+        bottleneck = "No live opportunities yet"; nextMove = "Add a role or a learning item to this track";
+      } else if (tJobs.length > 0 && tApplied.length === 0) {
+        bottleneck = `${tJobs.length} role${tJobs.length > 1 ? "s" : ""} saved, none submitted`;
+        nextMove = "Submit your strongest application on this track";
+      } else if (tContacts.length === 0) {
+        bottleneck = "No warm contact on this path";
+        nextMove = "Identify one person to reach in this sector";
+      } else if (tWarm.length === 0 && tContacts.length > 0) {
+        bottleneck = "Contacts identified but none messaged";
+        nextMove = "Send the first outreach message";
+      } else if (tProof.length > 0 && tProofLive.length === 0) {
+        bottleneck = "Proof asset still just an idea";
+        nextMove = "Move your proof asset past the idea stage";
+      } else {
+        bottleneck = "Moving well — keep the drumbeat";
+        nextMove = "Advance the next live application";
+      }
+
+      return {
+        id: t.id, slug: t.slug, name: t.name, status: t.status, priority: t.priority, whyItFits: t.whyItFits,
+        roles: tJobs.length, applied: tApplied.length, topFit,
+        learning: tLearn.length, learningActive: tLearnActive.length,
+        contacts: tContacts.length, warmContacts: tWarm.length,
+        proofAssets: tProof.length, proofLive: tProofLive.length,
+        bottleneck, nextMove,
+      };
+    });
+
+    // Cross-cutting insights (max 3, highest-signal first).
+    const insights: string[] = [];
+    const activeRows = rows.filter((r) => r.status === "active");
+    const totalLiveRoles = activeRows.reduce((s, r) => s + r.roles, 0);
+    const totalApplied = activeRows.reduce((s, r) => s + r.applied, 0);
+    if (totalLiveRoles >= 2 && totalApplied === 0)
+      insights.push(`Your bottleneck isn't more roles — it's submitting. You have ${totalLiveRoles} live, none applied yet. Pick one and send it.`);
+    const richNoContacts = activeRows.find((r) => (r.roles + r.learning) >= 2 && r.contacts === 0);
+    if (richNoContacts)
+      insights.push(`Your ${richNoContacts.name} path has roles and learning but no warm contact — a referral would unlock far more than another saved role.`);
+    const totalLearn = activeRows.reduce((s, r) => s + r.learning, 0);
+    const totalProofLive = activeRows.reduce((s, r) => s + r.proofLive, 0);
+    if (totalLearn >= 4 && totalProofLive === 0)
+      insights.push(`You're collecting learning (${totalLearn} items) but no proof asset is live yet — one published piece beats three half-read courses.`);
+    if (insights.length === 0 && activeRows.length)
+      insights.push(`Most focus is on ${activeRows[0].name}. That's your spine — keep it moving and let the rest stay light.`);
+
+    res.json({ tracks: rows, insights });
+  });
+
   // Events read
   app.get("/api/events", async (req, res) => res.json(await storage.getEvents(String(req.query.day || ""))));
   app.put("/api/events", async (req, res) => {

@@ -5,6 +5,7 @@ import {
   Plus, X, ArrowRight, Check, ExternalLink, Clock, Trash2,
   Target, Pin, Wand2, Loader2, CalendarDays, Star, ChevronDown, ChevronRight,
   Rocket, MoveRight, MoonStar, Lightbulb, Users, MessageCircle, RefreshCw,
+  Compass, ArrowUpRight,
 } from "lucide-react";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
@@ -50,8 +51,9 @@ function deadlineTone(d: string): string {
   return "bg-muted text-muted-foreground";
 }
 
-type Tab = "today" | "braindump" | "jobs" | "network" | "learn" | "hustle" | "wins";
+type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "hustle" | "wins";
 const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] = [
+  { id: "strategy", label: "Strategy", icon: Compass, blurb: "Your paths, at a glance" },
   { id: "braindump", label: "Brain dump", icon: Sparkles, blurb: "Empty your head" },
   { id: "jobs", label: "Jobs", icon: Briefcase, blurb: "Your applications" },
   { id: "network", label: "Network", icon: Users, blurb: "People to reach" },
@@ -116,6 +118,7 @@ export default function Home() {
           </button>
         )}
         {tab === "today" && <TodayView onOpenTab={go} />}
+        {tab === "strategy" && <StrategyView onOpenTab={go} />}
         {tab === "braindump" && <BrainDumpView />}
         {tab === "jobs" && <JobsView />}
         {tab === "network" && <NetworkView />}
@@ -385,6 +388,91 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ================= STRATEGY (the quiet bird's-eye view) ================= */
+type StrategyTrack = {
+  id: number; slug: string; name: string; status: string; priority: number; whyItFits: string;
+  roles: number; applied: number; topFit: number;
+  learning: number; learningActive: number;
+  contacts: number; warmContacts: number;
+  proofAssets: number; proofLive: number;
+  bottleneck: string; nextMove: string;
+};
+function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
+  const { data, isLoading } = useQuery<{ tracks: StrategyTrack[]; insights: string[] }>({ queryKey: ["/api/strategy"] });
+  if (isLoading) return <Loading />;
+  const tracks = data?.tracks || [];
+  const insights = data?.insights || [];
+  const active = tracks.filter((t) => t.status === "active");
+  const watching = tracks.filter((t) => t.status !== "active");
+
+  const Stat = ({ label, value, dim }: { label: string; value: string | number; dim?: boolean }) => (
+    <div className="flex flex-col">
+      <span className={`text-sm font-semibold tabular-nums ${dim ? "text-muted-foreground" : "text-foreground"}`}>{value}</span>
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+    </div>
+  );
+
+  const Card = ({ t }: { t: StrategyTrack }) => (
+    <div className="rounded-xl border border-card-border bg-card p-4" data-testid={`track-${t.slug}`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <h3 className="font-semibold text-sm leading-snug">{t.name}</h3>
+          {t.whyItFits && <p className="text-xs text-muted-foreground mt-0.5">{t.whyItFits}</p>}
+        </div>
+        {t.topFit > 0 && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[11px] font-semibold px-2 py-0.5">fit {t.topFit}</span>}
+      </div>
+      <div className="grid grid-cols-4 gap-2 mb-3">
+        <Stat label="Roles" value={t.roles} dim={t.roles === 0} />
+        <Stat label="Learning" value={t.learning} dim={t.learning === 0} />
+        <Stat label="Contacts" value={t.contacts} dim={t.contacts === 0} />
+        <Stat label="Proof" value={t.proofLive ? `${t.proofLive}/${t.proofAssets}` : t.proofAssets} dim={t.proofAssets === 0} />
+      </div>
+      <div className="rounded-lg bg-muted/60 px-3 py-2">
+        <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Bottleneck:</span> {t.bottleneck}</p>
+        <p className="text-xs text-primary mt-1 inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> {t.nextMove}</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <h1 className="text-xl font-bold tracking-tight">Your paths</h1>
+      <p className="text-sm text-muted-foreground mt-1 mb-5">The bird's-eye view — where each path stands and the one thing holding it back. Today stays your calm execution screen; this is just for orientation.</p>
+
+      {insights.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {insights.map((ins, i) => (
+            <div key={i} className="rounded-xl border border-accent-foreground/15 bg-accent/40 p-4 flex items-start gap-2.5" data-testid={`insight-${i}`}>
+              <Lightbulb className="w-4 h-4 text-accent-foreground shrink-0 mt-0.5" />
+              <p className="text-sm leading-snug">{ins}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <GroupLabel>Active paths</GroupLabel>
+      <div className="grid gap-3 sm:grid-cols-2 mt-2 mb-6">
+        {active.map((t) => <Card key={t.id} t={t} />)}
+      </div>
+
+      {watching.length > 0 && (
+        <>
+          <GroupLabel>Watching</GroupLabel>
+          <div className="grid gap-3 sm:grid-cols-2 mt-2 mb-6">
+            {watching.map((t) => <Card key={t.id} t={t} />)}
+          </div>
+        </>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => onOpenTab("jobs")}><Briefcase className="w-4 h-4 mr-1" /> Jobs</Button>
+        <Button size="sm" variant="outline" onClick={() => onOpenTab("network")}><Users className="w-4 h-4 mr-1" /> Network</Button>
+        <Button size="sm" variant="outline" onClick={() => onOpenTab("today")}><Target className="w-4 h-4 mr-1" /> Back to Today</Button>
+      </div>
     </div>
   );
 }

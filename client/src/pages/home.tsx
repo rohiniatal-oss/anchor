@@ -86,7 +86,6 @@ export default function Home() {
             <span className="text-primary"><AnchorLogo className="w-7 h-7" /></span>
             <div className="leading-tight text-left">
               <div className="font-bold text-lg tracking-tight" data-testid="text-appname">Anchor</div>
-              <div className="text-xs text-muted-foreground -mt-0.5">your calm home base</div>
             </div>
           </button>
           <div className="flex items-center gap-1.5">
@@ -322,7 +321,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   return (
     <div>
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
-      <p className="text-sm text-muted-foreground mt-1 mb-5">Here's your day — a few different things, not one giant list. You don't have to decide.</p>
+      <p className="text-sm text-muted-foreground mt-1 mb-5">Here's your day. Start at the top — you don't have to decide.</p>
 
       {/* Thin calendar line */}
       {events.length > 0 && (
@@ -591,7 +590,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   return (
     <div>
       <h1 className="text-xl font-bold tracking-tight">Your paths</h1>
-      <p className="text-sm text-muted-foreground mt-1 mb-5">The bird's-eye view — where each path stands and the one thing holding it back. Today stays your calm execution screen; this is just for orientation.</p>
+      <p className="text-sm text-muted-foreground mt-1 mb-5">Where each path stands, and what's holding it back.</p>
 
       {insights.length > 0 && (
         <div className="mb-6 space-y-2">
@@ -911,7 +910,7 @@ function BrainDumpView() {
 
   return (
     <div>
-      <SectionHeading title="Brain dump" sub="Got a thought buzzing? Drop it here and forget it. When you're ready, tap 'Sort these for me' and I'll suggest where each belongs." />
+      <SectionHeading title="Brain dump" sub="Empty your head now. Sort it later." />
       <div className="flex gap-2 mb-3">
         <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }}
           placeholder="Type anything and hit Enter…" className="h-11" data-testid="input-braindump" />
@@ -1007,7 +1006,7 @@ function JobsView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Job tracker" sub="Every role in one place, soonest deadlines first. Move a card right as you progress." />
+        <SectionHeading title="Jobs" sub="Roles and applications, soonest deadlines first." />
         <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
       </div>
       {showForm && (
@@ -1043,7 +1042,7 @@ function JobsView() {
               the fellowship readiness rail; watch/closed ones read as monitored. */}
           {fellowships.length > 0 && (
             <div className="mt-8" data-testid="fellowships-lane">
-              <SectionHeading title="Fellowships" sub="Opportunities you apply to — eligibility and deadline first. Watch the closed ones for the next cycle." />
+              <SectionHeading title="Fellowships" sub="Opportunities you apply to. Closed ones are kept to watch for next cycle." />
               {openFellowships.length > 0 && (
                 <div className="mb-4">
                   <GroupLabel count={openFellowships.length}><Compass className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Open / apply now</GroupLabel>
@@ -1452,7 +1451,7 @@ function NetworkView() {
 
   return (
     <div>
-      <SectionHeading title="Network" sub="A warmth view, not a contact list. People sit in your warm lanes; each card leads with the ask and timing. Anchor suggests who to reach — tied to your target roles — and you warm the path from first message to reply." />
+      <SectionHeading title="Network" sub="People to reach, by warmth. Each card leads with the ask." />
 
       {/* One networking suggestion: who to reach next */}
       {(sugLoading || sug) && (
@@ -1683,7 +1682,7 @@ function LearnView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Learn" sub="A proof-building view. Reading and reference are fine on their own — when you want something to count as proof, give it an output and it moves into the building lane. Grouped by capability." />
+        <SectionHeading title="Learn" sub="What you're building. Give an item an output to make it count as proof." />
         <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
       </div>
       {showForm && (
@@ -2081,7 +2080,7 @@ function ProofAssetsView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Proof Assets" sub="The credibility you produce — your geopolitics Substack, Afterline, and AI-gov memos. Produce the next output on each rail; every step becomes a task on your day plan." />
+        <SectionHeading title="Proof assets" sub="Proof you're producing — what makes you credible for these paths." />
         <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-hustle-form"><Plus className="w-4 h-4 mr-1" /> Add asset</Button>
       </div>
       {showForm && (
@@ -2227,7 +2226,7 @@ function WinsView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Wins" sub="Log the small stuff — sent an application, made a call, got out for a walk. Your brain forgets progress; this remembers it for you." />
+        <SectionHeading title="Wins" sub="Small wins count — log them so you don't forget the progress you made." />
         {stats && stats.doneThisWeek > 0 && (
           <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-accent text-accent-foreground px-3 py-1.5 text-sm font-medium" data-testid="text-wins-momentum">
             <Trophy className="w-4 h-4" /> {stats.doneThisWeek} this week

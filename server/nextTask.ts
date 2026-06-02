@@ -1,5 +1,5 @@
 import { db } from "./storage";
-import { tasks, jobs, learn, contacts, hustles, jobPipelineSteps, type Task, type JobPipelineStep } from "@shared/schema";
+import { tasks, jobs, learn, contacts, hustles, jobPipelineSteps, proofAssetSteps, type Task, type JobPipelineStep, type ProofAssetStep } from "@shared/schema";
 import { eq, and, ne } from "drizzle-orm";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -146,5 +146,29 @@ export async function materializeJobStep(step: JobPipelineStep): Promise<CreateR
   }
 
   db.update(jobPipelineSteps).set({ taskId: result.task.id }).where(eq(jobPipelineSteps.id, step.id)).run();
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MATERIALIZE A PROOF ASSET STEP (P4.3) — turn a proof-production rail step
+// into a task via the SAME createNextTask provenance + dedupe machinery
+// (sourceType "hustle", sourceId = step.hustleId). The hustle branch of
+// createNextTask already carries proofAssetForTrack through as relatedTrackId.
+// Sharpen the title to the step label, then write the step's taskId back for
+// the dedupe/back-ref. Reuses an open hustle task rather than duplicating.
+// ─────────────────────────────────────────────────────────────────────────
+export async function materializeProofStep(step: ProofAssetStep): Promise<CreateResult | null> {
+  const result = await createNextTask({ sourceType: "hustle", sourceId: step.hustleId });
+  if (!result) return null;
+
+  if (!result.reused && step.stepLabel.trim()) {
+    const h = db.select().from(hustles).where(eq(hustles.id, step.hustleId)).get();
+    const suffix = h ? `: ${h.title}` : "";
+    const updated = db.update(tasks).set({ title: `${step.stepLabel.trim()}${suffix}` })
+      .where(eq(tasks.id, result.task.id)).returning().get();
+    if (updated) result.task = updated;
+  }
+
+  db.update(proofAssetSteps).set({ taskId: result.task.id }).where(eq(proofAssetSteps.id, step.id)).run();
   return result;
 }

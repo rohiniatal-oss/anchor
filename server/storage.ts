@@ -1,10 +1,11 @@
 import {
   tasks, events, jobs, learn, hustles, wins, contacts,
-  dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps,
+  dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps, proofAssetSteps,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
   type JobPipelineStep, type InsertJobPipelineStep,
+  type ProofAssetStep, type InsertProofAssetStep,
   type Learn, type InsertLearn,
   type Hustle, type InsertHustle,
   type Win, type InsertWin,
@@ -18,6 +19,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, asc, desc } from "drizzle-orm";
 import { templateForArchetype } from "@shared/jobTemplates";
+import { templateForProofAsset } from "@shared/proofAssetTemplates";
 
 const DB_PATH = process.env.ANCHOR_DB_PATH || "data.db";
 const sqlite = new Database(DB_PATH);
@@ -50,6 +52,13 @@ export interface IStorage {
   createHustle(h: InsertHustle): Promise<Hustle>;
   updateHustle(id: number, patch: Partial<InsertHustle>): Promise<Hustle | undefined>;
   deleteHustle(id: number): Promise<void>;
+  getProofAssetSteps(hustleId: number): Promise<ProofAssetStep[]>;
+  getProofAssetStep(stepId: number): Promise<ProofAssetStep | undefined>;
+  seedProofAssetSteps(hustleId: number): Promise<ProofAssetStep[]>;
+  createProofAssetStep(hustleId: number, data: { stepLabel: string; sequence?: number; note?: string }): Promise<ProofAssetStep>;
+  updateProofAssetStep(stepId: number, patch: Partial<InsertProofAssetStep>): Promise<ProofAssetStep | undefined>;
+  deleteProofAssetStep(stepId: number): Promise<void>;
+  reorderProofAssetSteps(hustleId: number, orderedStepIds: number[]): Promise<ProofAssetStep[]>;
   getWins(): Promise<Win[]>;
   createWin(w: InsertWin): Promise<Win>;
   deleteWin(id: number): Promise<void>;
@@ -144,7 +153,51 @@ export class DatabaseStorage implements IStorage {
   async getHustles() { return db.select().from(hustles).orderBy(desc(hustles.id)).all(); }
   async createHustle(h: InsertHustle) { return db.insert(hustles).values({ ...h, createdAt: Date.now() }).returning().get(); }
   async updateHustle(id: number, patch: Partial<InsertHustle>) { return db.update(hustles).set(patch).where(eq(hustles.id, id)).returning().get(); }
-  async deleteHustle(id: number) { db.delete(hustles).where(eq(hustles.id, id)).run(); }
+  async deleteHustle(id: number) {
+    db.delete(hustles).where(eq(hustles.id, id)).run();
+    db.delete(proofAssetSteps).where(eq(proofAssetSteps.hustleId, id)).run();
+  }
+
+  // ── Proof asset steps (P4.3) — mirror the job pipeline step methods exactly ──
+  async getProofAssetSteps(hustleId: number) {
+    return db.select().from(proofAssetSteps).where(eq(proofAssetSteps.hustleId, hustleId))
+      .orderBy(asc(proofAssetSteps.sequence), asc(proofAssetSteps.id)).all();
+  }
+  async getProofAssetStep(stepId: number) {
+    return db.select().from(proofAssetSteps).where(eq(proofAssetSteps.id, stepId)).get();
+  }
+  // Seed the kind-aware template — only if the asset exists and has no steps yet.
+  async seedProofAssetSteps(hustleId: number) {
+    const h = db.select().from(hustles).where(eq(hustles.id, hustleId)).get();
+    if (!h) return [];
+    const existing = await this.getProofAssetSteps(hustleId);
+    if (existing.length > 0) return existing;
+    const labels = templateForProofAsset(h);
+    const now = Date.now();
+    labels.forEach((stepLabel, i) => {
+      db.insert(proofAssetSteps).values({ hustleId, stepLabel, status: "todo", sequence: i, note: "", createdAt: now }).run();
+    });
+    return this.getProofAssetSteps(hustleId);
+  }
+  async createProofAssetStep(hustleId: number, data: { stepLabel: string; sequence?: number; note?: string }) {
+    const existing = await this.getProofAssetSteps(hustleId);
+    const sequence = data.sequence ?? (existing.length ? existing[existing.length - 1].sequence + 1 : 0);
+    return db.insert(proofAssetSteps).values({
+      hustleId, stepLabel: data.stepLabel, status: "todo", sequence, note: data.note ?? "", createdAt: Date.now(),
+    }).returning().get();
+  }
+  async updateProofAssetStep(stepId: number, patch: Partial<InsertProofAssetStep>) {
+    return db.update(proofAssetSteps).set(patch).where(eq(proofAssetSteps.id, stepId)).returning().get();
+  }
+  async deleteProofAssetStep(stepId: number) { db.delete(proofAssetSteps).where(eq(proofAssetSteps.id, stepId)).run(); }
+  async reorderProofAssetSteps(hustleId: number, orderedStepIds: number[]) {
+    const steps = await this.getProofAssetSteps(hustleId);
+    const owned = new Set(steps.map((s) => s.id));
+    orderedStepIds.filter((id) => owned.has(id)).forEach((id, i) => {
+      db.update(proofAssetSteps).set({ sequence: i }).where(eq(proofAssetSteps.id, id)).run();
+    });
+    return this.getProofAssetSteps(hustleId);
+  }
 
   async getWins() { return db.select().from(wins).orderBy(desc(wins.id)).all(); }
   async createWin(w: InsertWin) { return db.insert(wins).values({ ...w, createdAt: Date.now() }).returning().get(); }

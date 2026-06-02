@@ -3,7 +3,7 @@ import {
   isJobLive, getJobReadiness, isLearnDone, isLearnActive, getLearnStatus,
   isContactWarm, isProofLive, isTaskDone, getTaskReadiness, getTrackId,
 } from "@shared/domainState";
-import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep } from "@shared/schema";
+import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the five bottleneck types, and a
@@ -50,6 +50,7 @@ function diagnoseTrack(
   track: CareerTrack,
   jobs: Job[], learn: Learn[], contacts: Contact[], hustles: Hustle[], tasks: Task[],
   stepsByJob: Map<number, JobPipelineStep[]>,
+  proofStepsByHustle: Map<number, ProofAssetStep[]>,
 ): TrackDiagnostic {
   const tJobs = jobs.filter((j) => getTrackId("jobs", j) === track.id);
   const tLiveJobs = tJobs.filter(isJobLive);
@@ -80,10 +81,21 @@ function diagnoseTrack(
   }, 0);
   const readinessGap = lowReadinessJobs + stuckTasks + stallSteps;
 
-  // proof gap: few active proof assets; learn items missing requiredOutput
+  // proof gap: few active proof assets; learn items missing requiredOutput; AND
+  // (P4.3) proof assets with a production rail but little progress — few done or
+  // blocked steps signal a stalled proof asset. "blocked" counts as a stall;
+  // "skipped" is a separate resolved state, not a stall (mirrors the job rail).
   const liveProof = tHustles.filter(isProofLive).length;
   const learnNoOutput = tLearn.filter((l) => !l.requiredOutput || !l.requiredOutput.trim()).length;
-  const proofGap = (liveProof === 0 ? 1 : 0) + learnNoOutput;
+  const proofStall = tHustles.reduce((acc, h) => {
+    const steps = proofStepsByHustle.get(h.id) || [];
+    if (steps.length === 0) return acc;
+    const done = steps.filter((s) => s.status === "done").length;
+    const blocked = steps.filter((s) => s.status === "blocked").length;
+    const fewDone = done < Math.ceil(steps.length / 2) ? 1 : 0;
+    return acc + fewDone + blocked;
+  }, 0);
+  const proofGap = (liveProof === 0 ? 1 : 0) + learnNoOutput + proofStall;
 
   // warmth gap: live jobs with low warmPathScore; cold / absent contacts; AND
   // contacts overdue for follow-up (P4.2) — a stale warm path is a warmth gap too.
@@ -112,10 +124,16 @@ function diagnoseTrack(
     recommendedMove = "Add or activate a role, learning item, or proof asset on this track";
   } else if (proofGap > 0 && (credibilityTrack || liveProof === 0)) {
     bottleneck = "proof";
-    bottleneckLabel = liveProof === 0 ? "No live proof asset" : "Learning without an output";
-    recommendedMove = liveProof === 0
-      ? "Create a proof-asset task to move it past the idea stage"
-      : "Define the required output for your learning";
+    if (liveProof === 0) {
+      bottleneckLabel = "No live proof asset";
+      recommendedMove = "Create a proof-asset task to move it past the idea stage";
+    } else if (proofStall > 0) {
+      bottleneckLabel = "Proof asset stalled";
+      recommendedMove = "Produce the next output on your proof asset's rail";
+    } else {
+      bottleneckLabel = "Learning without an output";
+      recommendedMove = "Define the required output for your learning";
+    }
   } else if (warmthGap > 0 && tLiveJobs.length > 0) {
     const overdue = tContacts.filter(isContactOverdue).length;
     bottleneck = "warmth";
@@ -155,7 +173,11 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
   const stepLists = await Promise.all(liveJobs.map((j) => storage.getJobSteps(j.id)));
   const stepsByJob = new Map<number, JobPipelineStep[]>();
   liveJobs.forEach((j, i) => stepsByJob.set(j.id, stepLists[i]));
-  return tracks.map((t) => diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob));
+  // P4.3: pull each proof asset's production rail so a stalled asset feeds the proof gap.
+  const proofStepLists = await Promise.all(hustles.map((h) => storage.getProofAssetSteps(h.id)));
+  const proofStepsByHustle = new Map<number, ProofAssetStep[]>();
+  hustles.forEach((h, i) => proofStepsByHustle.set(h.id, proofStepLists[i]));
+  return tracks.map((t) => diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob, proofStepsByHustle));
 }
 
 export type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };

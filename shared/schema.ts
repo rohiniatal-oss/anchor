@@ -110,6 +110,25 @@ export const jobPipelineSteps = sqliteTable("job_pipeline_steps", {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// PROOF ASSET STEPS (P4.3) — a TASK-GENERATIVE proof-production rail over a
+// hustle (proof asset). Mirrors jobPipelineSteps EXACTLY (same fields + same
+// 4-value status set todo|done|skipped|blocked) so the two step systems stay
+// consistent. Each step materializes a task via createNextTask, or is marked
+// done/blocked. taskId is a thin back-ref for dedupe; canonical task state
+// still lives on the task. Asset KIND is derived (not stored here).
+// ─────────────────────────────────────────────────────────────────────────
+export const proofAssetSteps = sqliteTable("proof_asset_steps", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  hustleId: integer("hustle_id").notNull(),
+  stepLabel: text("step_label").notNull(),
+  status: text("status").notNull().default("todo"), // todo|done|skipped|blocked
+  sequence: integer("sequence").notNull().default(0),
+  note: text("note").notNull().default(""),
+  taskId: integer("task_id"), // set when materialized into a task (back-ref/dedupe)
+  createdAt: integer("created_at").notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // LEARN — capability map. Every item REQUIRES an output.
 // ─────────────────────────────────────────────────────────────────────────
 export const learn = sqliteTable("learn", {
@@ -271,6 +290,7 @@ export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, created
 export const insertJobPipelineStepSchema = createInsertSchema(jobPipelineSteps).omit({ id: true, createdAt: true });
 export const insertLearnSchema = createInsertSchema(learn).omit({ id: true, createdAt: true });
 export const insertHustleSchema = createInsertSchema(hustles).omit({ id: true, createdAt: true });
+export const insertProofAssetStepSchema = createInsertSchema(proofAssetSteps).omit({ id: true, createdAt: true });
 export const insertWinSchema = createInsertSchema(wins).omit({ id: true, createdAt: true });
 export const insertContactSchema = createInsertSchema(contacts).omit({ id: true, createdAt: true });
 export const insertCareerTrackSchema = createInsertSchema(careerTracks).omit({ id: true, createdAt: true });
@@ -292,6 +312,8 @@ export type InsertLearn = z.infer<typeof insertLearnSchema>;
 export type Learn = typeof learn.$inferSelect;
 export type InsertHustle = z.infer<typeof insertHustleSchema>;
 export type Hustle = typeof hustles.$inferSelect;
+export type InsertProofAssetStep = z.infer<typeof insertProofAssetStepSchema>;
+export type ProofAssetStep = typeof proofAssetSteps.$inferSelect;
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type Contact = typeof contacts.$inferSelect;
 export type InsertWin = z.infer<typeof insertWinSchema>;

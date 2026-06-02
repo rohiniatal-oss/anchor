@@ -612,6 +612,37 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
   }
 
+  // ═══ P4.4: LEARN AS A PROOF-BUILDING VIEW ═══
+  // create-output-task is an intent-named ALIAS over the existing 3.5 learn
+  // create-next-task (REUSES createNextTask(sourceType "learn") — title from
+  // requiredOutput, doneWhen references the artifact — with provenance + dedupe).
+  // No parallel task creator. PATCH /api/learn/:id is already provided by crud()
+  // and accepts requiredOutput / outputEvidenceUrl / learnStatus / relatedTrackId.
+  app.post("/api/learn/:id/create-output-task", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const result = await createNextTask({ sourceType: "learn", sourceId: id });
+    if (!result) return res.status(404).json({ error: "Learn item not found" });
+    res.json({ ...result.task, reused: result.reused });
+  });
+
+  // mark-evidenced: persist the produced-artifact url onto the learn item (flips
+  // derived outputState to "evidenced"); optionally record a proof_for entityLink
+  // to a produced task when proofToId is supplied (kept optional/simple).
+  app.post("/api/learn/:id/mark-evidenced", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const outputEvidenceUrl = String(req.body?.outputEvidenceUrl || "").trim().slice(0, 500);
+    if (!outputEvidenceUrl) return res.status(400).json({ error: "Need outputEvidenceUrl" });
+    const rawProof = req.body?.proofToId;
+    const proofToId = rawProof === null || rawProof === undefined ? null : Number(rawProof);
+    if (proofToId !== null && !Number.isFinite(proofToId)) return res.status(400).json({ error: "proofToId must be a number or null" });
+    const updated = await storage.markLearnEvidenced(id, outputEvidenceUrl, proofToId);
+    if (!updated) return res.status(404).json({ error: "Learn item not found" });
+    await storage.logActivity({ eventType: "completed", sourceType: "learn", sourceId: id, metadata: JSON.stringify({ evidenced: true, proofToId }) } as any);
+    res.json(updated);
+  });
+
   // ═══ P4.1: JOB PIPELINE STEPS — a TASK-GENERATIVE readiness rail over a job ═══
   // Steps are SEEDED from an archetype template, then editable per job. Each step
   // does ONLY ONE of: materialize-as-task (reuses 3.5 createNextTask provenance +

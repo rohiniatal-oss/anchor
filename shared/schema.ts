@@ -148,7 +148,8 @@ export const learn = sqliteTable("learn", {
   programEnd: text("program_end").notNull().default(""),
   timeRequired: text("time_required").notNull().default(""),
   capabilityBuilt: text("capability_built").notNull().default(""), // what skill it produces
-  requiredOutput: text("required_output").notNull().default(""), // the output that proves it
+  requiredOutput: text("required_output").notNull().default(""), // the INTENDED output that proves it
+  outputEvidenceUrl: text("output_evidence_url").notNull().default(""), // P4.4: link/ref to the PRODUCED artifact
   prerequisites: text("prerequisites").notNull().default("[]"), // JSON [learnId,...]
   unlocks: text("unlocks").notNull().default("[]"), // JSON [learnId,...]
   relatedTrackId: integer("related_track_id"),

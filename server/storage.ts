@@ -1,6 +1,6 @@
 import {
   tasks, events, jobs, learn, hustles, wins, contacts,
-  dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps, proofAssetSteps,
+  dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps, proofAssetSteps, entityLinks,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
@@ -77,6 +77,9 @@ export interface IStorage {
   getCareerTracks(): Promise<CareerTrack[]>;
   createCareerTrack(t: InsertCareerTrack): Promise<CareerTrack>;
   linkTrack(entity: TrackEntity, id: number, trackId: number | null): Promise<any | undefined>;
+  // P4.4 — learn proof-building
+  markLearnEvidenced(id: number, outputEvidenceUrl: string, proofToId?: number | null): Promise<Learn | undefined>;
+  getLearnProofLinkIds(): Promise<Set<number>>;
 }
 
 // Entities that carry a track link. Hustles store it in proofAssetForTrack;
@@ -221,6 +224,30 @@ export class DatabaseStorage implements IStorage {
     const table = TRACK_TABLES[entity];
     const patch = entity === "hustles" ? { proofAssetForTrack: trackId } : { relatedTrackId: trackId };
     return db.update(table).set(patch as any).where(eq(table.id, id)).returning().get();
+  }
+
+  // P4.4 — persist the produced-artifact link on a learn item (flips its derived
+  // outputState to "evidenced"). Optionally record a proof_for entityLink from
+  // the learn item to a produced object (e.g. a task) when an id is supplied.
+  async markLearnEvidenced(id: number, outputEvidenceUrl: string, proofToId?: number | null) {
+    const updated = db.update(learn).set({ outputEvidenceUrl }).where(eq(learn.id, id)).returning().get();
+    if (!updated) return undefined;
+    if (proofToId != null && Number.isFinite(proofToId)) {
+      db.insert(entityLinks).values({
+        fromType: "learn", fromId: id, toType: "task", toId: proofToId,
+        relationType: "proof_for", createdAt: Date.now(),
+      }).run();
+    }
+    return updated;
+  }
+
+  // P4.4 — set of learn ids that already have a proof_for entityLink. Lets the
+  // derived outputState count an evidenced item even before its url is filled in.
+  async getLearnProofLinkIds() {
+    const rows = db.select().from(entityLinks)
+      .where(eq(entityLinks.fromType, "learn")).all()
+      .filter((r) => r.relationType === "proof_for");
+    return new Set<number>(rows.map((r) => r.fromId));
   }
 }
 

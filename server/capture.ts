@@ -113,8 +113,10 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   return suggestion(id, "keep", "low", "Not enough signal to route safely", "Should this become a task, learning item, contact, job, or proof asset?");
 }
 
-function routeToBlock(route: CaptureRoute, task?: Task): string | null {
-  if (route === "today") return task?.size === "deep" ? "morning" : "afternoon";
+// A capture has no slot/plan context, so we never fabricate a time block.
+// This matches the Phase 4.6a convention (/api/plan-items/:id/start): block is
+// derived from real slot context or left null — never hardcoded by guessing.
+function routeToBlock(_route: CaptureRoute, _task?: Task): string | null {
   return null;
 }
 

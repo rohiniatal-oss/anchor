@@ -74,6 +74,7 @@ export interface IStorage {
   updatePlanItem(id: number, patch: Partial<InsertDayPlanItem>): Promise<DayPlanItem | undefined>;
   clearPlanItems(planId: number): Promise<void>;
   logActivity(a: InsertActivityLog): Promise<void>;
+  getActivityLog(): Promise<ActivityLog[]>;
   getCareerTracks(): Promise<CareerTrack[]>;
   createCareerTrack(t: InsertCareerTrack): Promise<CareerTrack>;
   linkTrack(entity: TrackEntity, id: number, trackId: number | null): Promise<any | undefined>;
@@ -218,6 +219,9 @@ export class DatabaseStorage implements IStorage {
   async updatePlanItem(id: number, patch: Partial<InsertDayPlanItem>) { return db.update(dayPlanItems).set(patch).where(eq(dayPlanItems.id, id)).returning().get(); }
   async clearPlanItems(planId: number) { db.delete(dayPlanItems).where(eq(dayPlanItems.planId, planId)).run(); }
   async logActivity(a: InsertActivityLog) { db.insert(activityLog).values({ ...a, timestamp: Date.now() }).run(); }
+  // Read-only behavioural truth (P4.5 evidence layer). activityLog stays the
+  // system-of-record; this is the only reader and never writes.
+  async getActivityLog() { return db.select().from(activityLog).orderBy(desc(activityLog.timestamp)).all(); }
   async getCareerTracks() { return db.select().from(careerTracks).orderBy(desc(careerTracks.priority)).all(); }
   async createCareerTrack(t: InsertCareerTrack) { return db.insert(careerTracks).values({ ...t, createdAt: Date.now() }).returning().get(); }
   async linkTrack(entity: TrackEntity, id: number, trackId: number | null) {

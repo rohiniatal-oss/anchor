@@ -283,6 +283,18 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [plan, setPlan] = useState<DayPlanT | null>(null);
   const [planItems, setPlanItems] = useState<PlanItemT[]>([]);
   const [loadingPlan, setLoadingPlan] = useState(false);
+  // Quick-capture: get a stray thought out of your head from Today, without
+  // leaving the screen. Lands in the inbox (shows up in Brain dump to sort
+  // later) — deliberately NOT onto today, so the plan below stays calm.
+  const [quickText, setQuickText] = useState("");
+  async function quickCapture() {
+    const t = quickText.trim();
+    if (!t) return;
+    setQuickText("");
+    const created = await mutateAndInvalidate("POST", "/api/tasks", { title: t, list: "inbox", done: false }, ["/api/tasks"]);
+    if (created?.id) mutateAndInvalidate("POST", `/api/tasks/${created.id}/enrich`, {}, ["/api/tasks"]).catch(() => {});
+    toast({ title: "Captured.", description: "It's in your brain dump — sort it whenever." });
+  }
   const [showCapacity, setShowCapacity] = useState(false);
   const [energy, setEnergy] = useState("medium");
 
@@ -321,7 +333,14 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   return (
     <div>
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
-      <p className="text-sm text-muted-foreground mt-1 mb-5">Here's your day. Start at the top — you don't have to decide.</p>
+      <p className="text-sm text-muted-foreground mt-1 mb-3">Here's your day. Start at the top — you don't have to decide.</p>
+
+      {/* Quick-capture — always here so a stray thought never needs another tab. */}
+      <div className="mb-5 flex gap-2">
+        <Input value={quickText} onChange={(e) => setQuickText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") quickCapture(); }}
+          placeholder="Add anything on your mind…" className="h-10" data-testid="input-quick-capture" />
+        <Button className="h-10 px-3 shrink-0" variant="outline" onClick={quickCapture} data-testid="button-quick-capture"><Plus className="w-4 h-4 mr-1" /> Capture</Button>
+      </div>
 
       {/* Thin calendar line */}
       {events.length > 0 && (

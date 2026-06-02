@@ -74,7 +74,11 @@ export const jobs = sqliteTable("jobs", {
   deadline: text("deadline").notNull().default(""), // YYYY-MM-DD or ""
   flag: text("flag").notNull().default(""), // short caveat chip, e.g. "US visa", "closes 5 Jun"
   // --- P1/P3: scoring + bespoke pipeline ---
-  roleArchetype: text("role_archetype").notNull().default(""), // ops|research|advisory|chief_of_staff|policy
+  roleArchetype: text("role_archetype").notNull().default(""), // ops|research|advisory|chief_of_staff|policy|fellowship
+  // Opportunity kind — distinguishes a paid role from a fellowship YOU APPLY TO.
+  // Drives the Fellowships lane grouping in the Opportunities view and lets
+  // strategy/brain treat a watch/closed fellowship as monitored, not a live app.
+  opportunityKind: text("opportunity_kind").notNull().default("job"), // job|fellowship
   fitScore: integer("fit_score"), // 0-100
   stretchScore: integer("stretch_score"),
   strategicValue: integer("strategic_value"),

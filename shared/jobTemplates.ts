@@ -44,6 +44,15 @@ export const JOB_STEP_TEMPLATES: Record<string, string[]> = {
     "Submit",
     "Follow up",
   ],
+  // Fellowships are OPPORTUNITIES YOU APPLY TO — eligibility FIRST because most
+  // are US/EU-gated, then the deadline, then materials, then the application.
+  fellowship: [
+    "Confirm eligibility",
+    "Check/confirm deadline",
+    "Prepare materials",
+    "Submit application",
+    "Follow up",
+  ],
 };
 
 export const FALLBACK_JOB_STEPS: string[] = [

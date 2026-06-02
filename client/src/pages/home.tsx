@@ -17,7 +17,8 @@ import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
 import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
-import { type TrackedEntity, getTrackId, getRelationshipStrength, WIN_CATEGORIES, type WinCategory, getLearnOutputState, learnNeedsOutputNudge, type LearnOutputState, getLearnStatus, type LearnStatus } from "@shared/domainState";
+import { type TrackedEntity, getTrackId, getRelationshipStrength, WIN_CATEGORIES, type WinCategory, getLearnOutputState, learnNeedsOutputNudge, type LearnOutputState, getLearnStatus, type LearnStatus, isFellowship } from "@shared/domainState";
+import { isFellowshipLearnRow } from "@shared/fellowshipLane";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -997,10 +998,20 @@ function JobsView() {
   }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/jobs/${id}`, undefined, ["/api/jobs"]); }
 
+  // MECE lanes: fellowships are OPPORTUNITIES YOU APPLY TO, grouped in their own
+  // lane (not paid roles). Everything else flows through the paid-role kanban.
+  const fellowships = jobs.filter(isFellowship).sort(sortJobs);
+  const roles = jobs.filter((j) => !isFellowship(j));
+
   // Only show columns that have items (plus always 'wishlist'); shrink empties to a thin line.
-  const grouped = JOB_COLS.map((col) => ({ col, items: jobs.filter((j) => j.status === col.id).sort(sortJobs) }));
+  const grouped = JOB_COLS.map((col) => ({ col, items: roles.filter((j) => j.status === col.id).sort(sortJobs) }));
   const active = grouped.filter((g) => g.items.length > 0 || g.col.id === "wishlist");
   const empty = grouped.filter((g) => g.items.length === 0 && g.col.id !== "wishlist");
+
+  // Within the Fellowships lane, separate the ones she can act on now (open window)
+  // from the watch/closed ones she's monitoring for the next cycle.
+  const openFellowships = fellowships.filter((f) => f.applicationWindowStatus !== "closed" && f.status !== "closed");
+  const watchFellowships = fellowships.filter((f) => f.applicationWindowStatus === "closed" || f.status === "closed");
 
   return (
     <div>
@@ -1034,6 +1045,31 @@ function JobsView() {
           </div>
           {empty.length > 0 && (
             <p className="mt-3 text-xs text-muted-foreground">Empty: {empty.map((g) => g.col.label).join(" · ")} — cards appear here as you move them along.</p>
+          )}
+
+          {/* FELLOWSHIPS LANE — opportunities you apply to (eligibility + deadline +
+              application steps), NOT resources you consume. Open ones render with
+              the fellowship readiness rail; watch/closed ones read as monitored. */}
+          {fellowships.length > 0 && (
+            <div className="mt-8" data-testid="fellowships-lane">
+              <SectionHeading title="Fellowships" sub="Opportunities you apply to — eligibility and deadline first. Watch the closed ones for the next cycle." />
+              {openFellowships.length > 0 && (
+                <div className="mb-4">
+                  <GroupLabel count={openFellowships.length}><Compass className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Open / apply now</GroupLabel>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {openFellowships.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} onMove={move} onRemove={() => remove(j.id)} />)}
+                  </div>
+                </div>
+              )}
+              {watchFellowships.length > 0 && (
+                <div>
+                  <GroupLabel count={watchFellowships.length}><CalendarDays className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Watch / closed for 2026</GroupLabel>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} onMove={move} onRemove={() => remove(j.id)} />)}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </>
       )}
@@ -1122,6 +1158,26 @@ function JobStepRail({ j }: { j: Job }) {
 
   const doneCount = steps.filter((s) => s.status === "done").length;
   const eligLabel = j.eligibilityRisk ? (ELIGIBILITY_LABEL[j.eligibilityRisk] || j.eligibilityRisk) : "";
+
+  // A closed-window opportunity (e.g. a watch/closed 2026 fellowship) is MONITORED,
+  // not actionable: show the eligibility + window context, but offer no task-
+  // generating rail so the app never suggests applying to a closed cycle.
+  if (j.applicationWindowStatus === "closed") {
+    return (
+      <div className="mt-2.5 pt-2.5 border-t border-card-border" data-testid={`steprail-${j.id}`}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300 px-2 py-1 text-[11px] font-medium" data-testid={`window-closed-${j.id}`}>
+            <CalendarDays className="w-3 h-3" /> Watching for the next cycle
+          </span>
+          {eligLabel && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 px-2 py-1 text-[11px] font-medium" data-testid={`eligibility-${j.id}`}>
+              <Lock className="w-3 h-3" /> {eligLabel}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border" data-testid={`steprail-${j.id}`}>
@@ -1228,8 +1284,10 @@ function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tra
         </div>
         <div className="flex items-center gap-2">
           {/* P4.6a #3: explicit, deterministic submit affordance — the safest path
-              to wishlist -> applied. Never fabricated; only shown while wishlisted. */}
-          {j.status === "wishlist" && (
+              to wishlist -> applied. Never fabricated; only shown while wishlisted
+              AND the application window is open (a watch/closed fellowship is
+              monitored, not submittable, so it offers no application action). */}
+          {j.status === "wishlist" && j.applicationWindowStatus !== "closed" && (
             <button data-testid={`button-mark-submitted-job-${j.id}`}
               onClick={async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door"]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); }}
               className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Mark application submitted</button>
@@ -1574,8 +1632,13 @@ function LearnView() {
   async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn"]); }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/learn/${id}`, undefined, ["/api/learn", "/api/strategy/diagnostics"]); }
 
-  const live = items.filter((l) => !l.done);
-  const done = items.filter((l) => l.done);
+  // MECE guard: a fellowship is an OPPORTUNITY YOU APPLY TO (it lives in the
+  // Fellowships lane of Jobs, not here). The startup migration moves these out of
+  // learn, but guard the view too so a not-yet-migrated row never shows the
+  // consume/proof workflow. Conservative: never hides a real course/book/podcast.
+  const consumeItems = items.filter((l) => !isFellowshipLearnRow(l));
+  const live = consumeItems.filter((l) => !l.done);
+  const done = consumeItems.filter((l) => l.done);
 
   // OPTIONAL capability grouping: matched items group under fixed system domains
   // (display order from CAPABILITY_DOMAIN_KEYS); everything that doesn't match a

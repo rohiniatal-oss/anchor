@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import {
-  isJobLive, getJobReadiness, isLearnDone, isLearnActive, getLearnStatus,
+  isJobLive, isOpportunityActionable, getJobReadiness, isLearnDone, isLearnActive, getLearnStatus,
   isContactWarm, isProofLive, isTaskDone, getTaskReadiness, getTrackId,
   getLearnOutputState, type WinCategory,
 } from "@shared/domainState";
@@ -68,7 +68,9 @@ function diagnoseTrack(
   ev: TrackEvidence,
 ): TrackDiagnostic {
   const tJobs = jobs.filter((j) => getTrackId("jobs", j) === track.id);
-  const tLiveJobs = tJobs.filter(isJobLive);
+  // Window-aware "live": a watch/closed fellowship (or any closed-window job) is
+  // MONITORED, not a live application, so it must not inflate readiness/warmth.
+  const tLiveJobs = tJobs.filter(isOpportunityActionable);
   const tLearn = learn.filter((l) => getTrackId("learn", l) === track.id && !isLearnDone(l) && getLearnStatus(l) !== "closed");
   const tContacts = contacts.filter((c) => getTrackId("contacts", c) === track.id);
   const tHustles = hustles.filter((h) => getTrackId("hustles", h) === track.id);

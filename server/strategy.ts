@@ -35,6 +35,17 @@ export type TrackDiagnostic = {
 
 const LOW_WARMTH = 40; // warmPathScore threshold
 
+// A contact is "overdue for follow-up" when its nextFollowUpDate is a valid
+// past date. Stale warm paths erode warmth, so this feeds the warmth gap.
+function isContactOverdue(c: Contact): boolean {
+  const raw = (c.nextFollowUpDate || "").trim();
+  if (!raw) return false;
+  const due = new Date(raw + "T00:00:00");
+  if (isNaN(due.getTime())) return false;
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  return due.getTime() < now.getTime();
+}
+
 function diagnoseTrack(
   track: CareerTrack,
   jobs: Job[], learn: Learn[], contacts: Contact[], hustles: Hustle[], tasks: Task[],
@@ -55,14 +66,15 @@ function diagnoseTrack(
   // readiness gap: jobs with low readiness; tasks needing info or blocked
   const lowReadinessJobs = tLiveJobs.filter((j) => getJobReadiness(j) === "none" || getJobReadiness(j) === "cv").length;
   const stuckTasks = tTasks.filter((t) => !isTaskDone(t) && (getTaskReadiness(t) === "needs_info" || getTaskReadiness(t) === "blocked")).length;
-  // P4.1: a job's pipeline rail feeds the readiness gap so it isn't ornamental —
+  // P4.1/4.2: a job's pipeline rail feeds the readiness gap so it isn't ornamental —
   // a live job with steps but little done, or with blocked steps, signals work
-  // left to ready the application. "blocked" steps = status "skipped" with a note.
+  // left to ready the application. Blocked steps now carry their own status
+  // "blocked" (P4.2 fold-in); "skipped" is a separate resolved state, not a stall.
   const stallSteps = tLiveJobs.reduce((acc, j) => {
     const steps = stepsByJob.get(j.id) || [];
     if (steps.length === 0) return acc;
     const done = steps.filter((s) => s.status === "done").length;
-    const blocked = steps.filter((s) => s.status === "skipped" && !!s.note.trim()).length;
+    const blocked = steps.filter((s) => s.status === "blocked").length;
     const fewDone = done < Math.ceil(steps.length / 2) ? 1 : 0;
     return acc + fewDone + blocked;
   }, 0);
@@ -73,10 +85,12 @@ function diagnoseTrack(
   const learnNoOutput = tLearn.filter((l) => !l.requiredOutput || !l.requiredOutput.trim()).length;
   const proofGap = (liveProof === 0 ? 1 : 0) + learnNoOutput;
 
-  // warmth gap: live jobs with low warmPathScore; cold / absent contacts
+  // warmth gap: live jobs with low warmPathScore; cold / absent contacts; AND
+  // contacts overdue for follow-up (P4.2) — a stale warm path is a warmth gap too.
   const lowWarmJobs = tLiveJobs.filter((j) => (j.warmPathScore ?? 0) < LOW_WARMTH).length;
   const noWarmContacts = tContacts.filter(isContactWarm).length === 0 ? 1 : 0;
-  const warmthGap = (tLiveJobs.length > 0 ? lowWarmJobs : 0) + (tContacts.length === 0 ? 1 : noWarmContacts);
+  const overdueContacts = tContacts.filter(isContactOverdue).length;
+  const warmthGap = (tLiveJobs.length > 0 ? lowWarmJobs : 0) + (tContacts.length === 0 ? 1 : noWarmContacts) + overdueContacts;
 
   // execution gap: many ready tasks vs few done
   const readyTasks = tTasks.filter((t) => !isTaskDone(t) && getTaskReadiness(t) === "ready").length;
@@ -103,9 +117,14 @@ function diagnoseTrack(
       ? "Create a proof-asset task to move it past the idea stage"
       : "Define the required output for your learning";
   } else if (warmthGap > 0 && tLiveJobs.length > 0) {
+    const overdue = tContacts.filter(isContactOverdue).length;
     bottleneck = "warmth";
-    bottleneckLabel = tContacts.length === 0 ? "Roles but no warm contact" : "Contacts are cold";
-    recommendedMove = "Create an outreach task to warm a path to these roles";
+    bottleneckLabel = tContacts.length === 0
+      ? "Roles but no warm contact"
+      : overdue > 0 ? `${overdue} contact${overdue > 1 ? "s" : ""} overdue for follow-up` : "Contacts are cold";
+    recommendedMove = overdue > 0
+      ? "Follow up with the contacts that have gone cold"
+      : "Create an outreach task to warm a path to these roles";
   } else if (readinessGap > 0) {
     bottleneck = "readiness";
     bottleneckLabel = stuckTasks > 0 ? "Tasks blocked or need info" : "Applications not ready";

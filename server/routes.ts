@@ -694,7 +694,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const step = await storage.getJobStep(stepId);
     if (!step) return res.status(404).json({ error: "Step not found" });
     const reason = String(req.body?.reason || "Blocked").slice(0, 160);
-    const updated = await storage.updateJobStep(stepId, { status: "skipped", note: reason } as any);
+    const updated = await storage.updateJobStep(stepId, { status: "blocked", note: reason } as any);
     if (step.taskId) {
       await storage.updateTask(step.taskId, { readiness: "blocked", blockerReason: reason, status: "stuck" } as any);
     }

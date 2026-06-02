@@ -102,7 +102,7 @@ export const jobPipelineSteps = sqliteTable("job_pipeline_steps", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   jobId: integer("job_id").notNull(),
   stepLabel: text("step_label").notNull(),
-  status: text("status").notNull().default("todo"), // todo|done|skipped
+  status: text("status").notNull().default("todo"), // todo|done|skipped|blocked
   sequence: integer("sequence").notNull().default(0),
   note: text("note").notNull().default(""),
   taskId: integer("task_id"), // set when materialized into a task (back-ref/dedupe)

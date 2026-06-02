@@ -1,5 +1,6 @@
 import {
   tasks, events, jobs, learn, hustles, wins, contacts,
+  dayPlans, dayPlanItems, activityLog,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
@@ -7,12 +8,16 @@ import {
   type Hustle, type InsertHustle,
   type Win, type InsertWin,
   type Contact, type InsertContact,
+  type DayPlan, type InsertDayPlan,
+  type DayPlanItem, type InsertDayPlanItem,
+  type ActivityLog, type InsertActivityLog,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, asc, desc } from "drizzle-orm";
 
-const sqlite = new Database("data.db");
+const DB_PATH = process.env.ANCHOR_DB_PATH || "data.db";
+const sqlite = new Database(DB_PATH);
 sqlite.pragma("journal_mode = WAL");
 export const db = drizzle(sqlite);
 
@@ -42,6 +47,14 @@ export interface IStorage {
   createContact(ct: InsertContact): Promise<Contact>;
   updateContact(id: number, patch: Partial<InsertContact>): Promise<Contact | undefined>;
   deleteContact(id: number): Promise<void>;
+  getPlanByDate(date: string): Promise<DayPlan | undefined>;
+  createPlan(p: InsertDayPlan): Promise<DayPlan>;
+  updatePlan(id: number, patch: Partial<InsertDayPlan>): Promise<DayPlan | undefined>;
+  getPlanItems(planId: number): Promise<DayPlanItem[]>;
+  createPlanItem(i: InsertDayPlanItem): Promise<DayPlanItem>;
+  updatePlanItem(id: number, patch: Partial<InsertDayPlanItem>): Promise<DayPlanItem | undefined>;
+  clearPlanItems(planId: number): Promise<void>;
+  logActivity(a: InsertActivityLog): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -78,6 +91,15 @@ export class DatabaseStorage implements IStorage {
   async createContact(ct: InsertContact) { return db.insert(contacts).values({ ...ct, createdAt: Date.now() }).returning().get(); }
   async updateContact(id: number, patch: Partial<InsertContact>) { return db.update(contacts).set(patch).where(eq(contacts.id, id)).returning().get(); }
   async deleteContact(id: number) { db.delete(contacts).where(eq(contacts.id, id)).run(); }
+
+  async getPlanByDate(date: string) { return db.select().from(dayPlans).where(eq(dayPlans.date, date)).get(); }
+  async createPlan(p: InsertDayPlan) { const now = Date.now(); return db.insert(dayPlans).values({ ...p, createdAt: now, updatedAt: now }).returning().get(); }
+  async updatePlan(id: number, patch: Partial<InsertDayPlan>) { return db.update(dayPlans).set({ ...patch, updatedAt: Date.now() }).where(eq(dayPlans.id, id)).returning().get(); }
+  async getPlanItems(planId: number) { return db.select().from(dayPlanItems).where(eq(dayPlanItems.planId, planId)).orderBy(asc(dayPlanItems.sequence)).all(); }
+  async createPlanItem(i: InsertDayPlanItem) { return db.insert(dayPlanItems).values({ ...i, createdAt: Date.now() }).returning().get(); }
+  async updatePlanItem(id: number, patch: Partial<InsertDayPlanItem>) { return db.update(dayPlanItems).set(patch).where(eq(dayPlanItems.id, id)).returning().get(); }
+  async clearPlanItems(planId: number) { db.delete(dayPlanItems).where(eq(dayPlanItems.planId, planId)).run(); }
+  async logActivity(a: InsertActivityLog) { db.insert(activityLog).values({ ...a, timestamp: Date.now() }).run(); }
 }
 
 export const storage = new DatabaseStorage();

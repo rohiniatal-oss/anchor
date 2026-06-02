@@ -41,23 +41,68 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   crud(app, "contacts", () => storage.getContacts(), insertContactSchema,
     (d) => storage.createContact(d), (id, d) => storage.updateContact(id, d), (id) => storage.deleteContact(id));
 
-  // Break a task into tiny steps
+  // Context-aware breakdown (MUST-FIX #1: NOT title-only). Pulls the REAL source
+  // context (job posting, learning output, hustle note) so steps are grounded in
+  // what the thing actually needs. First step is MEANINGFUL, never "Google it".
   app.post("/api/tasks/:id/breakdown", async (req, res) => {
     const id = Number(req.params.id);
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
+    const context = String(req.body?.context || "").slice(0, 300);
+
+    let sourceContext = "";
+    let playbook = "";
+    if (task.sourceType === "job" && task.sourceId) {
+      const j = (await storage.getJobs()).find((x) => x.id === task.sourceId);
+      if (j) {
+        sourceContext = `This is a JOB APPLICATION. Role: ${j.title} at ${j.company}. Status: ${j.status}. Readiness: ${j.applicationReadiness}. ${j.note ? "Posting notes: " + j.note : ""} ${j.url ? "URL: " + j.url : ""}`;
+        playbook = "APPLICATION playbook: verify requirements \u2192 prepare materials \u2192 draft answers \u2192 review \u2192 submit. First step = open the posting & list exactly what it asks for.";
+      }
+    } else if (task.sourceType === "learn" && task.sourceId) {
+      const l = (await storage.getLearn()).find((x) => x.id === task.sourceId);
+      if (l) {
+        sourceContext = `This is a LEARNING item (${l.type}). ${l.note ? "Notes: " + l.note : ""} Required output: ${l.requiredOutput || "a concrete output"}. ${l.applicationDeadline ? "Deadline: " + l.applicationDeadline : ""}`;
+        playbook = (l.type === "fellowship" || l.type === "course")
+          ? "COURSE/FELLOWSHIP playbook: confirm real deadline \u2192 check eligibility/prereq \u2192 apply or enrol \u2192 schedule the work. First step = confirm deadline & prerequisite."
+          : "READING playbook: choose the piece \u2192 extract one note \u2192 produce the output. First step = open it and read the first section.";
+      }
+    } else if (task.sourceType === "hustle" && task.sourceId) {
+      const h = (await storage.getHustles()).find((x) => x.id === task.sourceId);
+      if (h) {
+        sourceContext = `This is a PROOF-ASSET / project step (${h.title}, stage: ${h.stage}). ${h.note ? "Notes: " + h.note : ""}`;
+        playbook = /substack/i.test(h.title)
+          ? "WRITING playbook: pick audience \u2192 sharpen the claim \u2192 outline \u2192 ugly first draft \u2192 publish. If brand new, first step = decide the angle (a decision, not producing)."
+          : "BUILD playbook: define the smallest testable slice \u2192 build it \u2192 try it \u2192 note what to change.";
+      }
+    } else if (task.sourceUrl || task.sourceNote) {
+      sourceContext = `${task.sourceNote ? "Context: " + task.sourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
+    }
+
     try {
       const client = new OpenAI();
       const r = await client.responses.create({
         model: "gpt_5_1",
-        input: "You help someone with ADHD who finds starting overwhelming. Break this task into 3-5 tiny steps. " +
-          "The FIRST step must be almost laughably small and physical (under 2 minutes). Each step max ~8 words, action-first, no numbering. " +
-          'Return ONLY a JSON array of strings. Task: "' + task.title + '"',
+        input:
+          `You break a task into a real, ordered sequence for Rohini (ADHD, rebuilding momentum). ` +
+          `Ground the steps in the ACTUAL thing this task needs \u2014 use the source context below, do NOT guess from the title. ` +
+          `Think it THROUGH: what does it actually involve, and what is the genuine FIRST step given where she likely is? ` +
+          `Never skip ahead (if she's brand new, the first step is understanding/deciding, not producing). ` +
+          `The first step must be MEANINGFUL and frictionless \u2014 "open the saved posting & note what it asks", NEVER "Google it" or "pick up the phone". ` +
+          `Use as many steps as the task genuinely needs (2-6), each max ~10 words, in real order.\n\n` +
+          (playbook ? `Relevant playbook: ${playbook}\n\n` : "") +
+          `IF you cannot tell how far along she is and it materially changes the sequence, ask ONE short question first.\n\n` +
+          `Task: "${task.title}". Category: ${task.category}. Done when: ${task.doneWhen || "(unset)"}.\n` +
+          `SOURCE CONTEXT: ${sourceContext || "(none beyond the title)"}\n` +
+          `${context ? "Her answer to your last question: " + context : "No extra context yet."}\n\n` +
+          `Return ONLY JSON: either {"question":"<one short question>"} if you must ask, or {"steps":["...","..."]} ordered steps.`,
       });
       let text = (r.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-      let steps: string[] = [];
-      try { steps = JSON.parse(text); } catch { steps = text.split("\n").map((s) => s.replace(/^[-*\d.\s]+/, "").trim()).filter(Boolean); }
-      const objs = steps.slice(0, 5).map((s) => ({ text: s, done: false }));
+      let j: any = {}; try { j = JSON.parse(text); } catch { j = {}; }
+      if (j && typeof j.question === "string" && !context) return res.json({ question: String(j.question).slice(0, 140) });
+      let arr: string[] = Array.isArray(j?.steps) ? j.steps.slice(0, 6).map(String)
+        : (Array.isArray(j) ? j.slice(0, 6).map(String) : []);
+      if (!arr.length) arr = ["Open the saved link & check what's needed", "Do the smallest next bit", "Keep going if you can"];
+      const objs = arr.map((s) => ({ text: s, done: false }));
       res.json(await storage.updateTask(id, { steps: JSON.stringify(objs) }));
     } catch { res.status(500).json({ error: "Could not break this down right now." }); }
   });
@@ -239,9 +284,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Brain: recommend ONE next action from capacity (energy + time)
   app.post("/api/brain/recommend", async (req, res) => {
     const energy = ["low","medium","high"].includes(req.body?.energy) ? req.body.energy : "medium";
-    const time = ["15","45","120"].includes(String(req.body?.time)) ? String(req.body.time) : "45";
     const [tasks, jobs, learn, hustles] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles()]);
-    const r = recommend(tasks, jobs, learn, hustles, energy, time);
+    const r = recommend(tasks, jobs, learn, hustles, energy);
     res.json(r);
   });
 
@@ -278,10 +322,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       return res.json({ ok: true, task: updated });
     }
     const block = ["morning","afternoon","evening"].includes(c.block) ? c.block : "morning";
+    // Carry the FULL source context onto the task (MUST-FIX #2).
     const created = await storage.createTask({
       title: String(c.title), list: "today", block, done: false, pinned: req.body?.pin !== false,
       steps: "[]", sort: 0, category: c.category || "admin", deadline: c.deadline || "",
-      size: c.size || "medium", status: "in_progress", skipped: 0, doneWhen: "",
+      size: c.size || "medium", status: "in_progress", skipped: 0, doneWhen: c.doneWhen || "",
+      sourceType: c.source || "", sourceId: c.sourceId ?? undefined,
+      sourceUrl: c.sourceUrl || "", sourceNote: c.sourceNote || "", sourceStatus: c.sourceStatus || "",
     } as any);
     res.json({ ok: true, task: created });
   });
@@ -333,6 +380,135 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         }
       }
     }
+    res.json({ ok: true });
+  });
+
+  // \u2550\u2550\u2550 P2: PERSISTED DAY PLAN (Now/Next/Later/Bonus + Minimum Viable Day) \u2550\u2550\u2550
+  async function busyMinutesFor(day: string): Promise<number> {
+    const events = await storage.getEvents(day);
+    let busy = 0;
+    for (const e of events) {
+      const m = /^(\d{1,2}):(\d{2})/.exec(e.start || "");
+      const n = /^(\d{1,2}):(\d{2})/.exec(e.end || "");
+      if (m && n) { const mins = (Number(n[1]) * 60 + Number(n[2])) - (Number(m[1]) * 60 + Number(m[2])); if (mins > 0 && mins < 12 * 60) busy += mins; }
+      else { busy += 45; }
+    }
+    return busy;
+  }
+
+  async function buildPlan(day: string, energy: "low"|"medium"|"high") {
+    const [tasks, jobs, learn, hustles] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles()]);
+    const busy = await busyMinutesFor(day);
+    const r = planDay(tasks, jobs, learn, hustles, energy, busy);
+    let plan = await storage.getPlanByDate(day);
+    const planMode = r.mode === "low" ? "low_energy" : r.mode;
+    if (!plan) plan = await storage.createPlan({ date: day, mode: planMode, energy, status: "active", enoughForToday: false, note: r.note } as any);
+    else plan = await storage.updatePlan(plan.id, { mode: planMode, energy, note: r.note } as any);
+    const prevItems = await storage.getPlanItems(plan!.id);
+    const actioned = new Map(prevItems.filter((i) => i.status !== "planned").map((i) => [`${i.sourceType}:${i.sourceId}`, i] as const));
+    await storage.clearPlanItems(plan!.id);
+    let mvdItemId: number | null = null; let seq = 0;
+    for (const pi of r.plan) {
+      const c = pi.candidate;
+      const prev = actioned.get(`${c.source}:${c.sourceId}`);
+      const item = await storage.createPlanItem({
+        planId: plan!.id, sequence: seq++, slot: pi.slot,
+        sourceType: c.source, sourceId: c.sourceId, taskId: c.taskId ?? undefined,
+        title: c.title, whySelected: pi.why, doneWhen: c.doneWhen,
+        status: prev ? prev.status : "planned", plannedFor: day,
+        startedAt: prev?.startedAt ?? undefined, completedAt: prev?.completedAt ?? undefined,
+      } as any);
+      if (pi.isMVD) mvdItemId = item.id;
+    }
+    if (mvdItemId) await storage.updatePlan(plan!.id, { minimumViableItemId: mvdItemId } as any);
+    return storage.getPlanByDate(day);
+  }
+
+  app.get("/api/plan/current", async (req, res) => {
+    const day = String(req.query.day || new Date().toISOString().slice(0, 10));
+    const energy = ["low","medium","high"].includes(String(req.query.energy)) ? String(req.query.energy) as any : "medium";
+    let plan = await storage.getPlanByDate(day);
+    if (!plan) await buildPlan(day, energy);
+    plan = await storage.getPlanByDate(day);
+    const items = plan ? await storage.getPlanItems(plan.id) : [];
+    const events = await storage.getEvents(day);
+    res.json({ plan, items, events });
+  });
+
+  app.post("/api/plan/recompute", async (req, res) => {
+    const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
+    const energy = ["low","medium","high"].includes(req.body?.energy) ? req.body.energy : "medium";
+    await buildPlan(day, energy);
+    const plan = await storage.getPlanByDate(day);
+    const items = plan ? await storage.getPlanItems(plan.id) : [];
+    res.json({ plan, items });
+  });
+
+  async function refreshDoneEnough(day: string) {
+    const plan = await storage.getPlanByDate(day);
+    if (!plan || !plan.minimumViableItemId) return;
+    const items = await storage.getPlanItems(plan.id);
+    const mvd = items.find((i) => i.id === plan.minimumViableItemId);
+    if (mvd && mvd.status === "completed" && !plan.enoughForToday)
+      await storage.updatePlan(plan.id, { enoughForToday: true, status: "done_enough" } as any);
+  }
+
+  async function syncPlanItem(day: string, taskId: number, patch: any) {
+    const plan = await storage.getPlanByDate(day);
+    if (!plan) return;
+    const items = await storage.getPlanItems(plan.id);
+    const it = items.find((i) => i.taskId === taskId || (i.sourceType === "task" && i.sourceId === taskId));
+    if (it) await storage.updatePlanItem(it.id, patch);
+  }
+
+  app.post("/api/tasks/:id/complete", async (req, res) => {
+    const id = Number(req.params.id);
+    const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+    await storage.updateTask(id, { done: true, status: "done", pinned: false } as any);
+    await storage.createWin({ text: task.title, kind: "planned" } as any);
+    await storage.logActivity({ eventType: "completed", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: id } as any);
+    if (task.sourceType === "job" && task.sourceId) {
+      const jb = (await storage.getJobs()).find((x) => x.id === task.sourceId);
+      if (jb && jb.status === "wishlist") await storage.updateJob(jb.id, { status: "applied" } as any);
+    }
+    await syncPlanItem(day, id, { status: "completed", completedAt: Date.now() });
+    await refreshDoneEnough(day);
+    res.json({ ok: true });
+  });
+
+  app.post("/api/tasks/:id/block", async (req, res) => {
+    const id = Number(req.params.id);
+    const reason = String(req.body?.reason || "Blocked").slice(0, 160);
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+    await storage.updateTask(id, { readiness: "blocked", blockerReason: reason, status: "stuck", pinned: false } as any);
+    await storage.logActivity({ eventType: "blocked", sourceType: "task", taskId: id, metadata: JSON.stringify({ reason }) } as any);
+    res.json({ ok: true });
+  });
+
+  app.post("/api/tasks/:id/park", async (req, res) => {
+    const id = Number(req.params.id);
+    const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+    await storage.updateTask(id, { list: "inbox", block: null, pinned: false, skipped: (task.skipped || 0) + 1 } as any);
+    await storage.logActivity({ eventType: "parked", sourceType: "task", taskId: id } as any);
+    await syncPlanItem(day, id, { status: "parked", parkedAt: Date.now() });
+    res.json({ ok: true });
+  });
+
+  app.post("/api/tasks/:id/move-later", async (req, res) => {
+    const id = Number(req.params.id);
+    const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+    const order = ["morning", "afternoon", "evening"];
+    const i = order.indexOf(task.block || "morning");
+    await storage.updateTask(id, { block: order[Math.min(i + 1, order.length - 1)], pinned: false } as any);
+    await storage.logActivity({ eventType: "moved", sourceType: "task", taskId: id } as any);
+    await syncPlanItem(day, id, { status: "moved", movedAt: Date.now() });
     res.json({ ok: true });
   });
 

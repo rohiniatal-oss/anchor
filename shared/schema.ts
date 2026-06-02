@@ -29,6 +29,7 @@ export const tasks = sqliteTable("tasks", {
   sourceUrl: text("source_url").notNull().default(""), // the real posting / course / profile URL
   sourceNote: text("source_note").notNull().default(""), // context snippet from the source
   sourceStatus: text("source_status").notNull().default(""), // mirror of source object status
+  planItemId: integer("plan_item_id"), // P4.6a: both-way link to the originating day_plan_items.id
   // --- P1: DEPENDENCY / READINESS ---
   relatedTrackId: integer("related_track_id"), // career_tracks.id
   relatedOpportunityId: integer("related_opportunity_id"), // job/learn id this serves

@@ -59,3 +59,15 @@ export function templateForArchetype(roleArchetype: string | null | undefined): 
   const key = (roleArchetype || "").trim();
   return JOB_STEP_TEMPLATES[key] ?? FALLBACK_JOB_STEPS;
 }
+
+// P4.6a — DERIVE submit semantics from a step's label (there is no type column).
+// The "Submit" step in every template carries the application-submission meaning;
+// this is the ONLY deterministic signal (besides the explicit button) allowed to
+// advance a job wishlist -> applied. "Follow up" and other steps are NOT submit.
+// Matches the submit/apply verb but excludes follow-up phrasing.
+export function isSubmitStep(stepLabel: string | null | undefined): boolean {
+  const s = (stepLabel || "").trim().toLowerCase();
+  if (!s) return false;
+  if (/follow[\s-]?up/.test(s)) return false;
+  return /\bsubmit\b|\bsubmitted\b|submit application|application submitted/.test(s);
+}

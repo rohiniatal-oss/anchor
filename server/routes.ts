@@ -5,13 +5,14 @@ import { storage, type TrackEntity } from "./storage";
 import OpenAI from "openai";
 import { recommend, planDay } from "./brain";
 import { createNextTask, materializeJobStep, materializeProofStep, type NextTaskSourceType } from "./nextTask";
-import { getTrackDiagnostics, getUnlinkedItems, getEvidencePayload } from "./strategy";
+import { getTrackDiagnostics, getUnlinkedItems, getEvidencePayload, getStrategyFrontDoor } from "./strategy";
 import { computeWinsSummary } from "./evidence";
 import {
   insertTaskSchema, insertEventSchema, insertJobSchema,
   insertLearnSchema, insertHustleSchema, insertWinSchema, insertContactSchema,
   insertJobPipelineStepSchema, insertProofAssetStepSchema,
 } from "@shared/schema";
+import { isSubmitStep } from "@shared/jobTemplates";
 
 function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
   create: (d: any) => Promise<any>, update: (id: number, d: any) => Promise<any>, del: (id: number) => Promise<any>) {
@@ -196,41 +197,72 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     return res.status(400).json({ error: "Unknown category" });
   });
 
-  // ---- COACH: ONE concrete next action (not a list). Reads live state, suggests
-  //      the single highest-leverage thing she probably hasn't thought of.
-  //      `exclude` lets the UI ask for a different one ("something else").
+  // ---- COACH (P4.6a #6): a THIN explanation layer, NOT an independent decider.
+  //      The BRAIN ranks the live candidates and SELECTS the move (recommend()),
+  //      and STRATEGY supplies the bottleneck context. The LLM only EXPLAINS the
+  //      already-selected move in Rohini's voice. The move's title/category/size
+  //      are brain-derived and never come from the model, so the decision is
+  //      deterministic and the coach can't fabricate or drift. If the LLM is
+  //      unavailable we still return the brain's pick with its own plain `why`.
   app.post("/api/coach", async (req, res) => {
     const exclude: string[] = Array.isArray(req.body?.exclude) ? req.body.exclude.map((s: any) => String(s)) : [];
-    const [tasks, jobs, learn, hustles, wins] = await Promise.all([
-      storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getWins(),
+    const energy = ["low", "medium", "high"].includes(req.body?.energy) ? req.body.energy : "medium";
+    const [tasks, jobs, learn, hustles] = await Promise.all([
+      storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(),
     ]);
-    const existing = tasks.filter((t) => !t.done).map((t) => t.title.toLowerCase());
-    const openJobs = jobs.filter((j) => j.status !== "closed").map((j) => `${j.title} @ ${j.company} [${j.status}]`);
-    const activeLearn = learn.filter((l) => l.active && !l.done).map((l) => l.title);
-    const hustleSteps = hustles.filter((h) => h.stage !== "earning").map((h) => `${h.title}: ${h.nextStep}`);
-    const recentWins = wins.slice(0, 5).map((w) => w.text);
+
+    // 1) BRAIN selects the move (deterministic ranking). Honour the exclude set so
+    //    "something else" walks down the ranked list rather than re-rolling an LLM.
+    const { mode, pick, alternative } = recommend(tasks, jobs, learn, hustles, energy);
+    const excludeSet = new Set(exclude.map((s) => s.toLowerCase().trim()));
+    let chosen = pick && !excludeSet.has(pick.title.toLowerCase().trim()) ? pick : null;
+    if (!chosen && alternative && !excludeSet.has(alternative.title.toLowerCase().trim())) chosen = alternative;
+    if (!chosen) return res.json({ suggestion: null });
+
+    // 2) STRATEGY supplies the bottleneck framing for the chosen move's track.
+    const diagnostics = await getTrackDiagnostics();
+    const trackId = chosen.source === "task"
+      ? (tasks.find((t) => t.id === chosen!.sourceId)?.relatedTrackId ?? null)
+      : chosen.source === "job" ? (jobs.find((j) => j.id === chosen!.sourceId)?.relatedTrackId ?? null)
+      : chosen.source === "learn" ? (learn.find((l) => l.id === chosen!.sourceId)?.relatedTrackId ?? null)
+      : (hustles.find((h) => h.id === chosen!.sourceId)?.proofAssetForTrack ?? null);
+    const diag = trackId != null ? diagnostics.find((d) => d.id === trackId) : undefined;
+
+    // The suggestion the UI accepts is FULLY brain-derived (decision is fixed).
+    const category = ["job", "substack", "interview", "health", "learning", "hustle", "afterline", "admin"].includes(chosen.category) ? chosen.category : "job";
+    const suggestion = {
+      title: chosen.title.slice(0, 120),
+      category,
+      size: ["quick", "medium", "deep"].includes(chosen.size) ? chosen.size : "medium",
+      why: (chosen.whyNow || "").slice(0, 60),
+      sourceType: chosen.source,
+      sourceId: chosen.sourceId,
+    };
+
+    // 3) LLM EXPLAINS the already-selected move (optional polish on `why`). It may
+    //    NOT change the action \u2014 only phrase why it's the right one right now.
     try {
       const client = new OpenAI();
       const out = await client.responses.create({
         model: "gpt_5_1",
         input:
-          `You are a sharp, warm job-hunt coach for Rohini \u2014 ex-Tony Blair Institute, Bain, Abraaj; targeting geopolitics, AI governance, strategic advisory, and chief-of-staff roles in London / UAE / remote. ADHD, rebuilding momentum.\n\n` +
-          `Suggest THE SINGLE most useful next action she probably hasn't thought of \u2014 ONE thing, concrete, doable today, first-step-friendly. Reason from her live pipeline (the specific roles/sectors below), not generic advice. Prefer the highest-leverage move right now (a near deadline, an obvious follow-up, a credibility step, a smart bit of prep). NOT networking (that has its own engine). Examples of the right shape: "Tailor your CV bullets for the GovAI ops role", "Draft the opening line of your Impact Accelerator application", "Outline a Substack post on this week's biggest geopolitical shift".\n\n` +
-          `Do NOT invent names. ONE action line, max ~12 words. Don't repeat anything in her list or the exclude set.\n\n` +
-          `OPEN ROLES: ${JSON.stringify(openJobs)}\nACTIVE LEARNING: ${JSON.stringify(activeLearn)}\nPROJECTS: ${JSON.stringify(hustleSteps)}\nALREADY ON LIST: ${JSON.stringify(existing)}\nEXCLUDE (already shown, pick something different): ${JSON.stringify(exclude)}\nRECENT WINS: ${JSON.stringify(recentWins)}\n\n` +
-          `Return ONLY one JSON object: {"title":"...","category":"job|substack|learning|admin","size":"quick|medium|deep","why":"<=8 words"}.`,
+          `You are a sharp, warm job-hunt coach for Rohini (ADHD, rebuilding momentum). ` +
+          `Her brain has ALREADY chosen the single highest-leverage move below. Do NOT pick a different action. ` +
+          `Write ONE warm, concrete sentence (max ~16 words) explaining WHY this is the right thing right now, ` +
+          `grounded in the move and the track bottleneck. No preamble, no new task.\n\n` +
+          `CHOSEN MOVE: ${suggestion.title}\n` +
+          `Brain's reason: ${suggestion.why || "(none)"}\n` +
+          `Day mode: ${mode}\n` +
+          `Track bottleneck: ${diag ? `${diag.bottleneckLabel} \u2014 ${diag.recommendedMove}` : "(no track context)"}\n\n` +
+          `Return ONLY JSON: {"why":"<one sentence>"}.`,
       });
       let text = (out.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
       let j: any = {}; try { j = JSON.parse(text); } catch { j = {}; }
-      if (!j || typeof j.title !== "string") return res.json({ suggestion: null });
-      const suggestion = {
-        title: String(j.title).slice(0, 120),
-        category: ["job", "substack", "learning", "admin"].includes(j.category) ? j.category : "job",
-        size: ["quick", "medium", "deep"].includes(j.size) ? j.size : "quick",
-        why: typeof j.why === "string" ? j.why.slice(0, 60) : "",
-      };
-      res.json({ suggestion, date: new Date().toISOString().slice(0, 10) });
-    } catch { res.status(500).json({ error: "Coach couldn't think right now.", suggestion: null }); }
+      if (j && typeof j.why === "string" && j.why.trim()) suggestion.why = j.why.trim().slice(0, 160);
+    } catch {
+      // LLM down \u2014 keep the brain's own plain `why`. The move still stands.
+    }
+    res.json({ suggestion, mode, date: new Date().toISOString().slice(0, 10) });
   });
 
   // COACH: accept the one action -> drops straight into TODAY, brain places the block
@@ -439,6 +471,64 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ plan, items, events });
   });
 
+  // ═══ P4.6a: PLAN-ITEM IDENTITY CHAIN ═══
+  // Start a plan item -> reads the EXACT day_plan_items.id, creates OR reuses the
+  // backing task (reusing the 3.5 createNextTask/dedupe for non-task sources; if
+  // the plan item already has a taskId, that task is reused), stores taskId back
+  // on the plan item (both-way link), marks the item started, pins the task as
+  // Right Now, and PRESERVES slot/source/url/deadline/doneWhen/whySelected onto
+  // the task. The block is DERIVED from the slot (or left null) — never hardcoded.
+  // slot context: now -> morning, next -> afternoon, later/bonus -> evening.
+  const SLOT_TO_BLOCK: Record<string, string> = { now: "morning", next: "afternoon", later: "evening", bonus: "evening" };
+  app.post("/api/plan-items/:id/start", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const item = await storage.getPlanItem(id);
+    if (!item) return res.status(404).json({ error: "Plan item not found" });
+    const day = String(req.body?.day || item.plannedFor || new Date().toISOString().slice(0, 10));
+    const block = item.slot && SLOT_TO_BLOCK[item.slot] ? SLOT_TO_BLOCK[item.slot] : null;
+
+    // 1) Resolve the backing task: explicit link first, then existing task source,
+    //    then the shared createNextTask machinery for job/learn/hustle/contact.
+    let task = item.taskId ? (await storage.getTasks()).find((t) => t.id === item.taskId) : undefined;
+    if (!task && item.sourceType === "task" && item.sourceId) {
+      task = (await storage.getTasks()).find((t) => t.id === item.sourceId);
+    }
+    if (!task && item.sourceId && (item.sourceType === "job" || item.sourceType === "learn" || item.sourceType === "hustle" || item.sourceType === "contact")) {
+      const result = await createNextTask({ sourceType: item.sourceType, sourceId: item.sourceId });
+      if (result) task = result.task;
+    }
+
+    // 2) Unpin any existing focus before pinning the new one.
+    for (const t of await storage.getTasks()) { if (t.pinned && t.id !== task?.id) await storage.updateTask(t.id, { pinned: false }); }
+
+    // 3) Preserve the plan item's full identity onto the task. block derived (or null).
+    const preserve: any = {
+      list: "today", pinned: true, status: "in_progress", block,
+      planItemId: item.id,
+      doneWhen: item.doneWhen || task?.doneWhen || "",
+      sourceType: item.sourceType || task?.sourceType || "",
+      sourceId: item.sourceId ?? task?.sourceId ?? undefined,
+    };
+    if (task) {
+      task = await storage.updateTask(task.id, preserve);
+    } else {
+      // No source object resolvable (e.g. a free-text plan item) — materialise a
+      // task that still carries the plan item's identity.
+      task = await storage.createTask({
+        title: item.title, list: "today", block, done: false, pinned: true, steps: "[]", sort: 0,
+        category: item.sourceType === "job" ? "job" : item.sourceType === "learn" ? "learning" : item.sourceType === "hustle" ? "hustle" : "admin",
+        deadline: "", status: "in_progress", skipped: 0, doneWhen: item.doneWhen || "",
+        sourceType: item.sourceType || "", sourceId: item.sourceId ?? undefined, planItemId: item.id,
+      } as any);
+    }
+
+    // 4) Both-way link + mark the plan item started.
+    await storage.updatePlanItem(item.id, { taskId: task!.id, status: "started", startedAt: Date.now() } as any);
+    await storage.logActivity({ eventType: "started", sourceType: item.sourceType || "task", sourceId: item.sourceId ?? undefined, taskId: task!.id, planItemId: item.id } as any);
+    res.json({ ok: true, task });
+  });
+
   app.post("/api/plan/recompute", async (req, res) => {
     const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
     const energy = ["low","medium","high"].includes(req.body?.energy) ? req.body.energy : "medium";
@@ -457,11 +547,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.updatePlan(plan.id, { enoughForToday: true, status: "done_enough" } as any);
   }
 
-  async function syncPlanItem(day: string, taskId: number, patch: any) {
+  // Resolve plan item <-> task by EXPLICIT id link FIRST (for ALL source types),
+  // then fall back to source inference only if no id link exists (P4.6a #2).
+  // task.planItemId (set by /start) is the strongest link; then item.taskId; then
+  // a "task"-sourced item whose sourceId is this task; then nothing.
+  async function syncPlanItem(day: string, task: { id: number; planItemId?: number | null }, patch: any) {
     const plan = await storage.getPlanByDate(day);
     if (!plan) return;
     const items = await storage.getPlanItems(plan.id);
-    const it = items.find((i) => i.taskId === taskId || (i.sourceType === "task" && i.sourceId === taskId));
+    const it =
+      (task.planItemId != null ? items.find((i) => i.id === task.planItemId) : undefined)
+      || items.find((i) => i.taskId === task.id)
+      || items.find((i) => i.sourceType === "task" && i.sourceId === task.id);
     if (it) await storage.updatePlanItem(it.id, patch);
   }
 
@@ -478,12 +575,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       : task.sourceType === "contact" ? "network"
       : "admin";
     await storage.createWin({ text: task.title, kind: "planned", winCategory } as any);
-    await storage.logActivity({ eventType: "completed", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: id } as any);
-    if (task.sourceType === "job" && task.sourceId) {
-      const jb = (await storage.getJobs()).find((x) => x.id === task.sourceId);
-      if (jb && jb.status === "wishlist") await storage.updateJob(jb.id, { status: "applied" } as any);
-    }
-    await syncPlanItem(day, id, { status: "completed", completedAt: Date.now() });
+    await storage.logActivity({ eventType: "completed", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: id, planItemId: task.planItemId ?? undefined } as any);
+    // P4.6a #3: a GENERIC completed job-linked task NEVER changes job status — it
+    // only logs activity/evidence (above). Job wishlist->applied advances ONLY via
+    // the submit pipeline step or the explicit "Mark application submitted" button.
+    // The old fuzzy auto-applied trigger is CUT.
+    await syncPlanItem(day, task, { status: "completed", completedAt: Date.now() });
     await refreshDoneEnough(day);
     res.json({ ok: true });
   });
@@ -505,7 +602,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!task) return res.status(404).json({ error: "Not found" });
     await storage.updateTask(id, { list: "inbox", block: null, pinned: false, skipped: (task.skipped || 0) + 1 } as any);
     await storage.logActivity({ eventType: "parked", sourceType: "task", taskId: id } as any);
-    await syncPlanItem(day, id, { status: "parked", parkedAt: Date.now() });
+    await syncPlanItem(day, task, { status: "parked", parkedAt: Date.now() });
     res.json({ ok: true });
   });
 
@@ -518,84 +615,25 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const i = order.indexOf(task.block || "morning");
     await storage.updateTask(id, { block: order[Math.min(i + 1, order.length - 1)], pinned: false } as any);
     await storage.logActivity({ eventType: "moved", sourceType: "task", taskId: id } as any);
-    await syncPlanItem(day, id, { status: "moved", movedAt: Date.now() });
+    await syncPlanItem(day, task, { status: "moved", movedAt: Date.now() });
     res.json({ ok: true });
   });
 
-  // ═══ P3: STRATEGY — per-track dashboard + bottleneck insights (computed) ═══
-  // The quiet strategic view. Connects jobs / learning / network / proof per
-  // career track, finds each track's bottleneck and next move, and surfaces
-  // 1-3 cross-cutting insights. Pure deterministic logic — no LLM, no fabrication.
+  // ═══ STRATEGY — ONE engine (getTrackDiagnostics), ONE front door ═══════════
+  // P4.6a #5: the diagnostics engine is the single source of truth. The unified
+  // front-door returns everything the Strategy view needs in one payload; the
+  // legacy /api/strategy now DELEGATES to it (mapping to its old { tracks,
+  // insights } shape) so there is no parallel computation to drift.
+  app.get("/api/strategy/front-door", async (_req, res) => res.json(await getStrategyFrontDoor()));
+
   app.get("/api/strategy", async (_req, res) => {
-    const [tracks, jobs, learn, hustles, contacts] = await Promise.all([
-      storage.getCareerTracks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(),
-    ]);
-
-    const liveJobStatuses = ["wishlist", "applied", "interviewing"];
-    const rows = tracks.map((t) => {
-      const tJobs = jobs.filter((j) => j.relatedTrackId === t.id && liveJobStatuses.includes(j.status) && j.eligibilityRisk !== "likely_ineligible");
-      const tApplied = tJobs.filter((j) => j.status === "applied" || j.status === "interviewing");
-      const tLearn = learn.filter((l) => l.relatedTrackId === t.id && !l.done && l.learnStatus !== "closed");
-      const tLearnActive = tLearn.filter((l) => l.active);
-      const tContacts = contacts.filter((c) => c.relatedTrackId === t.id);
-      const tWarm = tContacts.filter((c) => c.status === "messaged" || c.status === "replied");
-      const tProof = hustles.filter((h) => h.proofAssetForTrack === t.id);
-      const tProofLive = tProof.filter((h) => h.stage !== "idea");
-      const topFit = tJobs.reduce((m, j) => Math.max(m, j.fitScore ?? 0), 0);
-
-      // Bottleneck: the single weakest link on this track (in priority order).
-      let bottleneck = "", nextMove = "";
-      if (tJobs.length === 0 && tLearn.length === 0 && tProof.length === 0) {
-        bottleneck = "No live opportunities yet"; nextMove = "Add a role or a learning item to this track";
-      } else if (tProof.length > 0 && tJobs.length === 0 && tLearn.length === 0) {
-        // A proof / thought-leadership track: the work IS the proof asset.
-        bottleneck = tProofLive.length === 0 ? "Proof asset still just an idea" : "Keep the proof asset moving";
-        nextMove = tProofLive.length === 0 ? "Move your proof asset past the idea stage" : "Ship the next piece of your proof asset";
-      } else if (tJobs.length > 0 && tApplied.length === 0) {
-        bottleneck = `${tJobs.length} role${tJobs.length > 1 ? "s" : ""} saved, none submitted`;
-        nextMove = "Submit your strongest application on this track";
-      } else if (tContacts.length === 0) {
-        bottleneck = "No warm contact on this path";
-        nextMove = "Identify one person to reach in this sector";
-      } else if (tWarm.length === 0 && tContacts.length > 0) {
-        bottleneck = "Contacts identified but none messaged";
-        nextMove = "Send the first outreach message";
-      } else if (tProof.length > 0 && tProofLive.length === 0) {
-        bottleneck = "Proof asset still just an idea";
-        nextMove = "Move your proof asset past the idea stage";
-      } else {
-        bottleneck = "Moving well — keep the drumbeat";
-        nextMove = "Advance the next live application";
-      }
-
-      return {
-        id: t.id, slug: t.slug, name: t.name, status: t.status, priority: t.priority, whyItFits: t.whyItFits,
-        roles: tJobs.length, applied: tApplied.length, topFit,
-        learning: tLearn.length, learningActive: tLearnActive.length,
-        contacts: tContacts.length, warmContacts: tWarm.length,
-        proofAssets: tProof.length, proofLive: tProofLive.length,
-        bottleneck, nextMove,
-      };
-    });
-
-    // Cross-cutting insights (max 3, highest-signal first).
-    const insights: string[] = [];
-    const activeRows = rows.filter((r) => r.status === "active");
-    const totalLiveRoles = activeRows.reduce((s, r) => s + r.roles, 0);
-    const totalApplied = activeRows.reduce((s, r) => s + r.applied, 0);
-    if (totalLiveRoles >= 2 && totalApplied === 0)
-      insights.push(`Your bottleneck isn't more roles — it's submitting. You have ${totalLiveRoles} live, none applied yet. Pick one and send it.`);
-    const richNoContacts = activeRows.find((r) => (r.roles + r.learning) >= 2 && r.contacts === 0);
-    if (richNoContacts)
-      insights.push(`Your ${richNoContacts.name} path has roles and learning but no warm contact — a referral would unlock far more than another saved role.`);
-    const totalLearn = activeRows.reduce((s, r) => s + r.learning, 0);
-    const totalProofLive = activeRows.reduce((s, r) => s + r.proofLive, 0);
-    if (totalLearn >= 4 && totalProofLive === 0)
-      insights.push(`You're collecting learning (${totalLearn} items) but no proof asset is live yet — one published piece beats three half-read courses.`);
-    if (insights.length === 0 && activeRows.length)
-      insights.push(`Most focus is on ${activeRows[0].name}. That's your spine — keep it moving and let the rest stay light.`);
-
-    res.json({ tracks: rows, insights });
+    const fd = await getStrategyFrontDoor();
+    const tracks = fd.tracks.map((t) => ({
+      id: t.id, slug: t.slug, name: t.name, status: t.status, priority: t.priority, whyItFits: t.whyItFits,
+      roles: t.counts.jobs, learning: t.counts.learn, contacts: t.counts.contacts, proofAssets: t.counts.hustles,
+      bottleneck: t.bottleneckLabel, nextMove: t.recommendedMove,
+    }));
+    res.json({ tracks, insights: fd.insights.map((i) => i.text) });
   });
 
   // ═══ P3.5: NEXT-TASK ENGINE — every source can spawn a provenance-carrying task ═══
@@ -679,6 +717,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   // Edit label / status / note / sequence (the one-action contract is unchanged).
+  // P4.6a #3: marking the SUBMIT step done is a DETERMINISTIC submit signal —
+  // it advances the job wishlist -> applied (derived from the step label, no fuzzy
+  // task.doneWhen matching). Any other step done does NOT touch job status.
   app.patch("/api/steps/:stepId", async (req, res) => {
     const stepId = Number(req.params.stepId);
     if (!Number.isFinite(stepId)) return res.status(400).json({ error: "Bad id" });
@@ -686,7 +727,29 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const updated = await storage.updateJobStep(stepId, p.data);
     if (!updated) return res.status(404).json({ error: "Not found" });
+    if (p.data.status === "done" && isSubmitStep(updated.stepLabel)) {
+      const jb = (await storage.getJobs()).find((x) => x.id === updated.jobId);
+      if (jb && jb.status === "wishlist") {
+        await storage.updateJob(jb.id, { status: "applied", applicationReadiness: "submitted" } as any);
+        await storage.logActivity({ eventType: "completed", sourceType: "job", sourceId: jb.id, metadata: JSON.stringify({ stepId, submitted: true }) } as any);
+      }
+    }
     res.json(updated);
+  });
+
+  // P4.6a #3: explicit "Mark application submitted" affordance on the job card —
+  // the safest deterministic path to wishlist -> applied. Never fabricated.
+  app.post("/api/jobs/:id/mark-submitted", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const job = (await storage.getJobs()).find((x) => x.id === id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    if (job.status === "wishlist") {
+      await storage.updateJob(id, { status: "applied", applicationReadiness: "submitted" } as any);
+    }
+    await storage.logActivity({ eventType: "completed", sourceType: "job", sourceId: id, metadata: JSON.stringify({ submitted: true, explicit: true }) } as any);
+    const updated = (await storage.getJobs()).find((x) => x.id === id);
+    res.json({ ok: true, job: updated });
   });
 
   app.delete("/api/steps/:stepId", async (req, res) => {

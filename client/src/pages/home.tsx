@@ -303,14 +303,11 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     } catch { toast({ title: "Couldn't shape the day", description: "Try again in a moment." }); }
     finally { setLoadingPlan(false); }
   }
-  // Start an item: materialise it as the active focus, carrying its source context.
+  // Start an item via the IDENTITY-PRESERVING endpoint: it reads the exact plan
+  // item id, creates/reuses the backing task, links taskId both ways, derives the
+  // block from the slot (no hardcoded "morning"), and preserves source/doneWhen.
   async function startItem(it: PlanItemT) {
-    const candidate = {
-      source: it.sourceType, sourceId: it.sourceId, title: it.title,
-      category: it.sourceType === "job" ? "job" : it.sourceType === "learn" ? "learning" : it.sourceType === "hustle" ? "hustle" : "admin",
-      size: "medium", deadline: "", doneWhen: it.doneWhen, block: "morning",
-    };
-    await mutateAndInvalidate("POST", "/api/brain/accept", { candidate, pin: true }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
+    await mutateAndInvalidate("POST", `/api/plan-items/${it.id}/start`, { day }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
     setPlan(null); setPlanItems([]);
     toast({ title: "Started — this is your focus.", description: "Tiny steps next. One at a time." });
   }
@@ -504,14 +501,6 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 }
 
 /* ================= STRATEGY (the quiet bird's-eye view) ================= */
-type StrategyTrack = {
-  id: number; slug: string; name: string; status: string; priority: number; whyItFits: string;
-  roles: number; applied: number; topFit: number;
-  learning: number; learningActive: number;
-  contacts: number; warmContacts: number;
-  proofAssets: number; proofLive: number;
-  bottleneck: string; nextMove: string;
-};
 type TrackDiagnostic = {
   id: number; slug: string; name: string; status: string; priority: number; whyItFits: string;
   counts: { jobs: number; learn: number; contacts: number; hustles: number; tasks: number };
@@ -524,6 +513,15 @@ type TrackDiagnostic = {
   bottleneck: string; bottleneckLabel: string; recommendedMove: string;
 };
 type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
+type StrategyInsight = { kind: string; text: string };
+// P4.6a #5 — the single unified Strategy payload (one diagnostics engine).
+type FrontDoor = {
+  tracks: TrackDiagnostic[];
+  topThree: TrackDiagnostic[];
+  insights: StrategyInsight[];
+  unlinked: { items: UnlinkedItem[]; counts: Record<string, number> };
+  evidence?: unknown;
+};
 const BOTTLENECK_LABEL: Record<string, string> = {
   direction: "Direction", readiness: "Readiness", proof: "Proof", warmth: "Warmth", execution: "Execution", none: "Healthy",
 };
@@ -553,15 +551,13 @@ function EvidenceChips({ ev }: { ev: NonNullable<TrackDiagnostic["evidence"]> })
   );
 }
 function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
-  const { data, isLoading } = useQuery<{ tracks: StrategyTrack[]; insights: string[] }>({ queryKey: ["/api/strategy"] });
-  const { data: diag } = useQuery<{ tracks: TrackDiagnostic[] }>({ queryKey: ["/api/strategy/diagnostics"] });
-  const { data: unlinked } = useQuery<{ items: UnlinkedItem[]; counts: Record<string, number> }>({ queryKey: ["/api/strategy/unlinked"] });
+  // P4.6a #5 — ONE unified payload from the single diagnostics engine.
+  const { data, isLoading } = useQuery<FrontDoor>({ queryKey: ["/api/strategy/front-door"] });
   const { data: careerTracks = [] } = useCareerTracks();
   if (isLoading) return <Loading />;
   const tracks = data?.tracks || [];
-  const insights = data?.insights || [];
-  const diagById = new Map((diag?.tracks || []).map((d) => [d.id, d] as const));
-  const unlinkedItems = unlinked?.items || [];
+  const insights = (data?.insights || []).map((i) => i.text);
+  const unlinkedItems = data?.unlinked?.items || [];
   const active = tracks.filter((t) => t.status === "active");
   const watching = tracks.filter((t) => t.status !== "active");
 
@@ -572,13 +568,8 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     </div>
   );
 
-  const Card = ({ t }: { t: StrategyTrack }) => {
-    const d = diagById.get(t.id);
-    // Prefer the computed diagnostic (the five bottleneck types); fall back to the
-    // legacy /api/strategy bottleneck text if diagnostics haven't loaded.
-    const bottleneckLabel = d ? d.bottleneckLabel : t.bottleneck;
-    const recommendedMove = d ? d.recommendedMove : t.nextMove;
-    const health = d?.bottleneck ?? "none";
+  const Card = ({ t }: { t: TrackDiagnostic }) => {
+    const health = t.bottleneck ?? "none";
     return (
       <div className="rounded-xl border border-card-border bg-card p-4" data-testid={`track-${t.slug}`}>
         <div className="flex items-start justify-between gap-3 mb-3">
@@ -588,20 +579,19 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <span className={`rounded-full text-[11px] font-semibold px-2 py-0.5 ${health === "none" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`} data-testid={`track-health-${t.slug}`}>{BOTTLENECK_LABEL[health] || health}</span>
-            {t.topFit > 0 && <span className="rounded-full bg-primary/10 text-primary text-[11px] font-semibold px-2 py-0.5">fit {t.topFit}</span>}
           </div>
         </div>
         <div className="grid grid-cols-4 gap-2 mb-3">
-          <Stat label="Roles" value={t.roles} dim={t.roles === 0} />
-          <Stat label="Learning" value={t.learning} dim={t.learning === 0} />
-          <Stat label="Contacts" value={t.contacts} dim={t.contacts === 0} />
-          <Stat label="Proof" value={t.proofLive ? `${t.proofLive}/${t.proofAssets}` : t.proofAssets} dim={t.proofAssets === 0} />
+          <Stat label="Roles" value={t.counts.jobs} dim={t.counts.jobs === 0} />
+          <Stat label="Learning" value={t.counts.learn} dim={t.counts.learn === 0} />
+          <Stat label="Contacts" value={t.counts.contacts} dim={t.counts.contacts === 0} />
+          <Stat label="Proof" value={t.counts.hustles} dim={t.counts.hustles === 0} />
         </div>
         <div className="rounded-lg bg-muted/60 px-3 py-2">
-          <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Bottleneck:</span> {bottleneckLabel}</p>
-          <p className="text-xs text-primary mt-1 inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> {recommendedMove}</p>
+          <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Bottleneck:</span> {t.bottleneckLabel}</p>
+          <p className="text-xs text-primary mt-1 inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> {t.recommendedMove}</p>
         </div>
-        {d?.evidence && <EvidenceChips ev={d.evidence} />}
+        {t.evidence && <EvidenceChips ev={t.evidence} />}
       </div>
     );
   };
@@ -609,7 +599,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "learn", contacts: "network", hustles: "hustle" };
   const ENTITY_LABEL: Record<UnlinkedItem["entity"], string> = { jobs: "Job", learn: "Learn", contacts: "Contact", hustles: "Proof" };
   async function linkUnlinked(it: UnlinkedItem, trackId: number) {
-    await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked"]);
+    await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", "/api/strategy/front-door"]);
   }
 
   return (
@@ -688,17 +678,37 @@ function RightNow({ pinned }: { pinned: Task }) {
   const [breaking, setBreaking] = useState(false);
   const [unsticking, setUnsticking] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  // P4.6a #7 — breakdown may return ONE clarifying question before it can split
+  // the task. Hold it here and re-call breakdown WITH the user's answer as context.
+  const [question, setQuestion] = useState<string | null>(null);
+  const [answer, setAnswer] = useState("");
   const steps = parseSteps(pinned.steps);
   const currentIdx = steps.findIndex((s) => !s.done);
   const current = currentIdx >= 0 ? steps[currentIdx] : null;
   const allStepsDone = steps.length > 0 && currentIdx === -1;
   const avoided = (pinned.skipped || 0) >= 2;
 
-  async function breakdown() {
+  async function breakdown(context?: string) {
     setBreaking(true);
-    try { await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/breakdown`, {}, ["/api/tasks"]); }
+    try {
+      const res = await mutateAndInvalidate(
+        "POST", `/api/tasks/${pinned.id}/breakdown`,
+        context ? { context } : {}, ["/api/tasks"],
+      );
+      if (res && typeof res.question === "string") {
+        setQuestion(res.question);
+      } else {
+        setQuestion(null);
+        setAnswer("");
+      }
+    }
     catch { toast({ title: "Couldn't break it down", description: "Give it another go in a sec." }); }
     finally { setBreaking(false); }
+  }
+  async function answerQuestion() {
+    const ctx = answer.trim();
+    if (!ctx) return;
+    await breakdown(ctx);
   }
   async function checkStep() {
     if (currentIdx < 0) return;
@@ -721,7 +731,7 @@ function RightNow({ pinned }: { pinned: Task }) {
     finally { setUnsticking(false); }
   }
   async function shrink() {
-    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/breakdown`, {}, ["/api/tasks"]);
+    await breakdown();
     toast({ title: "Made it smaller.", description: "Just the first tiny step now." });
   }
   async function moveBlock() {
@@ -757,10 +767,29 @@ function RightNow({ pinned }: { pinned: Task }) {
           This one's been slipping a few days — totally normal. Want it smaller, or park it kindly? No pressure.
         </p>
       )}
-      {steps.length === 0 && (
+      {steps.length === 0 && question && (
+        <div className="mt-2" data-testid="breakdown-question">
+          <p className="text-sm text-muted-foreground mb-1">One quick question before I break this down…</p>
+          <p className="text-sm font-medium mb-2.5">{question}</p>
+          <div className="flex items-center gap-2">
+            <input
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") answerQuestion(); }}
+              placeholder="Your answer…"
+              data-testid="input-breakdown-answer"
+              className="flex-1 rounded-lg border border-card-border bg-card px-3 py-2 text-sm"
+            />
+            <Button size="sm" onClick={answerQuestion} disabled={breaking || !answer.trim()} data-testid="button-breakdown-answer">
+              {breaking ? <Loader2 className="w-4 h-4 animate-spin" /> : "Answer"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {steps.length === 0 && !question && (
         <div className="mt-2">
           <p className="text-sm text-muted-foreground mb-2.5">Want me to break it into tiny steps so starting is easy?</p>
-          <Button size="sm" onClick={breakdown} disabled={breaking} data-testid="button-breakdown-pinned">
+          <Button size="sm" onClick={() => breakdown()} disabled={breaking} data-testid="button-breakdown-pinned">
             {breaking ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />} Break into tiny steps
           </Button>
         </div>
@@ -1198,6 +1227,13 @@ function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tra
           {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">{JOB_COLS[idx + 1].label} →</button>}
         </div>
         <div className="flex items-center gap-2">
+          {/* P4.6a #3: explicit, deterministic submit affordance — the safest path
+              to wishlist -> applied. Never fabricated; only shown while wishlisted. */}
+          {j.status === "wishlist" && (
+            <button data-testid={`button-mark-submitted-job-${j.id}`}
+              onClick={async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door"]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); }}
+              className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Mark application submitted</button>
+          )}
           {(j.status === "applied" || j.status === "interviewing") && (
             <button data-testid={`button-promote-win-job-${j.id}`}
               onClick={async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win 🎉", description: "Application progress counts." }); }}

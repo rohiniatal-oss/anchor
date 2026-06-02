@@ -277,6 +277,60 @@ export async function getEvidencePayload(): Promise<EvidencePayload> {
   return { windowDays: evidence.windowDays, tracks: trackRows, untracked };
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// P4.6a #5 — UNIFIED STRATEGY FRONT DOOR. getTrackDiagnostics is the ONE engine;
+// this wraps it once to produce everything the Strategy view needs in a single
+// payload: ranked tracks, the topThree focus set, cross-cutting insights derived
+// FROM the diagnostics (not a parallel computation), the unlinked bucket, and the
+// evidence payload. Legacy /api/strategy delegates here so there is no second
+// source of truth.
+// ─────────────────────────────────────────────────────────────────────────
+export type StrategyInsight = { kind: string; text: string };
+export type StrategyFrontDoor = {
+  tracks: TrackDiagnostic[];
+  topThree: TrackDiagnostic[];
+  insights: StrategyInsight[];
+  unlinked: { items: UnlinkedItem[]; counts: Record<string, number> };
+  evidence: EvidencePayload;
+};
+
+// Cross-cutting insights READ OFF the diagnostics (single engine). Highest-signal
+// first, capped at 3, calm and never fabricated.
+function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
+  const out: StrategyInsight[] = [];
+  const active = tracks.filter((t) => t.status === "active");
+
+  const readinessTrack = active.find((t) => t.bottleneck === "readiness");
+  if (readinessTrack)
+    out.push({ kind: "readiness", text: `Your bottleneck on ${readinessTrack.name} isn't more roles — it's getting one ready. ${readinessTrack.recommendedMove}.` });
+
+  const warmthTrack = active.find((t) => t.bottleneck === "warmth");
+  if (warmthTrack)
+    out.push({ kind: "warmth", text: `${warmthTrack.name} has live roles but no warm path — a referral would unlock more than another saved role.` });
+
+  const proofTrack = active.find((t) => t.bottleneck === "proof");
+  if (proofTrack)
+    out.push({ kind: "proof", text: `${proofTrack.name}: ${proofTrack.bottleneckLabel.toLowerCase()}. One shipped output beats three half-read courses.` });
+
+  if (out.length === 0 && active.length)
+    out.push({ kind: "focus", text: `Most focus is on ${active[0].name}. That's your spine — keep it moving and let the rest stay light.` });
+
+  return out.slice(0, 3);
+}
+
+export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
+  const [tracks, unlinked, evidence] = await Promise.all([
+    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(),
+  ]);
+  return {
+    tracks,
+    topThree: tracks.slice(0, 3),
+    insights: deriveInsights(tracks),
+    unlinked,
+    evidence,
+  };
+}
+
 export type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
 
 // Source items with no track link (trackId null/0) — orphans that should be linked.

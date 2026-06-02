@@ -1,0 +1,83 @@
+import {
+  tasks, events, jobs, learn, hustles, wins, contacts,
+  type Task, type InsertTask,
+  type Event, type InsertEvent,
+  type Job, type InsertJob,
+  type Learn, type InsertLearn,
+  type Hustle, type InsertHustle,
+  type Win, type InsertWin,
+  type Contact, type InsertContact,
+} from "@shared/schema";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import Database from "better-sqlite3";
+import { eq, asc, desc } from "drizzle-orm";
+
+const sqlite = new Database("data.db");
+sqlite.pragma("journal_mode = WAL");
+export const db = drizzle(sqlite);
+
+export interface IStorage {
+  getTasks(): Promise<Task[]>;
+  createTask(t: InsertTask): Promise<Task>;
+  updateTask(id: number, patch: Partial<InsertTask>): Promise<Task | undefined>;
+  deleteTask(id: number): Promise<void>;
+  getEvents(day: string): Promise<Event[]>;
+  replaceEventsForDay(day: string, items: InsertEvent[]): Promise<void>;
+  getJobs(): Promise<Job[]>;
+  createJob(j: InsertJob): Promise<Job>;
+  updateJob(id: number, patch: Partial<InsertJob>): Promise<Job | undefined>;
+  deleteJob(id: number): Promise<void>;
+  getLearn(): Promise<Learn[]>;
+  createLearn(l: InsertLearn): Promise<Learn>;
+  updateLearn(id: number, patch: Partial<InsertLearn>): Promise<Learn | undefined>;
+  deleteLearn(id: number): Promise<void>;
+  getHustles(): Promise<Hustle[]>;
+  createHustle(h: InsertHustle): Promise<Hustle>;
+  updateHustle(id: number, patch: Partial<InsertHustle>): Promise<Hustle | undefined>;
+  deleteHustle(id: number): Promise<void>;
+  getWins(): Promise<Win[]>;
+  createWin(w: InsertWin): Promise<Win>;
+  deleteWin(id: number): Promise<void>;
+  getContacts(): Promise<Contact[]>;
+  createContact(ct: InsertContact): Promise<Contact>;
+  updateContact(id: number, patch: Partial<InsertContact>): Promise<Contact | undefined>;
+  deleteContact(id: number): Promise<void>;
+}
+
+export class DatabaseStorage implements IStorage {
+  async getTasks() { return db.select().from(tasks).orderBy(asc(tasks.sort), asc(tasks.id)).all(); }
+  async createTask(t: InsertTask) { return db.insert(tasks).values({ ...t, createdAt: Date.now() }).returning().get(); }
+  async updateTask(id: number, patch: Partial<InsertTask>) { return db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(); }
+  async deleteTask(id: number) { db.delete(tasks).where(eq(tasks.id, id)).run(); }
+
+  async getEvents(day: string) { return db.select().from(events).where(eq(events.day, day)).orderBy(asc(events.start)).all(); }
+  async replaceEventsForDay(day: string, items: InsertEvent[]) {
+    db.delete(events).where(eq(events.day, day)).run();
+    for (const it of items) db.insert(events).values({ ...it, day, createdAt: Date.now() }).run();
+  }
+
+  async getJobs() { return db.select().from(jobs).orderBy(desc(jobs.id)).all(); }
+  async createJob(j: InsertJob) { return db.insert(jobs).values({ ...j, createdAt: Date.now() }).returning().get(); }
+  async updateJob(id: number, patch: Partial<InsertJob>) { return db.update(jobs).set(patch).where(eq(jobs.id, id)).returning().get(); }
+  async deleteJob(id: number) { db.delete(jobs).where(eq(jobs.id, id)).run(); }
+
+  async getLearn() { return db.select().from(learn).orderBy(desc(learn.id)).all(); }
+  async createLearn(l: InsertLearn) { return db.insert(learn).values({ ...l, createdAt: Date.now() }).returning().get(); }
+  async updateLearn(id: number, patch: Partial<InsertLearn>) { return db.update(learn).set(patch).where(eq(learn.id, id)).returning().get(); }
+  async deleteLearn(id: number) { db.delete(learn).where(eq(learn.id, id)).run(); }
+
+  async getHustles() { return db.select().from(hustles).orderBy(desc(hustles.id)).all(); }
+  async createHustle(h: InsertHustle) { return db.insert(hustles).values({ ...h, createdAt: Date.now() }).returning().get(); }
+  async updateHustle(id: number, patch: Partial<InsertHustle>) { return db.update(hustles).set(patch).where(eq(hustles.id, id)).returning().get(); }
+  async deleteHustle(id: number) { db.delete(hustles).where(eq(hustles.id, id)).run(); }
+
+  async getWins() { return db.select().from(wins).orderBy(desc(wins.id)).all(); }
+  async createWin(w: InsertWin) { return db.insert(wins).values({ ...w, createdAt: Date.now() }).returning().get(); }
+  async deleteWin(id: number) { db.delete(wins).where(eq(wins.id, id)).run(); }
+  async getContacts() { return db.select().from(contacts).orderBy(desc(contacts.id)).all(); }
+  async createContact(ct: InsertContact) { return db.insert(contacts).values({ ...ct, createdAt: Date.now() }).returning().get(); }
+  async updateContact(id: number, patch: Partial<InsertContact>) { return db.update(contacts).set(patch).where(eq(contacts.id, id)).returning().get(); }
+  async deleteContact(id: number) { db.delete(contacts).where(eq(contacts.id, id)).run(); }
+}
+
+export const storage = new DatabaseStorage();

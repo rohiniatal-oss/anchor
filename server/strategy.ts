@@ -3,7 +3,7 @@ import {
   isJobLive, getJobReadiness, isLearnDone, isLearnActive, getLearnStatus,
   isContactWarm, isProofLive, isTaskDone, getTaskReadiness, getTrackId,
 } from "@shared/domainState";
-import type { Job, Learn, Contact, Hustle, Task, CareerTrack } from "@shared/schema";
+import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep } from "@shared/schema";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the five bottleneck types, and a
@@ -38,6 +38,7 @@ const LOW_WARMTH = 40; // warmPathScore threshold
 function diagnoseTrack(
   track: CareerTrack,
   jobs: Job[], learn: Learn[], contacts: Contact[], hustles: Hustle[], tasks: Task[],
+  stepsByJob: Map<number, JobPipelineStep[]>,
 ): TrackDiagnostic {
   const tJobs = jobs.filter((j) => getTrackId("jobs", j) === track.id);
   const tLiveJobs = tJobs.filter(isJobLive);
@@ -54,7 +55,18 @@ function diagnoseTrack(
   // readiness gap: jobs with low readiness; tasks needing info or blocked
   const lowReadinessJobs = tLiveJobs.filter((j) => getJobReadiness(j) === "none" || getJobReadiness(j) === "cv").length;
   const stuckTasks = tTasks.filter((t) => !isTaskDone(t) && (getTaskReadiness(t) === "needs_info" || getTaskReadiness(t) === "blocked")).length;
-  const readinessGap = lowReadinessJobs + stuckTasks;
+  // P4.1: a job's pipeline rail feeds the readiness gap so it isn't ornamental —
+  // a live job with steps but little done, or with blocked steps, signals work
+  // left to ready the application. "blocked" steps = status "skipped" with a note.
+  const stallSteps = tLiveJobs.reduce((acc, j) => {
+    const steps = stepsByJob.get(j.id) || [];
+    if (steps.length === 0) return acc;
+    const done = steps.filter((s) => s.status === "done").length;
+    const blocked = steps.filter((s) => s.status === "skipped" && !!s.note.trim()).length;
+    const fewDone = done < Math.ceil(steps.length / 2) ? 1 : 0;
+    return acc + fewDone + blocked;
+  }, 0);
+  const readinessGap = lowReadinessJobs + stuckTasks + stallSteps;
 
   // proof gap: few active proof assets; learn items missing requiredOutput
   const liveProof = tHustles.filter(isProofLive).length;
@@ -119,7 +131,12 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
     storage.getCareerTracks(), storage.getJobs(), storage.getLearn(),
     storage.getContacts(), storage.getHustles(), storage.getTasks(),
   ]);
-  return tracks.map((t) => diagnoseTrack(t, jobs, learn, contacts, hustles, tasks));
+  // Pull each live job's pipeline steps so the rail feeds the readiness gap.
+  const liveJobs = jobs.filter(isJobLive);
+  const stepLists = await Promise.all(liveJobs.map((j) => storage.getJobSteps(j.id)));
+  const stepsByJob = new Map<number, JobPipelineStep[]>();
+  liveJobs.forEach((j, i) => stepsByJob.set(j.id, stepLists[i]));
+  return tracks.map((t) => diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob));
 }
 
 export type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };

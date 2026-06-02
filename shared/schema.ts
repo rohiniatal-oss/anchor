@@ -93,6 +93,23 @@ export const jobs = sqliteTable("jobs", {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// JOB PIPELINE STEPS (P4.1) — a TASK-GENERATIVE readiness rail over a job.
+// NOT a second workflow engine: each step materializes into a task (via the
+// existing createNextTask machinery), or is marked done/blocked. taskId is a
+// thin back-reference for dedupe; canonical task state still lives on the task.
+// ─────────────────────────────────────────────────────────────────────────
+export const jobPipelineSteps = sqliteTable("job_pipeline_steps", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  jobId: integer("job_id").notNull(),
+  stepLabel: text("step_label").notNull(),
+  status: text("status").notNull().default("todo"), // todo|done|skipped
+  sequence: integer("sequence").notNull().default(0),
+  note: text("note").notNull().default(""),
+  taskId: integer("task_id"), // set when materialized into a task (back-ref/dedupe)
+  createdAt: integer("created_at").notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // LEARN — capability map. Every item REQUIRES an output.
 // ─────────────────────────────────────────────────────────────────────────
 export const learn = sqliteTable("learn", {
@@ -251,6 +268,7 @@ export const activityLog = sqliteTable("activity_log", {
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true });
 export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });
+export const insertJobPipelineStepSchema = createInsertSchema(jobPipelineSteps).omit({ id: true, createdAt: true });
 export const insertLearnSchema = createInsertSchema(learn).omit({ id: true, createdAt: true });
 export const insertHustleSchema = createInsertSchema(hustles).omit({ id: true, createdAt: true });
 export const insertWinSchema = createInsertSchema(wins).omit({ id: true, createdAt: true });
@@ -268,6 +286,8 @@ export type InsertEvent = z.infer<typeof insertEventSchema>;
 export type Event = typeof events.$inferSelect;
 export type InsertJob = z.infer<typeof insertJobSchema>;
 export type Job = typeof jobs.$inferSelect;
+export type InsertJobPipelineStep = z.infer<typeof insertJobPipelineStepSchema>;
+export type JobPipelineStep = typeof jobPipelineSteps.$inferSelect;
 export type InsertLearn = z.infer<typeof insertLearnSchema>;
 export type Learn = typeof learn.$inferSelect;
 export type InsertHustle = z.infer<typeof insertHustleSchema>;

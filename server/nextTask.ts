@@ -1,5 +1,5 @@
 import { db } from "./storage";
-import { tasks, jobs, learn, contacts, hustles, type Task } from "@shared/schema";
+import { tasks, jobs, learn, contacts, hustles, jobPipelineSteps, type Task, type JobPipelineStep } from "@shared/schema";
 import { eq, and, ne } from "drizzle-orm";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -121,4 +121,30 @@ export async function createNextTask(args: { sourceType: NextTaskSourceType; sou
   if (!values) return null;
   const task = db.insert(tasks).values(values).returning().get();
   return { task, reused: false };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MATERIALIZE A JOB PIPELINE STEP — turn a readiness-rail step into a task via
+// the SAME createNextTask provenance + dedupe machinery (sourceType "job",
+// sourceId = step.jobId). Title the task after the step label so the rail and
+// the task stay legible. Writes the step's taskId back for the dedupe/back-ref.
+// Reuses an existing open task for the job rather than spawning a duplicate.
+// ─────────────────────────────────────────────────────────────────────────
+export async function materializeJobStep(step: JobPipelineStep): Promise<CreateResult | null> {
+  const result = await createNextTask({ sourceType: "job", sourceId: step.jobId });
+  if (!result) return null;
+
+  // For a freshly-created task, sharpen the title to the step's label so the
+  // user sees the concrete action they tapped (createNextTask defaults to the
+  // job's nextStep). Reused tasks keep their existing title untouched.
+  if (!result.reused && step.stepLabel.trim()) {
+    const j = db.select().from(jobs).where(eq(jobs.id, step.jobId)).get();
+    const suffix = j ? `: ${j.title}${j.company ? " @ " + j.company : ""}` : "";
+    const updated = db.update(tasks).set({ title: `${step.stepLabel.trim()}${suffix}` })
+      .where(eq(tasks.id, result.task.id)).returning().get();
+    if (updated) result.task = updated;
+  }
+
+  db.update(jobPipelineSteps).set({ taskId: result.task.id }).where(eq(jobPipelineSteps.id, step.id)).run();
+  return result;
 }

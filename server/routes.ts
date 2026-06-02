@@ -6,6 +6,7 @@ import OpenAI from "openai";
 import { recommend, planDay } from "./brain";
 import { createNextTask, materializeJobStep, materializeProofStep, type NextTaskSourceType } from "./nextTask";
 import { getTrackDiagnostics, getUnlinkedItems, getEvidencePayload, getStrategyFrontDoor } from "./strategy";
+import { computeLearningGaps } from "./learningStrategy";
 import { computeWinsSummary } from "./evidence";
 import {
   insertTaskSchema, insertEventSchema, insertJobSchema,
@@ -580,7 +581,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       : task.category === "substack" || task.category === "hustle" || task.category === "afterline" ? "proof_asset"
       : task.sourceType === "contact" ? "network"
       : "admin";
-    await storage.createWin({ text: task.title, kind: "planned", winCategory } as any);
+    // P5 — attribute the win to the originating task's track explicitly (no more
+    // fragile text-match). Null when the task is untracked, which stays valid.
+    await storage.createWin({ text: task.title, kind: "planned", winCategory, trackId: task.relatedTrackId ?? null } as any);
     await storage.logActivity({ eventType: "completed", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: id, planItemId: task.planItemId ?? undefined } as any);
     // P4.6a #3: a GENERIC completed job-linked task NEVER changes job status — it
     // only logs activity/evidence (above). Job wishlist->applied advances ONLY via
@@ -923,6 +926,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Per-track diagnostics already carry compact per-track evidence (above); this
   // endpoint exposes the full per-track + untracked-bucket metrics. No write path.
   app.get("/api/strategy/evidence", async (_req, res) => res.json(await getEvidencePayload()));
+
+  // ═══ P5: LEARNING STRATEGY — per-track capability gaps + deterministic sequencing ═══
+  // Read-only. The gap engine (server/learningStrategy.ts) compares each track's
+  // REQUIRED capability domains (data-driven from the track) against its EVIDENCED
+  // domains and exposes the gap + a sequenced learning path (incl. unfilled-gap
+  // slots where out-of-scope discovered resources later attach). No write path.
+  app.get("/api/strategy/learning-gaps", async (_req, res) => res.json(await computeLearningGaps()));
+
   // Compact wins summary (by-category + window counts + streak + derived track per win).
   app.get("/api/wins/summary", async (_req, res) => res.json(await computeWinsSummary()));
 

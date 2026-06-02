@@ -158,6 +158,10 @@ export const learn = sqliteTable("learn", {
   prerequisites: text("prerequisites").notNull().default("[]"), // JSON [learnId,...]
   unlocks: text("unlocks").notNull().default("[]"), // JSON [learnId,...]
   relatedTrackId: integer("related_track_id"),
+  // P5 — explicit "this item is intended as proof-building" flag. Sharpens the
+  // 4.4 nudge/output-state, which now key off proofIntent OR requiredOutput
+  // (not relatedTrackId alone). Pure-consumption (0 + no requiredOutput) stays silent.
+  proofIntent: integer("proof_intent", { mode: "boolean" }).notNull().default(false),
   deadlineConfidence: text("deadline_confidence").notNull().default(""),
   createdAt: integer("created_at").notNull(),
 });
@@ -186,6 +190,10 @@ export const wins = sqliteTable("wins", {
   text: text("text").notNull(),
   kind: text("kind").notNull().default("manual"), // manual|planned|spontaneous|coach|source|mvd
   winCategory: text("win_category").notNull().default("mindset"), // job_progress|learning|network|proof_asset|mindset|admin
+  // P5 — explicit track attribution, set from the originating task's relatedTrackId
+  // on win creation. Replaces the fragile 4.5 text-match: evidence.ts PREFERS this
+  // column when present and falls back to text-match for legacy rows. Null = untracked.
+  trackId: integer("track_id"),
   createdAt: integer("created_at").notNull(),
 });
 

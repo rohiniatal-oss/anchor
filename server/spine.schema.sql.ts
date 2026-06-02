@@ -118,6 +118,7 @@ CREATE TABLE learn (
   prerequisites TEXT NOT NULL DEFAULT '[]',
   unlocks TEXT NOT NULL DEFAULT '[]',
   related_track_id INTEGER,
+  proof_intent INTEGER NOT NULL DEFAULT 0,
   deadline_confidence TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
@@ -140,6 +141,7 @@ CREATE TABLE wins (
   text TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'manual',
   win_category TEXT NOT NULL DEFAULT 'mindset',
+  track_id INTEGER,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE contacts (

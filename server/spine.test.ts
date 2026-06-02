@@ -8,18 +8,24 @@ import assert from "node:assert/strict";
 import { makeHarness, api, type Harness } from "./spine.harness";
 import { isSubmitStep } from "@shared/jobTemplates";
 import { isFellowshipOpportunity } from "@shared/fellowshipLane";
-import { isOpportunityActionable } from "@shared/domainState";
+import { isOpportunityActionable, getLearnOutputState, learnNeedsOutputNudge } from "@shared/domainState";
+import { requiredDomainsForTrack } from "@shared/capabilityTargets";
 
 let h: Harness;
 const DAY = "2026-06-02";
 // Imported dynamically AFTER the harness sets ANCHOR_DB_PATH — a static import
 // would pull in ./storage (which opens its db handle at module load) before the
-// harness points it at the throwaway DB.
+// harness points it at the throwaway DB. learningStrategy/evidence transitively
+// import ./storage, so they MUST be loaded dynamically here for the same reason.
 let migrateFellowshipLearnRows: typeof import("./fellowshipMigration").migrateFellowshipLearnRows;
+let computeLearningGaps: typeof import("./learningStrategy").computeLearningGaps;
+let computeEvidence: typeof import("./evidence").computeEvidence;
 
 before(async () => {
   h = await makeHarness();
   ({ migrateFellowshipLearnRows } = await import("./fellowshipMigration"));
+  ({ computeLearningGaps } = await import("./learningStrategy"));
+  ({ computeEvidence } = await import("./evidence"));
 });
 after(async () => { await h.close(); });
 beforeEach(() => { h.reset(); });
@@ -310,6 +316,176 @@ test("migration is idempotent — re-running produces no duplicate opportunities
   const second = migrateFellowshipLearnRows();
   assert.equal(second.migrated, 0, "second run migrates nothing new");
   assert.equal((await h.storage.getJobs()).length, 1, "no duplicate opportunity");
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PHASE 5 — LEARNING STRATEGY: capability-gap detection (5.1), sequencing (5.3),
+// strategy ordering (5.4), the wins.trackId attribution debt, and the proofIntent
+// opt-in. The Afterline rule is the spine: a domain is credited only from a source
+// whose OWN text normalizes to it — the geopolitics proof asset never evidences
+// (nor is demanded to fill) an AI gap.
+// ─────────────────────────────────────────────────────────────────────────
+
+// 5.1 — required domains are DATA-DRIVEN from the track archetype; the geopolitics
+// (advisory) lane deliberately does NOT require ai-gov.
+test("required domains are data-driven and keep AI out of the geopolitics lane", () => {
+  assert.deepEqual(requiredDomainsForTrack({ targetRoleArchetype: "policy" }), ["ai-gov", "policy", "quant"]);
+  const advisory = requiredDomainsForTrack({ targetRoleArchetype: "advisory" });
+  assert.deepEqual(advisory, ["geo", "comms"]);
+  assert.ok(!advisory.includes("ai-gov"), "AFTERLINE: geopolitics/advisory must never require AI governance");
+  // fallback by slug/name when no archetype.
+  assert.deepEqual(requiredDomainsForTrack({ slug: "ai-gov-ops", name: "AI Gov Ops" }), ["ai-gov", "policy", "quant"]);
+  assert.deepEqual(requiredDomainsForTrack({ slug: "unknown", name: "Mystery" }), [], "no profile -> no gaps, never a false alarm");
+});
+
+// 5.1 — a gap is required-minus-evidenced; an evidenced Learn item closes its own
+// domain. Items whose text doesn't normalize to a required domain don't help.
+test("gap detection: an evidenced Learn item closes only the domain its text normalizes to", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ai-gov-ops", name: "AI Gov Ops", status: "active", priority: 5, targetRoleArchetype: "policy" } as any);
+  // ai-gov evidenced via an evidenced learn item (has outputEvidenceUrl -> evidenced).
+  await h.storage.createLearn({
+    title: "AI governance course", category: "AI governance", capabilityBuilt: "ai safety",
+    relatedTrackId: track.id, learnStatus: "active", outputEvidenceUrl: "https://proof.example/memo",
+  } as any);
+
+  const r = await computeLearningGaps();
+  const t = r.tracks.find((x) => x.trackId === track.id)!;
+  assert.deepEqual(t.requiredDomains, ["ai-gov", "policy", "quant"]);
+  assert.ok(t.evidencedDomains.includes("ai-gov"), "the AI governance item evidences ai-gov");
+  assert.deepEqual(t.gapDomains, ["policy", "quant"], "policy + quant remain open gaps");
+});
+
+// 5.1 AFTERLINE — the geopolitics proof asset normalizes to geo/comms; it can
+// neither evidence an AI gap nor be demanded to carry AI content.
+test("AFTERLINE: the geopolitics proof asset never evidences an AI gap", async () => {
+  const aiTrack = await h.storage.createCareerTrack({ slug: "ai-gov-ops", name: "AI Gov Ops", status: "active", priority: 5, targetRoleArchetype: "policy" } as any);
+  // A geopolitics Substack proof asset linked to the AI track. Its OWN text is geo —
+  // so it credits geo (not a required AI domain), and the AI gaps stay open.
+  await h.storage.createHustle({
+    title: "Geopolitics Substack", contentPillar: "geopolitical forecasting",
+    coreClaim: "weekly foreign policy analysis", note: "international relations essay",
+    stage: "earning", proofAssetForTrack: aiTrack.id,
+  } as any);
+
+  const r = await computeLearningGaps();
+  const t = r.tracks.find((x) => x.trackId === aiTrack.id)!;
+  assert.ok(!t.evidencedDomains.includes("ai-gov"), "geopolitics asset must NOT evidence ai-gov");
+  assert.ok(t.gapDomains.includes("ai-gov"), "ai-gov stays a gap — never filled by the geo asset");
+});
+
+// wins.trackId DEBT — evidence attribution PREFERS the explicit column.
+test("wins.trackId column is preferred for evidence attribution", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ai-gov-ops", name: "AI Gov Ops", status: "active", priority: 5 } as any);
+  await h.storage.createWin({ text: "shipped a memo", winCategory: "proof_asset", trackId: track.id } as any);
+
+  const ev = await computeEvidence();
+  const b = ev.byTrack.get(track.id)!;
+  assert.equal(b.evidenceCount, 1, "the column-tagged win is attributed to the track directly");
+  const untracked = ev.byTrack.get("untracked")!;
+  assert.equal(untracked.evidenceCount, 0, "nothing leaks to untracked");
+});
+
+// wins.trackId DEBT — a legacy win with NO trackId still attributes via the
+// completed-event text-match fallback (column-null stays valid, not lost).
+test("legacy win with null trackId falls back to the completed-event text match", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ai-gov-ops", name: "AI Gov Ops", status: "active", priority: 5 } as any);
+  const task = await h.storage.createTask({ title: "Publish forecast", list: "today", status: "in_progress", relatedTrackId: track.id } as any);
+  // complete via the route so a completed activity event + a win (with trackId) are
+  // created — then strip the win's trackId to simulate a legacy row.
+  await api(h.base, "POST", `/api/tasks/${task.id}/complete`, { day: DAY });
+  const win = (await h.storage.getWins())[0];
+  h.sqlite.prepare(`UPDATE wins SET track_id = NULL WHERE id = ?`).run(win.id);
+
+  const ev = await computeEvidence();
+  const b = ev.byTrack.get(track.id)!;
+  assert.equal(b.evidenceCount, 1, "legacy win still lands on the track via text-match fallback");
+});
+
+// 5.3 — sequencing: an unmet prerequisite pushes its item AFTER the prereq.
+test("sequencing orders an item with an unmet prerequisite after its dependency", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ai-gov-ops", name: "AI Gov Ops", status: "active", priority: 5, targetRoleArchetype: "policy" } as any);
+  const prereq = await h.storage.createLearn({
+    title: "Intro to policy", category: "policy frameworks", relatedTrackId: track.id, learnStatus: "open",
+  } as any);
+  await h.storage.createLearn({
+    title: "Advanced policy", category: "policy frameworks", relatedTrackId: track.id,
+    learnStatus: "open", prerequisites: JSON.stringify([prereq.id]),
+  } as any);
+
+  const r = await computeLearningGaps();
+  const t = r.tracks.find((x) => x.trackId === track.id)!;
+  const policySteps = t.sequence.filter((s) => s.gapDomain === "policy" && s.learnId !== null);
+  assert.equal(policySteps[0].title, "Intro to policy", "prereq sequenced first");
+  assert.equal(policySteps[1].title, "Advanced policy", "dependent item comes after");
+  assert.equal(policySteps[1].hasUnmetPrereq, true, "the dependent item flags its unmet prereq");
+});
+
+// 5.3 — a gap domain with no matching live Learn item becomes an unfilled-gap slot
+// (the attach point for later out-of-scope discovered resources).
+test("a gap with no Learn item produces an unfilled-gap slot", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ai-gov-ops", name: "AI Gov Ops", status: "active", priority: 5, targetRoleArchetype: "policy" } as any);
+  const r = await computeLearningGaps();
+  const t = r.tracks.find((x) => x.trackId === track.id)!;
+  assert.ok(t.unfilledGapCount >= 1, "no Learn items -> unfilled-gap slots exist");
+  assert.ok(t.sequence.some((s) => s.learnId === null), "an unfilled slot is present in the sequence");
+});
+
+// 5.4 — strategy ordering: the learning gap is a STRUCTURAL bottleneck but ranks
+// BELOW readiness. With proof/warmth cleared, a live-but-unready application
+// surfaces readiness, not the (also-open) capability gap, as the primary move.
+test("strategy ranks the learning gap below readiness", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ai-gov-ops", name: "AI Gov Ops", status: "active", priority: 5, targetRoleArchetype: "policy" } as any);
+  // Live proof asset normalizing to ai-gov clears proofGap (and evidences ai-gov).
+  await h.storage.createHustle({ title: "AI governance memo series", contentPillar: "ai safety", coreClaim: "frontier ai policy", note: "responsible ai", stage: "earning", proofAssetForTrack: track.id } as any);
+  // A live, low-readiness job creates the readiness gap; warm contact clears warmth.
+  await h.storage.createJob({ title: "Policy analyst", company: "Org", status: "applied", relatedTrackId: track.id, applicationReadiness: "none", warmPathScore: 80 } as any);
+  await h.storage.createContact({ name: "Ally", who: "Ally", status: "replied", relatedTrackId: track.id } as any);
+
+  const fd = await api(h.base, "GET", "/api/strategy/front-door");
+  const t = fd.json.tracks.find((x: any) => x.id === track.id)!;
+  assert.equal(t.bottleneck, "readiness", "readiness outranks the capability gap");
+  assert.ok(t.learningGap && t.learningGap.gapCount > 0, "the capability gap is still reported alongside");
+  assert.ok(fd.json.learningGap, "the front-door exposes the top learning-gap signal");
+});
+
+// 5.4 — when no readiness/proof/warmth/execution blocker is louder, the learning
+// gap surfaces as the primary structural move (above the calm evidence nudge).
+test("learning gap is the move when no louder structural blocker exists", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ai-gov-ops", name: "AI Gov Ops", status: "active", priority: 5, targetRoleArchetype: "policy" } as any);
+  // A live proof asset normalizing to ai-gov: clears directionGap + proofGap and
+  // evidences ai-gov, leaving policy + quant as the only open (capability) gaps.
+  await h.storage.createHustle({ title: "AI governance memo series", contentPillar: "ai safety", coreClaim: "frontier ai policy", note: "responsible ai", stage: "earning", proofAssetForTrack: track.id } as any);
+  // A warm contact clears the warmth signal; no live jobs -> no readiness/warmth-from-jobs.
+  await h.storage.createContact({ name: "Ally", who: "Ally", status: "replied", relatedTrackId: track.id } as any);
+  // Log a win so the evidence nudge can't be the bottleneck either.
+  await h.storage.createWin({ text: "shipped a memo", winCategory: "proof_asset", trackId: track.id } as any);
+
+  const fd = await api(h.base, "GET", "/api/strategy/front-door");
+  const t = fd.json.tracks.find((x: any) => x.id === track.id)!;
+  assert.equal(t.bottleneck, "learning", "capability gap surfaces once nothing structural is louder");
+  assert.ok(/policy|quant/i.test(t.recommendedMove), "the move names an unmet capability domain");
+});
+
+// proofIntent — the opt-in lane. An item with proofIntent=0 and no requiredOutput
+// is SILENT (reference); setting proofIntent moves it into the producing lane.
+test("proofIntent: reference stays silent; opting in enters the producing lane", () => {
+  const ref = { requiredOutput: "", proofIntent: false, outputEvidenceUrl: "" };
+  assert.equal(getLearnOutputState(ref as any), "reference", "no output + no intent = silent reference");
+  assert.equal(learnNeedsOutputNudge(ref as any), false, "reference is never nudged");
+
+  const optedIn = { requiredOutput: "", proofIntent: true, outputEvidenceUrl: "" };
+  assert.equal(getLearnOutputState(optedIn as any), "producing", "proofIntent alone enters the producing lane");
+  assert.equal(learnNeedsOutputNudge(optedIn as any), true, "opted-in-without-output gets the soft nudge");
+});
+
+// proofIntent round-trips through the PATCH route and flips the derived state.
+test("proofIntent round-trips via PATCH and flips the output state", async () => {
+  const l = await h.storage.createLearn({ title: "A book", category: "geopolitics", learnStatus: "open" } as any);
+  assert.equal(getLearnOutputState(l), "reference", "starts as silent reference");
+  const r = await api(h.base, "PATCH", `/api/learn/${l.id}`, { proofIntent: true });
+  assert.equal(r.status, 200);
+  const after = (await h.storage.getLearn()).find((x) => x.id === l.id)!;
+  assert.equal(getLearnOutputState(after), "producing", "opting in moves it to producing");
 });
 
 // plan recompute does not produce duplicate started/linked tasks — starting an

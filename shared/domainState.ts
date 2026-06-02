@@ -112,15 +112,17 @@ export const LEARN_OUTPUT_STATES = ["reference", "producing", "evidenced"] as co
 export type LearnOutputState = (typeof LEARN_OUTPUT_STATES)[number];
 
 // A learn item is "opted in" to the proof-building lane when the user has either
-// set an intended output OR linked it to a track as proof-building.
-export function isLearnProofOptedIn(l: Pick<Learn, "requiredOutput" | "relatedTrackId">): boolean {
+// set an intended output OR explicitly flagged it as proof-building (P5 proofIntent).
+// P5: intent is now EXPLICIT (proofIntent) rather than inferred from relatedTrackId —
+// a track-linked reference item no longer auto-enters the producing lane. The user
+// opts in deliberately, so pure-consumption on a tracked item stays silent.
+export function isLearnProofOptedIn(l: Pick<Learn, "requiredOutput" | "proofIntent">): boolean {
   const hasOutput = !!(l.requiredOutput && l.requiredOutput.trim());
-  const trackLinked = l.relatedTrackId != null;
-  return hasOutput || trackLinked;
+  return hasOutput || !!l.proofIntent;
 }
 
 export function getLearnOutputState(
-  l: Pick<Learn, "requiredOutput" | "relatedTrackId" | "outputEvidenceUrl">,
+  l: Pick<Learn, "requiredOutput" | "proofIntent" | "outputEvidenceUrl">,
   hasProofLink = false,
 ): LearnOutputState {
   const evidenced = !!(l.outputEvidenceUrl && l.outputEvidenceUrl.trim()) || hasProofLink;
@@ -128,16 +130,17 @@ export function getLearnOutputState(
   return isLearnProofOptedIn(l) ? "producing" : "reference";
 }
 
-// True only for the SOFT, NON-AMBER reminder: the user linked this to a track as
-// proof-building but hasn't given it any output yet. Pure-consumption (reference)
-// items are NEVER flagged. Items with a requiredOutput already have their lane.
+// True only for the SOFT, NON-AMBER reminder: the user flagged this as proof-
+// building (proofIntent) but hasn't given it any output yet. Pure-consumption
+// (reference) items are NEVER flagged. Items with a requiredOutput already have
+// their lane and need no nudge.
 export function learnNeedsOutputNudge(
-  l: Pick<Learn, "requiredOutput" | "relatedTrackId" | "outputEvidenceUrl">,
+  l: Pick<Learn, "requiredOutput" | "proofIntent" | "outputEvidenceUrl">,
   hasProofLink = false,
 ): boolean {
   if (getLearnOutputState(l, hasProofLink) !== "producing") return false;
   const hasOutputIntent = !!(l.requiredOutput && l.requiredOutput.trim());
-  return l.relatedTrackId != null && !hasOutputIntent;
+  return !!l.proofIntent && !hasOutputIntent;
 }
 
 // ── CONTACTS ────────────────────────────────────────────────────────────────

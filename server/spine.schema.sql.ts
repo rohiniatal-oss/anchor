@@ -60,6 +60,7 @@ CREATE TABLE jobs (
   deadline TEXT NOT NULL DEFAULT '',
   flag TEXT NOT NULL DEFAULT '',
   role_archetype TEXT NOT NULL DEFAULT '',
+  opportunity_kind TEXT NOT NULL DEFAULT 'job',
   fit_score INTEGER,
   stretch_score INTEGER,
   strategic_value INTEGER,

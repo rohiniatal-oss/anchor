@@ -7,11 +7,20 @@ import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { makeHarness, api, type Harness } from "./spine.harness";
 import { isSubmitStep } from "@shared/jobTemplates";
+import { isFellowshipOpportunity } from "@shared/fellowshipLane";
+import { isOpportunityActionable } from "@shared/domainState";
 
 let h: Harness;
 const DAY = "2026-06-02";
+// Imported dynamically AFTER the harness sets ANCHOR_DB_PATH — a static import
+// would pull in ./storage (which opens its db handle at module load) before the
+// harness points it at the throwaway DB.
+let migrateFellowshipLearnRows: typeof import("./fellowshipMigration").migrateFellowshipLearnRows;
 
-before(async () => { h = await makeHarness(); });
+before(async () => {
+  h = await makeHarness();
+  ({ migrateFellowshipLearnRows } = await import("./fellowshipMigration"));
+});
 after(async () => { await h.close(); });
 beforeEach(() => { h.reset(); });
 
@@ -188,6 +197,119 @@ test("coach returns the brain's deterministically-selected move", async () => {
   assert.ok(typeof r.json.suggestion.title === "string" && r.json.suggestion.title.length > 0, "move has a brain-derived title");
   assert.ok(["job", "substack", "interview", "health", "learning", "hustle", "afterline", "admin"].includes(r.json.suggestion.category));
   assert.equal(r.json.suggestion.sourceType, "job", "move carries its brain source type");
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// FELLOWSHIP MECE FIX — a fellowship is an OPPORTUNITY YOU APPLY TO, not a
+// resource you consume. Legacy `learn` rows that are really fellowships migrate
+// into the jobs/opportunity pipeline (opportunityKind="fellowship"), get the
+// application step rail (eligibility FIRST, no proof/output workflow), and a
+// gated/closed 2026 cycle reads as watch/closed — monitored, not actionable.
+// ─────────────────────────────────────────────────────────────────────────
+
+test("fellowship learn row migrates into jobs and disappears from Learn", async () => {
+  await h.storage.createLearn({
+    title: "Talos Fellowship", type: "fellowship", category: "Fellowship · WATCH",
+    note: "EU citizenship required; closed for 2026, reopens next cycle.",
+    url: "https://talos.example", applicationDeadline: "", learnStatus: "watch",
+  } as any);
+
+  const r = migrateFellowshipLearnRows();
+  assert.equal(r.migrated, 1, "one fellowship moved");
+
+  const learnAfter = await h.storage.getLearn();
+  assert.equal(learnAfter.length, 0, "originating learn row removed");
+
+  const jobsAfter = await h.storage.getJobs();
+  assert.equal(jobsAfter.length, 1, "fellowship now an opportunity");
+  const f = jobsAfter[0];
+  assert.equal(f.opportunityKind, "fellowship");
+  assert.equal(f.roleArchetype, "fellowship", "carries the fellowship archetype for its rail");
+  assert.ok(isFellowshipOpportunity(f), "recognised as a fellowship opportunity");
+  assert.equal(f.url, "https://talos.example", "url carried over");
+});
+
+test("a course is NEVER misclassified as a fellowship (stays in Learn)", async () => {
+  await h.storage.createLearn({
+    title: "BlueDot AI Governance course", type: "course", category: "Course",
+    note: "AI governance fundamentals.", learnStatus: "active",
+  } as any);
+
+  const r = migrateFellowshipLearnRows();
+  assert.equal(r.migrated, 0, "course must not migrate");
+
+  const learnAfter = await h.storage.getLearn();
+  assert.equal(learnAfter.length, 1, "course stays in Learn");
+  assert.equal((await h.storage.getJobs()).length, 0, "no opportunity created from a course");
+});
+
+test("a migrated fellowship gets the application step rail, eligibility FIRST", async () => {
+  await h.storage.createLearn({
+    title: "Impact Accelerator", type: "fellowship", category: "Fellowship · OPEN",
+    note: "Open cohort.", applicationDeadline: "2026-06-07", learnStatus: "open",
+  } as any);
+  migrateFellowshipLearnRows();
+  const f = (await h.storage.getJobs())[0];
+
+  const steps = await h.storage.seedJobSteps(f.id);
+  const labels = steps.map((s) => s.stepLabel);
+  assert.deepEqual(labels, [
+    "Confirm eligibility", "Check/confirm deadline", "Prepare materials",
+    "Submit application", "Follow up",
+  ], "fellowship rail with eligibility first — not a proof/output workflow");
+});
+
+test("an open fellowship is actionable; a gated/closed 2026 one is watch/closed", async () => {
+  await h.storage.createLearn({
+    title: "Impact Accelerator", type: "fellowship", category: "Fellowship · OPEN",
+    note: "Open cohort.", applicationDeadline: "2026-06-07", learnStatus: "open",
+  } as any);
+  await h.storage.createLearn({
+    title: "Horizon Fellowship", type: "fellowship", category: "Fellowship · WATCH",
+    note: "Requires US work eligibility; closed for 2026.", learnStatus: "watch",
+  } as any);
+  migrateFellowshipLearnRows();
+
+  const all = await h.storage.getJobs();
+  const open = all.find((j) => j.title === "Impact Accelerator")!;
+  const watch = all.find((j) => j.title === "Horizon Fellowship")!;
+
+  assert.equal(open.applicationWindowStatus, "open");
+  assert.equal(open.eligibilityRisk, "", "open one carries no eligibility risk");
+  assert.ok(isOpportunityActionable(open), "open fellowship is actionable now");
+
+  assert.equal(watch.applicationWindowStatus, "closed", "gated 2026 one is window-closed");
+  assert.ok(watch.eligibilityRisk, "carries an eligibility-risk chip");
+  assert.equal(watch.status, "wishlist", "still a tracked opportunity, not deleted");
+  assert.equal(isOpportunityActionable(watch), false, "closed window is monitored, not actionable");
+});
+
+test("a watch/closed fellowship is not surfaced by the coach/brain", async () => {
+  await h.storage.createLearn({
+    title: "IAPS Fellowship", type: "fellowship", category: "Fellowship · WATCH",
+    note: "US work authorisation required; closed for 2026.", learnStatus: "watch",
+  } as any);
+  migrateFellowshipLearnRows();
+
+  const r = await api(h.base, "POST", "/api/coach", { exclude: [] });
+  assert.equal(r.status, 200);
+  // Only a watch/closed fellowship exists — nothing actionable, so the brain has
+  // no live move to surface from it.
+  if (r.json.suggestion) {
+    assert.notEqual(r.json.suggestion.title, "IAPS Fellowship", "closed fellowship is not recommended");
+  }
+});
+
+test("migration is idempotent — re-running produces no duplicate opportunities", async () => {
+  await h.storage.createLearn({
+    title: "MATS", type: "fellowship", category: "Fellowship · WATCH",
+    note: "Closed for 2026.", learnStatus: "watch",
+  } as any);
+  const first = migrateFellowshipLearnRows();
+  assert.equal(first.migrated, 1);
+  const second = migrateFellowshipLearnRows();
+  assert.equal(second.migrated, 0, "second run migrates nothing new");
+  assert.equal((await h.storage.getJobs()).length, 1, "no duplicate opportunity");
 });
 
 // plan recompute does not produce duplicate started/linked tasks — starting an

@@ -64,6 +64,28 @@ export function isJobLive(j: Pick<Job, "status">): boolean {
   return s === "wishlist" || s === "applied" || s === "interviewing";
 }
 
+// A fellowship is an opportunity YOU APPLY TO (opportunityKind/roleArchetype
+// "fellowship"). Reuse a tolerant check here so domain consumers don't import
+// the normalizer for the common case.
+export function isFellowship(j: Pick<Job, "opportunityKind" | "roleArchetype">): boolean {
+  const kind = (j.opportunityKind || "").trim().toLowerCase();
+  if (kind === "fellowship") return true;
+  return (j.roleArchetype || "").trim().toLowerCase() === "fellowship";
+}
+
+// ACTIONABLE-NOW gate for the brain/strategy. A closed application window means
+// the opportunity is monitored, not live — so a watch/closed fellowship (or any
+// job whose window is closed) must NOT inflate readiness or be surfaced as a
+// live application. status-live AND window-open. This is stricter than isJobLive
+// (which is status-only) and is the gate to use when "can she act on it today?"
+// matters. Paid roles default applicationWindowStatus="open", so their behaviour
+// is unchanged.
+export function isOpportunityActionable(
+  j: Pick<Job, "status" | "applicationWindowStatus">,
+): boolean {
+  return isJobLive(j) && getJobWindow(j) !== "closed";
+}
+
 // ── LEARN — canonical = learnStatus; done/active are derived ────────────────
 export function getLearnStatus(l: Pick<Learn, "learnStatus">): LearnStatus {
   return (LEARN_STATUSES as readonly string[]).includes(l.learnStatus) ? (l.learnStatus as LearnStatus) : "open";

@@ -13,6 +13,7 @@ import {
   insertJobPipelineStepSchema, insertProofAssetStepSchema,
 } from "@shared/schema";
 import { isSubmitStep } from "@shared/jobTemplates";
+import { migrateFellowshipLearnRows } from "./fellowshipMigration";
 
 function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
   create: (d: any) => Promise<any>, update: (id: number, d: any) => Promise<any>, del: (id: number) => Promise<any>) {
@@ -33,6 +34,11 @@ function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+  // MECE fix: move any legacy fellowship `learn` rows into the opportunity
+  // pipeline before serving. Idempotent + conservative (dedupe by title+kind;
+  // never misclassifies a course). Safe to run on every boot.
+  try { migrateFellowshipLearnRows(); } catch (e) { console.error("Fellowship migration skipped:", e); }
+
   crud(app, "tasks", () => storage.getTasks(), insertTaskSchema,
     (d) => storage.createTask(d), (id, d) => storage.updateTask(id, d), (id) => storage.deleteTask(id));
   crud(app, "jobs", () => storage.getJobs(), insertJobSchema,

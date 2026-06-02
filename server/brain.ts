@@ -1,4 +1,5 @@
 import type { Task, Job, Learn, Hustle } from "@shared/schema";
+import { isOpportunityActionable } from "@shared/domainState";
 
 // ─────────────────────────────────────────────────────────────────────────
 // ANCHOR BRAIN — adaptive sequencer (NOT a balanced-day picker).
@@ -111,9 +112,11 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
     }
   }
 
-  // Jobs — real per-state next step, deadline CARRIED.
+  // Jobs (incl. fellowships) — real per-state next step, deadline CARRIED.
+  // Window-aware: a closed window (e.g. a watch/closed 2026 fellowship) is
+  // MONITORED, not actionable, so it never surfaces as a live application.
   for (const j of jobs) {
-    if (["wishlist", "applied", "interviewing"].includes(j.status)) {
+    if (isOpportunityActionable(j)) {
       const { action, size, doneWhen, why } = jobNextStep(j);
       out.push({
         source: "job", sourceId: j.id, taskId: null,

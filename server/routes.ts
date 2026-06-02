@@ -4,12 +4,12 @@ import type { Server } from 'node:http';
 import { storage, type TrackEntity } from "./storage";
 import OpenAI from "openai";
 import { recommend, planDay } from "./brain";
-import { createNextTask, materializeJobStep, type NextTaskSourceType } from "./nextTask";
+import { createNextTask, materializeJobStep, materializeProofStep, type NextTaskSourceType } from "./nextTask";
 import { getTrackDiagnostics, getUnlinkedItems } from "./strategy";
 import {
   insertTaskSchema, insertEventSchema, insertJobSchema,
   insertLearnSchema, insertHustleSchema, insertWinSchema, insertContactSchema,
-  insertJobPipelineStepSchema,
+  insertJobPipelineStepSchema, insertProofAssetStepSchema,
 } from "@shared/schema";
 
 function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
@@ -699,6 +699,99 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       await storage.updateTask(step.taskId, { readiness: "blocked", blockerReason: reason, status: "stuck" } as any);
     }
     await storage.logActivity({ eventType: "blocked", sourceType: "job", sourceId: step.jobId, taskId: step.taskId ?? undefined, metadata: JSON.stringify({ stepId, reason }) } as any);
+    res.json(updated);
+  });
+
+  // ═══ P4.3: PROOF ASSET STEPS — a TASK-GENERATIVE proof-production rail over a ═══
+  // proof asset (hustle). Steps are SEEDED from a kind-aware template (substack/
+  // afterline/memo), then editable per asset. Each step does ONLY ONE of:
+  // materialize-as-task (reuses 3.5 createNextTask provenance + dedupe, carrying
+  // proofAssetForTrack as relatedTrackId), mark-done, or mark-blocked. Mirrors the
+  // 4.1 job step API exactly; "blocked" is distinct from "skipped".
+  app.get("/api/hustles/:id/steps", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    res.json(await storage.getProofAssetSteps(id));
+  });
+
+  // Seed from the kind-aware template — no-op if steps already exist.
+  app.post("/api/hustles/:id/steps/seed", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const steps = await storage.seedProofAssetSteps(id);
+    if (!steps.length) {
+      const h = (await storage.getHustles()).find((x) => x.id === id);
+      if (!h) return res.status(404).json({ error: "Proof asset not found" });
+    }
+    res.json(steps);
+  });
+
+  // Add a custom step.
+  app.post("/api/hustles/:id/steps", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const stepLabel = String(req.body?.stepLabel || "").trim().slice(0, 120);
+    if (!stepLabel) return res.status(400).json({ error: "Need a stepLabel" });
+    const note = String(req.body?.note || "").slice(0, 300);
+    const sequence = Number.isFinite(Number(req.body?.sequence)) ? Number(req.body.sequence) : undefined;
+    res.json(await storage.createProofAssetStep(id, { stepLabel, note, sequence }));
+  });
+
+  // Edit label / status / note / sequence (one-action contract unchanged).
+  app.patch("/api/proof-steps/:stepId", async (req, res) => {
+    const stepId = Number(req.params.stepId);
+    if (!Number.isFinite(stepId)) return res.status(400).json({ error: "Bad id" });
+    const p = insertProofAssetStepSchema.partial().omit({ hustleId: true }).safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const updated = await storage.updateProofAssetStep(stepId, p.data);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  });
+
+  app.delete("/api/proof-steps/:stepId", async (req, res) => {
+    const stepId = Number(req.params.stepId);
+    if (!Number.isFinite(stepId)) return res.status(400).json({ error: "Bad id" });
+    await storage.deleteProofAssetStep(stepId);
+    res.json({ ok: true });
+  });
+
+  app.patch("/api/hustles/:id/steps/reorder", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const ordered = Array.isArray(req.body?.orderedStepIds) ? req.body.orderedStepIds.map(Number).filter(Number.isFinite) : null;
+    if (!ordered) return res.status(400).json({ error: "Need orderedStepIds:number[]" });
+    res.json(await storage.reorderProofAssetSteps(id, ordered));
+  });
+
+  // Materialize a proof step into a task via the existing provenance + dedupe
+  // machinery. The task carries proofAssetForTrack (as relatedTrackId) from the
+  // hustle branch of createNextTask. Records the resulting taskId; reuses an
+  // open hustle task rather than duplicating.
+  app.post("/api/proof-steps/:stepId/materialize", async (req, res) => {
+    const stepId = Number(req.params.stepId);
+    if (!Number.isFinite(stepId)) return res.status(400).json({ error: "Bad id" });
+    const step = await storage.getProofAssetStep(stepId);
+    if (!step) return res.status(404).json({ error: "Step not found" });
+    const result = await materializeProofStep(step);
+    if (!result) return res.status(404).json({ error: "Proof asset not found" });
+    await storage.logActivity({ eventType: "planned", sourceType: "hustle", sourceId: step.hustleId, taskId: result.task.id, metadata: JSON.stringify({ stepId, reused: result.reused }) } as any);
+    res.json({ ...result.task, reused: result.reused, stepId });
+  });
+
+  // mark-blocked: thin status + blocker note on the step. "blocked" is distinct
+  // from "skipped". If the step already materialized a task, propagate
+  // readiness="blocked" to that task (NOT a parallel state machine).
+  app.post("/api/proof-steps/:stepId/block", async (req, res) => {
+    const stepId = Number(req.params.stepId);
+    if (!Number.isFinite(stepId)) return res.status(400).json({ error: "Bad id" });
+    const step = await storage.getProofAssetStep(stepId);
+    if (!step) return res.status(404).json({ error: "Step not found" });
+    const reason = String(req.body?.reason || "Blocked").slice(0, 160);
+    const updated = await storage.updateProofAssetStep(stepId, { status: "blocked", note: reason } as any);
+    if (step.taskId) {
+      await storage.updateTask(step.taskId, { readiness: "blocked", blockerReason: reason, status: "stuck" } as any);
+    }
+    await storage.logActivity({ eventType: "blocked", sourceType: "hustle", sourceId: step.hustleId, taskId: step.taskId ?? undefined, metadata: JSON.stringify({ stepId, reason }) } as any);
     res.json(updated);
   });
 

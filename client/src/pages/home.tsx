@@ -7,13 +7,14 @@ import {
   Rocket, MoveRight, MoonStar, Lightbulb, Users, MessageCircle, RefreshCw,
   Compass, ArrowUpRight, Link2, ListChecks, AlertTriangle,
   Lock, Pencil, ArrowUp, ArrowDown, Ban, CheckCircle2,
-  MessageSquare, Flame, Send,
+  MessageSquare, Flame, Send, FileText, Newspaper, Package,
 } from "lucide-react";
 import { NETWORK_LANES, OPEN_LANE, ALL_LANE_KEYS, laneForSourceNetwork, laneLabel } from "@shared/networkLanes";
+import { classifyProofAsset, PROOF_ASSET_KIND_LABEL, type ProofAssetKind } from "@shared/proofAssetTemplates";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
-import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack, JobPipelineStep } from "@shared/schema";
+import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 import { type TrackedEntity, getTrackId, getRelationshipStrength, WIN_CATEGORIES, type WinCategory } from "@shared/domainState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +64,7 @@ const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] =
   { id: "jobs", label: "Jobs", icon: Briefcase, blurb: "Your applications" },
   { id: "network", label: "Network", icon: Users, blurb: "People to reach" },
   { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
-  { id: "hustle", label: "Hustle", icon: Rocket, blurb: "Projects & side income" },
+  { id: "hustle", label: "Proof Assets", icon: Rocket, blurb: "Credibility you produce" },
   { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
 ];
 
@@ -128,7 +129,7 @@ export default function Home() {
         {tab === "jobs" && <JobsView />}
         {tab === "network" && <NetworkView />}
         {tab === "learn" && <LearnView />}
-        {tab === "hustle" && <HustleView />}
+        {tab === "hustle" && <ProofAssetsView />}
         {tab === "wins" && <WinsView />}
       </main>
     </div>
@@ -815,7 +816,7 @@ function DoneTaskRow({ t }: { t: Task }) {
 }
 
 /* ---------------- BRAIN DUMP ---------------- */
-const SORT_LABELS: Record<string, string> = { today: "Today", job: "Jobs", learn: "Learn", hustle: "Hustle" };
+const SORT_LABELS: Record<string, string> = { today: "Today", job: "Jobs", learn: "Learn", hustle: "Proof" };
 function BrainDumpView() {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [text, setText] = useState("");
@@ -1582,22 +1583,188 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
   );
 }
 
-/* ---------------- HUSTLE ---------------- */
+/* ---------------- PROOF ASSETS (P4.3) ---------------- */
+// Proof Assets is a PROOF-PRODUCTION view: each asset's primary verb is "produce
+// the next output" via a step that materializes a task. Career-proof systems,
+// NOT side-income ventures — the DB table stays `hustles` internally. Stages
+// (idea|testing|earning) still group the assets by how real each one is.
 const HUSTLE_STAGES = [
-  { id: "idea", label: "Ideas", hint: "Worth exploring" },
-  { id: "testing", label: "Testing", hint: "Trying it out" },
-  { id: "earning", label: "Live / earning", hint: "Making it real" },
+  { id: "idea", label: "Idea", hint: "Not yet producing" },
+  { id: "testing", label: "Producing", hint: "Output going out" },
+  { id: "earning", label: "Established", hint: "Recognised proof" },
 ] as const;
-function HustleView() {
+
+const PROOF_KIND_ICON: Record<ProofAssetKind, typeof Sun> = {
+  substack: Newspaper, afterline: Package, memo: FileText,
+};
+
+// Kind badge from the derived classifier — never a stored column.
+function ProofKindBadge({ kind }: { kind: ProofAssetKind }) {
+  const Icon = PROOF_KIND_ICON[kind];
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-700 px-1.5 py-0.5 text-[10px] font-medium text-slate-100" data-testid={`badge-kind-${kind}`}>
+      <Icon className="w-2.5 h-2.5" /> {PROOF_ASSET_KIND_LABEL[kind]}
+    </span>
+  );
+}
+
+// The proof-production rail — mirrors JobStepRail (4.1) exactly: seed-when-empty,
+// per-step materialize / mark-done / mark-blocked, edit (add/rename/delete/reorder).
+// Hits the proof-step API (/api/hustles/:id/steps... and /api/proof-steps/:stepId...).
+function ProofStepRail({ h }: { h: Hustle }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const stepsKey = ["/api/hustles", h.id, "steps"];
+  const { data: steps = [], isLoading } = useQuery<ProofAssetStep[]>({
+    queryKey: stepsKey,
+    queryFn: async () => { const r = await fetch(`/api/hustles/${h.id}/steps`); return r.json(); },
+  });
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  async function reloadInto() { await qc.invalidateQueries({ queryKey: stepsKey }); }
+
+  async function seed() {
+    setBusy(true);
+    try {
+      await mutateAndInvalidate("POST", `/api/hustles/${h.id}/steps/seed`, {}, ["/api/strategy/diagnostics"]);
+      await reloadInto();
+      toast({ title: "Steps generated.", description: "From this asset's workflow — edit them to fit." });
+    } catch { toast({ title: "Couldn't generate steps", description: "Try again in a moment." }); }
+    finally { setBusy(false); }
+  }
+  async function materialize(s: ProofAssetStep) {
+    setBusy(true);
+    try {
+      const r = await mutateAndInvalidate("POST", `/api/proof-steps/${s.id}/materialize`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
+      await reloadInto();
+      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this asset." : "Find it in your inbox / today list." });
+    } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
+    finally { setBusy(false); }
+  }
+  async function setStatus(s: ProofAssetStep, status: string) {
+    await mutateAndInvalidate("PATCH", `/api/proof-steps/${s.id}`, { status }, ["/api/strategy/diagnostics"]);
+    await reloadInto();
+  }
+  async function block(s: ProofAssetStep) {
+    await mutateAndInvalidate("POST", `/api/proof-steps/${s.id}/block`, { reason: "Blocked from the rail" }, ["/api/tasks", "/api/strategy/diagnostics"]);
+    await reloadInto();
+    toast({ title: "Marked blocked.", description: "Noted on the step — unblock it when ready." });
+  }
+  async function rename(s: ProofAssetStep, stepLabel: string) {
+    if (!stepLabel.trim() || stepLabel === s.stepLabel) return;
+    await mutateAndInvalidate("PATCH", `/api/proof-steps/${s.id}`, { stepLabel: stepLabel.trim() }, []);
+    await reloadInto();
+  }
+  async function del(s: ProofAssetStep) {
+    await mutateAndInvalidate("DELETE", `/api/proof-steps/${s.id}`, undefined, ["/api/strategy/diagnostics"]);
+    await reloadInto();
+  }
+  async function addStep() {
+    if (!newLabel.trim()) return;
+    await mutateAndInvalidate("POST", `/api/hustles/${h.id}/steps`, { stepLabel: newLabel.trim() }, ["/api/strategy/diagnostics"]);
+    setNewLabel("");
+    await reloadInto();
+  }
+  async function reorder(s: ProofAssetStep, dir: -1 | 1) {
+    const ids = steps.map((x) => x.id);
+    const i = ids.indexOf(s.id);
+    const ni = i + dir;
+    if (ni < 0 || ni >= ids.length) return;
+    [ids[i], ids[ni]] = [ids[ni], ids[i]];
+    await mutateAndInvalidate("PATCH", `/api/hustles/${h.id}/steps/reorder`, { orderedStepIds: ids }, ["/api/strategy/diagnostics"]);
+    await reloadInto();
+  }
+
+  const doneCount = steps.filter((s) => s.status === "done").length;
+
+  return (
+    <div className="mt-2.5 pt-2.5 border-t border-card-border" data-testid={`proofrail-${h.id}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <ListChecks className="w-3.5 h-3.5" /> Production rail
+          {steps.length > 0 && <span className="tabular-nums opacity-70">{doneCount}/{steps.length}</span>}
+        </div>
+        {steps.length > 0 && (
+          <button onClick={() => setEditing((e) => !e)} data-testid={`button-edit-proof-steps-${h.id}`} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+            <Pencil className="w-3 h-3" /> {editing ? "Done" : "Edit"}
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground/60 py-1">Loading steps…</p>
+      ) : steps.length === 0 ? (
+        <button onClick={seed} disabled={busy} data-testid={`button-seed-proof-steps-${h.id}`}
+          className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Generate steps
+        </button>
+      ) : (
+        <div className="space-y-1">
+          {steps.map((s, i) => (
+            <div key={s.id} className="flex items-start gap-2" data-testid={`proof-step-${s.id}`}>
+              <span className={`mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${STEP_STATUS_TONE[s.status] || STEP_STATUS_TONE.todo}`}>{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                {editing ? (
+                  <input defaultValue={s.stepLabel} onBlur={(e) => rename(s, e.target.value)} data-testid={`input-proof-step-label-${s.id}`}
+                    className="w-full text-xs bg-transparent border-b border-input pb-0.5 focus:outline-none focus:border-primary" />
+                ) : (
+                  <p className={`text-xs leading-snug ${s.status === "done" ? "line-through text-muted-foreground" : ""}`}>{s.stepLabel}</p>
+                )}
+                {s.status === "blocked" && <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5 inline-flex items-center gap-1"><Ban className="w-2.5 h-2.5" /> blocked{s.note ? `: ${s.note}` : ""}</p>}
+                {s.status === "skipped" && <p className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1"><X className="w-2.5 h-2.5" /> skipped{s.note ? `: ${s.note}` : ""}</p>}
+                {s.taskId && !editing && <p className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1"><ListChecks className="w-2.5 h-2.5" /> task created</p>}
+              </div>
+              {editing ? (
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button onClick={() => reorder(s, -1)} disabled={i === 0} data-testid={`button-proof-step-up-${s.id}`} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => reorder(s, 1)} disabled={i === steps.length - 1} data-testid={`button-proof-step-down-${s.id}`} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => del(s)} data-testid={`button-proof-step-delete-${s.id}`} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              ) : (s.status === "done" || s.status === "skipped") ? (
+                <button onClick={() => setStatus(s, "todo")} title="Reopen" data-testid={`button-proof-step-reopen-${s.id}`} className="shrink-0 text-muted-foreground hover:text-foreground"><RefreshCw className="w-3.5 h-3.5" /></button>
+              ) : (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => materialize(s)} disabled={busy} title="Create a task from this step" data-testid={`button-proof-step-materialize-${s.id}`} className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-0.5 disabled:opacity-60"><Plus className="w-3 h-3" /> Task</button>
+                  <button onClick={() => setStatus(s, "done")} title="Mark done" data-testid={`button-proof-step-done-${s.id}`} className="text-muted-foreground hover:text-primary"><CheckCircle2 className="w-3.5 h-3.5" /></button>
+                  {s.status === "blocked"
+                    ? <button onClick={() => setStatus(s, "todo")} title="Unblock" data-testid={`button-proof-step-unblock-${s.id}`} className="text-muted-foreground hover:text-foreground"><RefreshCw className="w-3.5 h-3.5" /></button>
+                    : <button onClick={() => block(s)} title="Mark blocked" data-testid={`button-proof-step-block-${s.id}`} className="text-muted-foreground hover:text-amber-600"><Ban className="w-3.5 h-3.5" /></button>}
+                </div>
+              )}
+            </div>
+          ))}
+          {editing && (
+            <div className="flex items-center gap-1.5 pt-1">
+              <Input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addStep(); }}
+                placeholder="Add a step…" className="h-7 text-xs" data-testid={`input-add-proof-step-${h.id}`} />
+              <Button size="sm" variant="outline" className="h-7 px-2" onClick={addStep} data-testid={`button-add-proof-step-${h.id}`}><Plus className="w-3.5 h-3.5" /></Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A labelled field row used by the workflow-specific card bodies.
+function ProofField({ label, value }: { label: string; value: string }) {
+  if (!value || !value.trim()) return null;
+  return (
+    <p className="text-xs mt-1.5 leading-snug"><span className="text-muted-foreground">{label}:</span> {value}</p>
+  );
+}
+
+function ProofAssetsView() {
   const { data: hustles = [], isLoading } = useQuery<Hustle[]>({ queryKey: ["/api/hustles"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", note: "", nextStep: "" });
+  const [form, setForm] = useState({ title: "", note: "", coreClaim: "", contentPillar: "" });
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/hustles", { ...form, stage: "idea" }, ["/api/hustles"]);
-    setForm({ title: "", note: "", nextStep: "" }); setShowForm(false);
+    setForm({ title: "", note: "", coreClaim: "", contentPillar: "" }); setShowForm(false);
   }
   async function move(h: Hustle, dir: 1 | -1) {
     const idx = HUSTLE_STAGES.findIndex((s) => s.id === h.stage);
@@ -1613,57 +1780,89 @@ function HustleView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Hustle" sub="Your flagship projects — the Substack and Afterline. Move each right as it gets real; their next steps feed into your day plan." />
-        <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-hustle-form"><Plus className="w-4 h-4 mr-1" /> Add idea</Button>
+        <SectionHeading title="Proof Assets" sub="The credibility you produce — your geopolitics Substack, Afterline, and AI-gov memos. Produce the next output on each rail; every step becomes a task on your day plan." />
+        <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-hustle-form"><Plus className="w-4 h-4 mr-1" /> Add asset</Button>
       </div>
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2">
-          <Input placeholder="What's the idea? *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-hustle-title" />
-          <Input placeholder="Note (who's it for, how it earns)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} data-testid="input-hustle-note" />
-          <Input placeholder="Next step" value={form.nextStep} onChange={(e) => setForm({ ...form, nextStep: e.target.value })} data-testid="input-hustle-nextstep" />
+          <Input placeholder="Asset name? *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-hustle-title" />
+          <Input placeholder="Core claim / what it proves" value={form.coreClaim} onChange={(e) => setForm({ ...form, coreClaim: e.target.value })} data-testid="input-hustle-claim" />
+          <Input placeholder="Content pillar (e.g. geopolitics)" value={form.contentPillar} onChange={(e) => setForm({ ...form, contentPillar: e.target.value })} data-testid="input-hustle-pillar" />
+          <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} data-testid="input-hustle-note" />
           <div className="flex gap-2 justify-end"><Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button><Button onClick={add} data-testid="button-save-hustle">Save</Button></div>
         </div>
       )}
       {isLoading ? <Loading /> : hustles.length === 0 ? (
-        <Empty icon={Rocket} text="No projects yet. Add the Substack or Afterline above." />
+        <Empty icon={Rocket} text="No proof assets yet. Add your Substack, Afterline, or a memo above." />
       ) : (
         <>
           <div className={`grid gap-4 ${active.length > 1 ? "sm:grid-cols-2" : ""}`}>
             {active.map(({ stage, items }) => (
               <div key={stage.id} className="rounded-xl border border-border bg-muted/30 p-3">
                 <div className="mb-2.5 px-1"><div className="flex items-center justify-between"><h2 className="font-semibold text-sm">{stage.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div><p className="text-xs text-muted-foreground">{stage.hint}</p></div>
-                <div className="space-y-2">{items.map((h) => <HustleCard key={h.id} h={h} tracks={tracks} tasks={tasks} onMove={move} onRemove={() => remove(h.id)} />)}</div>
+                <div className="space-y-2">{items.map((h) => <ProofAssetCard key={h.id} h={h} tracks={tracks} tasks={tasks} onMove={move} onRemove={() => remove(h.id)} />)}</div>
               </div>
             ))}
           </div>
-          {empty.length > 0 && <p className="mt-3 text-xs text-muted-foreground">Next stages: {empty.map((g) => g.stage.label).join(" · ")} — projects move here as they progress.</p>}
+          {empty.length > 0 && <p className="mt-3 text-xs text-muted-foreground">Other stages: {empty.map((g) => g.stage.label).join(" · ")} — assets move here as they become real.</p>}
         </>
       )}
     </div>
   );
 }
-function HustleCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tracks: CareerTrack[]; tasks: Task[]; onMove: (h: Hustle, d: 1 | -1) => void; onRemove: () => void }) {
+
+// Workflow-specific card body — each kind shows its own bespoke fields.
+function ProofAssetBody({ h, kind }: { h: Hustle; kind: ProofAssetKind }) {
+  if (kind === "substack") {
+    return (
+      <>
+        <ProofField label="Pillar" value={h.contentPillar} />
+        <ProofField label="Cadence" value={h.publishingCadence} />
+        <ProofField label="First post" value={h.firstPostIdea} />
+      </>
+    );
+  }
+  if (kind === "afterline") {
+    return (
+      <>
+        <ProofField label="Claim" value={h.coreClaim} />
+        <ProofField label="Audience" value={h.audience} />
+      </>
+    );
+  }
+  return (
+    <>
+      <ProofField label="Claim" value={h.coreClaim} />
+      {h.note && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{h.note}</p>}
+    </>
+  );
+}
+
+function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tracks: CareerTrack[]; tasks: Task[]; onMove: (h: Hustle, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = HUSTLE_STAGES.findIndex((s) => s.id === h.stage);
   const trackId = getTrackId("hustles", h);
   const linked = useLinkedTaskCount(tasks, "hustle", h.id);
+  const kind = classifyProofAsset(h);
   return (
     <div className="group rounded-lg border border-card-border bg-card p-3" data-testid={`hustle-${h.id}`}>
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-medium text-sm leading-snug">{h.title}</h3>
         <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-hustle-${h.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
-      {/* Clarity strip: track chip + stage + idea constraint */}
+      {/* Clarity strip: kind badge (derived) + track chip + idea constraint */}
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+        <ProofKindBadge kind={kind} />
         <TrackChip trackId={trackId} tracks={tracks} />
-        {h.stage === "idea" && <ConstraintBadge text="still an idea" />}
+        {h.stage === "idea" && <ConstraintBadge text="not yet producing" />}
       </div>
-      {h.note && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{h.note}</p>}
+      <ProofAssetBody h={h} kind={kind} />
       {h.nextStep && <p className="text-xs mt-2 inline-flex items-center gap-1 rounded-md bg-accent text-accent-foreground px-1.5 py-0.5"><ArrowRight className="w-3 h-3" /> {h.nextStep}</p>}
       <div className="flex items-center gap-1 mt-2.5">
         {idx > 0 && <button onClick={() => onMove(h, -1)} data-testid={`button-hustle-back-${h.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">←</button>}
         {idx < HUSTLE_STAGES.length - 1 && <button onClick={() => onMove(h, 1)} data-testid={`button-hustle-fwd-${h.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">{HUSTLE_STAGES[idx + 1].label} →</button>}
       </div>
+      <ProofStepRail h={h} />
       <CardActions entity="hustles" id={h.id} trackId={trackId} tracks={tracks}
         onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
     </div>

@@ -1,16 +1,17 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Sun, Moon, Sparkles, ListTodo, Briefcase, GraduationCap, Trophy,
   Plus, X, ArrowRight, Check, ExternalLink, Clock, Trash2,
   Target, Pin, Wand2, Loader2, CalendarDays, Star, ChevronDown, ChevronRight,
   Rocket, MoveRight, MoonStar, Lightbulb, Users, MessageCircle, RefreshCw,
   Compass, ArrowUpRight, Link2, ListChecks, AlertTriangle,
+  Lock, Pencil, ArrowUp, ArrowDown, Ban, CheckCircle2,
 } from "lucide-react";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
-import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack } from "@shared/schema";
+import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack, JobPipelineStep } from "@shared/schema";
 import { type TrackedEntity, getTrackId, WIN_CATEGORIES, type WinCategory } from "@shared/domainState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -973,6 +974,158 @@ function JobsView() {
     </div>
   );
 }
+/* P4.1: Job pipeline step rail — a task-generative readiness view over a job.
+   Each step does ONE of: materialize-as-task / mark-done / mark-blocked. Editing
+   changes sequence/label only. Eligibility = locked amber chip above the rail
+   (nothing hidden). Deadline lives in the card clarity strip, never orders steps. */
+const ELIGIBILITY_LABEL: Record<string, string> = {
+  visa: "Visa sponsorship needed", citizenship: "Citizenship required",
+  phd: "PhD required", likely_ineligible: "Likely ineligible",
+};
+const STEP_STATUS_TONE: Record<string, string> = {
+  done: "bg-primary/10 text-primary", skipped: "bg-amber-500/15 text-amber-700 dark:text-amber-400", todo: "bg-muted text-muted-foreground",
+};
+function JobStepRail({ j }: { j: Job }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const stepsKey = ["/api/jobs", j.id, "steps"];
+  const { data: steps = [], isLoading } = useQuery<JobPipelineStep[]>({
+    queryKey: stepsKey,
+    queryFn: async () => { const r = await fetch(`/api/jobs/${j.id}/steps`); return r.json(); },
+  });
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  async function reloadInto() { await qc.invalidateQueries({ queryKey: stepsKey }); }
+
+  async function seed() {
+    setBusy(true);
+    try {
+      await mutateAndInvalidate("POST", `/api/jobs/${j.id}/steps/seed`, {}, ["/api/strategy/diagnostics"]);
+      await reloadInto();
+      toast({ title: "Steps generated.", description: "From the role's template — edit them to fit." });
+    } catch { toast({ title: "Couldn't generate steps", description: "Try again in a moment." }); }
+    finally { setBusy(false); }
+  }
+
+  async function materialize(s: JobPipelineStep) {
+    setBusy(true);
+    try {
+      const r = await mutateAndInvalidate("POST", `/api/steps/${s.id}/materialize`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
+      await reloadInto();
+      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this role." : "Find it in your inbox / today list." });
+    } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
+    finally { setBusy(false); }
+  }
+  async function setStatus(s: JobPipelineStep, status: string) {
+    await mutateAndInvalidate("PATCH", `/api/steps/${s.id}`, { status }, ["/api/strategy/diagnostics"]);
+    await reloadInto();
+  }
+  async function block(s: JobPipelineStep) {
+    await mutateAndInvalidate("POST", `/api/steps/${s.id}/block`, { reason: "Blocked from the rail" }, ["/api/tasks", "/api/strategy/diagnostics"]);
+    await reloadInto();
+    toast({ title: "Marked blocked.", description: "Noted on the step — unblock it when ready." });
+  }
+  async function rename(s: JobPipelineStep, stepLabel: string) {
+    if (!stepLabel.trim() || stepLabel === s.stepLabel) return;
+    await mutateAndInvalidate("PATCH", `/api/steps/${s.id}`, { stepLabel: stepLabel.trim() }, []);
+    await reloadInto();
+  }
+  async function del(s: JobPipelineStep) {
+    await mutateAndInvalidate("DELETE", `/api/steps/${s.id}`, undefined, ["/api/strategy/diagnostics"]);
+    await reloadInto();
+  }
+  async function addStep() {
+    if (!newLabel.trim()) return;
+    await mutateAndInvalidate("POST", `/api/jobs/${j.id}/steps`, { stepLabel: newLabel.trim() }, ["/api/strategy/diagnostics"]);
+    setNewLabel("");
+    await reloadInto();
+  }
+  async function reorder(s: JobPipelineStep, dir: -1 | 1) {
+    const ids = steps.map((x) => x.id);
+    const i = ids.indexOf(s.id);
+    const ni = i + dir;
+    if (ni < 0 || ni >= ids.length) return;
+    [ids[i], ids[ni]] = [ids[ni], ids[i]];
+    await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}/steps/reorder`, { orderedStepIds: ids }, ["/api/strategy/diagnostics"]);
+    await reloadInto();
+  }
+
+  const doneCount = steps.filter((s) => s.status === "done").length;
+  const eligLabel = j.eligibilityRisk ? (ELIGIBILITY_LABEL[j.eligibilityRisk] || j.eligibilityRisk) : "";
+
+  return (
+    <div className="mt-2.5 pt-2.5 border-t border-card-border" data-testid={`steprail-${j.id}`}>
+      {/* Eligibility = LOCKED AMBER chip above the rail. Hides nothing — flag only. */}
+      {eligLabel && (
+        <div className="mb-2 inline-flex items-center gap-1 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 px-2 py-1 text-[11px] font-medium" data-testid={`eligibility-${j.id}`}>
+          <Lock className="w-3 h-3" /> {eligLabel}
+        </div>
+      )}
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <ListChecks className="w-3.5 h-3.5" /> Readiness rail
+          {steps.length > 0 && <span className="tabular-nums opacity-70">{doneCount}/{steps.length}</span>}
+        </div>
+        {steps.length > 0 && (
+          <button onClick={() => setEditing((e) => !e)} data-testid={`button-edit-steps-${j.id}`} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+            <Pencil className="w-3 h-3" /> {editing ? "Done" : "Edit"}
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground/60 py-1">Loading steps…</p>
+      ) : steps.length === 0 ? (
+        <button onClick={seed} disabled={busy} data-testid={`button-seed-steps-${j.id}`}
+          className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Generate steps
+        </button>
+      ) : (
+        <div className="space-y-1">
+          {steps.map((s, i) => (
+            <div key={s.id} className="flex items-start gap-2" data-testid={`step-${s.id}`}>
+              <span className={`mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${STEP_STATUS_TONE[s.status] || STEP_STATUS_TONE.todo}`}>{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                {editing ? (
+                  <input defaultValue={s.stepLabel} onBlur={(e) => rename(s, e.target.value)} data-testid={`input-step-label-${s.id}`}
+                    className="w-full text-xs bg-transparent border-b border-input pb-0.5 focus:outline-none focus:border-primary" />
+                ) : (
+                  <p className={`text-xs leading-snug ${s.status === "done" ? "line-through text-muted-foreground" : ""}`}>{s.stepLabel}</p>
+                )}
+                {s.status === "skipped" && s.note && <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5 inline-flex items-center gap-1"><Ban className="w-2.5 h-2.5" /> {s.note}</p>}
+                {s.taskId && !editing && <p className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1"><ListChecks className="w-2.5 h-2.5" /> task created</p>}
+              </div>
+              {editing ? (
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button onClick={() => reorder(s, -1)} disabled={i === 0} data-testid={`button-step-up-${s.id}`} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowUp className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => reorder(s, 1)} disabled={i === steps.length - 1} data-testid={`button-step-down-${s.id}`} className="text-muted-foreground hover:text-foreground disabled:opacity-30"><ArrowDown className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => del(s)} data-testid={`button-step-delete-${s.id}`} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+              ) : s.status !== "done" ? (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button onClick={() => materialize(s)} disabled={busy} title="Create a task from this step" data-testid={`button-step-materialize-${s.id}`} className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-0.5 disabled:opacity-60"><Plus className="w-3 h-3" /> Task</button>
+                  <button onClick={() => setStatus(s, "done")} title="Mark done" data-testid={`button-step-done-${s.id}`} className="text-muted-foreground hover:text-primary"><CheckCircle2 className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => block(s)} title="Mark blocked" data-testid={`button-step-block-${s.id}`} className="text-muted-foreground hover:text-amber-600"><Ban className="w-3.5 h-3.5" /></button>
+                </div>
+              ) : (
+                <button onClick={() => setStatus(s, "todo")} title="Reopen" data-testid={`button-step-reopen-${s.id}`} className="shrink-0 text-muted-foreground hover:text-foreground"><RefreshCw className="w-3.5 h-3.5" /></button>
+              )}
+            </div>
+          ))}
+          {editing && (
+            <div className="flex items-center gap-1.5 pt-1">
+              <Input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addStep(); }}
+                placeholder="Add a step…" className="h-7 text-xs" data-testid={`input-add-step-${j.id}`} />
+              <Button size="sm" variant="outline" className="h-7 px-2" onClick={addStep} data-testid={`button-add-step-${j.id}`}><Plus className="w-3.5 h-3.5" /></Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function JobCard({ j, tracks, tasks, onMove, onRemove }: { j: Job; tracks: CareerTrack[]; tasks: Task[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
@@ -1010,6 +1163,7 @@ function JobCard({ j, tracks, tasks, onMove, onRemove }: { j: Job; tracks: Caree
           {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
         </div>
       </div>
+      <JobStepRail j={j} />
       <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
         onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
     </div>

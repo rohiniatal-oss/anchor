@@ -1,9 +1,10 @@
 import {
   tasks, events, jobs, learn, hustles, wins, contacts,
-  dayPlans, dayPlanItems, activityLog, careerTracks,
+  dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
+  type JobPipelineStep, type InsertJobPipelineStep,
   type Learn, type InsertLearn,
   type Hustle, type InsertHustle,
   type Win, type InsertWin,
@@ -16,6 +17,7 @@ import {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, asc, desc } from "drizzle-orm";
+import { templateForArchetype } from "@shared/jobTemplates";
 
 const DB_PATH = process.env.ANCHOR_DB_PATH || "data.db";
 const sqlite = new Database(DB_PATH);
@@ -33,6 +35,13 @@ export interface IStorage {
   createJob(j: InsertJob): Promise<Job>;
   updateJob(id: number, patch: Partial<InsertJob>): Promise<Job | undefined>;
   deleteJob(id: number): Promise<void>;
+  getJobSteps(jobId: number): Promise<JobPipelineStep[]>;
+  getJobStep(stepId: number): Promise<JobPipelineStep | undefined>;
+  seedJobSteps(jobId: number): Promise<JobPipelineStep[]>;
+  createJobStep(jobId: number, data: { stepLabel: string; sequence?: number; note?: string }): Promise<JobPipelineStep>;
+  updateJobStep(stepId: number, patch: Partial<InsertJobPipelineStep>): Promise<JobPipelineStep | undefined>;
+  deleteJobStep(stepId: number): Promise<void>;
+  reorderJobSteps(jobId: number, orderedStepIds: number[]): Promise<JobPipelineStep[]>;
   getLearn(): Promise<Learn[]>;
   createLearn(l: InsertLearn): Promise<Learn>;
   updateLearn(id: number, patch: Partial<InsertLearn>): Promise<Learn | undefined>;
@@ -81,7 +90,51 @@ export class DatabaseStorage implements IStorage {
   async getJobs() { return db.select().from(jobs).orderBy(desc(jobs.id)).all(); }
   async createJob(j: InsertJob) { return db.insert(jobs).values({ ...j, createdAt: Date.now() }).returning().get(); }
   async updateJob(id: number, patch: Partial<InsertJob>) { return db.update(jobs).set(patch).where(eq(jobs.id, id)).returning().get(); }
-  async deleteJob(id: number) { db.delete(jobs).where(eq(jobs.id, id)).run(); }
+  async deleteJob(id: number) {
+    db.delete(jobs).where(eq(jobs.id, id)).run();
+    db.delete(jobPipelineSteps).where(eq(jobPipelineSteps.jobId, id)).run();
+  }
+
+  async getJobSteps(jobId: number) {
+    return db.select().from(jobPipelineSteps).where(eq(jobPipelineSteps.jobId, jobId))
+      .orderBy(asc(jobPipelineSteps.sequence), asc(jobPipelineSteps.id)).all();
+  }
+  async getJobStep(stepId: number) {
+    return db.select().from(jobPipelineSteps).where(eq(jobPipelineSteps.id, stepId)).get();
+  }
+  // Seed the archetype template — only if the job exists and has no steps yet.
+  async seedJobSteps(jobId: number) {
+    const job = db.select().from(jobs).where(eq(jobs.id, jobId)).get();
+    if (!job) return [];
+    const existing = await this.getJobSteps(jobId);
+    if (existing.length > 0) return existing;
+    const labels = templateForArchetype(job.roleArchetype);
+    const now = Date.now();
+    labels.forEach((stepLabel, i) => {
+      db.insert(jobPipelineSteps).values({ jobId, stepLabel, status: "todo", sequence: i, note: "", createdAt: now }).run();
+    });
+    return this.getJobSteps(jobId);
+  }
+  async createJobStep(jobId: number, data: { stepLabel: string; sequence?: number; note?: string }) {
+    const existing = await this.getJobSteps(jobId);
+    const sequence = data.sequence ?? (existing.length ? existing[existing.length - 1].sequence + 1 : 0);
+    return db.insert(jobPipelineSteps).values({
+      jobId, stepLabel: data.stepLabel, status: "todo", sequence, note: data.note ?? "", createdAt: Date.now(),
+    }).returning().get();
+  }
+  async updateJobStep(stepId: number, patch: Partial<InsertJobPipelineStep>) {
+    return db.update(jobPipelineSteps).set(patch).where(eq(jobPipelineSteps.id, stepId)).returning().get();
+  }
+  async deleteJobStep(stepId: number) { db.delete(jobPipelineSteps).where(eq(jobPipelineSteps.id, stepId)).run(); }
+  // Rewrite sequence from an ordered id list (ids not in the job are ignored).
+  async reorderJobSteps(jobId: number, orderedStepIds: number[]) {
+    const steps = await this.getJobSteps(jobId);
+    const owned = new Set(steps.map((s) => s.id));
+    orderedStepIds.filter((id) => owned.has(id)).forEach((id, i) => {
+      db.update(jobPipelineSteps).set({ sequence: i }).where(eq(jobPipelineSteps.id, id)).run();
+    });
+    return this.getJobSteps(jobId);
+  }
 
   async getLearn() { return db.select().from(learn).orderBy(desc(learn.id)).all(); }
   async createLearn(l: InsertLearn) { return db.insert(learn).values({ ...l, createdAt: Date.now() }).returning().get(); }

@@ -1304,51 +1304,84 @@ function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tra
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
   const trackId = getTrackId("jobs", j);
   const linked = useLinkedTaskCount(tasks, "job", j.id);
+  const [open, setOpen] = useState(false);
+
+  // An eligibility-gated role is a dead end — don't dangle the whole work surface
+  // (rail + outreach) under it. It collapses to a quiet "probably skip" state.
+  const gated = j.eligibilityRisk === "likely_ineligible";
+  const windowClosed = j.applicationWindowStatus === "closed" || j.status === "closed";
+
+  // The ONE primary action for this card, by state. Calm surface = one clear move.
+  const primary = (() => {
+    if (gated || windowClosed) return null;
+    if (j.status === "wishlist") return {
+      label: "Mark applied", icon: CheckCircle2,
+      run: async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door"]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); },
+    };
+    return {
+      label: "Log progress", icon: Trophy,
+      run: async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win 🎉", description: "Application progress counts." }); },
+    };
+  })();
+
   return (
-    <div className="group rounded-lg border border-card-border bg-card p-3" data-testid={`job-${j.id}`}>
+    <div className={`group rounded-lg border bg-card p-3 ${gated || windowClosed ? "border-card-border opacity-70" : "border-card-border"}`} data-testid={`job-${j.id}`}>
+      {/* ── HEADER: what it is (title · org · deadline · track) ── */}
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-medium text-sm leading-snug">{j.title}</h3>
         <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-job-${j.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
       {(j.company || j.location) && <p className="text-xs text-muted-foreground mt-0.5">{[j.company, j.location].filter(Boolean).join(" · ")}</p>}
-      {/* Clarity strip: track chip + canonical state + constraint badges */}
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
         <TrackChip trackId={trackId} tracks={tracks} />
         {j.deadline && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${deadlineTone(j.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(j.deadline)}</span>}
-        {j.applicationWindowStatus === "closing" && <ConstraintBadge text="window closing" tone="warn" />}
-        {j.eligibilityRisk && j.eligibilityRisk !== "" && <ConstraintBadge text={`eligibility: ${j.eligibilityRisk}`} tone="warn" />}
-        {(j.status === "wishlist" && (j.applicationReadiness === "none")) && <ConstraintBadge text="not started" />}
-        {j.flag && <ConstraintBadge text={j.flag} />}
+        {gated && <ConstraintBadge text={`eligibility: ${j.eligibilityRisk}`} tone="warn" />}
+        {windowClosed && !gated && <ConstraintBadge text="window closed" />}
       </div>
-      {j.note && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{j.note}</p>}
-      {j.nextStep && <p className="text-xs mt-2 inline-flex items-center gap-1 rounded-md bg-accent text-accent-foreground px-1.5 py-0.5"><ArrowRight className="w-3 h-3" /> {j.nextStep}</p>}
-      <div className="flex items-center justify-between mt-2.5">
-        <div className="flex items-center gap-1">
-          {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">←</button>}
-          {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">{JOB_COLS[idx + 1].label} →</button>}
-        </div>
-        <div className="flex items-center gap-2">
-          {/* P4.6a #3: explicit, deterministic submit affordance — the safest path
-              to wishlist -> applied. Never fabricated; only shown while wishlisted
-              AND the application window is open (a watch/closed fellowship is
-              monitored, not submittable, so it offers no application action). */}
-          {j.status === "wishlist" && j.applicationWindowStatus !== "closed" && (
-            <button data-testid={`button-mark-submitted-job-${j.id}`}
-              onClick={async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door"]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); }}
-              className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Mark application submitted</button>
-          )}
-          {(j.status === "applied" || j.status === "interviewing") && (
-            <button data-testid={`button-promote-win-job-${j.id}`}
-              onClick={async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win 🎉", description: "Application progress counts." }); }}
-              className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1"><Trophy className="w-3.5 h-3.5" /> Promote to win</button>
-          )}
+
+      {/* ── GATED / CLOSED: quiet dead-end, no work surface ── */}
+      {gated ? (
+        <p className="text-xs text-muted-foreground mt-2">Probably skip — {j.note || "a stretch versus your background"}. Kept for reference.</p>
+      ) : windowClosed ? (
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-xs text-muted-foreground">Watching for the next cycle.</p>
           {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
         </div>
-      </div>
-      <JobStepRail j={j} />
-      <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
-      <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
-        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
+      ) : (
+        <>
+          {/* ── ONE primary action + open link + expand toggle ── */}
+          <div className="flex items-center justify-between mt-2.5 gap-2">
+            <div className="flex items-center gap-2">
+              {primary && (
+                <button data-testid={`button-primary-job-${j.id}`} onClick={primary.run}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-foreground bg-primary rounded-md px-2 py-1 hover-elevate">
+                  <primary.icon className="w-3.5 h-3.5" /> {primary.label}
+                </button>
+              )}
+              {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
+            </div>
+            <button onClick={() => setOpen((o) => !o)} data-testid={`button-expand-job-${j.id}`}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+              {open ? "Less" : "Open"} <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+            </button>
+          </div>
+
+          {/* ── EXPANDED: the work surface (steps, warm path, stage move, tasks) ── */}
+          {open && (
+            <div className="mt-3 pt-3 border-t border-card-border space-y-3">
+              {j.note && <p className="text-xs text-muted-foreground leading-snug">{j.note}</p>}
+              <div className="flex items-center gap-1">
+                {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">← back</button>}
+                {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">Move to {JOB_COLS[idx + 1].label} →</button>}
+              </div>
+              <JobStepRail j={j} />
+              <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
+              <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
+                onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

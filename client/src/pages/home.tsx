@@ -888,12 +888,23 @@ function DoneTaskRow({ t }: { t: Task }) {
 }
 
 /* ---------------- BRAIN DUMP ---------------- */
-const SORT_LABELS: Record<string, string> = { today: "Today", job: "Jobs", learn: "Learn", hustle: "Proof" };
+// A capture is not always a standalone task — it may be a subtask of something
+// she already has, a note/idea, a new project, or clutter. Triage classifies
+// each by KIND and offers ONE coherent next move per item (she confirms with a
+// tap — we never silently reshape her day).
+type Triage = { id: number; kind: string; parentType: string; parentId: number | null; parentLabel: string; reason: string };
+const KIND_BLURB: Record<string, string> = {
+  standalone_task: "A task you can just do",
+  subtask: "Part of something you're already on",
+  note_idea: "A thought, not a task yet",
+  new_project: "Sounds like a whole new thing",
+  clutter: "Looks like a loose note",
+};
 function BrainDumpView() {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [text, setText] = useState("");
   const [sorting, setSorting] = useState(false);
-  const [suggestions, setSuggestions] = useState<Record<number, string>>({});
+  const [triage, setTriage] = useState<Record<number, Triage>>({});
   const { toast } = useToast();
   const inbox = tasks.filter((t) => t.list === "inbox");
 
@@ -903,28 +914,45 @@ function BrainDumpView() {
     setText("");
     if (created?.id) mutateAndInvalidate("POST", `/api/tasks/${created.id}/enrich`, {}, ["/api/tasks"]).catch(() => {});
   }
-  async function addToDay(t: Task) {
-    // Pick a sensible block by size: deep -> morning, else afternoon.
-    const block = t.size === "deep" ? "morning" : "afternoon";
-    await mutateAndInvalidate("PATCH", `/api/tasks/${t.id}`, { list: "today", block }, ["/api/tasks"]);
-    toast({ title: "Added to today.", description: "It's in your day now." });
-  }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/tasks/${id}`, undefined, ["/api/tasks"]); }
+
+  // Classify every inbox item by kind (one call each, in parallel).
   async function sortAll() {
     setSorting(true);
     try {
-      const res = await mutateAndInvalidate("POST", "/api/braindump/sort", {}, []);
-      const map: Record<number, string> = {};
-      (res.suggestions || []).forEach((s: { id: number; category: string }) => { if (s.category !== "keep") map[s.id] = s.category; });
-      setSuggestions(map);
-      if (Object.keys(map).length === 0) toast({ title: "Nothing to route", description: "These look like loose thoughts — keeping them here." });
+      const results = await Promise.all(inbox.map(async (t) => {
+        try { const r = await apiRequest("POST", `/api/braindump/${t.id}/triage`); return await r.json() as Triage; }
+        catch { return { id: t.id, kind: "standalone_task", parentType: "", parentId: null, parentLabel: "", reason: "" } as Triage; }
+      }));
+      const map: Record<number, Triage> = {};
+      results.forEach((r) => { map[r.id] = r; });
+      setTriage(map);
     } catch { toast({ title: "Couldn't sort right now", description: "Give it another go in a moment." }); }
     finally { setSorting(false); }
   }
-  async function accept(t: Task, category: string) {
-    await mutateAndInvalidate("POST", `/api/braindump/${t.id}/move`, { category }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
-    setSuggestions((s) => { const n = { ...s }; delete n[t.id]; return n; });
-    toast({ title: `Moved to ${SORT_LABELS[category]}`, description: "You can find it there anytime." });
+
+  async function apply(t: Task, action: string, extra: Record<string, unknown> = {}, label = "Done") {
+    await mutateAndInvalidate("POST", `/api/braindump/${t.id}/apply`, { action, ...extra }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/plan/current"]);
+    setTriage((s) => { const n = { ...s }; delete n[t.id]; return n; });
+    toast({ title: label });
+  }
+
+  // The ONE primary move offered for an item, by its classified kind.
+  function suggestion(t: Task, tr: Triage) {
+    switch (tr.kind) {
+      case "subtask":
+        return tr.parentId != null
+          ? { label: `Add under ${tr.parentLabel}`, run: () => apply(t, "attach_subtask", { parentType: tr.parentType, parentId: tr.parentId }, `Filed under ${tr.parentLabel}`) }
+          : { label: "Do today", run: () => apply(t, "do_today", {}, "Added to today") };
+      case "note_idea":
+        return { label: "File as Substack idea", run: () => apply(t, "file_substack", {}, "Filed as a Substack idea") };
+      case "new_project":
+        return { label: "Make it a role", run: () => apply(t, "make_role", {}, "Added to Jobs") };
+      case "clutter":
+        return { label: "Keep here", run: () => apply(t, "keep", {}, "Kept in your inbox") };
+      default:
+        return { label: "Do today", run: () => apply(t, "do_today", {}, "Added to today") };
+    }
   }
 
   return (
@@ -935,40 +963,47 @@ function BrainDumpView() {
           placeholder="Type anything and hit Enter…" className="h-11" data-testid="input-braindump" />
         <Button className="h-11 px-4" onClick={add} data-testid="button-add-braindump"><Plus className="w-4 h-4 mr-1" /> Add</Button>
       </div>
-      {inbox.length > 1 && (
-        <button onClick={sortAll} disabled={sorting} data-testid="button-sort-braindump"
-          className="mb-5 inline-flex items-center gap-1.5 text-sm text-primary font-medium hover:underline disabled:opacity-60">
-          {sorting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}{sorting ? "Sorting…" : "Sort these for me"}
-        </button>
+      {inbox.length > 0 && (
+        <div className="mb-5">
+          <Button variant="outline" onClick={sortAll} disabled={sorting} data-testid="button-sort-braindump"
+            className="inline-flex items-center gap-1.5">
+            {sorting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}{sorting ? "Sorting…" : "Sort these for me"}
+          </Button>
+          <p className="text-xs text-muted-foreground mt-1.5">I'll work out what each one is — a task for today, part of something you're already on, an idea, or just a note.</p>
+        </div>
       )}
       {isLoading ? <Loading /> : inbox.length === 0 ? (
         <Empty icon={Sparkles} text="Empty head, clear mind. Add a thought above when one shows up." />
       ) : (
         <div className="space-y-2">
-          {inbox.map((t) => (
-            <div key={t.id} className="group rounded-lg border border-card-border bg-card px-3 py-2.5" data-testid={`braindump-${t.id}`}>
-              <div className="flex items-center gap-2">
-                <span className="flex-1 text-sm">
-                  {t.title}
-
-                </span>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => addToDay(t)} data-testid={`button-addday-${t.id}`}>Add to day</Button>
-                  <button onClick={() => remove(t.id)} aria-label="Delete" data-testid={`button-delete-braindump-${t.id}`} className="text-muted-foreground hover:text-destructive ml-0.5"><X className="w-4 h-4" /></button>
+          {inbox.map((t) => {
+            const tr = triage[t.id];
+            const sug = tr ? suggestion(t, tr) : null;
+            return (
+              <div key={t.id} className="group rounded-lg border border-card-border bg-card px-3 py-2.5" data-testid={`braindump-${t.id}`}>
+                <div className="flex items-center gap-2">
+                  <span className="flex-1 text-sm">{t.title}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!tr && <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => apply(t, "do_today", {}, "Added to today")} data-testid={`button-addday-${t.id}`}>Add to day</Button>}
+                    <button onClick={() => remove(t.id)} aria-label="Delete" data-testid={`button-delete-braindump-${t.id}`} className="text-muted-foreground hover:text-destructive ml-0.5"><X className="w-4 h-4" /></button>
+                  </div>
                 </div>
+                {tr && sug && (
+                  <div className="mt-2 pt-2 border-t border-card-border flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-muted-foreground">{KIND_BLURB[tr.kind] || ""}{tr.reason ? ` — ${tr.reason}` : ""}</span>
+                    <button onClick={sug.run} data-testid={`button-triage-accept-${t.id}`}
+                      className="text-xs font-medium text-primary inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 hover-elevate">
+                      <ArrowRight className="w-3 h-3" /> {sug.label}
+                    </button>
+                    {tr.kind !== "standalone_task" && (
+                      <button onClick={() => apply(t, "do_today", {}, "Added to today")} data-testid={`button-triage-today-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">or just do today</button>
+                    )}
+                    <button onClick={() => setTriage((s) => { const n = { ...s }; delete n[t.id]; return n; })} data-testid={`button-triage-dismiss-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">keep here</button>
+                  </div>
+                )}
               </div>
-              {suggestions[t.id] && (
-                <div className="mt-2 pt-2 border-t border-card-border flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Looks like a {SORT_LABELS[suggestions[t.id]]} item —</span>
-                  <button onClick={() => accept(t, suggestions[t.id])} data-testid={`button-accept-sort-${t.id}`}
-                    className="text-xs font-medium text-primary inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 hover-elevate">
-                    <ArrowRight className="w-3 h-3" /> Move to {SORT_LABELS[suggestions[t.id]]}
-                  </button>
-                  <button onClick={() => setSuggestions((s) => { const n = { ...s }; delete n[t.id]; return n; })} data-testid={`button-dismiss-sort-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">keep here</button>
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

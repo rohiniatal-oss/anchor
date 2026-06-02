@@ -163,6 +163,116 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch { res.status(500).json({ error: "Couldn't enrich right now." }); }
   });
 
+  // ── BRAIN-DUMP TRIAGE: classify a captured item by KIND, then act coherently.
+  //    An inbox item is NOT always a standalone task — it may be a SUBTASK of an
+  //    existing job/learn/hustle, a note/idea, a new project, or clutter. We
+  //    classify once (LLM, grounded in her REAL pipeline) and return a SUGGESTION
+  //    the UI confirms with one tap — we never silently reshape her day, so the
+  //    plan stays trustworthy. Kinds:
+  //      standalone_task  -> offer "Do today" (promotes to today's plan)
+  //      subtask          -> offer "Add under <parent>" (attaches as a step; shows
+  //                          through the parent, never orphaned as its own line)
+  //      note_idea        -> offer "File as <Substack idea / Learn>"
+  //      new_project      -> offer "Make it a <hustle / role / learn track>"
+  //      clutter          -> keep in inbox (no action)
+  app.post("/api/braindump/:id/triage", async (req, res) => {
+    const id = Number(req.params.id);
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+    const [jobs, learn, hustles] = await Promise.all([storage.getJobs(), storage.getLearn(), storage.getHustles()]);
+
+    // Compact, ID'd context so the model can name a real parent (no fabrication).
+    const liveJobs = jobs.filter((j) => ["wishlist", "applied", "interviewing"].includes(j.status));
+    const ctx = [
+      ...liveJobs.map((j) => `job#${j.id}: ${j.title}${j.company ? " @ " + j.company : ""}`),
+      ...learn.filter((l) => !l.done).map((l) => `learn#${l.id}: ${l.title}`),
+      ...hustles.map((h) => `hustle#${h.id}: ${h.title}`),
+    ].join("\n");
+
+    let kind = "standalone_task", parentType = "", parentId: number | null = null, reason = "";
+    try {
+      const client = new OpenAI();
+      const out = await client.responses.create({
+        model: "gpt_5_1",
+        input:
+          `Classify ONE captured thought from Rohini's brain dump. Decide what KIND it is and, ` +
+          `if it belongs under something she already has, WHICH parent.\n\n` +
+          `KINDS:\n` +
+          `- "standalone_task": a single actionable to-do that stands on its own (e.g. "call the recruiter back").\n` +
+          `- "subtask": a step of one of her EXISTING items below (e.g. "draft cover letter" under a specific job).\n` +
+          `- "note_idea": a thought/idea/seed, not yet actionable (e.g. a writing topic).\n` +
+          `- "new_project": implies a whole new project/role/learning track, not a one-off task.\n` +
+          `- "clutter": personal/no-action-needed/too-vague.\n\n` +
+          `HER EXISTING ITEMS (use these exact ids for a subtask parent):\n${ctx || "(none)"}\n\n` +
+          `CAPTURED THOUGHT: "${task.title}"\n\n` +
+          `Return ONLY JSON: {"kind":"...","parentType":"job|learn|hustle|","parentId":<number or null>,"reason":"<=12 words"}.`,
+      });
+      let text = (out.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      const j: any = JSON.parse(text);
+      const kinds = ["standalone_task", "subtask", "note_idea", "new_project", "clutter"];
+      if (kinds.includes(j.kind)) kind = j.kind;
+      if (["job", "learn", "hustle"].includes(j.parentType)) parentType = j.parentType;
+      if (Number.isFinite(j.parentId)) parentId = Number(j.parentId);
+      if (typeof j.reason === "string") reason = j.reason.slice(0, 80);
+    } catch {
+      // LLM down — safe default: treat as a standalone task she can choose to do.
+      kind = "standalone_task";
+    }
+
+    // Validate a claimed parent actually exists (never trust a fabricated id).
+    let parentLabel = "";
+    if (kind === "subtask" && parentType && parentId != null) {
+      const pool = parentType === "job" ? jobs : parentType === "learn" ? learn : hustles;
+      const parent = pool.find((x: any) => x.id === parentId);
+      if (!parent) { kind = "standalone_task"; parentType = ""; parentId = null; }
+      else parentLabel = (parent as any).title || "";
+    }
+
+    res.json({ id, kind, parentType, parentId, parentLabel, reason });
+  });
+
+  // Act on an accepted triage suggestion (one tap from the UI). Coherent per kind.
+  app.post("/api/braindump/:id/apply", async (req, res) => {
+    const id = Number(req.params.id);
+    const action = String(req.body?.action || "");
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+
+    if (action === "do_today") {
+      const block = task.size === "deep" ? "morning" : task.size === "medium" ? "afternoon" : "evening";
+      const updated = await storage.updateTask(id, { list: "today", block } as any);
+      return res.json({ ok: true, result: "today", task: updated });
+    }
+    if (action === "attach_subtask") {
+      const parentType = String(req.body?.parentType || "");
+      const parentId = Number(req.body?.parentId);
+      // Carry the parent's context onto the task and link it, so it shows THROUGH
+      // the parent's next-step rail rather than floating as its own plan line.
+      await storage.updateTask(id, {
+        list: "inbox", sourceType: parentType, sourceId: parentId,
+        relatedOpportunityId: parentType === "job" ? parentId : undefined,
+      } as any);
+      return res.json({ ok: true, result: "attached" });
+    }
+    if (action === "file_substack") {
+      await storage.createHustle({ title: task.title, note: "From brain dump", nextStep: "Decide your angle", stage: "idea" } as any);
+      await storage.deleteTask(id);
+      return res.json({ ok: true, result: "substack" });
+    }
+    if (action === "file_learn") {
+      await storage.createLearn({ title: task.title, category: "", cost: "", url: "", note: "From brain dump", done: false, active: false } as any);
+      await storage.deleteTask(id);
+      return res.json({ ok: true, result: "learn" });
+    }
+    if (action === "make_role") {
+      await storage.createJob({ title: task.title, company: "", location: "", url: "", note: "From brain dump", nextStep: "", status: "wishlist" } as any);
+      await storage.deleteTask(id);
+      return res.json({ ok: true, result: "job" });
+    }
+    // keep / clutter -> no-op, stays in inbox
+    return res.json({ ok: true, result: "kept" });
+  });
+
   // "Done this week" count for momentum (wins logged in the last 7 days).
   app.get("/api/stats", async (_req, res) => {
     const weekAgo = Date.now() - 7 * 86400000;

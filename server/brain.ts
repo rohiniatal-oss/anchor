@@ -112,6 +112,15 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
     }
   }
 
+  // NOTE: inbox (brain-dump) items do NOT auto-flow here by keyword. An inbox
+  // item may be a standalone task, a SUBTASK of an existing job/learn/hustle, a
+  // note/idea, a whole new project, or clutter — a regex can't tell these apart,
+  // and floating a subtask as its own plan line would orphan it. Triage happens
+  // at capture time (see /api/braindump/triage), which classifies by KIND and
+  // either flows a standalone task to today, attaches a subtask to its parent,
+  // or routes a note/project to the right place. Only items already promoted to
+  // list==="today" reach the plan above.
+
   // Jobs (incl. fellowships) — real per-state next step, deadline CARRIED.
   // Window-aware: a closed window (e.g. a watch/closed 2026 fellowship) is
   // MONITORED, not actionable, so it never surfaces as a live application.

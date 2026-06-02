@@ -8,14 +8,16 @@ import {
   Compass, ArrowUpRight, Link2, ListChecks, AlertTriangle,
   Lock, Pencil, ArrowUp, ArrowDown, Ban, CheckCircle2,
   MessageSquare, Flame, Send, FileText, Newspaper, Package,
+  BookOpen, Hammer, BadgeCheck, Layers,
 } from "lucide-react";
 import { NETWORK_LANES, OPEN_LANE, ALL_LANE_KEYS, laneForSourceNetwork, laneLabel } from "@shared/networkLanes";
+import { CAPABILITY_DOMAIN_KEYS, domainForLearn, domainLabel } from "@shared/capabilityDomains";
 import { classifyProofAsset, PROOF_ASSET_KIND_LABEL, type ProofAssetKind } from "@shared/proofAssetTemplates";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
 import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
-import { type TrackedEntity, getTrackId, getRelationshipStrength, WIN_CATEGORIES, type WinCategory } from "@shared/domainState";
+import { type TrackedEntity, getTrackId, getRelationshipStrength, WIN_CATEGORIES, type WinCategory, getLearnOutputState, learnNeedsOutputNudge, type LearnOutputState, getLearnStatus, type LearnStatus } from "@shared/domainState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -1473,18 +1475,28 @@ function CreateNextContactTask({ c }: { c: Contact }) {
 
 /* ---------------- LEARN ---------------- */
 // Group parked items by status prefix in the category ("· OPEN", "· WATCH") or "Resource".
-function learnGroup(l: Learn): "open" | "watch" | "resource" {
-  const cat = (l.category || "").toUpperCase();
-  if (cat.includes("OPEN")) return "open";
-  if (cat.includes("WATCH")) return "watch";
-  return "resource";
+// P4.4 — Learn is the PROOF-BUILDING view over the loop. Output state is DERIVED
+// and CALM: "reference" is the silent, valid default; an item only joins the
+// proof-building lane when the user opts in. Chips are slate (never amber) for
+// reference/producing; evidenced is slate-green. No nag on consumption.
+const LEARN_OUTPUT_META: Record<LearnOutputState, { label: string; cls: string; icon: typeof BookOpen }> = {
+  reference: { label: "reference", cls: "bg-slate-100 text-slate-500 dark:bg-slate-800/60 dark:text-slate-400", icon: BookOpen },
+  producing: { label: "building proof", cls: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200", icon: Hammer },
+  evidenced: { label: "evidenced", cls: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", icon: BadgeCheck },
+};
+function parseIdList(raw: string): number[] {
+  try { const a = JSON.parse(raw || "[]"); return Array.isArray(a) ? a.map(Number).filter(Number.isFinite) : []; } catch { return []; }
 }
+const LEARN_STATUS_LABEL: Record<LearnStatus, string> = {
+  open: "open", watch: "watch", active: "active", applied: "applied", enrolled: "enrolled", done: "done", closed: "closed",
+};
+
 function LearnView() {
   const { data: items = [], isLoading } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [showForm, setShowForm] = useState(false);
-  const [showShelf, setShowShelf] = useState(false);
+  const [showDone, setShowDone] = useState(false);
   const [form, setForm] = useState({ title: "", category: "", url: "", note: "" });
   async function add() {
     if (!form.title.trim()) return;
@@ -1493,14 +1505,22 @@ function LearnView() {
   }
   async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn"]); }
   async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn"]); }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/learn/${id}`, undefined, ["/api/learn"]); }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/learn/${id}`, undefined, ["/api/learn", "/api/strategy/diagnostics"]); }
 
-  const active = items.filter((l) => l.active && !l.done);
-  const shelf = items.filter((l) => (!l.active || l.done));
-  const open = shelf.filter((l) => learnGroup(l) === "open" && !l.done);
-  const watch = shelf.filter((l) => learnGroup(l) === "watch" && !l.done);
-  const resources = shelf.filter((l) => learnGroup(l) === "resource" && !l.done);
-  const done = shelf.filter((l) => l.done);
+  const live = items.filter((l) => !l.done);
+  const done = items.filter((l) => l.done);
+
+  // OPTIONAL capability grouping: matched items group under fixed system domains
+  // (display order from CAPABILITY_DOMAIN_KEYS); everything that doesn't match a
+  // domain lands in a FLAT list — never a forced "Other" bucket. No pressure.
+  const byDomain = new Map<string, Learn[]>(CAPABILITY_DOMAIN_KEYS.map((k) => [k, []]));
+  const flat: Learn[] = [];
+  for (const l of live) {
+    const key = domainForLearn(l.category, l.capabilityBuilt);
+    if (key && byDomain.has(key)) byDomain.get(key)!.push(l);
+    else flat.push(l);
+  }
+  const activeDomainKeys = CAPABILITY_DOMAIN_KEYS.filter((k) => byDomain.get(k)!.length > 0);
 
   function CardList({ list }: { list: Learn[] }) {
     return <div className="grid gap-2.5 sm:grid-cols-2">{list.map((l) => <LearnCard key={l.id} l={l} tracks={tracks} tasks={tasks} onToggle={() => toggle(l)} onToggleActive={() => toggleActive(l)} onRemove={() => remove(l.id)} />)}</div>;
@@ -1509,13 +1529,13 @@ function LearnView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Learn" sub="Only what you're working on now sits up top. Everything else is on the shelf, grouped by what's open, what to watch, and reference. Star to make active." />
+        <SectionHeading title="Learn" sub="A proof-building view. Reading and reference are fine on their own — when you want something to count as proof, give it an output and it moves into the building lane. Grouped by capability." />
         <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
       </div>
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
           <Input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-learn-title" />
-          <Input placeholder="Track / category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} data-testid="input-learn-category" />
+          <Input placeholder="Capability / category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} data-testid="input-learn-category" />
           <Input placeholder="Link" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" data-testid="input-learn-url" />
           <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-learn-note" />
           <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button><Button onClick={add} data-testid="button-save-learn">Save</Button></div>
@@ -1524,35 +1544,80 @@ function LearnView() {
       {isLoading ? <Loading /> : items.length === 0 ? (
         <Empty icon={GraduationCap} text="No resources yet. Add a course, fellowship, or book above." />
       ) : (
-        <>
-          <GroupLabel count={active.length}><Star className="w-4 h-4 text-primary" fill="currentColor" /> Active now</GroupLabel>
-          {active.length === 0 ? (
-            <p className="text-sm text-muted-foreground rounded-xl border border-dashed border-border p-4 mb-6">Nothing active yet. Open the shelf and star 1–2 things to focus on.</p>
-          ) : <div className="mb-6"><CardList list={active} /></div>}
+        <div className="space-y-6">
+          {activeDomainKeys.map((key) => (
+            <div key={key} data-testid={`domain-${key}`}>
+              <GroupLabel count={byDomain.get(key)!.length}><Layers className="w-4 h-4 text-slate-600 dark:text-slate-400" /> {domainLabel(key)}</GroupLabel>
+              <CardList list={byDomain.get(key)!} />
+            </div>
+          ))}
 
-          {open.length > 0 && (<div className="mb-5"><GroupLabel count={open.length}><Clock className="w-4 h-4 text-primary" /> Open now — applications you can make</GroupLabel><CardList list={open} /></div>)}
-
-          <button onClick={() => setShowShelf((s) => !s)} data-testid="button-toggle-shelf" className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2.5 hover:text-foreground">
-            {showShelf ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />} On the shelf ({watch.length + resources.length + done.length})
-          </button>
-          {showShelf && (
-            <div className="space-y-5">
-              {watch.length > 0 && (<div><GroupLabel count={watch.length}>Watch — closed, re-opening later</GroupLabel><CardList list={watch} /></div>)}
-              {resources.length > 0 && (<div><GroupLabel count={resources.length}>Resources — books & reading</GroupLabel><CardList list={resources} /></div>)}
-              {done.length > 0 && (<div><GroupLabel count={done.length}>Done</GroupLabel><CardList list={done} /></div>)}
+          {flat.length > 0 && (
+            <div data-testid="domain-flat">
+              <GroupLabel count={flat.length}><GraduationCap className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Everything else</GroupLabel>
+              <CardList list={flat} />
             </div>
           )}
-        </>
+
+          {done.length > 0 && (
+            <div>
+              <button onClick={() => setShowDone((s) => !s)} data-testid="button-toggle-learn-done" className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2.5 hover:text-foreground">
+                {showDone ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />} Done ({done.length})
+              </button>
+              {showDone && <CardList list={done} />}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
 }
+
 function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l: Learn; tracks: CareerTrack[]; tasks: Task[]; onToggle: () => void; onToggleActive: () => void; onRemove: () => void }) {
   const { toast } = useToast();
-  // Strip the status suffix from the category for a clean track label.
-  const track = (l.category || "").split("·")[0].trim();
   const trackId = getTrackId("learn", l);
   const linked = useLinkedTaskCount(tasks, "learn", l.id);
+  const outputState = getLearnOutputState(l);
+  const needsNudge = learnNeedsOutputNudge(l);
+  const meta = LEARN_OUTPUT_META[outputState];
+  const OutputIcon = meta.icon;
+  const learnStatus = getLearnStatus(l);
+
+  const [busy, setBusy] = useState(false);
+  const [editingOutput, setEditingOutput] = useState(false);
+  const [outputDraft, setOutputDraft] = useState(l.requiredOutput || "");
+  const [evidencing, setEvidencing] = useState(false);
+  const [evidenceDraft, setEvidenceDraft] = useState("");
+
+  const prereqIds = parseIdList(l.prerequisites);
+  const unlockIds = parseIdList(l.unlocks);
+
+  async function saveOutput() {
+    const v = outputDraft.trim();
+    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { requiredOutput: v }, ["/api/learn", "/api/strategy/diagnostics"]);
+    setEditingOutput(false);
+    if (v) toast({ title: "Output set.", description: "This is now building toward proof. Produce it when you're ready — no rush." });
+  }
+  async function createOutputTask() {
+    setBusy(true);
+    try {
+      const r = await mutateAndInvalidate("POST", `/api/learn/${l.id}/create-output-task`, {}, ["/api/tasks"]);
+      toast({ title: r?.reused ? "Already on your list." : "Output task created.", description: r?.reused ? "There's already an open task for this." : "Find it in your inbox / today list." });
+    } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
+    finally { setBusy(false); }
+  }
+  async function markEvidenced() {
+    const v = evidenceDraft.trim();
+    if (!v) return;
+    setBusy(true);
+    try {
+      await mutateAndInvalidate("POST", `/api/learn/${l.id}/mark-evidenced`, { outputEvidenceUrl: v }, ["/api/learn", "/api/strategy/diagnostics"]);
+      setEvidencing(false); setEvidenceDraft("");
+      toast({ title: "Marked as evidenced.", description: "The artifact is linked — this now counts as proof." });
+    } catch { toast({ title: "Couldn't save the link", description: "Try again in a moment." }); }
+    finally { setBusy(false); }
+  }
+
   return (
     <div className={`group rounded-xl border bg-card p-4 ${l.active && !l.done ? "border-primary/40" : "border-card-border"} ${l.done ? "opacity-60" : ""}`} data-testid={`learn-${l.id}`}>
       <div className="flex items-start gap-2.5">
@@ -1564,19 +1629,84 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
             <button onClick={onToggleActive} aria-label={l.active ? "Park this" : "Make active"} title={l.active ? "Park this" : "Make active"} data-testid={`button-active-learn-${l.id}`}
               className={`shrink-0 ${l.active ? "text-primary" : "text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100"}`}><Star className="w-4 h-4" fill={l.active ? "currentColor" : "none"} /></button>
           </div>
-          {/* Clarity strip: track chip + track label + missing-output constraint */}
+
+          {/* Clarity strip: track chip + capability + learn status + DERIVED output state chip (slate, never amber for reference) */}
           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
             <TrackChip trackId={trackId} tracks={tracks} />
-            {track && <span className="text-[10px] rounded-md bg-accent text-accent-foreground px-1.5 py-0.5">{track}</span>}
-            {!l.requiredOutput && <ConstraintBadge text="no output" tone="warn" />}
+            {l.capabilityBuilt && <span className="text-[10px] rounded-md bg-accent text-accent-foreground px-1.5 py-0.5">{l.capabilityBuilt}</span>}
+            <span className="text-[10px] rounded-md bg-muted text-muted-foreground px-1.5 py-0.5">{LEARN_STATUS_LABEL[learnStatus]}</span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`} data-testid={`output-state-${l.id}`}>
+              <OutputIcon className="w-2.5 h-2.5" /> {meta.label}
+            </span>
           </div>
-          {l.note && <p className="text-xs text-muted-foreground mt-2 leading-snug">{l.note}</p>}
+
+          {l.requiredOutput && <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-snug"><span className="font-medium">Output:</span> {l.requiredOutput}</p>}
+          {l.note && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{l.note}</p>}
+
+          {/* prerequisites / unlocks as lightweight chips (no graph viz) */}
+          {(prereqIds.length > 0 || unlockIds.length > 0) && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              {prereqIds.length > 0 && <span className="text-[10px] rounded-md bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 inline-flex items-center gap-1"><Lock className="w-2.5 h-2.5" /> needs {prereqIds.length}</span>}
+              {unlockIds.length > 0 && <span className="text-[10px] rounded-md bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 inline-flex items-center gap-1"><ArrowUpRight className="w-2.5 h-2.5" /> unlocks {unlockIds.length}</span>}
+            </div>
+          )}
+
+          {/* SOFT, NON-AMBER reminder — ONLY for opted-in (track-linked) items with no output. Never on reference/consumption. */}
+          {needsNudge && (
+            <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-2 inline-flex items-center gap-1" data-testid={`learn-nudge-${l.id}`}>
+              <Hammer className="w-3 h-3" /> Add an output to make this count as proof.
+            </p>
+          )}
+
+          {/* CALM opt-in affordance for reference items: a quiet optional link only — NO warning. */}
+          {outputState === "reference" && !l.done && (
+            editingOutput ? (
+              <div className="flex items-center gap-2 mt-2">
+                <Input value={outputDraft} onChange={(e) => setOutputDraft(e.target.value)} placeholder="e.g. a published memo, a forecast, a sample" className="h-7 text-xs" data-testid={`input-output-${l.id}`} />
+                <button onClick={saveOutput} data-testid={`button-save-output-${l.id}`} className="text-xs text-primary font-medium hover:underline">Save</button>
+                <button onClick={() => { setEditingOutput(false); setOutputDraft(l.requiredOutput || ""); }} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => setEditingOutput(true)} data-testid={`button-set-output-${l.id}`} className="text-[11px] text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-1">
+                <Plus className="w-3 h-3" /> Set a required output
+              </button>
+            )
+          )}
+
+          {/* Evidenced: show the produced artifact link. */}
+          {outputState === "evidenced" && l.outputEvidenceUrl && (
+            <a href={l.outputEvidenceUrl} target="_blank" rel="noopener noreferrer" data-testid={`link-evidence-${l.id}`} className="text-xs text-emerald-700 dark:text-emerald-300 mt-2 inline-flex items-center gap-1 hover:underline">
+              <BadgeCheck className="w-3 h-3" /> View the proof artifact <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+
           <div className="flex items-center gap-3 mt-2">
             {l.url && <a href={l.url} target="_blank" rel="noopener noreferrer" data-testid={`link-learn-${l.id}`} className="text-xs text-primary inline-flex items-center gap-1 hover:underline">Open <ExternalLink className="w-3 h-3" /></a>}
             <button onClick={onRemove} data-testid={`button-delete-learn-${l.id}`} className="opacity-0 group-hover:opacity-100 text-xs text-muted-foreground hover:text-destructive inline-flex items-center gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
           </div>
+
+          {/* Producing lane (opted in, not yet evidenced): invite to create the output task + mark evidenced inline. */}
+          {outputState === "producing" && !l.done && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5">
+              <button onClick={createOutputTask} disabled={busy} data-testid={`button-create-output-task-${l.id}`} className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create output task
+              </button>
+              {evidencing ? (
+                <span className="inline-flex items-center gap-2">
+                  <Input value={evidenceDraft} onChange={(e) => setEvidenceDraft(e.target.value)} placeholder="link to the artifact" className="h-7 text-xs w-48" data-testid={`input-evidence-${l.id}`} />
+                  <button onClick={markEvidenced} disabled={busy || !evidenceDraft.trim()} data-testid={`button-confirm-evidence-${l.id}`} className="text-xs text-primary font-medium hover:underline disabled:opacity-60">Save</button>
+                  <button onClick={() => { setEvidencing(false); setEvidenceDraft(""); }} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                </span>
+              ) : (
+                <button onClick={() => setEvidencing(true)} data-testid={`button-mark-evidenced-${l.id}`} className="text-xs text-slate-600 dark:text-slate-300 hover:text-foreground inline-flex items-center gap-1">
+                  <BadgeCheck className="w-3.5 h-3.5" /> Mark evidenced
+                </button>
+              )}
+            </div>
+          )}
+
           <CardActions entity="learn" id={l.id} trackId={trackId} tracks={tracks}
-            onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
+            onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create output task' to make one." })} />
         </div>
       </div>
     </div>

@@ -76,6 +76,48 @@ export function isLearnActive(l: Pick<Learn, "learnStatus">): boolean {
   return s === "active" || s === "enrolled";
 }
 
+// ── LEARN OUTPUT STATE (P4.4) — DERIVED, calm, opt-in. NOT a nag. ────────────
+// The rule "every learn item requires an output" is INTENT-DRIVEN: the app never
+// assumes it. The DEFAULT for any item is "reference" — a fully valid, SILENT
+// state for pure consumption (no warning, no chip pressure). An item only enters
+// the proof-building lane when the USER opts in, by either (a) linking it to a
+// track as proof-building (relatedTrackId set), OR (b) setting a requiredOutput.
+// MECE 3-state:
+//   reference  : no requiredOutput AND not track-linked-as-proof. The default.
+//   producing  : opted in (requiredOutput set OR track-linked) AND no evidence yet.
+//   evidenced  : outputEvidenceUrl present (or a proof_for entityLink — passed in).
+export const LEARN_OUTPUT_STATES = ["reference", "producing", "evidenced"] as const;
+export type LearnOutputState = (typeof LEARN_OUTPUT_STATES)[number];
+
+// A learn item is "opted in" to the proof-building lane when the user has either
+// set an intended output OR linked it to a track as proof-building.
+export function isLearnProofOptedIn(l: Pick<Learn, "requiredOutput" | "relatedTrackId">): boolean {
+  const hasOutput = !!(l.requiredOutput && l.requiredOutput.trim());
+  const trackLinked = l.relatedTrackId != null;
+  return hasOutput || trackLinked;
+}
+
+export function getLearnOutputState(
+  l: Pick<Learn, "requiredOutput" | "relatedTrackId" | "outputEvidenceUrl">,
+  hasProofLink = false,
+): LearnOutputState {
+  const evidenced = !!(l.outputEvidenceUrl && l.outputEvidenceUrl.trim()) || hasProofLink;
+  if (evidenced) return "evidenced";
+  return isLearnProofOptedIn(l) ? "producing" : "reference";
+}
+
+// True only for the SOFT, NON-AMBER reminder: the user linked this to a track as
+// proof-building but hasn't given it any output yet. Pure-consumption (reference)
+// items are NEVER flagged. Items with a requiredOutput already have their lane.
+export function learnNeedsOutputNudge(
+  l: Pick<Learn, "requiredOutput" | "relatedTrackId" | "outputEvidenceUrl">,
+  hasProofLink = false,
+): boolean {
+  if (getLearnOutputState(l, hasProofLink) !== "producing") return false;
+  const hasOutputIntent = !!(l.requiredOutput && l.requiredOutput.trim());
+  return l.relatedTrackId != null && !hasOutputIntent;
+}
+
 // ── CONTACTS ────────────────────────────────────────────────────────────────
 export function getContactStatus(c: Pick<Contact, "status">): ContactStatus {
   return (CONTACT_STATUSES as readonly string[]).includes(c.status) ? (c.status as ContactStatus) : "to_contact";

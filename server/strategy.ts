@@ -2,6 +2,7 @@ import { storage } from "./storage";
 import {
   isJobLive, getJobReadiness, isLearnDone, isLearnActive, getLearnStatus,
   isContactWarm, isProofLive, isTaskDone, getTaskReadiness, getTrackId,
+  getLearnOutputState,
 } from "@shared/domainState";
 import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 
@@ -27,6 +28,7 @@ export type TrackDiagnostic = {
     proofGap: number;
     warmthGap: number;
     executionGap: number;
+    learnProofGap: number; // P4.4 — opt-in, lowest priority; never the sole bottleneck driver
   };
   bottleneck: BottleneckType;
   bottleneckLabel: string;
@@ -81,12 +83,10 @@ function diagnoseTrack(
   }, 0);
   const readinessGap = lowReadinessJobs + stuckTasks + stallSteps;
 
-  // proof gap: few active proof assets; learn items missing requiredOutput; AND
-  // (P4.3) proof assets with a production rail but little progress — few done or
-  // blocked steps signal a stalled proof asset. "blocked" counts as a stall;
-  // "skipped" is a separate resolved state, not a stall (mirrors the job rail).
+  // proof gap: few active proof assets; AND (P4.3) proof assets with a production
+  // rail but little progress — few done or blocked steps signal a stalled proof
+  // asset. "blocked" counts as a stall; "skipped" is a separate resolved state.
   const liveProof = tHustles.filter(isProofLive).length;
-  const learnNoOutput = tLearn.filter((l) => !l.requiredOutput || !l.requiredOutput.trim()).length;
   const proofStall = tHustles.reduce((acc, h) => {
     const steps = proofStepsByHustle.get(h.id) || [];
     if (steps.length === 0) return acc;
@@ -95,7 +95,14 @@ function diagnoseTrack(
     const fewDone = done < Math.ceil(steps.length / 2) ? 1 : 0;
     return acc + fewDone + blocked;
   }, 0);
-  const proofGap = (liveProof === 0 ? 1 : 0) + learnNoOutput + proofStall;
+  // P4.4 — learn-proof signal (GENTLE, LOW PRIORITY, OPT-IN ONLY): count learn
+  // items the user has opted into the proof-building lane (track-linked here, so
+  // already opted-in) that are still "producing" — i.e. no output evidence yet.
+  // Pure-consumption / reference items are NEVER counted and never reduce proof
+  // health. This signal is reported separately and DELIBERATELY excluded from the
+  // primary proofGap math so it can never become the bottleneck on its own.
+  const learnNoOutput = tLearn.filter((l) => getLearnOutputState(l) === "producing").length;
+  const proofGap = (liveProof === 0 ? 1 : 0) + proofStall;
 
   // warmth gap: live jobs with low warmPathScore; cold / absent contacts; AND
   // contacts overdue for follow-up (P4.2) — a stale warm path is a warmth gap too.
@@ -109,7 +116,11 @@ function diagnoseTrack(
   const doneTasks = tTasks.filter(isTaskDone).length;
   const executionGap = readyTasks >= 3 && doneTasks === 0 ? readyTasks : 0;
 
-  const signals = { directionGap, readinessGap, proofGap, warmthGap, executionGap };
+  // learnProofGap is reported alongside the others but is INTENTIONALLY the lowest
+  // priority — it can only surface as the recommended move once every structural
+  // gap (direction/proof/warmth/readiness/execution) is clear. Opt-in only.
+  const learnProofGap = learnNoOutput;
+  const signals = { directionGap, readinessGap, proofGap, warmthGap, executionGap, learnProofGap };
 
   // ── Primary bottleneck (deterministic priority order) + recommended move ──
   let bottleneck: BottleneckType = "none";
@@ -127,12 +138,9 @@ function diagnoseTrack(
     if (liveProof === 0) {
       bottleneckLabel = "No live proof asset";
       recommendedMove = "Create a proof-asset task to move it past the idea stage";
-    } else if (proofStall > 0) {
+    } else {
       bottleneckLabel = "Proof asset stalled";
       recommendedMove = "Produce the next output on your proof asset's rail";
-    } else {
-      bottleneckLabel = "Learning without an output";
-      recommendedMove = "Define the required output for your learning";
     }
   } else if (warmthGap > 0 && tLiveJobs.length > 0) {
     const overdue = tContacts.filter(isContactOverdue).length;
@@ -153,6 +161,14 @@ function diagnoseTrack(
     bottleneck = "execution";
     bottleneckLabel = `${executionGap} ready tasks, none done`;
     recommendedMove = "Pick the top ready task and finish one today";
+  } else if (learnProofGap > 0) {
+    // LOWEST-PRIORITY, OPT-IN nudge: only reached when nothing structural is the
+    // bottleneck. Stays "proof"-typed but is gentle — never the primary blocker.
+    bottleneck = "proof";
+    bottleneckLabel = learnProofGap === 1
+      ? "A proof-building learning item has no output yet"
+      : `${learnProofGap} proof-building learning items have no output yet`;
+    recommendedMove = "When you're ready, give one an output to make it count as proof";
   }
 
   return {

@@ -41,6 +41,7 @@ export async function makeHarness(): Promise<Harness> {
   seed.close();
 
   const express = (await import("express")).default;
+  const { registerCaptureRoutes } = await import("./capture");
   const { registerRoutes } = await import("./routes");
   const { storage } = await import("./storage");
   const sqlite = new Database(dbPath);
@@ -48,6 +49,7 @@ export async function makeHarness(): Promise<Harness> {
   const app = express();
   app.use(express.json());
   const httpServer = createServer(app);
+  registerCaptureRoutes(app);
   await registerRoutes(httpServer, app);
 
   await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));

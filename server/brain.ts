@@ -244,8 +244,8 @@ export function planDay(
   // when the remaining day is tiny, Anchor gives one MVD rather than pretending a
   // full three-item day still exists.
   const budget = freeMinutes(busyMinutes);
-  const maxItems = (energy === "low" || mode === "low") ? Math.min(2, cands.length)
-    : budget < 75 ? 1
+  const maxItems = budget < 75 ? 1
+    : (energy === "low" || mode === "low") ? Math.min(2, cands.length)
     : budget < 180 ? 2
     : 3;
 
@@ -292,8 +292,8 @@ export function planDay(
   const fits = planMin <= Math.max(15, budget);
   const note =
     mode === "deadline" ? "A deadline's close — the urgent thing leads. Do that one and today counts."
-    : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
     : budget < 75 ? "Restart from here. One useful thing is enough for today."
+    : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
     : fits ? "Start at the top. Finish the first one and today already counts."
     : "Full plate for the time you've got. Just do the first one and call it a win.";
 

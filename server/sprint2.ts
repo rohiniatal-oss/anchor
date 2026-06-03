@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { planDay } from "./brain";
-import { dayPlans, dayPlanItems, type DayPlan } from "@shared/schema";
+import { dayPlans, dayPlanItems, type DayPlan, type Task } from "@shared/schema";
 import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey } from "./planningFeedback";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +186,37 @@ function readAvailableMinutes(raw: unknown) {
   return Number.isFinite(n) ? n : null;
 }
 
+function parseTaskSteps(raw: string) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed.filter((s) => s && typeof s.text === "string").map((s) => ({ text: String(s.text), done: !!s.done })) : [];
+  } catch { return []; }
+}
+
+function findTaskForUnstick(tasks: Task[], stepText: string) {
+  const pinned = tasks.find((t) => t.pinned && !t.done);
+  if (pinned) return pinned;
+  const needle = stepText.trim().toLowerCase();
+  if (!needle) return tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress") || null;
+  return tasks.find((t) => !t.done && parseTaskSteps(t.steps).some((s) => !s.done && s.text.trim().toLowerCase() === needle))
+    || tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress")
+    || null;
+}
+
+async function saveUnstickStep(task: Task, step: string) {
+  const steps = prependStep(task.steps || "[]", step);
+  const updated = await storage.updateTask(task.id, { steps, status: "in_progress" } as any);
+  await storage.logActivity({
+    eventType: "unstick_used",
+    sourceType: task.sourceType || "task",
+    sourceId: task.sourceId ?? undefined,
+    taskId: task.id,
+    planItemId: task.planItemId ?? undefined,
+    metadata: JSON.stringify({ step }),
+  } as any);
+  return updated;
+}
+
 export function registerSprint2Routes(app: Express) {
   app.post("/api/plan/restart", async (req, res) => {
     const day = String(req.body?.day || todayKey());
@@ -249,16 +280,20 @@ export function registerSprint2Routes(app: Express) {
     if (!task) return res.status(404).json({ error: "Not found" });
     const provided = String(req.body?.hint || req.body?.step || "").trim();
     const step = provided || deterministicUnstickStep(task);
-    const steps = prependStep(task.steps || "[]", step);
-    const updated = await storage.updateTask(task.id, { steps, status: "in_progress" } as any);
-    await storage.logActivity({
-      eventType: "unstick_used",
-      sourceType: task.sourceType || "task",
-      sourceId: task.sourceId ?? undefined,
-      taskId: task.id,
-      planItemId: task.planItemId ?? undefined,
-      metadata: JSON.stringify({ step }),
-    } as any);
+    const updated = await saveUnstickStep(task, step);
     res.json({ task: updated, step });
+  });
+
+  // Compatibility with the existing Right Now UI, which calls /api/unstick with
+  // only the current step text. Generate a deterministic tiny action, save it onto
+  // the pinned/current task when identifiable, and return it under the legacy
+  // `hint` key so the UI keeps working without a monolith edit.
+  app.post("/api/unstick", async (req, res) => {
+    const stepText = String(req.body?.step || "").trim();
+    const tasks = await storage.getTasks();
+    const task = findTaskForUnstick(tasks, stepText);
+    const hint = task ? deterministicUnstickStep(task) : "Set a two-minute timer and do the smallest visible start";
+    if (task) await saveUnstickStep(task, hint);
+    res.json({ hint, saved: !!task, taskId: task?.id ?? null });
   });
 }

@@ -1,6 +1,6 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { careerAssetsFromActivity, generateCandidateUniverse, starterDirections } from "./candidates";
+import { careerAssetsFromActivity, deconstructRole, generateCandidateUniverse, starterDirections } from "./candidates";
 import { makeHarness, api, type Harness } from "./spine.harness";
 
 let h: Harness;
@@ -43,6 +43,52 @@ test("career asset API adds custom assets used by candidates", async () => {
   const candidates = await api(h.base, "GET", "/api/candidates");
   assert.equal(candidates.status, 200);
   assert.ok(candidates.json.grounding.includes("Oxford network"));
+});
+
+test("role deconstruction extracts attributes and proof gaps instead of whole-role reactions", () => {
+  const role = {
+    id: 1,
+    title: "AI Policy Strategy Manager",
+    company: "Example Org",
+    location: "London",
+    note: "Lead AI policy strategy, stakeholder engagement, public sector briefings and responsible AI roadmap development.",
+    nextStep: "",
+    roleArchetype: "policy",
+    narrativeAngle: "TBI and Worldpay/FIS experience",
+  } as any;
+  const d = deconstructRole(role);
+  assert.ok(d.attributes.workContent.includes("strategy"));
+  assert.ok(d.attributes.topicAreas.includes("AI or technology"));
+  assert.ok(d.attributes.environment.includes("government or public sector"));
+  assert.ok(d.nextSignalAction.title.includes("AI Policy Strategy Manager"));
+  assert.ok(d.proofGaps.length >= 1);
+});
+
+test("role deconstruction route can commit one Today proof-gap task", async () => {
+  const job = await h.storage.createJob({
+    title: "Investment Attraction Strategy Lead",
+    company: "Example Org",
+    location: "Dubai",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    note: "Lead investment attraction strategy, stakeholder engagement, FDI pipeline analysis and economic development advisory.",
+    roleArchetype: "advisory",
+  } as any);
+
+  const d = await api(h.base, "GET", `/api/jobs/${job.id}/deconstruct`);
+  assert.equal(d.status, 200);
+  assert.equal(d.json.jobId, job.id);
+  assert.ok(d.json.attributes.workContent.length >= 1);
+
+  const r = await api(h.base, "POST", `/api/jobs/${job.id}/deconstruct/commit`);
+  assert.equal(r.status, 200);
+  assert.ok(r.json.task?.id);
+  assert.equal(r.json.task.sourceType, "role_deconstruction");
+  const steps = JSON.parse(r.json.task.steps);
+  assert.ok(steps.length >= 1);
+
+  const log = await h.storage.getActivityLog();
+  assert.ok(log.some((a) => a.eventType === "role_deconstruction_committed" && a.taskId === r.json.task.id));
 });
 
 test("candidate commit creates one Today task with a first step", async () => {

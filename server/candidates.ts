@@ -226,7 +226,12 @@ export function starterDirections(assets: CareerAsset[] = STARTER_ASSETS): Caree
   const geography = labels(assets, "geography");
   const topics = labels(assets, "topic");
   const has = (name: string) => assets.some((a) => a.label.toLowerCase().includes(name.toLowerCase()));
-  const defaultNetworks = network.length ? network : ["Bain", "TBI", "SIPA"];
+  // Warm networks are not just "network"-kind assets — her credible EXPERIENCE
+  // orgs (Bain, TBI, Worldpay/FIS, etc.) are warm paths too. Merge both so a
+  // direction can legitimately cite Bain/TBI alongside SIPA.
+  const experienceNetworks = experience.filter((x) => /Bain|TBI|Worldpay|FIS|Abraaj|Humania/i.test(x));
+  const merged = Array.from(new Set([...network, ...experienceNetworks]));
+  const defaultNetworks = merged.length ? merged : ["Bain", "TBI", "SIPA"];
   const defaultGeo = geography.length ? geography.join(" / ") : "Dubai / London / GCC";
 
   const directions: CareerDirection[] = [

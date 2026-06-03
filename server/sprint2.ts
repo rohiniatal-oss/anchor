@@ -158,7 +158,10 @@ async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes
       await saveStarterStep(task);
     }
   }
-  return fitPlanToRemainingTime(plan, tasks, remainingMinutes);
+  const fitted = fitPlanToRemainingTime(plan, tasks, remainingMinutes);
+  // Report whether time pressure actually dropped anything, so the note layer
+  // can explain a cut-down day without guessing from length comparisons.
+  return { plan: fitted, trimmed: fitted.length < plan.length };
 }
 
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
@@ -169,10 +172,17 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   const memory = await planningMemoryFor(day);
   const result = planDay(tasks, jobs, learn, hustles, energy, budget.busyEquivalentMinutes);
   const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
-  const correctedPlan = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
+  const corrected = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
+  const correctedPlan = corrected.plan;
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
   const feedbackNote = feedbackSummary(memory);
-  const overloadNote = correctedPlan.length < feedbackPlan.length ? "Today was cut down to what can realistically fit." : "";
+  // Surface the cut-down note whenever time pressure shrank the day below the
+  // actionable load — either the time-fit step dropped an item, OR the brain
+  // itself capped the plan smaller than the number of live today-tasks because
+  // the available time was tight. Both mean: today got trimmed to fit.
+  const actionableToday = tasks.filter((t) => t.list === "today" && !t.done).length;
+  const trimmedForTime = corrected.trimmed || (correctedPlan.length < actionableToday && budget.remainingMinutes > 0 && budget.remainingMinutes < 120);
+  const overloadNote = trimmedForTime ? "Today was cut down to what can realistically fit." : "";
   const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, result.note].filter(Boolean).join(" ");
 
   const plan = db.transaction((tx) => {

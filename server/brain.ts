@@ -292,7 +292,7 @@ export function planDay(
   const fits = planMin <= Math.max(15, budget);
   const note =
     mode === "deadline" ? "A deadline's close — the urgent thing leads. Do that one and today counts."
-    : budget < 75 ? "Restart from here. One useful thing is enough for today."
+    : budget < 75 ? "One useful thing is enough for today."
     : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
     : fits ? "Start at the top. Finish the first one and today already counts."
     : "Full plate for the time you've got. Just do the first one and call it a win.";

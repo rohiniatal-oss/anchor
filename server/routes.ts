@@ -110,7 +110,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `The first step must be MEANINGFUL and frictionless \u2014 "open the saved posting & note what it asks", NEVER "Google it" or "pick up the phone". ` +
           `Use as many steps as the task genuinely needs (2-6), each max ~10 words, in real order.\n\n` +
           (playbook ? `Relevant playbook: ${playbook}\n\n` : "") +
-          `IF you cannot tell how far along she is and it materially changes the sequence, ask ONE short question first.\n\n` +
+          `STRONGLY PREFER giving steps over asking. If you recognise the resource or role (e.g. the 80,000 Hours career guide), reason from what you know and produce a sensible default sequence \u2014 do NOT ask her where she is. Only ask ONE short question in the rare case the sequence would be genuinely wrong without it (and never for a well-known public resource).\n\n` +
           `Task: "${task.title}". Category: ${task.category}. Done when: ${task.doneWhen || "(unset)"}.\n` +
           `SOURCE CONTEXT: ${sourceContext || "(none beyond the title)"}\n` +
           `${context ? "Her answer to your last question: " + context : "No extra context yet."}\n\n` +

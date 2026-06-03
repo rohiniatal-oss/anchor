@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { planDay } from "./brain";
 import { dayPlans, dayPlanItems, insertTaskSchema, type DayPlan, type Task, type CareerTrack } from "@shared/schema";
-import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey } from "./planningFeedback";
+import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey, refinedEstimateFromSteps, stepsWithEstimatedMinutes } from "./planningFeedback";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
@@ -12,6 +12,7 @@ import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, f
 //
 // Sprint 5A adds lightweight task-intake inference. Estimates are deliberately
 // rough: intake_guess + low confidence. Breakdown and actuals can refine later.
+// Sprint 5B lets task breakdown refine the estimate from step-level estimates.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Energy = "low" | "medium" | "high";
@@ -72,7 +73,6 @@ async function remainingBudgetFor(day: string, explicitAvailableMinutes?: number
       const mins = end - effectiveStart;
       if (mins > 0 && mins < 12 * 60) calendarRemainingMinutes += mins;
     } else if (!today || now < 18 * 60) {
-      // Untimed event: count it only if it could still affect the remaining day.
       calendarRemainingMinutes += 45;
     }
   }
@@ -289,6 +289,30 @@ async function enrichTaskInput(raw: any) {
   return insertTaskSchema.parse(enriched);
 }
 
+async function refineTaskEstimate(task: Task, opts: { inferMissing?: boolean } = {}) {
+  let steps = task.steps || "[]";
+  if (opts.inferMissing) {
+    steps = JSON.stringify(stepsWithEstimatedMinutes(steps));
+  }
+  const refined = refinedEstimateFromSteps(steps);
+  if (!refined) return { task, refined: null };
+  const updated = await storage.updateTask(task.id, {
+    steps,
+    estimateMinutes: refined.estimateMinutes,
+    estimateConfidence: refined.estimateConfidence,
+    estimateReason: refined.estimateReason,
+  } as any);
+  await storage.logActivity({
+    eventType: "estimate_refined",
+    sourceType: task.sourceType || "task",
+    sourceId: task.sourceId ?? undefined,
+    taskId: task.id,
+    planItemId: task.planItemId ?? undefined,
+    metadata: JSON.stringify(refined),
+  } as any);
+  return { task: updated, refined };
+}
+
 export function registerSprint2Routes(app: Express) {
   app.post("/api/tasks", async (req, res) => {
     try {
@@ -306,6 +330,16 @@ export function registerSprint2Routes(app: Express) {
     }
   });
 
+  app.post("/api/tasks/:id/refine-estimate-from-steps", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+    const result = await refineTaskEstimate(task, { inferMissing: req.body?.inferMissing !== false });
+    if (!result.refined) return res.status(400).json({ error: "No step estimates available", task: result.task });
+    res.json(result);
+  });
+
   app.post("/api/plan/restart", async (req, res) => {
     const day = String(req.body?.day || todayKey());
     const energy = coerceEnergy(req.body?.energy);
@@ -320,8 +354,6 @@ export function registerSprint2Routes(app: Express) {
     res.json(await buildAdaptivePlan(day, energy, { availableMinutes, restart: false }));
   });
 
-  // Dependency-safe read. If today's plan already exists, return it. If not, build
-  // it with current-time awareness. Explicit restarts still use /api/plan/restart.
   app.get("/api/plan/current", async (req, res) => {
     const day = String(req.query.day || todayKey());
     const energy = coerceEnergy(req.query.energy);
@@ -334,8 +366,6 @@ export function registerSprint2Routes(app: Express) {
     res.json({ plan, items, events, budget, memory: { yesterday: memory.yesterday, missedMvd: !!memory.missedMvdKey, skipped: memory.skippedKeys.size, parked: memory.parkedKeys.size }, restart: false });
   });
 
-  // Avoidance review is deterministic and non-destructive. It gives the UI a safe
-  // way to respond to repeated park/move/skip patterns without guessing.
   app.get("/api/tasks/:id/avoidance-review", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
@@ -372,10 +402,6 @@ export function registerSprint2Routes(app: Express) {
     res.json({ task: updated, step });
   });
 
-  // Compatibility with the existing Right Now UI, which calls /api/unstick with
-  // only the current step text. Generate a deterministic tiny action, save it onto
-  // the pinned/current task when identifiable, and return it under the legacy
-  // `hint` key so the UI keeps working without a monolith edit.
   app.post("/api/unstick", async (req, res) => {
     const stepText = String(req.body?.step || "").trim();
     const tasks = await storage.getTasks();

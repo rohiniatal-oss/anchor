@@ -20,6 +20,8 @@ export type PlanningMemory = {
   eventCountsByTaskId: Map<number, Record<string, number>>;
 };
 
+export type TaskStep = { text: string; done: boolean; estimateMinutes?: number };
+
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -194,12 +196,49 @@ export function feedbackSummary(memory: PlanningMemory) {
   return bits.length ? `Adjusted for ${bits.join(", ")}.` : "";
 }
 
-export function prependStep(rawSteps: string, text: string) {
-  let steps: Array<{ text: string; done: boolean }> = [];
+export function parseSteps(rawSteps: string): TaskStep[] {
   try {
     const parsed = JSON.parse(rawSteps || "[]");
-    if (Array.isArray(parsed)) steps = parsed.filter((s) => s && typeof s.text === "string").map((s) => ({ text: s.text, done: !!s.done }));
-  } catch {}
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((s) => s && typeof s.text === "string")
+      .map((s) => ({
+        text: s.text,
+        done: !!s.done,
+        estimateMinutes: Number.isFinite(Number(s.estimateMinutes)) && Number(s.estimateMinutes) > 0 ? Math.round(Number(s.estimateMinutes)) : undefined,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export function refinedEstimateFromSteps(rawSteps: string) {
+  const steps = parseSteps(rawSteps);
+  const estimates = steps.map((s) => s.estimateMinutes).filter((n): n is number => Number.isFinite(n));
+  if (estimates.length === 0) return null;
+  return {
+    estimateMinutes: estimates.reduce((sum, n) => sum + n, 0),
+    estimateConfidence: estimates.length === steps.length ? "medium" : "low",
+    estimateReason: estimates.length === steps.length ? "breakdown_sum" : "breakdown_partial_sum",
+    stepsCount: steps.length,
+    estimatedStepsCount: estimates.length,
+  };
+}
+
+export function stepsWithEstimatedMinutes(rawSteps: string) {
+  const steps = parseSteps(rawSteps);
+  return steps.map((s) => {
+    if (s.estimateMinutes) return s;
+    const text = s.text.toLowerCase();
+    const estimateMinutes = /open|check|send|message|email|find|list|skim|note/.test(text) ? 5
+      : /draft|write|rewrite|research|prepare|review|tailor|build/.test(text) ? 20
+      : 10;
+    return { ...s, estimateMinutes };
+  });
+}
+
+export function prependStep(rawSteps: string, text: string) {
+  const steps = parseSteps(rawSteps).map((s) => ({ text: s.text, done: s.done, ...(s.estimateMinutes ? { estimateMinutes: s.estimateMinutes } : {}) }));
   const trimmed = text.trim();
   if (!trimmed) return JSON.stringify(steps);
   const withoutDuplicate = steps.filter((s) => s.text.trim().toLowerCase() !== trimmed.toLowerCase());

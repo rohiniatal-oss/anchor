@@ -6,6 +6,7 @@ import { registerCaptureRoutes } from "./capture";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
 import { registerJobTruthRoutes } from "./jobTruth";
+import { registerCandidateRoutes } from "./candidates";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
@@ -70,15 +71,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Capture remains the clean routing contract. Sprint 2 shadows Sprint 1 plan
-  // routes with current-time-aware restart logic, while Sprint 1 still protects
-  // legacy Brain Dump / completion dependencies. Job truth routes must register
-  // before the generic /api/jobs/:id CRUD route.
+  // Capture remains the clean routing contract. Candidate routes sit upstream of
+  // generic CRUD because they create candidate-derived Today tasks.
   registerPersistenceAdminRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);
   registerJobTruthRoutes(app);
+  registerCandidateRoutes(app);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

@@ -3,6 +3,7 @@ import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { registerCaptureRoutes } from "./capture";
+import { registerSprint1Routes } from "./sprint1";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 
@@ -63,10 +64,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // P4.7 capture endpoints are additive and isolated from the legacy Brain Dump
-  // routes; registering them before the app routes lets new UI call the clean
-  // capture contract without changing existing endpoints yet.
+  // P4.7 capture endpoints remain additive, but Sprint 1 registers compatibility
+  // routes before the legacy app routes so the current UI is quietly moved onto
+  // the hardened execution spine without a frontend rewrite.
   registerCaptureRoutes(app);
+  registerSprint1Routes(app);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

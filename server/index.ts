@@ -5,7 +5,7 @@ import { registerRoutes } from "./routes";
 import { registerCaptureRoutes } from "./capture";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
-import { registerOptionalBasicAuth, startOptionalSqliteBackups } from "./guardrails";
+import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 
@@ -27,6 +27,7 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+warnIfUsingDefaultDbPath();
 registerOptionalBasicAuth(app);
 startOptionalSqliteBackups();
 
@@ -71,6 +72,7 @@ app.use((req, res, next) => {
   // Capture remains the clean routing contract. Sprint 2 shadows Sprint 1 plan
   // routes with current-time-aware restart logic, while Sprint 1 still protects
   // legacy Brain Dump / completion dependencies.
+  registerPersistenceAdminRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);

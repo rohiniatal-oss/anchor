@@ -113,8 +113,8 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         mode: planMode,
         energy,
         note,
-        status: "active",
-        enoughForToday: false,
+        status: opts.restart ? "active" : current.status,
+        enoughForToday: opts.restart ? false : current.enoughForToday,
         updatedAt: now,
       } as any).where(eq(dayPlans.id, current.id)).returning().get() as DayPlan;
     }

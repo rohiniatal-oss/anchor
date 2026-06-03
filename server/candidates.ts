@@ -11,6 +11,7 @@ import { storage } from "./storage";
 // Editable career assets are stored as activity-log events to avoid a schema
 // migration in this sprint. The current asset inventory is reconstructed from
 // career_asset_upsert / career_asset_delete events, with starter fallbacks.
+// Role deconstruction learns from attributes inside a role, not binary likes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type AssetKind = "experience" | "network" | "geography" | "proof" | "topic";
@@ -40,6 +41,26 @@ type SignalActivity = {
   friction: number;
   score: number;
   createsTaskTitle: string;
+};
+
+type RoleDeconstruction = {
+  jobId: number;
+  title: string;
+  company: string;
+  attributes: {
+    workContent: string[];
+    topicAreas: string[];
+    environment: string[];
+    mechanics: string[];
+  };
+  credibilityAssets: string[];
+  proofGaps: string[];
+  usefulQuestions: string[];
+  nextSignalAction: {
+    title: string;
+    why: string;
+    firstStep: string;
+  };
 };
 
 const STARTER_ASSETS: CareerAsset[] = [
@@ -101,6 +122,94 @@ export function careerAssetsFromActivity(log: ActivityLog[]): CareerAsset[] {
 
 function labels(assets: CareerAsset[], kind?: AssetKind) {
   return assets.filter((a) => !kind || a.kind === kind).sort((a, b) => b.strength - a.strength).map((a) => a.label);
+}
+
+function haystack(job: Job) {
+  return `${job.title} ${job.company} ${job.location} ${job.note} ${job.nextStep} ${job.roleArchetype} ${job.narrativeAngle}`.toLowerCase();
+}
+
+function hasAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(term.toLowerCase()));
+}
+
+function attributeList(text: string, groups: Array<[string, string[]]>) {
+  return groups.filter(([, terms]) => hasAny(text, terms)).map(([label]) => label);
+}
+
+export function deconstructRole(job: Job, assets: CareerAsset[] = STARTER_ASSETS): RoleDeconstruction {
+  const text = haystack(job);
+  const workContent = attributeList(text, [
+    ["strategy", ["strategy", "strategic", "transformation", "roadmap"]],
+    ["policy", ["policy", "government", "public sector", "regulation", "regulatory"]],
+    ["analysis", ["analysis", "analytics", "research", "insight", "market"]],
+    ["stakeholder management", ["stakeholder", "client", "minister", "executive", "senior"]],
+    ["investment or capital", ["investment", "capital", "fund", "investor", "economic development", "fdi"]],
+    ["operations or delivery", ["operations", "delivery", "implementation", "program", "programme", "execution"]],
+    ["writing or thought leadership", ["writing", "brief", "memo", "publication", "thought leadership"]],
+  ]);
+  const topicAreas = attributeList(text, [
+    ["AI or technology", ["ai", "artificial intelligence", "technology", "digital", "data", "fintech"]],
+    ["economic development", ["economic development", "investment attraction", "fdi", "trade"]],
+    ["government transformation", ["government transformation", "public sector", "ministry", "civil service"]],
+    ["impact or development", ["impact", "development", "foundation", "philanthropy", "ngo"]],
+    ["health or education", ["health", "healthcare", "education"]],
+  ]);
+  const environment = attributeList(text, [
+    ["consulting or advisory", ["consulting", "advisory", "advisor", "client"]],
+    ["government or public sector", ["government", "public sector", "ministry", "policy"]],
+    ["corporate", ["corporate", "company", "business unit"]],
+    ["startup or founder office", ["startup", "founder", "chief of staff", "operator"]],
+    ["foundation or impact", ["foundation", "impact", "philanthropy", "development"]],
+  ]);
+  const mechanics = attributeList(text, [
+    ["ambiguous problem solving", ["ambiguous", "0 to 1", "build", "shape", "design"]],
+    ["senior stakeholder facing", ["stakeholder", "minister", "executive", "senior", "client"]],
+    ["delivery heavy", ["delivery", "implementation", "execution", "programme", "program"]],
+    ["writing heavy", ["brief", "memo", "writing", "draft", "publication"]],
+    ["commercial or BD", ["business development", "sales", "partnership", "pipeline"]],
+  ]);
+
+  const credibilityAssets = assets
+    .filter((asset) => hasAny(text, [asset.label, asset.note]))
+    .sort((a, b) => b.strength - a.strength)
+    .map((a) => a.label)
+    .slice(0, 5);
+
+  const proofGaps: string[] = [];
+  if (topicAreas.includes("AI or technology") && !credibilityAssets.some((a) => /Worldpay|FIS|technology|digital/i.test(a))) proofGaps.push("AI or technology proof");
+  if (workContent.includes("investment or capital") && !credibilityAssets.some((a) => /Abraaj|Humania|investment|capital/i.test(a))) proofGaps.push("investment or capital proof");
+  if (mechanics.includes("delivery heavy") && !credibilityAssets.some((a) => /TBI|Bain/i.test(a))) proofGaps.push("delivery or implementation proof");
+  if (workContent.includes("writing or thought leadership") && assets.filter((a) => a.kind === "proof").length === 0) proofGaps.push("writing sample or proof asset");
+  if (proofGaps.length === 0) proofGaps.push("specific evidence that proves the most important requirement");
+
+  const usefulQuestions = [
+    "Which responsibility sounds energising versus merely impressive?",
+    "Which requirement is already proven by existing experience?",
+    "Which requirement would need a proof asset or conversation?",
+  ];
+
+  const firstGap = proofGaps[0];
+  const nextSignalAction = {
+    title: `Check one proof gap for ${job.title}`,
+    why: "The role is a bundle. The useful next move is to test the weakest important attribute, not judge the whole role.",
+    firstStep: `Highlight the line in the role that creates this gap: ${firstGap}.`,
+  };
+
+  return {
+    jobId: job.id,
+    title: job.title,
+    company: job.company,
+    attributes: {
+      workContent: workContent.length ? workContent : ["unclear work content"],
+      topicAreas: topicAreas.length ? topicAreas : ["unclear topic area"],
+      environment: environment.length ? environment : ["unclear environment"],
+      mechanics: mechanics.length ? mechanics : ["unclear role mechanics"],
+    },
+    credibilityAssets,
+    proofGaps,
+    usefulQuestions,
+    nextSignalAction,
+  };
 }
 
 function openJobs(jobs: Job[]) {
@@ -306,5 +415,48 @@ export function registerCandidateRoutes(app: Express) {
       metadata: JSON.stringify(recommended),
     } as any);
     res.json({ recommended, task });
+  });
+
+  app.get("/api/jobs/:id/deconstruct", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [jobs, log] = await Promise.all([storage.getJobs(), storage.getActivityLog()]);
+    const job = jobs.find((j) => j.id === id);
+    if (!job) return res.status(404).json({ error: "Not found" });
+    const result = deconstructRole(job, careerAssetsFromActivity(log));
+    res.json(result);
+  });
+
+  app.post("/api/jobs/:id/deconstruct/commit", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const [jobs, log] = await Promise.all([storage.getJobs(), storage.getActivityLog()]);
+    const job = jobs.find((j) => j.id === id);
+    if (!job) return res.status(404).json({ error: "Not found" });
+    const deconstruction = deconstructRole(job, careerAssetsFromActivity(log));
+    const task = await storage.createTask({
+      title: deconstruction.nextSignalAction.title,
+      list: "today",
+      done: false,
+      category: "job",
+      size: "quick",
+      estimateMinutes: 15,
+      estimateConfidence: "low",
+      estimateReason: "role_deconstruction",
+      doneWhen: "One role attribute or proof gap has been clarified",
+      steps: JSON.stringify([{ text: deconstruction.nextSignalAction.firstStep, done: false, estimateMinutes: 5 }]),
+      status: "not_started",
+      sourceType: "role_deconstruction",
+      sourceId: job.id,
+      sourceNote: deconstruction.nextSignalAction.why,
+    } as any);
+    await storage.logActivity({
+      eventType: "role_deconstruction_committed",
+      sourceType: "job",
+      sourceId: job.id,
+      taskId: task.id,
+      metadata: JSON.stringify(deconstruction),
+    } as any);
+    res.json({ deconstruction, task });
   });
 }

@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import fs from "node:fs";
 import path from "node:path";
+import Database from "better-sqlite3";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROTOTYPE-GRADE OPERATIONAL GUARDRAILS
@@ -54,12 +55,24 @@ function timestamp() {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
 
+function checkpointWal(dbPath: string) {
+  // The app runs SQLite in WAL mode. Copying only data.db can miss committed rows
+  // that still sit in data.db-wal, so checkpoint before creating a file backup.
+  const sqlite = new Database(dbPath);
+  try {
+    sqlite.pragma("wal_checkpoint(TRUNCATE)");
+  } finally {
+    sqlite.close();
+  }
+}
+
 export function backupSqliteNow() {
   const dbPath = process.env.ANCHOR_DB_PATH || "data.db";
   const backupDir = process.env.ANCHOR_BACKUP_DIR || "";
   if (!backupDir) return null;
   if (!fs.existsSync(dbPath)) return null;
 
+  checkpointWal(dbPath);
   fs.mkdirSync(backupDir, { recursive: true });
   const parsed = path.parse(dbPath);
   const target = path.join(backupDir, `${parsed.name}-${timestamp()}${parsed.ext || ".db"}`);

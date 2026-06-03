@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { registerCaptureRoutes } from "./capture";
 import { registerSprint1Routes } from "./sprint1";
+import { registerOptionalBasicAuth, startOptionalSqliteBackups } from "./guardrails";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 
@@ -25,6 +26,8 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+registerOptionalBasicAuth(app);
+startOptionalSqliteBackups();
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

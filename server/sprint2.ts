@@ -13,6 +13,8 @@ import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, f
 // Sprint 5A adds lightweight task-intake inference. Estimates are deliberately
 // rough: intake_guess + low confidence. Breakdown and actuals can refine later.
 // Sprint 5B lets task breakdown refine the estimate from step-level estimates.
+// Sprint 6 keeps Today behaviour-first for ADHD execution: fewer items, smaller
+// starts, no deep task without a first step.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Energy = "low" | "medium" | "high";
@@ -100,6 +102,65 @@ async function planningMemoryFor(day: string) {
   });
 }
 
+function parseTaskSteps(raw: string) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed.filter((s) => s && typeof s.text === "string").map((s) => ({ text: String(s.text), done: !!s.done })) : [];
+  } catch { return []; }
+}
+
+async function saveStarterStep(task: Task) {
+  if (parseTaskSteps(task.steps || "[]").length > 0) return null;
+  const step = deterministicUnstickStep(task);
+  const steps = prependStep(task.steps || "[]", step);
+  const updated = await storage.updateTask(task.id, { steps } as any);
+  await storage.logActivity({
+    eventType: "starter_step_created",
+    sourceType: task.sourceType || "task",
+    sourceId: task.sourceId ?? undefined,
+    taskId: task.id,
+    planItemId: task.planItemId ?? undefined,
+    metadata: JSON.stringify({ step }),
+  } as any);
+  return updated;
+}
+
+function estimateForPlanItem(item: any, task: Task | undefined) {
+  if (task?.estimateMinutes && task.estimateMinutes > 0) return task.estimateMinutes;
+  if (item?.candidate?.size === "quick") return 15;
+  if (item?.candidate?.size === "deep") return 90;
+  return 45;
+}
+
+function fitPlanToRemainingTime(plan: any[], tasks: Task[], remainingMinutes: number) {
+  if (plan.length <= 1) return plan;
+  if (!Number.isFinite(remainingMinutes) || remainingMinutes <= 0) return plan.slice(0, 1);
+
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  let used = 0;
+  const kept: any[] = [];
+  for (const item of plan) {
+    const task = item.candidate?.taskId ? byId.get(item.candidate.taskId) : undefined;
+    const estimate = estimateForPlanItem(item, task);
+    if (kept.length === 0 || used + estimate <= remainingMinutes) {
+      kept.push(item);
+      used += estimate;
+    }
+  }
+  return kept.length ? kept : plan.slice(0, 1);
+}
+
+async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes: number) {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  for (const item of plan) {
+    const task = item.candidate?.taskId ? byId.get(item.candidate.taskId) : undefined;
+    if (task && !task.done && task.size === "deep" && parseTaskSteps(task.steps || "[]").length === 0) {
+      await saveStarterStep(task);
+    }
+  }
+  return fitPlanToRemainingTime(plan, tasks, remainingMinutes);
+}
+
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
   const [tasks, jobs, learn, hustles] = await Promise.all([
     storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(),
@@ -108,9 +169,11 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   const memory = await planningMemoryFor(day);
   const result = planDay(tasks, jobs, learn, hustles, energy, budget.busyEquivalentMinutes);
   const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
+  const correctedPlan = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
   const feedbackNote = feedbackSummary(memory);
-  const note = [opts.restart ? "Restart from here." : "", feedbackNote, result.note].filter(Boolean).join(" ");
+  const overloadNote = correctedPlan.length < feedbackPlan.length ? "Today was cut down to what can realistically fit." : "";
+  const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, result.note].filter(Boolean).join(" ");
 
   const plan = db.transaction((tx) => {
     const now = Date.now();
@@ -146,7 +209,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
 
     let minimumViableItemId: number | null = null;
     let sequence = 0;
-    for (const item of feedbackPlan) {
+    for (const item of correctedPlan) {
       const c = item.candidate;
       const previousAction = actioned.get(`${c.source}:${c.sourceId}`);
       const created = tx.insert(dayPlanItems).values({
@@ -168,7 +231,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         parkedAt: previousAction?.parkedAt ?? null,
         createdAt: now,
       } as any).returning().get();
-      if (item.isMVD) minimumViableItemId = created.id;
+      if (item.isMVD || sequence === 1) minimumViableItemId = created.id;
     }
 
     current = tx.update(dayPlans).set({
@@ -187,13 +250,6 @@ function readAvailableMinutes(raw: unknown) {
   if (raw === null || raw === undefined || raw === "") return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
-}
-
-function parseTaskSteps(raw: string) {
-  try {
-    const parsed = JSON.parse(raw || "[]");
-    return Array.isArray(parsed) ? parsed.filter((s) => s && typeof s.text === "string").map((s) => ({ text: String(s.text), done: !!s.done })) : [];
-  } catch { return []; }
 }
 
 function findTaskForUnstick(tasks: Task[], stepText: string) {

@@ -176,7 +176,7 @@ async function buildPlanTransactional(day: string, energy: Energy) {
       updatedAt: Date.now(),
     } as any).where(eq(dayPlans.id, current.id)).returning().get() as DayPlan;
     return current;
-  })();
+  });
 
   const items = await storage.getPlanItems(plan.id);
   const events = await storage.getEvents(day);

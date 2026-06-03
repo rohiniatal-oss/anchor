@@ -1,0 +1,217 @@
+import type { ActivityLog, DayPlanItem, Task } from "@shared/schema";
+import type { PlanItem, Candidate, SlotName } from "./brain";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PLANNING FEEDBACK
+// Deterministic behavioural memory for the planner. This keeps Anchor from being
+// a static recommender: yesterday's plan, skips, blocks, and carry-forward state
+// influence today's persisted plan without making planning LLM-dependent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type PlanningMemory = {
+  date: string;
+  yesterday: string;
+  completedKeys: Set<string>;
+  unfinishedKeys: Set<string>;
+  skippedKeys: Set<string>;
+  parkedKeys: Set<string>;
+  startedUnfinishedKeys: Set<string>;
+  missedMvdKey: string | null;
+  eventCountsByTaskId: Map<number, Record<string, number>>;
+};
+
+function ymd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function previousDayKey(day: string) {
+  const d = new Date(`${day}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() - 1);
+  return ymd(d);
+}
+
+function keyFor(sourceType: string, sourceId: number | null | undefined, taskId?: number | null) {
+  if (sourceType && sourceId != null) return `${sourceType}:${sourceId}`;
+  if (taskId != null) return `task:${taskId}`;
+  return "";
+}
+
+function keyForItem(item: DayPlanItem) {
+  return keyFor(item.sourceType, item.sourceId, item.taskId);
+}
+
+function keyForCandidate(c: Candidate) {
+  return keyFor(c.source, c.sourceId, c.taskId);
+}
+
+function addEventCount(map: Map<number, Record<string, number>>, a: ActivityLog) {
+  if (!a.taskId) return;
+  const current = map.get(a.taskId) || {};
+  current[a.eventType] = (current[a.eventType] || 0) + 1;
+  map.set(a.taskId, current);
+}
+
+export function buildPlanningMemory(args: {
+  day: string;
+  yesterdayItems: DayPlanItem[];
+  yesterdayMinimumViableItemId?: number | null;
+  activity: ActivityLog[];
+}): PlanningMemory {
+  const yesterday = previousDayKey(args.day);
+  const completedKeys = new Set<string>();
+  const unfinishedKeys = new Set<string>();
+  const skippedKeys = new Set<string>();
+  const parkedKeys = new Set<string>();
+  const startedUnfinishedKeys = new Set<string>();
+  const eventCountsByTaskId = new Map<number, Record<string, number>>();
+  let missedMvdKey: string | null = null;
+
+  for (const item of args.yesterdayItems) {
+    const key = keyForItem(item);
+    if (!key) continue;
+    if (item.status === "completed") completedKeys.add(key);
+    if (item.status === "skipped") skippedKeys.add(key);
+    if (item.status === "parked") parkedKeys.add(key);
+    if (item.status === "started") startedUnfinishedKeys.add(key);
+    if (["planned", "started", "skipped", "moved", "parked"].includes(item.status)) unfinishedKeys.add(key);
+    if (args.yesterdayMinimumViableItemId === item.id && item.status !== "completed") missedMvdKey = key;
+  }
+
+  const since = new Date(`${yesterday}T00:00:00`).getTime();
+  for (const a of args.activity) {
+    if (a.timestamp >= since) addEventCount(eventCountsByTaskId, a);
+  }
+
+  return { date: args.day, yesterday, completedKeys, unfinishedKeys, skippedKeys, parkedKeys, startedUnfinishedKeys, missedMvdKey, eventCountsByTaskId };
+}
+
+function cloneCandidate(c: Candidate, patch: Partial<Candidate>): Candidate {
+  return { ...c, ...patch };
+}
+
+function asPlanItem(candidate: Candidate, why: string, slot: SlotName = "now", isMVD = false): PlanItem {
+  return { candidate, why, slot, isMVD };
+}
+
+function unblockPlanItems(tasks: Task[]): PlanItem[] {
+  return tasks
+    .filter((t) => !t.done && t.list === "today" && (t.readiness === "blocked" || !!t.blockerReason))
+    .slice(0, 2)
+    .map((t) => {
+      const reason = t.blockerReason || t.blockedBy || "missing input";
+      const c: Candidate = {
+        source: "task",
+        sourceId: t.id,
+        taskId: t.id,
+        title: `Unblock: ${t.title}`,
+        category: "admin",
+        size: "quick",
+        deadline: t.deadline || "",
+        status: t.status || "stuck",
+        skipped: t.skipped || 0,
+        sourceUrl: t.sourceUrl || "",
+        sourceNote: t.sourceNote || "",
+        sourceStatus: t.sourceStatus || "",
+        doneWhen: `The blocker is named or resolved: ${reason}`,
+        whyNow: "blocked, so the next action is to remove the blocker",
+        fitScore: null,
+        blocked: false,
+        blockerReason: "",
+        eligibilityRisk: "",
+      };
+      return asPlanItem(c, `Blocked item. Do the unblock step first: ${reason}`, "now", false);
+    });
+}
+
+export function applyPlanningFeedback(plan: PlanItem[], memory: PlanningMemory, tasks: Task[]) {
+  const blockedItems = unblockPlanItems(tasks);
+  const completedYesterday = memory.completedKeys;
+  const filtered: PlanItem[] = [];
+
+  for (const item of plan) {
+    const key = keyForCandidate(item.candidate);
+    // Do not blindly repeat non-deadline source work completed yesterday. Tasks
+    // already disappear when done; this mainly prevents recurring job/learn source
+    // candidates from resurfacing immediately without a new reason.
+    const hasDeadline = !!item.candidate.deadline;
+    if (key && completedYesterday.has(key) && !hasDeadline) continue;
+
+    let next = item;
+    const taskSkipped = item.candidate.taskId ? (memory.eventCountsByTaskId.get(item.candidate.taskId)?.skipped || 0) : 0;
+    const repeatedlySkipped = item.candidate.skipped >= 2 || taskSkipped >= 2 || (key && memory.skippedKeys.has(key));
+    const carriedForward = key && memory.unfinishedKeys.has(key);
+    const missedMvd = key && memory.missedMvdKey === key;
+
+    if (repeatedlySkipped) {
+      next = {
+        ...next,
+        candidate: cloneCandidate(item.candidate, {
+          title: `Shrink or decide: ${item.candidate.title}`,
+          size: "quick",
+          doneWhen: "You have either made it smaller, blocked it, parked it, or done a 5-minute start",
+        }),
+        why: "This has slipped before, so do not repeat it unchanged. Shrink it or make a decision.",
+      };
+    } else if (missedMvd) {
+      next = {
+        ...next,
+        why: `Carry-forward from yesterday's minimum viable day. Do the smallest version first.`,
+      };
+    } else if (carriedForward) {
+      next = {
+        ...next,
+        why: `Carried forward from yesterday. Finish or deliberately park it.`,
+      };
+    }
+
+    filtered.push(next);
+  }
+
+  const seen = new Set<string>();
+  const merged = [...blockedItems, ...filtered].filter((item) => {
+    const k = keyForCandidate(item.candidate);
+    if (!k) return true;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).slice(0, Math.max(1, plan.length || blockedItems.length));
+
+  const slots: SlotName[] = ["now", "next", "later", "bonus"];
+  return merged.map((item, i) => ({
+    ...item,
+    slot: slots[Math.min(i, slots.length - 1)],
+    isMVD: i === 0,
+  }));
+}
+
+export function feedbackSummary(memory: PlanningMemory) {
+  const bits: string[] = [];
+  if (memory.missedMvdKey) bits.push("yesterday's MVD carried forward");
+  if (memory.skippedKeys.size > 0) bits.push(`${memory.skippedKeys.size} skipped item${memory.skippedKeys.size === 1 ? "" : "s"}`);
+  if (memory.parkedKeys.size > 0) bits.push(`${memory.parkedKeys.size} parked item${memory.parkedKeys.size === 1 ? "" : "s"}`);
+  if (memory.startedUnfinishedKeys.size > 0) bits.push(`${memory.startedUnfinishedKeys.size} started but unfinished`);
+  return bits.length ? `Adjusted for ${bits.join(", ")}.` : "";
+}
+
+export function prependStep(rawSteps: string, text: string) {
+  let steps: Array<{ text: string; done: boolean }> = [];
+  try {
+    const parsed = JSON.parse(rawSteps || "[]");
+    if (Array.isArray(parsed)) steps = parsed.filter((s) => s && typeof s.text === "string").map((s) => ({ text: s.text, done: !!s.done }));
+  } catch {}
+  const trimmed = text.trim();
+  if (!trimmed) return JSON.stringify(steps);
+  const withoutDuplicate = steps.filter((s) => s.text.trim().toLowerCase() !== trimmed.toLowerCase());
+  return JSON.stringify([{ text: trimmed, done: false }, ...withoutDuplicate]);
+}
+
+export function deterministicUnstickStep(task: Task) {
+  if (task.readiness === "blocked" || task.blockerReason) {
+    return `Write down the missing input: ${task.blockerReason || task.blockedBy || "what is blocking this"}`;
+  }
+  if (task.sourceUrl) return "Open the saved link and list what is needed";
+  if (task.size === "deep") return "Open a blank note and write the first ugly sentence";
+  if (/email|message|reach|follow/i.test(task.title)) return "Draft the first line only";
+  return "Set a two-minute timer and do the smallest visible start";
+}

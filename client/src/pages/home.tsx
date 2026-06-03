@@ -892,19 +892,16 @@ function DoneTaskRow({ t }: { t: Task }) {
 // she already has, a note/idea, a new project, or clutter. Triage classifies
 // each by KIND and offers ONE coherent next move per item (she confirms with a
 // tap — we never silently reshape her day).
-type Triage = { id: number; kind: string; parentType: string; parentId: number | null; parentLabel: string; reason: string };
-const KIND_BLURB: Record<string, string> = {
-  standalone_task: "A task you can just do",
-  subtask: "Part of something you're already on",
-  note_idea: "A thought, not a task yet",
-  new_project: "Sounds like a whole new thing",
-  clutter: "Looks like a loose note",
+type CaptureSug = { id: number; route: string; label: string; reason: string; confidence: string; question?: string };
+const ROUTE_ACTION_LABEL: Record<string, string> = {
+  today: "Do today", task: "Keep as task", job: "File under Jobs", learn: "File under Learn",
+  network: "File under Network", proof: "File as Proof asset", decision: "Needs a decision", keep: "Keep here",
 };
 function BrainDumpView() {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [text, setText] = useState("");
   const [sorting, setSorting] = useState(false);
-  const [triage, setTriage] = useState<Record<number, Triage>>({});
+  const [triage, setTriage] = useState<Record<number, CaptureSug>>({});
   const { toast } = useToast();
   const inbox = tasks.filter((t) => t.list === "inbox");
 
@@ -916,46 +913,27 @@ function BrainDumpView() {
   }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/tasks/${id}`, undefined, ["/api/tasks"]); }
 
-  // Classify every inbox item by kind (one call each, in parallel).
+  // Classify all open captures in one pass via the canonical capture engine.
   async function sortAll() {
     setSorting(true);
     try {
-      const results = await Promise.all(inbox.map(async (t) => {
-        try { const r = await apiRequest("POST", `/api/braindump/${t.id}/triage`); return await r.json() as Triage; }
-        catch { return { id: t.id, kind: "standalone_task", parentType: "", parentId: null, parentLabel: "", reason: "" } as Triage; }
-      }));
-      const map: Record<number, Triage> = {};
-      results.forEach((r) => { map[r.id] = r; });
+      const r = await apiRequest("POST", "/api/capture/sort");
+      const data = await r.json();
+      const map: Record<number, CaptureSug> = {};
+      (data?.suggestions || []).forEach((sg: CaptureSug) => { map[sg.id] = sg; });
       setTriage(map);
     } catch { toast({ title: "Couldn't sort right now", description: "Give it another go in a moment." }); }
     finally { setSorting(false); }
   }
 
-  async function apply(t: Task, action: string, extra: Record<string, unknown> = {}, label = "Done") {
-    await mutateAndInvalidate("POST", `/api/braindump/${t.id}/apply`, { action, ...extra }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/plan/current"]);
-    setTriage((s) => { const n = { ...s }; delete n[t.id]; return n; });
+  // File a capture along a chosen route (the enriched engine fills in real details).
+  async function applyRoute(t: Task, route: string, label = "Done") {
+    await mutateAndInvalidate("POST", `/api/capture/${t.id}/route`, { route }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current"]);
+    setTriage((st) => { const n = { ...st }; delete n[t.id]; return n; });
     toast({ title: label });
   }
 
-  // The ONE primary move offered for an item, by its classified kind.
-  function suggestion(t: Task, tr: Triage) {
-    switch (tr.kind) {
-      case "subtask":
-        return tr.parentId != null
-          ? { label: `Add under ${tr.parentLabel}`, run: () => apply(t, "attach_subtask", { parentType: tr.parentType, parentId: tr.parentId }, `Filed under ${tr.parentLabel}`) }
-          : { label: "Do today", run: () => apply(t, "do_today", {}, "Added to today") };
-      case "note_idea":
-        return { label: "File as Substack idea", run: () => apply(t, "file_substack", {}, "Filed as a Substack idea") };
-      case "new_project":
-        return { label: "Make it a role", run: () => apply(t, "make_role", {}, "Added to Jobs") };
-      case "clutter":
-        return { label: "Keep here", run: () => apply(t, "keep", {}, "Kept in your inbox") };
-      default:
-        return { label: "Do today", run: () => apply(t, "do_today", {}, "Added to today") };
-    }
-  }
-
-  return (
+    return (
     <div>
       <SectionHeading title="Brain dump" sub="Empty your head now. Sort it later." />
       <div className="flex gap-2 mb-3">
@@ -978,25 +956,26 @@ function BrainDumpView() {
         <div className="space-y-2">
           {inbox.map((t) => {
             const tr = triage[t.id];
-            const sug = tr ? suggestion(t, tr) : null;
             return (
               <div key={t.id} className="group rounded-lg border border-card-border bg-card px-3 py-2.5" data-testid={`braindump-${t.id}`}>
                 <div className="flex items-center gap-2">
                   <span className="flex-1 text-sm">{t.title}</span>
                   <div className="flex items-center gap-1 shrink-0">
-                    {!tr && <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => apply(t, "do_today", {}, "Added to today")} data-testid={`button-addday-${t.id}`}>Add to day</Button>}
+                    {!tr && <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => applyRoute(t, "today", "Added to today")} data-testid={`button-addday-${t.id}`}>Add to day</Button>}
                     <button onClick={() => remove(t.id)} aria-label="Delete" data-testid={`button-delete-braindump-${t.id}`} className="text-muted-foreground hover:text-destructive ml-0.5"><X className="w-4 h-4" /></button>
                   </div>
                 </div>
-                {tr && sug && (
+                {tr && (
                   <div className="mt-2 pt-2 border-t border-card-border flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-muted-foreground">{KIND_BLURB[tr.kind] || ""}{tr.reason ? ` — ${tr.reason}` : ""}</span>
-                    <button onClick={sug.run} data-testid={`button-triage-accept-${t.id}`}
-                      className="text-xs font-medium text-primary inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 hover-elevate">
-                      <ArrowRight className="w-3 h-3" /> {sug.label}
-                    </button>
-                    {tr.kind !== "standalone_task" && (
-                      <button onClick={() => apply(t, "do_today", {}, "Added to today")} data-testid={`button-triage-today-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">or just do today</button>
+                    <span className="text-xs text-muted-foreground">{tr.reason || tr.label}</span>
+                    {tr.route !== "keep" && (
+                      <button onClick={() => applyRoute(t, tr.route, `${ROUTE_ACTION_LABEL[tr.route] || "Filed"}`)} data-testid={`button-triage-accept-${t.id}`}
+                        className="text-xs font-medium text-primary inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 hover-elevate">
+                        <ArrowRight className="w-3 h-3" /> {ROUTE_ACTION_LABEL[tr.route] || "File it"}
+                      </button>
+                    )}
+                    {tr.route !== "today" && (
+                      <button onClick={() => applyRoute(t, "today", "Added to today")} data-testid={`button-triage-today-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">or just do today</button>
                     )}
                     <button onClick={() => setTriage((s) => { const n = { ...s }; delete n[t.id]; return n; })} data-testid={`button-triage-dismiss-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">keep here</button>
                   </div>

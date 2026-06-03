@@ -1,6 +1,38 @@
 import type { Express } from "express";
 import { storage } from "./storage";
 import type { Task } from "@shared/schema";
+import OpenAI from "openai";
+
+// Resolve a bare captured thought into REAL asset details before filing, so a
+// brain-dump like "read 80,000 hours career guide" becomes a Learn item WITH its
+// canonical URL, type, required output and capability — context that then flows
+// through to the breakdown and everywhere else. Knowledge-grounded; safe empty
+// fallback so filing never blocks if the model is unavailable.
+async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof" | "network"): Promise<Record<string, string>> {
+  try {
+    const client = new OpenAI();
+    const ask =
+      kind === "learn"
+        ? `Resolve this learning capture. If it's a known public resource, give its CANONICAL url. Fields: title (clean), url (real canonical URL or ""), learnType (course|fellowship|book|podcast|resource|practice), category (short label), requiredOutput (a concrete output proving value, tied to AI-governance/strategy goals), capabilityBuilt (the skill it builds).`
+        : kind === "job"
+        ? `Resolve this into a real opportunity. Fields: title (clean role title), company (if implied else ""), location (if implied else ""), url (real careers/board URL if a known org else ""), nextStep (concrete first step, e.g. "open the board and shortlist 3 roles").`
+        : kind === "proof"
+        ? `Resolve this writing/build/proof capture. Fields: title (clean), nextStep (a concrete first move, e.g. "decide the angle: your specific take").`
+        : `Resolve this networking capture. Fields: who (who this person/type is), why (why reach them), askType (soft|referral|advice|reconnect|follow_up), nextStep (concrete first move).`;
+    const out = await client.responses.create({
+      model: "gpt_5_1",
+      input:
+        `Rohini targets AI governance / strategic advisory / chief-of-staff roles (ex-Bain, TBI, Abraaj). ` +
+        `${ask}\nUse real-world knowledge; NEVER invent a fake URL — use "" if unsure. ` +
+        `Capture: "${title}". Return ONLY a JSON object with those exact fields.`,
+    });
+    let text = (out.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    const j = JSON.parse(text);
+    return (j && typeof j === "object") ? j : {};
+  } catch {
+    return {};
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PHASE 4.7 — BRAIN DUMP AS UNIVERSAL CAPTURE
@@ -175,35 +207,40 @@ export async function routeCapture(id: number, rawRoute: string) {
   }
 
   if (route === "job") {
+    const d = await resolveAssetDetails(task.title, "job");
     const created = await storage.createJob({
-      title: task.title, company: "", location: "", url: "",
-      note: "From Brain Dump", nextStep: "Check requirements and next action", status: "wishlist",
+      title: d.title || task.title, company: d.company || "", location: d.location || "", url: d.url || "",
+      note: "From Brain Dump", nextStep: d.nextStep || "Check requirements and next action", status: "wishlist",
     } as any);
     await markCaptureRouted(task, route, "job", created.id, reason);
     return { status: 200, body: { moved: "job", route, job: created, reason } };
   }
 
   if (route === "learn") {
+    const d = await resolveAssetDetails(task.title, "learn");
     const created = await storage.createLearn({
-      title: task.title, category: "", cost: "", url: "", note: "From Brain Dump",
-      done: false, active: false, type: "resource", learnStatus: "open",
+      title: d.title || task.title, category: d.category || "", cost: "", url: d.url || "", note: "From Brain Dump",
+      done: false, active: false, type: d.learnType || "resource", learnStatus: "open",
+      requiredOutput: d.requiredOutput || "", capabilityBuilt: d.capabilityBuilt || "",
     } as any);
     await markCaptureRouted(task, route, "learn", created.id, reason);
     return { status: 200, body: { moved: "learn", route, learn: created, reason } };
   }
 
   if (route === "network") {
+    const d = await resolveAssetDetails(task.title, "network");
     const created = await storage.createContact({
-      name: "", who: task.title, sector: "", why: "From Brain Dump", status: "to_contact",
-      relationshipStrength: "cold", askType: "soft",
+      name: "", who: d.who || task.title, sector: "", why: d.why || "From Brain Dump", status: "to_contact",
+      relationshipStrength: "cold", askType: d.askType || "soft",
     } as any);
     await markCaptureRouted(task, route, "contact", created.id, reason);
     return { status: 200, body: { moved: "network", route, contact: created, reason } };
   }
 
   if (route === "proof") {
+    const d = await resolveAssetDetails(task.title, "proof");
     const created = await storage.createHustle({
-      title: task.title, note: "From Brain Dump", nextStep: "Define the smallest output", stage: "idea",
+      title: d.title || task.title, note: "From Brain Dump", nextStep: d.nextStep || "Define the smallest output", stage: "idea",
     } as any);
     await markCaptureRouted(task, route, "hustle", created.id, reason);
     return { status: 200, body: { moved: "proof", route, hustle: created, reason } };

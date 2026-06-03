@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { registerCaptureRoutes } from "./capture";
 import { registerSprint1Routes } from "./sprint1";
+import { registerSprint2Routes } from "./sprint2";
 import { registerOptionalBasicAuth, startOptionalSqliteBackups } from "./guardrails";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
@@ -67,10 +68,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // P4.7 capture endpoints remain additive, but Sprint 1 registers compatibility
-  // routes before the legacy app routes so the current UI is quietly moved onto
-  // the hardened execution spine without a frontend rewrite.
+  // Capture remains the clean routing contract. Sprint 2 shadows Sprint 1 plan
+  // routes with current-time-aware restart logic, while Sprint 1 still protects
+  // legacy Brain Dump / completion dependencies.
   registerCaptureRoutes(app);
+  registerSprint2Routes(app);
   registerSprint1Routes(app);
   await registerRoutes(httpServer, app);
 

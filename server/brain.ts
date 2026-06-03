@@ -62,32 +62,32 @@ function guessSize(title: string, fallback = "medium"): string {
 // The REAL next step for a job depends on its pipeline state + readiness,
 // NOT its deadline (deadline = urgency only). SPEC §3.
 function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; why: string } {
-  const role = `${j.title}${j.company ? " \u2014 " + j.company : ""}`;
+  const role = `${j.title}${j.company ? " — " + j.company : ""}`;
   // An explicit user-written next step is always the truest action.
   if (j.nextStep && j.nextStep.trim()) {
-    return { action: `${j.nextStep.trim()} \u2014 ${role}`, size: guessSize(j.nextStep),
+    return { action: `${j.nextStep.trim()} — ${role}`, size: guessSize(j.nextStep),
       doneWhen: "That step is done", why: "your own next step on this role" };
   }
   const readiness = j.applicationReadiness || "none";
   if (j.eligibilityRisk && j.eligibilityRisk !== "") {
-    return { action: `Check eligibility before investing time \u2014 ${role}`, size: "quick",
+    return { action: `Check eligibility before investing time — ${role}`, size: "quick",
       doneWhen: "You know if you're eligible", why: `flagged: ${j.eligibilityRisk}` };
   }
   switch (j.status) {
     case "wishlist":
       if (readiness === "none")
-        return { action: `Open the posting & note what it asks for \u2014 ${role}`, size: "quick",
+        return { action: `Open the posting & note what it asks for — ${role}`, size: "quick",
           doneWhen: "You've listed CV / cover / sample / portal needed", why: "turns a wish into a real plan" };
-      return { action: `Tailor your CV to this role \u2014 ${role}`, size: "deep",
+      return { action: `Tailor your CV to this role — ${role}`, size: "deep",
         doneWhen: "CV reflects this role's language", why: "fit is clear; time to make it land" };
     case "applied":
-      return { action: `Follow up on your application \u2014 ${role}`, size: "quick",
+      return { action: `Follow up on your application — ${role}`, size: "quick",
         doneWhen: "A polite nudge is sent", why: "applied roles go cold without a nudge" };
     case "interviewing":
-      return { action: `Build your story bank \u2014 ${role}`, size: "deep",
-        doneWhen: "3 STAR stories ready", why: "you're in the room \u2014 prep wins it" };
+      return { action: `Build your story bank — ${role}`, size: "deep",
+        doneWhen: "3 STAR stories ready", why: "you're in the room — prep wins it" };
     default:
-      return { action: `Decide if this is worth pursuing \u2014 ${role}`, size: "quick",
+      return { action: `Decide if this is worth pursuing — ${role}`, size: "quick",
         doneWhen: "You've kept or archived it", why: "needs a keep / drop decision" };
   }
 }
@@ -103,7 +103,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
       const blocked = t.readiness === "blocked" || !!t.blockerReason;
       out.push({
         source: "task", sourceId: t.id, taskId: t.id,
-        title: t.title.replace(/^\u2728\s*/, ""), category: t.category, size: t.size,
+        title: t.title.replace(/^✨\s*/, ""), category: t.category, size: t.size,
         deadline: t.deadline, status: t.status, skipped: t.skipped,
         sourceUrl: t.sourceUrl || "", sourceNote: t.sourceNote || "", sourceStatus: t.sourceStatus || "",
         doneWhen: t.doneWhen || "", whyNow: "", fitScore: null,
@@ -156,7 +156,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
       const dl = l.applicationDeadline || "";
       out.push({
         source: "learn", sourceId: l.id, taskId: null,
-        title: l.requiredOutput ? `${l.title} \u2014 produce: ${l.requiredOutput}` : l.title,
+        title: l.requiredOutput ? `${l.title} — produce: ${l.requiredOutput}` : l.title,
         category: "learning", size: guessSize(l.title),
         deadline: dl, status: "not_started", skipped: 0,
         sourceUrl: l.url || "", sourceNote: l.note || "", sourceStatus: l.learnStatus || "active",
@@ -172,11 +172,11 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
       const cat = /substack/i.test(h.title) ? "substack" : /afterline/i.test(h.title) ? "afterline" : "hustle";
       out.push({
         source: "hustle", sourceId: h.id, taskId: null,
-        title: `${h.nextStep} (${h.title.replace(/^[\u2600-\u27BF\uD800-\uDFFF]+\s*/, "")})`,
+        title: `${h.nextStep} (${h.title.replace(/^[☀-➿\uD800-\uDFFF]+\s*/, "")})`,
         category: cat, size: guessSize(h.nextStep),
         deadline: "", status: "not_started", skipped: 0,
         sourceUrl: "", sourceNote: h.note || "", sourceStatus: h.stage,
-        doneWhen: "That step is done", whyNow: "proof of your judgement \u2014 builds credibility",
+        doneWhen: "That step is done", whyNow: "proof of your judgement — builds credibility",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
       });
     }
@@ -225,7 +225,7 @@ export type PlanItem = { slot: SlotName; candidate: Candidate; why: string; isMV
 
 function freeMinutes(busyMinutes: number): number {
   const WAKING = 10 * 60;
-  return Math.max(60, WAKING - busyMinutes);
+  return Math.max(0, WAKING - Math.max(0, busyMinutes));
 }
 
 export function planDay(
@@ -236,13 +236,18 @@ export function planDay(
   const cands = all.filter(passesGates);
   const mode = pickDayMode(cands, energy);
   if (cands.length === 0)
-    return { mode, plan: [], note: "Nothing actionable right now \u2014 add a couple of things and I'll shape a day.", mvdIndex: -1 };
+    return { mode, plan: [], note: "Nothing actionable right now — add a couple of things and I'll shape a day.", mvdIndex: -1 };
 
   const ranked = cands.map((c) => ({ c, s: score(c, energy, mode) })).sort((a, b) => b.s - a.s);
 
-  // How many slots? Time- and energy-aware (SPEC §3). Low energy never gets 3 deep items.
+  // How many slots? Time- and energy-aware. This is now genuinely restart-safe:
+  // when the remaining day is tiny, Anchor gives one MVD rather than pretending a
+  // full three-item day still exists.
   const budget = freeMinutes(busyMinutes);
-  const maxItems = (energy === "low" || mode === "low") ? 2 : (budget < 120 ? 2 : 3);
+  const maxItems = budget < 75 ? 1
+    : (energy === "low" || mode === "low") ? Math.min(2, cands.length)
+    : budget < 180 ? 2
+    : 3;
 
   // Variety as a SOFT tie-breaker: prefer a new family only when scores are close.
   const picks: Candidate[] = [];
@@ -284,10 +289,11 @@ export function planDay(
   });
 
   const planMin = picks.reduce((m, c) => m + (SIZE_MINUTES[c.size] ?? 45), 0);
-  const fits = planMin <= budget;
+  const fits = planMin <= Math.max(15, budget);
   const note =
-    mode === "deadline" ? "A deadline's close \u2014 the urgent thing leads. Do that one and today counts."
-    : mode === "low" ? "Lighter day. The first one is all that matters \u2014 done is plenty."
+    mode === "deadline" ? "A deadline's close — the urgent thing leads. Do that one and today counts."
+    : budget < 75 ? "Restart from here. One useful thing is enough for today."
+    : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
     : fits ? "Start at the top. Finish the first one and today already counts."
     : "Full plate for the time you've got. Just do the first one and call it a win.";
 

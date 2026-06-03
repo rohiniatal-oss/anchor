@@ -42,6 +42,7 @@ export async function makeHarness(): Promise<Harness> {
 
   const express = (await import("express")).default;
   const { registerCaptureRoutes } = await import("./capture");
+  const { registerSprint2Routes } = await import("./sprint2");
   const { registerSprint1Routes } = await import("./sprint1");
   const { registerRoutes } = await import("./routes");
   const { storage } = await import("./storage");
@@ -51,6 +52,7 @@ export async function makeHarness(): Promise<Harness> {
   app.use(express.json());
   const httpServer = createServer(app);
   registerCaptureRoutes(app);
+  registerSprint2Routes(app);
   registerSprint1Routes(app);
   await registerRoutes(httpServer, app);
 

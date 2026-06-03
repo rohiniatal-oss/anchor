@@ -2,13 +2,16 @@ import type { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { planDay } from "./brain";
-import { dayPlans, dayPlanItems, type DayPlan, type Task } from "@shared/schema";
+import { dayPlans, dayPlanItems, insertTaskSchema, type DayPlan, type Task, type CareerTrack } from "@shared/schema";
 import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey } from "./planningFeedback";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
 // behavioural feedback so repeated skips, missed MVDs, and blocked items change
 // the next plan rather than resurfacing unchanged.
+//
+// Sprint 5A adds lightweight task-intake inference. Estimates are deliberately
+// rough: intake_guess + low confidence. Breakdown and actuals can refine later.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Energy = "low" | "medium" | "high";
@@ -217,7 +220,92 @@ async function saveUnstickStep(task: Task, step: string) {
   return updated;
 }
 
+function words(text: string) {
+  return (text || "").toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length >= 4);
+}
+
+function containsAny(text: string, terms: string[]) {
+  const t = (text || "").toLowerCase();
+  return terms.some((term) => t.includes(term));
+}
+
+function inferCategory(title: string, current?: string) {
+  if (current && current !== "admin") return current;
+  if (containsAny(title, ["cv", "cover", "application", "apply", "interview", "role", "job", "fellowship"])) return "job";
+  if (containsAny(title, ["read", "course", "learn", "study", "book", "certificate"])) return "learning";
+  if (containsAny(title, ["article", "substack", "post", "memo", "essay", "publish", "draft"])) return "substack";
+  if (containsAny(title, ["workout", "walk", "sleep", "meal", "gym"])) return "health";
+  return current || "admin";
+}
+
+function inferEstimate(title: string, current?: string) {
+  if (current === "quick") return { size: "quick", minutes: 15, reason: "user_marked_quick" };
+  if (current === "medium") return { size: "medium", minutes: 45, reason: "user_marked_medium" };
+  if (current === "deep") return { size: "deep", minutes: 90, reason: "user_marked_deep" };
+  if (containsAny(title, ["open", "check", "confirm", "send", "email", "message", "reply", "book", "pay", "list", "note", "skim", "find"])) return { size: "quick", minutes: 15, reason: "quick_action_keyword" };
+  if (containsAny(title, ["write", "draft", "apply", "prepare", "research", "tailor", "build", "finish", "review", "outline"])) return { size: "deep", minutes: 90, reason: "deep_work_keyword" };
+  return { size: "medium", minutes: 45, reason: "default_medium" };
+}
+
+function inferDoneWhen(title: string, category: string) {
+  if (containsAny(title, ["email", "message", "reply", "send"])) return "Message is sent";
+  if (containsAny(title, ["open", "check", "confirm", "find"])) return "You have the answer or next constraint";
+  if (containsAny(title, ["cv", "cover", "application", "apply"])) return "Application material is updated or submitted";
+  if (containsAny(title, ["read", "course", "learn", "study", "book"])) return "One useful note or output exists";
+  if (containsAny(title, ["article", "substack", "post", "memo", "essay", "draft"])) return "A rough draft or outline exists";
+  if (category === "health") return "The healthy action is done";
+  return "The next visible action is complete";
+}
+
+function inferTrackId(title: string, tracks: CareerTrack[]) {
+  const tokens = words(title);
+  let best: { id: number; score: number } | null = null;
+  for (const track of tracks.filter((t) => t.status === "active")) {
+    const hay = `${track.slug} ${track.name} ${track.description} ${track.targetRoleArchetype}`.toLowerCase();
+    const score = tokens.filter((token) => hay.includes(token)).length;
+    if (score > 0 && (!best || score > best.score)) best = { id: track.id, score };
+  }
+  return best?.id ?? undefined;
+}
+
+async function enrichTaskInput(raw: any) {
+  const title = String(raw?.title || "").trim();
+  const category = inferCategory(title, raw?.category);
+  const estimate = inferEstimate(title, raw?.size);
+  const relatedTrackId = raw?.relatedTrackId ?? inferTrackId(title, await storage.getCareerTracks());
+  const enriched = {
+    ...raw,
+    title,
+    category,
+    size: raw?.size || estimate.size,
+    estimateMinutes: raw?.estimateMinutes ?? estimate.minutes,
+    estimateConfidence: raw?.estimateConfidence || "low",
+    estimateReason: raw?.estimateReason || `intake_guess:${estimate.reason}`,
+    doneWhen: raw?.doneWhen || inferDoneWhen(title, category),
+    relatedTrackId,
+    readiness: raw?.readiness || (raw?.blockerReason ? "blocked" : "ready"),
+    status: raw?.status || "not_started",
+  };
+  return insertTaskSchema.parse(enriched);
+}
+
 export function registerSprint2Routes(app: Express) {
+  app.post("/api/tasks", async (req, res) => {
+    try {
+      const task = await storage.createTask(await enrichTaskInput(req.body || {}));
+      await storage.logActivity({
+        eventType: "created",
+        sourceType: task.sourceType || "task",
+        sourceId: task.sourceId ?? undefined,
+        taskId: task.id,
+        metadata: JSON.stringify({ estimateMinutes: task.estimateMinutes, estimateReason: task.estimateReason, category: task.category }),
+      } as any);
+      res.json(task);
+    } catch (e: any) {
+      res.status(e?.status || 400).json({ error: e?.message || "Invalid task" });
+    }
+  });
+
   app.post("/api/plan/restart", async (req, res) => {
     const day = String(req.body?.day || todayKey());
     const energy = coerceEnergy(req.body?.energy);

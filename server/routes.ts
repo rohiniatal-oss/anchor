@@ -73,10 +73,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } else if (task.sourceType === "learn" && task.sourceId) {
       const l = (await storage.getLearn()).find((x) => x.id === task.sourceId);
       if (l) {
-        sourceContext = `This is a LEARNING item (${l.type}). ${l.note ? "Notes: " + l.note : ""} Required output: ${l.requiredOutput || "a concrete output"}. ${l.applicationDeadline ? "Deadline: " + l.applicationDeadline : ""}`;
+        sourceContext = `This is a LEARNING item (${l.type}). Title: "${l.title}". ${l.url ? "URL: " + l.url + ". " : ""}${l.note ? "Notes: " + l.note + ". " : ""}${l.capabilityBuilt ? "Capability it should build: " + l.capabilityBuilt + ". " : ""}Required output: ${l.requiredOutput || "a concrete output"}. ${l.applicationDeadline ? "Deadline: " + l.applicationDeadline : ""}`;
         playbook = (l.type === "fellowship" || l.type === "course")
           ? "COURSE/FELLOWSHIP playbook: confirm real deadline \u2192 check eligibility/prereq \u2192 apply or enrol \u2192 schedule the work. First step = confirm deadline & prerequisite."
-          : "READING playbook: choose the piece \u2192 extract one note \u2192 produce the output. First step = open it and read the first section.";
+          // NOT a canned recipe. Reason about THIS specific resource: you likely
+          // know what it is (e.g. the 80,000 Hours career guide). Steps must show
+          // you understand WHAT it is and what it's FOR, help her TRIAGE which
+          // parts matter for her goals (AI governance / strategy / chief-of-staff)
+          // vs what to skip, and end in a concrete useful output — NEVER vague
+          // filler like "read that section slowly".
+          : `READING/RESOURCE — reason about THIS specific resource ("${l.title}"${l.url ? ", " + l.url : ""}). If you know what it is, use that. Steps should: (1) orient — what this resource is and what it's good for; (2) triage — which 1-2 parts actually matter for her AI-governance / strategy / chief-of-staff goals and which to skip; (3) end in a concrete output that proves she got the useful part. No generic "read slowly" steps.`;
       }
     } else if (task.sourceType === "hustle" && task.sourceId) {
       const h = (await storage.getHustles()).find((x) => x.id === task.sourceId);
@@ -96,7 +102,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         model: "gpt_5_1",
         input:
           `You break a task into a real, ordered sequence for Rohini (ADHD, rebuilding momentum). ` +
-          `Ground the steps in the ACTUAL thing this task needs \u2014 use the source context below, do NOT guess from the title. ` +
+          `She's targeting AI governance / strategic advisory / chief-of-staff roles (ex-Bain, TBI, Abraaj). ` +
+          `Ground the steps in the ACTUAL thing this task needs \u2014 use the source context below, and your own knowledge of what the named resource/role IS. Do NOT produce generic filler that could apply to any task. ` +
+          `If the task is to read/use a known resource, show you understand what it is, what's worth her time in it, and what to skip \u2014 not "read it slowly". ` +
           `Think it THROUGH: what does it actually involve, and what is the genuine FIRST step given where she likely is? ` +
           `Never skip ahead (if she's brand new, the first step is understanding/deciding, not producing). ` +
           `The first step must be MEANINGFUL and frictionless \u2014 "open the saved posting & note what it asks", NEVER "Google it" or "pick up the phone". ` +

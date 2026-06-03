@@ -37,6 +37,20 @@ test("restart with a tiny remaining budget returns one MVD, not a fake full day"
   assert.equal(r.json.budget.remainingMinutes, 45);
 });
 
+test("low energy with a tiny remaining budget still returns only one MVD", async () => {
+  await seedThreeTodayTasks();
+
+  const r = await api(h.base, "POST", "/api/plan/restart", {
+    day: DAY,
+    energy: "low",
+    availableMinutes: 45,
+  });
+
+  assert.equal(r.status, 200);
+  assert.equal(r.json.items.length, 1, "tiny budget beats the low-energy two-item cap");
+  assert.match(r.json.plan.note, /One useful thing is enough/i);
+});
+
 test("restart with enough time can still return a shaped sequence", async () => {
   await seedThreeTodayTasks();
 

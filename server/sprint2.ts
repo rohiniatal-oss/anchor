@@ -3,11 +3,12 @@ import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { planDay } from "./brain";
 import { dayPlans, dayPlanItems, type DayPlan } from "@shared/schema";
+import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey } from "./planningFeedback";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SPRINT 2 — Today becomes adaptive, especially mid-day restarts.
-// This shadows the Sprint 1 plan routes with a current-time-aware planner. The
-// key product fix: Anchor stops pretending a full day exists at 5pm.
+// SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
+// behavioural feedback so repeated skips, missed MVDs, and blocked items change
+// the next plan rather than resurfacing unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type Energy = "low" | "medium" | "high";
@@ -83,16 +84,30 @@ async function remainingBudgetFor(day: string, explicitAvailableMinutes?: number
   };
 }
 
+async function planningMemoryFor(day: string) {
+  const yesterday = previousDayKey(day);
+  const yesterdayPlan = yesterday ? await storage.getPlanByDate(yesterday) : undefined;
+  const yesterdayItems = yesterdayPlan ? await storage.getPlanItems(yesterdayPlan.id) : [];
+  const activity = await storage.getActivityLog();
+  return buildPlanningMemory({
+    day,
+    yesterdayItems,
+    yesterdayMinimumViableItemId: yesterdayPlan?.minimumViableItemId ?? null,
+    activity,
+  });
+}
+
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
   const [tasks, jobs, learn, hustles] = await Promise.all([
     storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(),
   ]);
   const budget = await remainingBudgetFor(day, opts.availableMinutes ?? null);
+  const memory = await planningMemoryFor(day);
   const result = planDay(tasks, jobs, learn, hustles, energy, budget.busyEquivalentMinutes);
+  const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
-  const note = opts.restart
-    ? `Restart from here. ${result.note}`
-    : result.note;
+  const feedbackNote = feedbackSummary(memory);
+  const note = [opts.restart ? "Restart from here." : "", feedbackNote, result.note].filter(Boolean).join(" ");
 
   const plan = db.transaction((tx) => {
     const now = Date.now();
@@ -128,7 +143,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
 
     let minimumViableItemId: number | null = null;
     let sequence = 0;
-    for (const item of result.plan) {
+    for (const item of feedbackPlan) {
       const c = item.candidate;
       const previousAction = actioned.get(`${c.source}:${c.sourceId}`);
       const created = tx.insert(dayPlanItems).values({
@@ -162,7 +177,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
 
   const items = await storage.getPlanItems(plan.id);
   const events = await storage.getEvents(day);
-  return { plan, items, events, budget, restart: !!opts.restart };
+  return { plan, items, events, budget, memory: { yesterday: memory.yesterday, missedMvd: !!memory.missedMvdKey, skipped: memory.skippedKeys.size, parked: memory.parkedKeys.size }, restart: !!opts.restart };
 }
 
 function readAvailableMinutes(raw: unknown) {
@@ -196,7 +211,8 @@ export function registerSprint2Routes(app: Express) {
     const items = await storage.getPlanItems(plan.id);
     const events = await storage.getEvents(day);
     const budget = await remainingBudgetFor(day, readAvailableMinutes(req.query.availableMinutes));
-    res.json({ plan, items, events, budget, restart: false });
+    const memory = await planningMemoryFor(day);
+    res.json({ plan, items, events, budget, memory: { yesterday: memory.yesterday, missedMvd: !!memory.missedMvdKey, skipped: memory.skippedKeys.size, parked: memory.parkedKeys.size }, restart: false });
   });
 
   // Avoidance review is deterministic and non-destructive. It gives the UI a safe
@@ -224,5 +240,25 @@ export function registerSprint2Routes(app: Express) {
         : "No avoidance pattern yet.",
       options: ["make_smaller", "park", "mark_blocked", "continue"],
     });
+  });
+
+  app.post("/api/tasks/:id/unstick-to-step", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+    const provided = String(req.body?.hint || req.body?.step || "").trim();
+    const step = provided || deterministicUnstickStep(task);
+    const steps = prependStep(task.steps || "[]", step);
+    const updated = await storage.updateTask(task.id, { steps, status: "in_progress" } as any);
+    await storage.logActivity({
+      eventType: "unstick_used",
+      sourceType: task.sourceType || "task",
+      sourceId: task.sourceId ?? undefined,
+      taskId: task.id,
+      planItemId: task.planItemId ?? undefined,
+      metadata: JSON.stringify({ step }),
+    } as any);
+    res.json({ task: updated, step });
   });
 }

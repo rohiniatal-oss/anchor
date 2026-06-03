@@ -33,7 +33,7 @@ export async function makeHarness(): Promise<Harness> {
   if (singleton) return singleton;
   const dbPath = path.join(os.tmpdir(), `anchor-spine-${process.pid}-${Date.now()}.db`);
   process.env.ANCHOR_DB_PATH = dbPath;
-  // No real key needed — the spine tests never hit OpenAI routes.
+  // The spine tests never hit model-backed routes.
   process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "test-noop";
 
   const seed = new Database(dbPath);
@@ -42,6 +42,7 @@ export async function makeHarness(): Promise<Harness> {
 
   const express = (await import("express")).default;
   const { registerCaptureRoutes } = await import("./capture");
+  const { registerSprint1Routes } = await import("./sprint1");
   const { registerRoutes } = await import("./routes");
   const { storage } = await import("./storage");
   const sqlite = new Database(dbPath);
@@ -50,6 +51,7 @@ export async function makeHarness(): Promise<Harness> {
   app.use(express.json());
   const httpServer = createServer(app);
   registerCaptureRoutes(app);
+  registerSprint1Routes(app);
   await registerRoutes(httpServer, app);
 
   await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));

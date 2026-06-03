@@ -1,6 +1,6 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { generateCandidateUniverse, starterDirections } from "./candidates";
+import { careerAssetsFromActivity, generateCandidateUniverse, starterDirections } from "./candidates";
 import { makeHarness, api, type Harness } from "./spine.harness";
 
 let h: Harness;
@@ -25,6 +25,24 @@ test("candidate universe builds directions, activities, and one recommendation",
   assert.ok(universe.recommended);
   assert.ok(universe.grounding.includes("Bain"));
   assert.match(universe.recommended.firstStep, /Search|Look|Write|Open/i);
+});
+
+test("career assets can be reconstructed from activity log", () => {
+  const now = Date.now();
+  const assets = careerAssetsFromActivity([
+    { id: 1, eventType: "career_asset_upsert", sourceType: "career_asset", sourceId: null, taskId: null, planItemId: null, metadata: JSON.stringify({ key: "net-test", kind: "network", label: "Test Network", strength: 9 }), timestamp: now } as any,
+  ]);
+  assert.ok(assets.some((a) => a.label === "Test Network"));
+});
+
+test("career asset API adds custom assets used by candidates", async () => {
+  const create = await api(h.base, "POST", "/api/career-assets", { kind: "network", label: "Oxford network", note: "test asset", strength: 9 });
+  assert.equal(create.status, 200);
+  assert.ok(create.json.assets.some((a: any) => a.label === "Oxford network"));
+
+  const candidates = await api(h.base, "GET", "/api/candidates");
+  assert.equal(candidates.status, 200);
+  assert.ok(candidates.json.grounding.includes("Oxford network"));
 });
 
 test("candidate commit creates one Today task with a first step", async () => {

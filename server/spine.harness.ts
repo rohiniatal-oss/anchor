@@ -46,6 +46,7 @@ export async function makeHarness(): Promise<Harness> {
   const { registerSprint1Routes } = await import("./sprint1");
   const { registerJobTruthRoutes } = await import("./jobTruth");
   const { registerCandidateRoutes } = await import("./candidates");
+  const { registerGoalStateRoutes } = await import("./goalState");
   const { registerRoutes } = await import("./routes");
   const { storage } = await import("./storage");
   const sqlite = new Database(dbPath);
@@ -58,6 +59,7 @@ export async function makeHarness(): Promise<Harness> {
   registerSprint1Routes(app);
   registerJobTruthRoutes(app);
   registerCandidateRoutes(app);
+  registerGoalStateRoutes(app);
   await registerRoutes(httpServer, app);
 
   await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));

@@ -1,6 +1,6 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { careerAssetsFromActivity, deconstructRole, generateCandidateUniverse, starterDirections } from "./candidates";
+import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, deconstructRole, generateCandidateUniverse, starterDirections } from "./candidates";
 import { makeHarness, api, type Harness } from "./spine.harness";
 
 let h: Harness;
@@ -62,6 +62,31 @@ test("role deconstruction extracts attributes and proof gaps instead of whole-ro
   assert.ok(d.attributes.environment.includes("government or public sector"));
   assert.ok(d.nextSignalAction.title.includes("AI Policy Strategy Manager"));
   assert.ok(d.proofGaps.length >= 1);
+});
+
+test("attribute feedback is reconstructed and grouped", () => {
+  const now = Date.now();
+  const feedback = attributeFeedbackFromActivity([
+    { id: 1, eventType: "role_attribute_feedback", sourceType: "role_attribute", sourceId: null, taskId: null, planItemId: null, metadata: JSON.stringify({ attributeType: "workContent", attribute: "strategy", reaction: "energising" }), timestamp: now } as any,
+    { id: 2, eventType: "role_attribute_feedback", sourceType: "role_attribute", sourceId: null, taskId: null, planItemId: null, metadata: JSON.stringify({ attributeType: "mechanics", attribute: "delivery heavy", reaction: "draining" }), timestamp: now + 1 } as any,
+  ]);
+  const summary = attributeFeedbackSummary(feedback);
+  assert.ok(summary.energising.includes("strategy"));
+  assert.ok(summary.draining.includes("delivery heavy"));
+});
+
+test("role attribute feedback API stores signals and exposes them through candidates", async () => {
+  const r = await api(h.base, "POST", "/api/role-attributes", { attributeType: "workContent", attribute: "strategy", reaction: "energising", note: "good signal" });
+  assert.equal(r.status, 200);
+  assert.ok(r.json.summary.energising.includes("strategy"));
+
+  const attrs = await api(h.base, "GET", "/api/role-attributes");
+  assert.equal(attrs.status, 200);
+  assert.ok(attrs.json.energising.includes("strategy"));
+
+  const candidates = await api(h.base, "GET", "/api/candidates");
+  assert.equal(candidates.status, 200);
+  assert.ok(candidates.json.attributeFeedback.energising.includes("strategy"));
 });
 
 test("role deconstruction route can commit one Today proof-gap task", async () => {

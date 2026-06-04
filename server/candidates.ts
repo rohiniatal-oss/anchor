@@ -12,9 +12,12 @@ import { storage } from "./storage";
 // migration in this sprint. The current asset inventory is reconstructed from
 // career_asset_upsert / career_asset_delete events, with starter fallbacks.
 // Role deconstruction learns from attributes inside a role, not binary likes.
+// Attribute feedback stores specific signals such as energising, draining,
+// credible, and gap-producing.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type AssetKind = "experience" | "network" | "geography" | "proof" | "topic";
+type AttributeReaction = "energising" | "draining" | "credible" | "gap" | "unclear";
 
 type CareerAsset = {
   key: string;
@@ -63,6 +66,15 @@ type RoleDeconstruction = {
   };
 };
 
+type AttributeFeedback = {
+  jobId?: number | null;
+  attributeType: "workContent" | "topicAreas" | "environment" | "mechanics" | "proofGap" | "credibilityAsset";
+  attribute: string;
+  reaction: AttributeReaction;
+  note: string;
+  timestamp?: number;
+};
+
 const STARTER_ASSETS: CareerAsset[] = [
   { key: "exp-bain", kind: "experience", label: "Bain", note: "strategy consulting and alumni network", strength: 9, active: true },
   { key: "net-sipa", kind: "network", label: "SIPA", note: "policy and international affairs network", strength: 8, active: true },
@@ -99,6 +111,18 @@ function normaliseAsset(raw: any): CareerAsset {
   };
 }
 
+function normaliseFeedback(raw: any): AttributeFeedback {
+  const attributeType = ["workContent", "topicAreas", "environment", "mechanics", "proofGap", "credibilityAsset"].includes(raw.attributeType) ? raw.attributeType : "workContent";
+  const reaction = ["energising", "draining", "credible", "gap", "unclear"].includes(raw.reaction) ? raw.reaction : "unclear";
+  return {
+    jobId: raw.jobId == null ? null : Number(raw.jobId),
+    attributeType,
+    attribute: String(raw.attribute || "").trim(),
+    reaction,
+    note: String(raw.note || ""),
+  };
+}
+
 export function careerAssetsFromActivity(log: ActivityLog[]): CareerAsset[] {
   const map = new Map<string, CareerAsset>();
   for (const asset of STARTER_ASSETS) map.set(asset.key, asset);
@@ -118,6 +142,22 @@ export function careerAssetsFromActivity(log: ActivityLog[]): CareerAsset[] {
     if (asset.label) map.set(key, asset);
   }
   return Array.from(map.values()).filter((a) => a.active);
+}
+
+export function attributeFeedbackFromActivity(log: ActivityLog[]): AttributeFeedback[] {
+  return log
+    .filter((a) => a.eventType === "role_attribute_feedback")
+    .map((a) => ({ ...normaliseFeedback(safeJson(a.metadata)), timestamp: a.timestamp }))
+    .filter((f) => !!f.attribute)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+}
+
+export function attributeFeedbackSummary(feedback: AttributeFeedback[]) {
+  const grouped: Record<AttributeReaction, string[]> = { energising: [], draining: [], credible: [], gap: [], unclear: [] };
+  for (const f of feedback) {
+    if (!grouped[f.reaction].includes(f.attribute)) grouped[f.reaction].push(f.attribute);
+  }
+  return grouped;
 }
 
 function labels(assets: CareerAsset[], kind?: AssetKind) {
@@ -275,7 +315,19 @@ export function starterDirections(assets: CareerAsset[] = STARTER_ASSETS): Caree
   return directions;
 }
 
-function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[]) {
+function feedbackBoostFor(activity: SignalActivity, feedback: AttributeFeedback[]) {
+  const text = `${activity.activity} ${activity.why} ${activity.firstStep} ${activity.createsTaskTitle}`.toLowerCase();
+  let boost = 0;
+  for (const f of feedback) {
+    if (!text.includes(f.attribute.toLowerCase())) continue;
+    if (f.reaction === "energising" || f.reaction === "credible") boost += 2;
+    if (f.reaction === "gap") boost += 1;
+    if (f.reaction === "draining") boost -= 3;
+  }
+  return boost;
+}
+
+function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[], feedback: AttributeFeedback[] = []) {
   const directions = starterDirections(assets);
   const savedJobs = openJobs(jobs);
   const hasCareerWork = careerTasks(tasks).length > 0;
@@ -283,6 +335,9 @@ function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[]
   const firstSearch = firstDirection.roleSearches[0];
   const firstPerson = firstDirection.peopleToFind[0];
   const assetList = labels(assets).slice(0, 4).join(", ") || "your real experience";
+  const summary = attributeFeedbackSummary(feedback);
+  const positiveAttribute = summary.energising[0] || summary.credible[0] || "";
+  const gapAttribute = summary.gap[0] || "";
 
   const activities: SignalActivity[] = [
     {
@@ -323,6 +378,30 @@ function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[]
     },
   ];
 
+  if (positiveAttribute) {
+    activities.push({
+      activity: `Find another role with ${positiveAttribute}`,
+      why: `You marked ${positiveAttribute} as useful signal, so inspect it in another role rather than judging a whole job.` ,
+      firstStep: `Search one role that includes ${positiveAttribute}.`,
+      signalValue: 8,
+      friction: 3,
+      score: score(8, 3),
+      createsTaskTitle: `Inspect another role with ${positiveAttribute}`,
+    });
+  }
+
+  if (gapAttribute) {
+    activities.push({
+      activity: `Clarify proof for ${gapAttribute}`,
+      why: `You marked ${gapAttribute} as a gap, so the useful move is to find what evidence would close it.`,
+      firstStep: `Open one role and highlight the line that requires ${gapAttribute}.`,
+      signalValue: 8,
+      friction: 3,
+      score: score(8, 3),
+      createsTaskTitle: `Clarify one proof gap for ${gapAttribute}`,
+    });
+  }
+
   if (savedJobs.length > 0) {
     activities.push({
       activity: "Review one saved role for useful attributes",
@@ -347,17 +426,20 @@ function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[]
     });
   }
 
-  return activities.sort((a, b) => b.score - a.score);
+  return activities
+    .map((a) => ({ ...a, score: a.score + feedbackBoostFor(a, feedback) }))
+    .sort((a, b) => b.score - a.score);
 }
 
-export function generateCandidateUniverse(tasks: Task[], jobs: Job[], assets: CareerAsset[] = STARTER_ASSETS) {
+export function generateCandidateUniverse(tasks: Task[], jobs: Job[], assets: CareerAsset[] = STARTER_ASSETS, feedback: AttributeFeedback[] = []) {
   const activeAssets = assets.length ? assets : STARTER_ASSETS;
   const directions = starterDirections(activeAssets);
-  const activities = buildSignalActivities(tasks, jobs, activeAssets).slice(0, 5);
+  const activities = buildSignalActivities(tasks, jobs, activeAssets, feedback).slice(0, 5);
   return {
     purpose: "Build the list of possible jobs, people, tasks, and activities before choosing what to do.",
     grounding: labels(activeAssets),
     assets: activeAssets,
+    attributeFeedback: attributeFeedbackSummary(feedback),
     directions,
     activities,
     recommended: activities[0],
@@ -392,12 +474,12 @@ export function registerCandidateRoutes(app: Express) {
 
   app.get("/api/candidates", async (_req, res) => {
     const [tasks, jobs, log] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog()]);
-    res.json(generateCandidateUniverse(tasks, jobs, careerAssetsFromActivity(log)));
+    res.json(generateCandidateUniverse(tasks, jobs, careerAssetsFromActivity(log), attributeFeedbackFromActivity(log)));
   });
 
   app.post("/api/candidates/commit", async (_req, res) => {
     const [tasks, jobs, log] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog()]);
-    const { recommended } = generateCandidateUniverse(tasks, jobs, careerAssetsFromActivity(log));
+    const { recommended } = generateCandidateUniverse(tasks, jobs, careerAssetsFromActivity(log), attributeFeedbackFromActivity(log));
     const task = await storage.createTask({
       title: recommended.createsTaskTitle,
       list: "today",
@@ -420,6 +502,23 @@ export function registerCandidateRoutes(app: Express) {
       metadata: JSON.stringify(recommended),
     } as any);
     res.json({ recommended, task });
+  });
+
+  app.get("/api/role-attributes", async (_req, res) => {
+    res.json(attributeFeedbackSummary(attributeFeedbackFromActivity(await storage.getActivityLog())));
+  });
+
+  app.post("/api/role-attributes", async (req, res) => {
+    const feedback = normaliseFeedback(req.body || {});
+    if (!feedback.attribute) return res.status(400).json({ error: "Attribute is required" });
+    await storage.logActivity({
+      eventType: "role_attribute_feedback",
+      sourceType: "role_attribute",
+      sourceId: feedback.jobId ?? undefined,
+      metadata: JSON.stringify(feedback),
+    } as any);
+    const all = attributeFeedbackFromActivity(await storage.getActivityLog());
+    res.json({ feedback, summary: attributeFeedbackSummary(all) });
   });
 
   app.get("/api/jobs/:id/deconstruct", async (req, res) => {

@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { ActivityLog, Job, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse, starterDirections } from "./candidates";
+import { explorationSignalsFromActivity, preferenceSummaryFromSignals } from "./signalCapture";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXPLORATION QUEUE
@@ -52,10 +53,20 @@ function notesFor(log: ActivityLog[]) {
   return log.map((e) => String(e.metadata || "").toLowerCase()).join(" ");
 }
 
+function matchingPreferenceScore(directionName: string, terms: string[], preferenceSummary: ReturnType<typeof preferenceSummaryFromSignals>) {
+  const direction = preferenceSummary.directionScores.find((d) => d.direction.toLowerCase() === directionName.toLowerCase())?.score || 0;
+  const termText = terms.join(" ").toLowerCase();
+  const attractions = preferenceSummary.attractions.filter((a) => termText.includes(a.label.toLowerCase()) || a.label.toLowerCase().includes(termText)).reduce((sum, a) => sum + a.count, 0);
+  const avoidances = preferenceSummary.avoidances.filter((a) => termText.includes(a.label.toLowerCase()) || a.label.toLowerCase().includes(termText)).reduce((sum, a) => sum + a.count, 0);
+  return direction + attractions - avoidances;
+}
+
 export function buildExplorationQueue(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
   const assets = careerAssetsFromActivity(log);
   const feedback = attributeFeedbackFromActivity(log);
   const summary = attributeFeedbackSummary(feedback);
+  const explorationSignals = explorationSignalsFromActivity(log);
+  const preferenceSummary = preferenceSummaryFromSignals(explorationSignals);
   const directions = starterDirections(assets);
   const candidateUniverse = generateCandidateUniverse(tasks, jobs, assets, feedback);
   const logText = notesFor(log);
@@ -63,25 +74,29 @@ export function buildExplorationQueue(tasks: Task[], jobs: Job[], log: ActivityL
   const items: ExplorationItem[] = directions.map((direction) => {
     const directionJobs = matchingJobs(direction.name, jobs);
     const terms = directionAttributeTerms(direction.name);
-    const positiveTerms = [...summary.energising, ...summary.credible];
-    const negativeTerms = summary.draining;
-    const gapTerms = summary.gap;
+    const positiveTerms = [...summary.energising, ...summary.credible, ...preferenceSummary.attractions.map((a) => a.label)];
+    const negativeTerms = [...summary.draining, ...preferenceSummary.avoidances.map((a) => a.label)];
+    const gapTerms = [...summary.gap, ...preferenceSummary.unknowns.map((u) => u.label)];
     const evidenceFor: string[] = [];
     const evidenceAgainst: string[] = [];
     const missingEvidence: string[] = [];
+    const preferenceScore = matchingPreferenceScore(direction.name, terms, preferenceSummary);
 
     if (direction.whyPlausible) evidenceFor.push(direction.whyPlausible);
     if (direction.warmNetworks.length > 0) evidenceFor.push(`Warm routes exist via ${direction.warmNetworks.slice(0, 3).join(", ")}.`);
     if (directionJobs.length > 0) evidenceFor.push(`${directionJobs.length} saved/open role(s) appear related.`);
+    if (preferenceScore > 0) evidenceFor.push(`Preference signals are positive for this direction or its attributes.`);
+    if (preferenceScore < 0) evidenceAgainst.push(`Preference signals are negative for this direction or its attributes.`);
+
     for (const term of terms) {
       if (positiveTerms.some((p) => p.toLowerCase().includes(term.toLowerCase()) || term.toLowerCase().includes(p.toLowerCase()))) {
         evidenceFor.push(`Positive signal on ${term}.`);
       }
       if (negativeTerms.some((p) => p.toLowerCase().includes(term.toLowerCase()) || term.toLowerCase().includes(p.toLowerCase()))) {
-        evidenceAgainst.push(`Draining signal on ${term}.`);
+        evidenceAgainst.push(`Draining or avoidance signal on ${term}.`);
       }
       if (gapTerms.some((p) => p.toLowerCase().includes(term.toLowerCase()) || term.toLowerCase().includes(p.toLowerCase()))) {
-        missingEvidence.push(`Proof or credibility gap around ${term}.`);
+        missingEvidence.push(`Proof, preference, or clarity gap around ${term}.`);
       }
     }
 
@@ -90,7 +105,7 @@ export function buildExplorationQueue(tasks: Task[], jobs: Job[], log: ActivityL
     if (!direction.peopleToFind.length) missingEvidence.push("Need a reachable person to reality-check this direction.");
     if (missingEvidence.length === 0) missingEvidence.push("Need enough repeated evidence to decide whether to deepen, pause, or drop.");
 
-    const score = evidenceFor.length * 3 + directionJobs.length * 2 + missingEvidence.length - evidenceAgainst.length * 3;
+    const score = evidenceFor.length * 3 + directionJobs.length * 2 + missingEvidence.length + preferenceScore - evidenceAgainst.length * 3;
     const experimentTitle = directionJobs.length > 0
       ? `Inspect one saved ${direction.name} role for useful attributes`
       : `Find one real ${direction.name} role example`;
@@ -113,12 +128,13 @@ export function buildExplorationQueue(tasks: Task[], jobs: Job[], log: ActivityL
 
   return {
     purpose: "Rank what is most worth exploring before turning exploration into tasks.",
+    preferences: preferenceSummary,
     topExplorations: items.slice(0, 5),
     recommended: items[0] || null,
     candidateRecommendation: candidateUniverse.recommended,
     trace: [
-      "Read career assets, saved jobs, role attribute feedback, and candidate directions.",
-      "Ranked directions by asset fit, warm routes, saved-role evidence, positive/negative signals, and missing evidence.",
+      "Read career assets, saved jobs, role attribute feedback, exploration signals, and candidate directions.",
+      "Ranked directions by asset fit, warm routes, saved-role evidence, positive/negative signals, missing evidence, and preference summary.",
       "Returned smallest experiments rather than a full plan.",
     ],
   };

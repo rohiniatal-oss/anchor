@@ -85,13 +85,15 @@ function directionLane(tasks: Task[], jobs: Job[]): LaneState {
   };
 }
 
-function applicationsLane(tasks: Task[], jobs: Job[], direction: LaneState, proof: LaneState): LaneState {
+function applicationsLane(tasks: Task[], jobs: Job[], direction: LaneState): LaneState {
   const openJobs = actionableJobs(jobs);
   const applied = openJobs.filter((j) => j.status === "applied" || j.status === "interviewing").length;
   const ready = openJobs.filter((j) => (j.fitScore ?? 0) >= 70 || ["cv", "cover", "questions", "sample", "referral"].includes(j.applicationReadiness || "")).length;
   const hasApplicationTask = hasTask(tasks, /apply|application|cv|cover|interview|submit|follow up|follow-up/i);
   const stalled = hasApplicationTask && applied === 0 && direction.stage !== "empty" && direction.stage !== "exploring";
-  const premature = ["empty", "exploring"].includes(direction.stage) || ["idea", "empty"].includes(proof.stage);
+  // Applications are premature when direction is too vague. Proof is a long-term
+  // compounding lane, not a hard gate for applying unless a specific role requires it.
+  const premature = ["empty", "exploring"].includes(direction.stage) && ready === 0;
 
   let stage: LaneStage = premature ? "premature" : "ready";
   if (!premature && applied > 0) stage = "active";
@@ -103,15 +105,15 @@ function applicationsLane(tasks: Task[], jobs: Job[], direction: LaneState, proo
     priority:
       premature ? 18 :
       stalled ? 82 :
-      ready > 0 ? 74 :
+      ready > 0 ? 78 :
       applied > 0 ? 68 : 55,
     bottleneck:
-      premature ? "direction/proof gates are not strong enough for mass applications" :
+      premature ? "direction is not clear enough for selective applications" :
       stalled ? "application work exists but is not converting into submitted/followed-up roles" :
       ready > 0 ? "one high-fit role needs conversion" :
       "no high-fit application has been selected yet",
     unlockMove:
-      premature ? "Do not mass apply; build one direction signal or proof asset first" :
+      premature ? "Build one role signal before applying" :
       stalled ? "Convert one existing application task into a submitted or followed-up outcome" :
       ready > 0 ? "Tailor one strong application step for the highest-fit role" :
       "Choose one role worth converting and define its application requirements",
@@ -162,14 +164,15 @@ function proofLane(tasks: Task[], hustles: Hustle[], learn: Learn[]): LaneState 
   return {
     name: "Proof assets",
     stage,
-    priority: stage === "empty" ? 78 : stage === "idea" ? 82 : stage === "outlined" ? 88 : stage === "packaged" ? 45 : 70,
+    // Proof is valuable but should not routinely outrank conversion work.
+    priority: stage === "empty" ? 48 : stage === "idea" ? 52 : stage === "outlined" ? 58 : stage === "packaged" ? 34 : 45,
     bottleneck:
-      stage === "empty" ? "no reusable evidence asset exists" :
+      stage === "empty" ? "no reusable evidence asset exists yet" :
       stage === "idea" ? "proof asset exists only as an idea" :
-      stage === "outlined" ? "proof asset needs packaging into a visible output" :
+      stage === "outlined" ? "proof asset can be made more reusable over time" :
       "proof exists and can be reused in applications/networking",
     unlockMove:
-      stage === "empty" ? "Pick one proof gap and define the smallest visible asset" :
+      stage === "empty" ? "Define one lightweight proof idea when capacity allows" :
       stage === "idea" ? "Turn one proof idea into a claim and outline" :
       stage === "outlined" ? "Package one proof asset into a reusable paragraph, link, or bullet" :
       "Reuse one packaged proof asset in an application or message",
@@ -193,7 +196,7 @@ function learningLane(tasks: Task[], learn: Learn[]): LaneState {
   return {
     name: "Learning",
     stage,
-    priority: stage === "output_missing" ? 70 : stage === "active" ? 54 : stage === "queued" ? 38 : stage === "converted" ? 28 : 25,
+    priority: stage === "output_missing" ? 58 : stage === "active" ? 46 : stage === "queued" ? 34 : stage === "converted" ? 28 : 25,
     bottleneck:
       stage === "output_missing" ? "learning has not been converted into usable output" :
       stage === "active" ? "active learning needs a concrete output" :
@@ -227,9 +230,6 @@ function stabilityLane(tasks: Task[]): LaneState {
 function chooseBottleneck(lanes: LaneState[]) {
   const hardGate = lanes.find((l) => l.name === "Direction" && ["empty", "exploring"].includes(l.stage));
   if (hardGate) return hardGate;
-  const proofGate = lanes.find((l) => l.name === "Proof assets" && ["empty", "idea", "outlined"].includes(l.stage));
-  const applications = lanes.find((l) => l.name === "Applications");
-  if (applications?.stage === "premature" && proofGate) return proofGate;
   return [...lanes].sort((a, b) => b.priority - a.priority)[0];
 }
 
@@ -242,7 +242,7 @@ export function buildLaneOperatingModel(
 ): LaneOperatingModel {
   const direction = directionLane(tasks, jobs);
   const proof = proofLane(tasks, hustles, learn);
-  const applications = applicationsLane(tasks, jobs, direction, proof);
+  const applications = applicationsLane(tasks, jobs, direction);
   const network = networkLane(tasks, contacts);
   const learning = learningLane(tasks, learn);
   const stability = stabilityLane(tasks);

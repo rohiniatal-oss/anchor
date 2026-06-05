@@ -264,6 +264,100 @@ function useLinkedTaskCount(tasks: Task[], sourceType: string, sourceId: number)
   return tasks.filter((t) => t.sourceType === sourceType && t.sourceId === sourceId && !t.done).length;
 }
 
+/* ================= ONBOARDING (first-time setup) ================= */
+type OnboardingRole = { archetype: string; priority: string; fitLogic: string; nextExperiment: string };
+
+function OnboardingView() {
+  const queryClient = useQueryClient();
+  const [roles, setRoles] = useState<OnboardingRole[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [accepted, setAccepted] = useState<Set<string>>(new Set());
+  const [accepting, setAccepting] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    fetch("/api/strategy-builder")
+      .then((r) => r.json())
+      .then((d) => setRoles((d.roleArchetypes || []).slice(0, 4)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function acceptRole(r: OnboardingRole) {
+    setAccepting(r.archetype);
+    try {
+      await fetch("/api/strategy-builder/accept-role", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(r),
+      });
+      setAccepted((prev) => new Set([...prev, r.archetype]));
+      queryClient.invalidateQueries({ queryKey: ["/api/career-tracks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    } catch {
+      toast({ title: "Couldn't add that track", description: "Try again in a moment." });
+    } finally {
+      setAccepting(null);
+    }
+  }
+
+  return (
+    <div>
+      <h1 className="text-xl font-bold tracking-tight">Let's set up your strategy</h1>
+      <p className="text-sm text-muted-foreground mt-1 mb-6">
+        Pick one or two roles you're actively exploring. Anchor will shape your first plan around them.
+      </p>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" /> Thinking about your options…
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {roles.map((r) => {
+            const isAccepted = accepted.has(r.archetype);
+            const isBusy = accepting === r.archetype;
+            return (
+              <div key={r.archetype}
+                className={`rounded-xl border p-4 transition-colors ${isAccepted ? "border-primary/40 bg-primary/5" : "border-card-border bg-card"}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold">{r.archetype}</p>
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{r.priority}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{r.fitLogic}</p>
+                    {r.nextExperiment && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">First step:</span> {r.nextExperiment}
+                      </p>
+                    )}
+                  </div>
+                  <button onClick={() => !isAccepted && acceptRole(r)} disabled={isAccepted || isBusy}
+                    className={`shrink-0 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-60 ${
+                      isAccepted ? "bg-primary/10 text-primary" : "bg-primary text-primary-foreground hover:bg-primary/90"
+                    }`}>
+                    {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isAccepted ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                    {isAccepted ? "Added" : "Add track"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {accepted.size > 0 && (
+        <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center gap-3">
+          <Loader2 className="w-4 h-4 shrink-0 animate-spin text-primary" />
+          <div>
+            <p className="text-sm font-medium">{accepted.size === 1 ? "1 track added" : `${accepted.size} tracks added`} — building your plan…</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Anchor is shaping today around {accepted.size === 1 ? "it" : "them"}. Your first moves will appear in a moment.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ================= TODAY (day-first hero) ================= */
 type PlanItemT = { id: number; slot: string; title: string; whySelected: string; doneWhen: string; status: string; sourceType: string; sourceId: number | null; taskId: number | null };
 type DayPlanT = { id: number; mode: string; note: string; status: string; minimumViableItemId: number | null; enoughForToday: boolean };
@@ -271,6 +365,7 @@ const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "L
 
 function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+  const { data: tracks = [], isLoading: tracksLoading } = useCareerTracks();
   const day = todayKey();
   const { data: events = [] } = useQuery<Event[]>({ queryKey: ["/api/events", day] });
   const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
@@ -300,10 +395,10 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   // Load the PERSISTED plan (it lives in the DB now — survives reloads).
   useEffect(() => {
-    if (isLoading || pinned || plan || loadingPlan) return;
+    if (isLoading || tracksLoading || tracks.length === 0 || pinned || plan || loadingPlan) return;
     getPlan("medium");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, pinned]);
+  }, [isLoading, tracksLoading, pinned, tracks.length]);
 
   async function getPlan(e: string) {
     setLoadingPlan(true);
@@ -329,6 +424,8 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const isMVD = (it: PlanItemT) => plan?.minimumViableItemId === it.id;
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
+
+  if (!tracksLoading && !isLoading && tracks.length === 0) return <OnboardingView />;
 
   return (
     <div>

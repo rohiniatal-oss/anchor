@@ -1,17 +1,16 @@
-import type { Task, Job, Learn, Hustle } from "@shared/schema";
+import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { isOpportunityActionable } from "@shared/domainState";
-import { buildCareerGoalState } from "./goalState";
-import { buildExplorationQueue } from "./explorationQueue";
-import { buildLaneOperatingModel, type LaneOperatingModel, type LaneName } from "./laneState";
+import { buildTrackSpine } from "./trackSpine";
+import type { CanonicalLaneName } from "./lanes";
 
 // ─────────────────────────────────────────────────────────────────────────
 // ANCHOR BRAIN — adaptive sequencer (NOT a balanced-day picker).
 // Canonical decision flow:
-// 1) diagnose lane state and current bottleneck, 2) gather eligible actions,
+// 1) read the canonical Tracks × Lanes spine, 2) gather eligible actions,
 // 3) exclude only truly unavailable items, 4) score by track/application leverage,
 // 5) sequence against the remaining day, 6) explain the conclusion lightly.
-// User-selected roles are treated as intentional inputs: Anchor helps make the
-// application stronger and the profile more marketable; it is not a gatekeeper.
+// User-selected roles are intentional inputs: Anchor helps make applications
+// stronger and the profile more marketable; it is not a gatekeeper.
 // ─────────────────────────────────────────────────────────────────────────
 
 const CATEGORY_RANK: Record<string, number> = {
@@ -51,12 +50,13 @@ export type Candidate = {
 type StrategicContext = {
   bottleneck: string;
   reason: string;
-  applicationsPremature: boolean;
+  applicationsPremature: false;
   recommendedExploration: string;
-  laneModel: LaneOperatingModel;
-  bottleneckLane: LaneName;
+  laneModel: { trace: string[] };
+  bottleneckLane: CanonicalLaneName;
   laneStage: string;
   laneUnlockMove: string;
+  activeTrackName: string;
 };
 
 type RankedCandidate = { c: Candidate; s: number; trace: string[] };
@@ -84,17 +84,13 @@ function guessSize(title: string, fallback = "medium"): string {
   return fallback;
 }
 
-function isDirectionSignal(c: Candidate) {
-  // Application/submission work is never direction-signal work, even when its text
-  // mentions "role" (e.g. "Apply to several saved roles"). Excluding it keeps the
-  // direction-before-premature-apply rule intact: premature applies must not win
-  // the Direction lane just by matching the keyword.
-  if (isApplicationLike(c)) return false;
-  return /direction|role|career|inspect|signal|attribute|explore|job family|research|fit|path|market map|pattern/i.test(`${c.title} ${c.whyNow} ${c.sourceNote}`);
-}
-
 function isApplicationLike(c: Candidate) {
   return c.category === "job" || /apply|application|interview|cover|submit|cv|resume|follow up|follow-up|tailor|posting|requirements/i.test(`${c.title} ${c.whyNow}`);
+}
+
+function isDirectionSignal(c: Candidate) {
+  if (isApplicationLike(c)) return false;
+  return /direction|role|career|inspect|signal|attribute|explore|job family|research|fit|path|market map|pattern/i.test(`${c.title} ${c.whyNow} ${c.sourceNote}`);
 }
 
 function isProofAsset(c: Candidate) {
@@ -106,50 +102,40 @@ function isNetworkLike(c: Candidate) {
 }
 
 function isLearningLike(c: Candidate) {
-  return c.category === "learning" || c.source === "learn" || /learn|read|course|resource|podcast|book|study|output/i.test(`${c.title} ${c.whyNow} ${c.sourceNote}`);
+  return c.category === "learning" || c.source === "learn" || /learn|read|course|resource|podcast|book|study|output|practice|drill|development/i.test(`${c.title} ${c.whyNow} ${c.sourceNote}`);
 }
 
-function candidateMatchesLane(c: Candidate, lane: LaneName) {
+function candidateMatchesLane(c: Candidate, lane: CanonicalLaneName) {
   if (lane === "Direction") return isDirectionSignal(c);
   if (lane === "Applications") return isApplicationLike(c);
   if (lane === "Network") return isNetworkLike(c);
   if (lane === "Proof assets") return isProofAsset(c);
-  if (lane === "Learning") return isLearningLike(c);
+  if (lane === "Learning and development") return isLearningLike(c);
   if (lane === "Stability") return c.blocked || c.category === "admin" || c.category === "health";
   return false;
 }
 
-function buildStrategicContext(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[]): StrategicContext {
-  const fallbackLaneModel = buildLaneOperatingModel(tasks, jobs, learn, hustles, []);
-  try {
-    const log: any[] = [];
-    buildCareerGoalState(tasks, jobs, log);
-    const exploration = buildExplorationQueue(tasks, jobs, log);
-    const lane = fallbackLaneModel.bottleneckLane;
-    return {
-      bottleneck: lane.name,
-      reason: `${fallbackLaneModel.summary} Unlock move: ${lane.unlockMove}`,
-      // Kept for API compatibility, but no longer used to block user-selected role work.
-      applicationsPremature: false,
-      recommendedExploration: exploration.recommended?.direction || "",
-      laneModel: fallbackLaneModel,
-      bottleneckLane: lane.name,
-      laneStage: lane.stage,
-      laneUnlockMove: lane.unlockMove,
-    };
-  } catch {
-    const lane = fallbackLaneModel.bottleneckLane;
-    return {
-      bottleneck: lane.name,
-      reason: fallbackLaneModel.summary,
-      applicationsPremature: false,
-      recommendedExploration: "",
-      laneModel: fallbackLaneModel,
-      bottleneckLane: lane.name,
-      laneStage: lane.stage,
-      laneUnlockMove: lane.unlockMove,
-    };
-  }
+function buildStrategicContext(
+  tasks: Task[],
+  jobs: Job[],
+  learn: Learn[],
+  hustles: Hustle[],
+  contacts: Contact[] = [],
+  tracks: CareerTrack[] = [],
+): StrategicContext {
+  const spine = buildTrackSpine({ tasks, jobs, learn, hustles, contacts, tracks });
+  const lane = spine.globalLanes.find((l) => l.name === spine.bestMove.lane) || spine.globalLanes[0];
+  return {
+    bottleneck: spine.bestMove.lane,
+    reason: `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""}`,
+    applicationsPremature: false,
+    recommendedExploration: spine.bestMove.trackName || spine.activeTrack?.name || "",
+    laneModel: { trace: spine.trace },
+    bottleneckLane: spine.bestMove.lane,
+    laneStage: lane?.stage || "active",
+    laneUnlockMove: spine.bestMove.title,
+    activeTrackName: spine.bestMove.trackName || spine.activeTrack?.name || "",
+  };
 }
 
 function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; why: string } {
@@ -181,7 +167,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
 
   for (const t of tasks) {
     const isTodayTask = t.list === "today";
-    const isLaneAlignedSystemMove = t.sourceType === "strategy_builder" || t.sourceStatus === "strategy_refresh" || (t.sourceType === "career_track" && !!t.relatedTrackId);
+    const isLaneAlignedSystemMove = t.sourceType === "strategy_builder" || t.sourceType === "marketability_engine" || t.sourceStatus === "strategy_refresh" || (t.sourceType === "career_track" && !!t.relatedTrackId);
     if ((isTodayTask || isLaneAlignedSystemMove) && !t.done) {
       const blocked = t.readiness === "blocked" || !!t.blockerReason;
       out.push({
@@ -190,7 +176,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         deadline: t.deadline, status: t.status, skipped: t.skipped,
         sourceUrl: t.sourceUrl || "", sourceNote: t.sourceNote || "", sourceStatus: t.sourceStatus || "",
         doneWhen: t.doneWhen || t.minimumOutcome || "The smallest useful outcome is complete",
-        whyNow: isLaneAlignedSystemMove ? "strategy refresh says this unlocks the active plan" : "already on today's list",
+        whyNow: isLaneAlignedSystemMove ? "spine says this supports the active track or marketability plan" : "already on today's list",
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
       });
     }
@@ -295,16 +281,16 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   }
   if (context.laneUnlockMove && `${c.title} ${c.whyNow} ${c.sourceNote}`.toLowerCase().includes(context.laneUnlockMove.toLowerCase().slice(0, 18))) {
     s += 25;
-    trace.push("matches the lane unlock move");
+    trace.push("matches the spine unlock move");
   }
   if (/direction/i.test(context.bottleneck) && isDirectionSignal(c)) { s += 35; trace.push("matches direction bottleneck"); }
   if (/application/i.test(context.bottleneck) && isApplicationLike(c)) { s += 30; trace.push("moves an application forward"); }
   if (/proof|credibility|evidence/i.test(context.bottleneck) && isProofAsset(c)) { s += 25; trace.push("builds proof/credibility over time"); }
   if (/network/i.test(context.bottleneck) && isNetworkLike(c)) { s += 35; trace.push("moves a relationship lane forward"); }
-  if (/learning/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("converts learning into track leverage"); }
+  if (/learning|development/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("converts learning/development into track leverage"); }
   if (context.recommendedExploration && `${c.title} ${c.sourceNote}`.toLowerCase().includes(context.recommendedExploration.toLowerCase().slice(0, 20))) {
     s += 30;
-    trace.push("matches recommended exploration queue");
+    trace.push("matches active track from spine");
   }
 
   if (mode === "low" || energy === "low") {
@@ -324,7 +310,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
 function score(c: Candidate, energy: Energy, mode: DayMode): number {
   return scoreWithTrace(c, energy, mode, {
     bottleneck: "Progress", reason: "", applicationsPremature: false, recommendedExploration: "",
-    laneModel: buildLaneOperatingModel([], [], [], [], []), bottleneckLane: "Stability", laneStage: "steady", laneUnlockMove: "",
+    laneModel: { trace: [] }, bottleneckLane: "Stability", laneStage: "steady", laneUnlockMove: "", activeTrackName: "",
   }).s;
 }
 
@@ -357,8 +343,9 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
 export function planDay(
   tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[],
   energy: Energy, capacity: CapacityInput = 0,
+  contacts: Contact[] = [], tracks: CareerTrack[] = [],
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
-  const context = buildStrategicContext(tasks, jobs, learn, hustles);
+  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const all = gatherCandidates(tasks, jobs, learn, hustles);
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))
@@ -417,7 +404,7 @@ export function planDay(
     : budget < 45 ? "Very little day left. One tiny useful application or track move is enough."
     : budget < 90 ? "One useful application or track move is enough for the time left today."
     : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
-    : mode === "strategy" ? `${context.bottleneckLane} is the bottleneck. Anchor is choosing the next move to strengthen an application or track.`
+    : mode === "strategy" ? `${context.bottleneckLane} is the bottleneck. Anchor is choosing the next move from the Tracks × Lanes spine.`
     : fits ? "Start at the top. Finish the first one and today already counts."
     : "Full plate for the time you've got. Just do the first one and call it a win.";
 
@@ -437,13 +424,16 @@ export function planDay(
   };
 }
 
-export function recommend(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], energy: Energy) {
-  const context = buildStrategicContext(tasks, jobs, learn, hustles);
+export function recommend(
+  tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], energy: Energy,
+  contacts: Contact[] = [], tracks: CareerTrack[] = [],
+) {
+  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const cands = gatherCandidates(tasks, jobs, learn, hustles).filter((c) => passesGates(c, context));
   const mode = pickDayMode(cands, energy, context);
   if (cands.length === 0) return { mode, pick: null, alternative: null };
   const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s);
   const pick = ranked[0].c;
   const alternative = ranked.map((r) => r.c).find((c) => !(c.source === pick.source && c.sourceId === pick.sourceId) && c.size === "quick") || null;
-  return { mode, pick, alternative, trace: ranked[0].trace, bottleneck: context.bottleneck, lane: context.bottleneckLane };
+  return { mode, pick, alternative, trace: ranked[0].trace, bottleneck: context.bottleneck, lane: context.bottleneckLane, activeTrack: context.activeTrackName };
 }

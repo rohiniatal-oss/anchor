@@ -1,6 +1,6 @@
 import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 
-export type TrackStage = "define" | "signal" | "proof" | "network" | "convert" | "maintain";
+export type TrackStage = "define" | "signal" | "network" | "convert" | "maintain";
 export type TrackNeed = {
   lane: "Direction" | "Proof assets" | "Network" | "Learning" | "Applications" | "Stability";
   priority: number;
@@ -77,22 +77,21 @@ export function buildTrackPlan(track: CareerTrack, data: { tasks: Task[]; jobs: 
   const highFitJobs = jobs.filter((j) => (j.fitScore ?? 0) >= 70 || j.applicationReadiness !== "none");
   const appliedJobs = jobs.filter((j) => j.status === "applied" || j.status === "interviewing");
   const activeSignals = tasks.filter((t) => /inspect|signal|role family|market|pattern|requirements/i.test(t.title));
-  const proofReady = hustles.some((h) => h.stage === "testing" || h.coreClaim || h.firstPostIdea) || learn.some((l) => l.outputEvidenceUrl || l.requiredOutput);
+  const proofInMotion = hustles.some((h) => h.stage === "testing" || h.coreClaim || h.firstPostIdea || h.nextStep) || learn.some((l) => l.outputEvidenceUrl || l.requiredOutput);
   const networkActive = contacts.some((c) => c.status === "messaged" || c.status === "replied" || c.messageDraft);
 
   let stage: TrackStage = "define";
   if (jobs.length >= 3 || activeSignals.length > 0) stage = "signal";
-  if (proofReady) stage = "proof";
   if (networkActive) stage = "network";
-  if (highFitJobs.length > 0 && proofReady && networkActive) stage = "convert";
+  if (highFitJobs.length > 0 && jobs.length >= 1) stage = "convert";
   if (appliedJobs.length > 0) stage = "maintain";
 
   const needs: TrackNeed[] = [];
   if (jobs.length < 3) needs.push({ lane: "Direction", priority: 100, stage: "signal", move: `Inspect three real ${track.name} roles and capture repeated requirements`, doneWhen: "Three role examples are captured with repeated requirements", reason: "The track does not yet have enough market signal." });
-  if (!proofReady) needs.push({ lane: "Proof assets", priority: 92, stage: "proof", move: `Create one reusable proof asset for ${track.name}`, doneWhen: "A reusable paragraph, link, or bullet exists", reason: "The track needs evidence before applications/networking convert well." });
-  if (!networkActive) needs.push({ lane: "Network", priority: 82, stage: "network", move: `Find one ${track.name} insider for a reality-check conversation`, doneWhen: "One person type or named person is saved with a clear ask", reason: "The track needs market reality-check and access path." });
-  if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done)) needs.push({ lane: "Learning", priority: 68, stage: "proof", move: `Convert one ${track.name} resource into a proof note`, doneWhen: "One learning item has an output that can be reused", reason: "Learning is useful only if it becomes evidence." });
-  if (highFitJobs.length > 0 && proofReady && networkActive) needs.push({ lane: "Applications", priority: 88, stage: "convert", move: `Convert one high-fit ${track.name} role into an application step`, doneWhen: "One tailored application step is done", reason: "This track has enough support to move from exploration to conversion." });
+  if (highFitJobs.length > 0) needs.push({ lane: "Applications", priority: 94, stage: "convert", move: `Convert one high-fit ${track.name} role into an application step`, doneWhen: "One tailored application step is done", reason: "Applications do not need to wait for long-term proof assets when role fit/readiness is clear." });
+  if (!networkActive) needs.push({ lane: "Network", priority: 78, stage: "network", move: `Find one ${track.name} insider for a reality-check conversation`, doneWhen: "One person type or named person is saved with a clear ask", reason: "Network helps sharpen and access the track, but should not block selective applications." });
+  if (!proofInMotion) needs.push({ lane: "Proof assets", priority: 54, stage: "convert", move: `Define one lightweight proof asset for ${track.name}`, doneWhen: "A reusable proof idea or bullet exists", reason: "Proof is an ongoing compounding asset, not a prerequisite for applications." });
+  if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done)) needs.push({ lane: "Learning", priority: 48, stage: "convert", move: `Convert one ${track.name} resource into a useful note`, doneWhen: "One learning item has an output that can be reused", reason: "Learning should compound into track leverage, but not crowd out applications." });
   if (tasks.length > 6) needs.push({ lane: "Stability", priority: 72, stage: "maintain", move: `Reduce ${track.name} to the next three live moves`, doneWhen: "Only the next three track moves remain live", reason: "Too many open tasks can fragment the track." });
 
   if (needs.length === 0) needs.push({ lane: "Applications", priority: 50, stage: "maintain", move: `Maintain ${track.name} with one selective conversion or follow-up`, doneWhen: "One selective conversion/follow-up is complete", reason: "The track has basic coverage; maintain momentum." });
@@ -107,7 +106,7 @@ export function buildTrackPlan(track: CareerTrack, data: { tasks: Task[]; jobs: 
   ].slice(0, 10);
 
   const count = jobs.length + learn.length + contacts.length + hustles.length + tasks.length;
-  const health: TrackPlan["health"] = count === 0 ? "empty" : redundant.length >= 4 || tasks.length > 8 ? "overloaded" : count < 4 ? "thin" : needs[0].lane === "Applications" ? "ready" : "building";
+  const health: TrackPlan["health"] = count === 0 ? "empty" : redundant.length >= 4 || tasks.length > 8 ? "overloaded" : count < 4 ? "thin" : highFitJobs.length > 0 ? "ready" : "building";
 
   return {
     track,

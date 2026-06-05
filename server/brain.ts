@@ -85,6 +85,11 @@ function guessSize(title: string, fallback = "medium"): string {
 }
 
 function isDirectionSignal(c: Candidate) {
+  // Application/submission work is never direction-signal work, even when its text
+  // mentions "role" (e.g. "Apply to several saved roles"). Excluding it keeps the
+  // direction-before-premature-apply rule intact: premature applies must not win
+  // the Direction lane just by matching the keyword.
+  if (isApplicationLike(c)) return false;
   return /direction|role|career|inspect|signal|attribute|explore|job family|research|fit|path|market map|pattern/i.test(`${c.title} ${c.whyNow} ${c.sourceNote}`);
 }
 

@@ -94,7 +94,13 @@ export function reconcileGoalAndTasks(tasks: Task[], goal: ReturnType<typeof bui
     const blocked = task.readiness === "blocked" || !!task.blockerReason;
     const vague = isVague(task);
     const tooLarge = task.size === "deep" && !hasSteps(task);
-    const prematureApplication = isApplicationLike(task) && applications?.status === "premature";
+    // An application task should be deferred while the direction/proof gates are
+    // still incomplete. The gate signal is nextMoveType === "wait"; checking status
+    // alone is unreliable because the task being assessed flips Applications to
+    // "active" via hasApplicationTask in goalState.
+    const prematureApplication =
+      isApplicationLike(task) &&
+      (applications?.status === "premature" || applications?.nextMoveType === "wait");
     const maintenance = ["health", "admin"].includes(task.category) || best?.name === "Energy and stability";
 
     let assessment: TaskAssessment = "misaligned";

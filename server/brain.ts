@@ -173,15 +173,18 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
   const out: Candidate[] = [];
 
   for (const t of tasks) {
-    if (t.list === "today" && !t.done) {
+    const isTodayTask = t.list === "today";
+    const isLaneAlignedSystemMove = t.sourceType === "strategy_builder" || t.sourceStatus === "strategy_refresh" || (t.sourceType === "career_track" && !!t.relatedTrackId);
+    if ((isTodayTask || isLaneAlignedSystemMove) && !t.done) {
       const blocked = t.readiness === "blocked" || !!t.blockerReason;
       out.push({
         source: "task", sourceId: t.id, taskId: t.id,
         title: t.title.replace(/^✨\s*/, ""), category: t.category, size: t.size,
         deadline: t.deadline, status: t.status, skipped: t.skipped,
         sourceUrl: t.sourceUrl || "", sourceNote: t.sourceNote || "", sourceStatus: t.sourceStatus || "",
-        doneWhen: t.doneWhen || t.minimumOutcome || "The smallest useful outcome is complete", whyNow: "already on today's list", fitScore: null,
-        blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
+        doneWhen: t.doneWhen || t.minimumOutcome || "The smallest useful outcome is complete",
+        whyNow: isLaneAlignedSystemMove ? "strategy refresh says this unlocks the active plan" : "already on today's list",
+        fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
       });
     }
   }
@@ -209,7 +212,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
   };
 
   for (const l of learn) {
-    if (l.active && !l.done && l.learnStatus !== "closed" && !isDuplicate(l.title)) {
+    if ((l.active || l.proofIntent || !!l.relatedTrackId) && !l.done && l.learnStatus !== "closed" && !isDuplicate(l.title)) {
       const dl = l.applicationDeadline || "";
       out.push({
         source: "learn", sourceId: l.id, taskId: null,

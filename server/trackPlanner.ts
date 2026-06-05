@@ -8,6 +8,13 @@ export type TrackNeed = {
   move: string;
   doneWhen: string;
   reason: string;
+  kind?: "anchor" | "support" | "ongoing" | "cleanup";
+};
+export type TrackSequence = {
+  anchor: TrackNeed;
+  next: TrackNeed[];
+  ongoing: TrackNeed[];
+  cleanup: TrackNeed[];
 };
 export type TrackPlan = {
   track: CareerTrack;
@@ -15,6 +22,7 @@ export type TrackPlan = {
   health: "empty" | "thin" | "building" | "ready" | "overloaded";
   needs: TrackNeed[];
   primaryNeed: TrackNeed;
+  sequence: TrackSequence;
   redundant: Array<{ entity: "task" | "job" | "learn" | "contact" | "hustle"; id: number; title: string; reason: string }>;
   summary: string;
 };
@@ -67,6 +75,17 @@ function duplicateGroups<T extends { id: number }>(items: T[], titleOf: (x: T) =
   return redundant;
 }
 
+function buildSequence(needs: TrackNeed[]): TrackSequence {
+  const cleanup = needs.filter((n) => n.kind === "cleanup");
+  const ongoing = needs.filter((n) => n.kind === "ongoing").sort((a, b) => b.priority - a.priority);
+  const support = needs.filter((n) => n.kind === "support").sort((a, b) => b.priority - a.priority);
+  const anchors = needs.filter((n) => n.kind === "anchor").sort((a, b) => b.priority - a.priority);
+  const anchor = anchors[0] || support[0] || ongoing[0] || cleanup[0] || needs[0];
+  const anchorKey = `${anchor.lane}:${anchor.move}`;
+  const next = [...anchors.slice(1), ...support].filter((n) => `${n.lane}:${n.move}` !== anchorKey).slice(0, 2);
+  return { anchor, next, ongoing, cleanup };
+}
+
 export function buildTrackPlan(track: CareerTrack, data: { tasks: Task[]; jobs: Job[]; learn: Learn[]; hustles: Hustle[]; contacts: Contact[] }): TrackPlan {
   const jobs = trackJobs(track, data.jobs).filter((j) => j.status !== "closed");
   const learn = trackLearn(track, data.learn).filter((l) => !l.done && l.learnStatus !== "closed");
@@ -87,15 +106,16 @@ export function buildTrackPlan(track: CareerTrack, data: { tasks: Task[]; jobs: 
   if (appliedJobs.length > 0) stage = "maintain";
 
   const needs: TrackNeed[] = [];
-  if (jobs.length < 3) needs.push({ lane: "Direction", priority: 100, stage: "signal", move: `Inspect three real ${track.name} roles and capture repeated requirements`, doneWhen: "Three role examples are captured with repeated requirements", reason: "The track does not yet have enough market signal." });
-  if (highFitJobs.length > 0) needs.push({ lane: "Applications", priority: 94, stage: "convert", move: `Convert one high-fit ${track.name} role into an application step`, doneWhen: "One tailored application step is done", reason: "Applications do not need to wait for long-term proof assets when role fit/readiness is clear." });
-  if (!networkActive) needs.push({ lane: "Network", priority: 78, stage: "network", move: `Find one ${track.name} insider for a reality-check conversation`, doneWhen: "One person type or named person is saved with a clear ask", reason: "Network helps sharpen and access the track, but should not block selective applications." });
-  if (!proofInMotion) needs.push({ lane: "Proof assets", priority: 54, stage: "convert", move: `Define one lightweight proof asset for ${track.name}`, doneWhen: "A reusable proof idea or bullet exists", reason: "Proof is an ongoing compounding asset, not a prerequisite for applications." });
-  if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done)) needs.push({ lane: "Learning", priority: 48, stage: "convert", move: `Convert one ${track.name} resource into a useful note`, doneWhen: "One learning item has an output that can be reused", reason: "Learning should compound into track leverage, but not crowd out applications." });
-  if (tasks.length > 6) needs.push({ lane: "Stability", priority: 72, stage: "maintain", move: `Reduce ${track.name} to the next three live moves`, doneWhen: "Only the next three track moves remain live", reason: "Too many open tasks can fragment the track." });
+  if (jobs.length < 3) needs.push({ lane: "Direction", priority: 100, stage: "signal", kind: "anchor", move: `Inspect three real ${track.name} roles and capture repeated requirements`, doneWhen: "Three role examples are captured with repeated requirements", reason: "The track does not yet have enough market signal." });
+  if (highFitJobs.length > 0) needs.push({ lane: "Applications", priority: 110, stage: "convert", kind: "anchor", move: `Convert one high-fit ${track.name} role into an application step`, doneWhen: "One tailored application step is done", reason: "Applications do not need to wait for long-term proof assets when role fit/readiness is clear." });
+  if (!networkActive) needs.push({ lane: "Network", priority: highFitJobs.length > 0 ? 76 : 84, stage: "network", kind: "support", move: `Find one ${track.name} insider for a reality-check conversation`, doneWhen: "One person type or named person is saved with a clear ask", reason: "Network helps sharpen and access the track, but should not block selective applications." });
+  if (!proofInMotion) needs.push({ lane: "Proof assets", priority: 55, stage: "convert", kind: "ongoing", move: `Define one lightweight proof asset for ${track.name}`, doneWhen: "A reusable proof idea or bullet exists", reason: "Proof is an ongoing compounding asset, not a prerequisite for applications." });
+  if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done)) needs.push({ lane: "Learning", priority: 48, stage: "convert", kind: "ongoing", move: `Convert one ${track.name} resource into a useful note`, doneWhen: "One learning item has an output that can be reused", reason: "Learning should compound into track leverage, but not crowd out applications." });
+  if (tasks.length > 6) needs.push({ lane: "Stability", priority: 72, stage: "maintain", kind: "cleanup", move: `Reduce ${track.name} to the next three live moves`, doneWhen: "Only the next three track moves remain live", reason: "Too many open tasks can fragment the track." });
 
-  if (needs.length === 0) needs.push({ lane: "Applications", priority: 50, stage: "maintain", move: `Maintain ${track.name} with one selective conversion or follow-up`, doneWhen: "One selective conversion/follow-up is complete", reason: "The track has basic coverage; maintain momentum." });
+  if (needs.length === 0) needs.push({ lane: "Applications", priority: 50, stage: "maintain", kind: "anchor", move: `Maintain ${track.name} with one selective conversion or follow-up`, doneWhen: "One selective conversion/follow-up is complete", reason: "The track has basic coverage; maintain momentum." });
   needs.sort((a, b) => b.priority - a.priority);
+  const sequence = buildSequence(needs);
 
   const redundant = [
     ...duplicateGroups(tasks, (t) => t.title).map((r) => ({ entity: "task" as const, ...r })),
@@ -113,9 +133,10 @@ export function buildTrackPlan(track: CareerTrack, data: { tasks: Task[]; jobs: 
     stage,
     health,
     needs,
-    primaryNeed: needs[0],
+    primaryNeed: sequence.anchor,
+    sequence,
     redundant,
-    summary: `${track.name} is at ${stage}; next bottleneck is ${needs[0].lane}: ${needs[0].move}.`,
+    summary: `${track.name} is at ${stage}; anchor move is ${sequence.anchor.lane}: ${sequence.anchor.move}.`,
   };
 }
 

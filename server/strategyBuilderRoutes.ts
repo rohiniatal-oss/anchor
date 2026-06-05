@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "./storage";
 import { buildMarketGroundedStrategyBuilder, buildStrategyBuilder } from "./strategyBuilder";
+import { buildAllTrackPlans } from "./trackPlanner";
 
 function safeText(value: unknown, max = 240) {
   return String(value || "").trim().slice(0, max);
@@ -20,9 +21,17 @@ export function registerStrategyBuilderRoutes(app: Express) {
     res.json(buildStrategyBuilder(tasks, jobs, learn, hustles, contacts));
   });
 
-  // Backend strategy refresh: market-ground the plan, quietly add only a small
-  // number of missing strategic objects, then Today can recompute from the new system.
-  // This is deliberately conservative and deduped — no visible review panel needed.
+  app.get("/api/track-plans", async (_req, res) => {
+    const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
+      storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(),
+    ]);
+    res.json({ plans: buildAllTrackPlans(tracks, { tasks, jobs, learn, hustles, contacts }) });
+  });
+
+  // Backend strategy refresh: market-ground the plan, then reconcile around each
+  // active track's actual path-to-conversion. It creates only the next coherent
+  // track move, plus narrowly scoped supporting objects, instead of dumping a
+  // basket of recommendations into the system.
   app.post("/api/strategy-builder/apply", async (_req, res) => {
     const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
       storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(),
@@ -35,9 +44,11 @@ export function registerStrategyBuilderRoutes(app: Express) {
     const existingContactKeys = new Set(contacts.map((c) => norm(`${c.who} ${c.targetRole}`)));
     const existingLearnKeys = new Set(learn.map((l) => norm(`${l.title} ${l.capabilityBuilt}`)));
     const existingProofKeys = new Set(hustles.map((h) => norm(`${h.title} ${h.coreClaim}`)));
-
     const trackByName = new Map(tracks.map((t) => [norm(t.name), t]));
+    const allTracks = [...tracks];
 
+    // First, update the strategic track universe from market grounding. This is
+    // limited to the top two lanes and does not yet create support clutter.
     for (const r of strategy.roleArchetypes.filter((x) => x.priority === "explore" || x.priority === "convert").slice(0, 2)) {
       const key = norm(r.archetype);
       let track = trackByName.get(key);
@@ -51,81 +62,93 @@ export function registerStrategyBuilderRoutes(app: Express) {
           status: "active",
           whyItFits: safeText(r.fitLogic, 300),
         } as any);
+        allTracks.push(track as any);
+        trackByName.set(key, track as any);
         created.push(`track:${r.archetype}`);
       }
-      if (track && !existingTaskKeys.has(norm(r.nextExperiment))) {
+    }
+
+    // Then reconcile the actual active tracks. The track plan decides the next
+    // required move; Strategy Builder only supplies market context.
+    const plans = buildAllTrackPlans(allTracks as any, { tasks, jobs, learn, hustles, contacts });
+    const topPlans = plans.slice(0, 3);
+    for (const plan of topPlans) {
+      const need = plan.primaryNeed;
+      const title = need.move;
+      if (!existingTaskKeys.has(norm(title))) {
         await storage.createTask({
-          title: r.nextExperiment,
+          title,
           list: "inbox",
           block: null,
           done: false,
           pinned: false,
           steps: "[]",
           sort: 0,
-          category: "learning",
-          size: "medium",
+          category: need.lane === "Applications" ? "job" : need.lane === "Proof assets" ? "hustle" : need.lane === "Learning" ? "learning" : need.lane === "Network" ? "admin" : "learning",
+          size: need.lane === "Proof assets" || need.lane === "Applications" ? "deep" : "medium",
           status: "not_started",
           skipped: 0,
-          doneWhen: "One clear role-family signal is captured",
-          sourceType: "career_track",
-          sourceId: track.id,
-          sourceNote: "Market-grounded strategy refresh",
-          relatedTrackId: track.id,
+          doneWhen: need.doneWhen,
+          sourceType: "strategy_builder",
+          sourceStatus: "strategy_refresh",
+          sourceNote: `${plan.track.name}: ${need.reason}`,
+          relatedTrackId: plan.track.id,
+          minimumOutcome: need.doneWhen,
         } as any);
-        created.push(`task:${r.nextExperiment}`);
+        existingTaskKeys.add(norm(title));
+        created.push(`track_move:${plan.track.name}:${need.lane}`);
+      }
+
+      // Create exactly one missing support object for the primary bottleneck,
+      // linked to the same track, so the plan has structure not loose ideas.
+      if (need.lane === "Network") {
+        const person = strategy.peopleMap.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
+          || { category: `${plan.track.name} insider`, why: `Reality-check ${plan.track.name}`, ask: "Ask what profiles actually get hired and what proof matters.", linkedArchetype: plan.track.name };
+        if (!existingContactKeys.has(norm(person.category))) {
+          await storage.createContact({
+            name: "", who: person.category, sector: plan.track.name, why: safeText(person.why, 240), status: "to_contact",
+            note: safeText(`Suggested ask: ${person.ask}`, 300), askType: "advice", relatedTrackId: plan.track.id,
+          } as any);
+          existingContactKeys.add(norm(person.category));
+          created.push(`contact:${person.category}`);
+        }
+      }
+
+      if (need.lane === "Learning") {
+        const resource = strategy.resourceMap.find((r) => norm(r.linkedArchetype) === norm(plan.track.name) || norm(r.linkedArchetype) === norm(plan.track.targetRoleArchetype))
+          || { category: `${plan.track.name} resource with required output`, why: `Close capability gap for ${plan.track.name}`, output: "A reusable note or proof bullet", linkedArchetype: plan.track.name };
+        if (!existingLearnKeys.has(norm(resource.category))) {
+          await storage.createLearn({
+            title: resource.category, category: plan.track.name, cost: "", url: "", note: safeText(resource.why, 300), done: false,
+            active: false, type: "resource", learnStatus: "open", capabilityBuilt: plan.track.name,
+            requiredOutput: safeText(resource.output || "A reusable note or proof bullet", 240), proofIntent: true, relatedTrackId: plan.track.id,
+          } as any);
+          existingLearnKeys.add(norm(resource.category));
+          created.push(`learn:${resource.category}`);
+        }
+      }
+
+      if (need.lane === "Proof assets") {
+        const proof = strategy.proofGaps.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
+          || { asset: `Reusable proof asset for ${plan.track.name}`, gap: `Evidence gap for ${plan.track.name}`, doneWhen: "A reusable paragraph, link, or bullet exists", linkedArchetype: plan.track.name };
+        if (!existingProofKeys.has(norm(proof.asset))) {
+          await storage.createHustle({
+            title: proof.asset, note: safeText(`${proof.gap}. Done when: ${proof.doneWhen}`, 400), nextStep: "Define the claim and smallest reusable output",
+            stage: "idea", coreClaim: "", contentPillar: plan.track.name, proofAssetForTrack: plan.track.id,
+          } as any);
+          existingProofKeys.add(norm(proof.asset));
+          created.push(`proof:${proof.asset}`);
+        }
       }
     }
 
-    for (const p of strategy.peopleMap.slice(0, 2)) {
-      if (!existingContactKeys.has(norm(p.category))) {
-        await storage.createContact({
-          name: "",
-          who: p.category,
-          sector: p.linkedArchetype,
-          why: safeText(p.why, 240),
-          status: "to_contact",
-          note: safeText(`Suggested ask: ${p.ask}`, 300),
-          askType: "advice",
-        } as any);
-        created.push(`contact:${p.category}`);
-      }
-    }
-
-    for (const r of strategy.resourceMap.slice(0, 1)) {
-      if (!existingLearnKeys.has(norm(r.category))) {
-        await storage.createLearn({
-          title: r.category,
-          category: r.linkedArchetype,
-          cost: "",
-          url: "",
-          note: safeText(r.why, 300),
-          done: false,
-          active: false,
-          type: "resource",
-          learnStatus: "open",
-          capabilityBuilt: r.linkedArchetype,
-          requiredOutput: safeText(r.output || "A reusable note or proof bullet", 240),
-          proofIntent: true,
-        } as any);
-        created.push(`learn:${r.category}`);
-      }
-    }
-
-    for (const p of strategy.proofGaps.slice(0, 1)) {
-      if (!existingProofKeys.has(norm(p.asset))) {
-        await storage.createHustle({
-          title: p.asset,
-          note: safeText(`${p.gap}. Done when: ${p.doneWhen}`, 400),
-          nextStep: "Define the claim and smallest reusable output",
-          stage: "idea",
-          coreClaim: "",
-          contentPillar: p.linkedArchetype,
-        } as any);
-        created.push(`proof:${p.asset}`);
-      }
-    }
-
-    res.json({ ok: true, created, strategyStatus: strategy.marketGroundingStatus, marketGroundedAt: strategy.marketGroundedAt });
+    res.json({
+      ok: true,
+      created,
+      strategyStatus: strategy.marketGroundingStatus,
+      marketGroundedAt: strategy.marketGroundedAt,
+      reconciledTracks: topPlans.map((p) => ({ track: p.track.name, stage: p.stage, health: p.health, primaryNeed: p.primaryNeed, redundant: p.redundant })),
+    });
   });
 
   app.post("/api/strategy-builder/accept-person", async (req, res) => {

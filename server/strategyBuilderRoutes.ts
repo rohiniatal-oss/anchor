@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "./storage";
 import { buildMarketGroundedStrategyBuilder, buildStrategyBuilder } from "./strategyBuilder";
-import { buildAllTrackPlans } from "./trackPlanner";
+import { buildAllTrackPlans, type TrackNeed } from "./trackPlanner";
 
 function safeText(value: unknown, max = 240) {
   return String(value || "").trim().slice(0, max);
@@ -11,6 +11,46 @@ function norm(value: string) {
 }
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
+}
+
+function categoryForNeed(need: TrackNeed) {
+  return need.lane === "Applications" ? "job" : need.lane === "Proof assets" ? "hustle" : need.lane === "Learning" ? "learning" : need.lane === "Network" ? "admin" : "learning";
+}
+function sizeForNeed(need: TrackNeed) {
+  if (need.kind === "ongoing") return "quick";
+  return need.lane === "Applications" ? "deep" : need.lane === "Proof assets" ? "medium" : "medium";
+}
+async function createTrackMoveIfMissing(args: {
+  need: TrackNeed;
+  track: any;
+  existingTaskKeys: Set<string>;
+  created: string[];
+  label: "anchor" | "support" | "ongoing" | "cleanup";
+}) {
+  const { need, track, existingTaskKeys, created, label } = args;
+  const title = need.move;
+  if (existingTaskKeys.has(norm(title))) return;
+  await storage.createTask({
+    title,
+    list: "inbox",
+    block: null,
+    done: false,
+    pinned: false,
+    steps: "[]",
+    sort: 0,
+    category: categoryForNeed(need),
+    size: sizeForNeed(need),
+    status: "not_started",
+    skipped: 0,
+    doneWhen: need.doneWhen,
+    sourceType: "strategy_builder",
+    sourceStatus: `strategy_refresh:${label}`,
+    sourceNote: `${track.name}: ${need.reason}`,
+    relatedTrackId: track.id,
+    minimumOutcome: need.doneWhen,
+  } as any);
+  existingTaskKeys.add(norm(title));
+  created.push(`track_${label}:${track.name}:${need.lane}`);
 }
 
 export function registerStrategyBuilderRoutes(app: Express) {
@@ -28,10 +68,10 @@ export function registerStrategyBuilderRoutes(app: Express) {
     res.json({ plans: buildAllTrackPlans(tracks, { tasks, jobs, learn, hustles, contacts }) });
   });
 
-  // Backend strategy refresh: market-ground the plan, then reconcile around each
-  // active track's actual path-to-conversion. It creates only the next coherent
-  // track move, plus narrowly scoped supporting objects, instead of dumping a
-  // basket of recommendations into the system.
+  // Backend strategy refresh: market-ground the track universe, then reconcile each
+  // active track into a sequence. Applications can be the anchor when fit/readiness
+  // is strong; proof, learning, and networking remain support/ongoing moves rather
+  // than hard prerequisites.
   app.post("/api/strategy-builder/apply", async (_req, res) => {
     const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
       storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(),
@@ -47,8 +87,6 @@ export function registerStrategyBuilderRoutes(app: Express) {
     const trackByName = new Map(tracks.map((t) => [norm(t.name), t]));
     const allTracks = [...tracks];
 
-    // First, update the strategic track universe from market grounding. This is
-    // limited to the top two lanes and does not yet create support clutter.
     for (const r of strategy.roleArchetypes.filter((x) => x.priority === "explore" || x.priority === "convert").slice(0, 2)) {
       const key = norm(r.archetype);
       let track = trackByName.get(key);
@@ -68,40 +106,28 @@ export function registerStrategyBuilderRoutes(app: Express) {
       }
     }
 
-    // Then reconcile the actual active tracks. The track plan decides the next
-    // required move; Strategy Builder only supplies market context.
     const plans = buildAllTrackPlans(allTracks as any, { tasks, jobs, learn, hustles, contacts });
     const topPlans = plans.slice(0, 3);
     for (const plan of topPlans) {
-      const need = plan.primaryNeed;
-      const title = need.move;
-      if (!existingTaskKeys.has(norm(title))) {
-        await storage.createTask({
-          title,
-          list: "inbox",
-          block: null,
-          done: false,
-          pinned: false,
-          steps: "[]",
-          sort: 0,
-          category: need.lane === "Applications" ? "job" : need.lane === "Proof assets" ? "hustle" : need.lane === "Learning" ? "learning" : need.lane === "Network" ? "admin" : "learning",
-          size: need.lane === "Proof assets" || need.lane === "Applications" ? "deep" : "medium",
-          status: "not_started",
-          skipped: 0,
-          doneWhen: need.doneWhen,
-          sourceType: "strategy_builder",
-          sourceStatus: "strategy_refresh",
-          sourceNote: `${plan.track.name}: ${need.reason}`,
-          relatedTrackId: plan.track.id,
-          minimumOutcome: need.doneWhen,
-        } as any);
-        existingTaskKeys.add(norm(title));
-        created.push(`track_move:${plan.track.name}:${need.lane}`);
+      await createTrackMoveIfMissing({ need: plan.sequence.anchor, track: plan.track, existingTaskKeys, created, label: "anchor" });
+      for (const support of plan.sequence.next.slice(0, 1)) {
+        await createTrackMoveIfMissing({ need: support, track: plan.track, existingTaskKeys, created, label: "support" });
+      }
+      // Ongoing proof/learning is created only for the highest-priority track and
+      // only as a small background move, so it strengthens the track without
+      // crowding out applications.
+      if (plan === topPlans[0]) {
+        for (const ongoing of plan.sequence.ongoing.slice(0, 1)) {
+          await createTrackMoveIfMissing({ need: ongoing, track: plan.track, existingTaskKeys, created, label: "ongoing" });
+        }
       }
 
-      // Create exactly one missing support object for the primary bottleneck,
-      // linked to the same track, so the plan has structure not loose ideas.
-      if (need.lane === "Network") {
+      const supportNeeds = [plan.sequence.anchor, ...plan.sequence.next, ...plan.sequence.ongoing];
+      const needsNetworkSupport = supportNeeds.some((n) => n.lane === "Network");
+      const needsLearningSupport = supportNeeds.some((n) => n.lane === "Learning");
+      const needsProofSupport = supportNeeds.some((n) => n.lane === "Proof assets");
+
+      if (needsNetworkSupport) {
         const person = strategy.peopleMap.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
           || { category: `${plan.track.name} insider`, why: `Reality-check ${plan.track.name}`, ask: "Ask what profiles actually get hired and what proof matters.", linkedArchetype: plan.track.name };
         if (!existingContactKeys.has(norm(person.category))) {
@@ -114,7 +140,7 @@ export function registerStrategyBuilderRoutes(app: Express) {
         }
       }
 
-      if (need.lane === "Learning") {
+      if (needsLearningSupport) {
         const resource = strategy.resourceMap.find((r) => norm(r.linkedArchetype) === norm(plan.track.name) || norm(r.linkedArchetype) === norm(plan.track.targetRoleArchetype))
           || { category: `${plan.track.name} resource with required output`, why: `Close capability gap for ${plan.track.name}`, output: "A reusable note or proof bullet", linkedArchetype: plan.track.name };
         if (!existingLearnKeys.has(norm(resource.category))) {
@@ -128,7 +154,7 @@ export function registerStrategyBuilderRoutes(app: Express) {
         }
       }
 
-      if (need.lane === "Proof assets") {
+      if (needsProofSupport) {
         const proof = strategy.proofGaps.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
           || { asset: `Reusable proof asset for ${plan.track.name}`, gap: `Evidence gap for ${plan.track.name}`, doneWhen: "A reusable paragraph, link, or bullet exists", linkedArchetype: plan.track.name };
         if (!existingProofKeys.has(norm(proof.asset))) {
@@ -147,7 +173,13 @@ export function registerStrategyBuilderRoutes(app: Express) {
       created,
       strategyStatus: strategy.marketGroundingStatus,
       marketGroundedAt: strategy.marketGroundedAt,
-      reconciledTracks: topPlans.map((p) => ({ track: p.track.name, stage: p.stage, health: p.health, primaryNeed: p.primaryNeed, redundant: p.redundant })),
+      reconciledTracks: topPlans.map((p) => ({
+        track: p.track.name,
+        stage: p.stage,
+        health: p.health,
+        sequence: p.sequence,
+        redundant: p.redundant,
+      })),
     });
   });
 

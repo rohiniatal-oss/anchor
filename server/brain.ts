@@ -8,8 +8,10 @@ import { buildLaneOperatingModel, type LaneOperatingModel, type LaneName } from 
 // ANCHOR BRAIN — adaptive sequencer (NOT a balanced-day picker).
 // Canonical decision flow:
 // 1) diagnose lane state and current bottleneck, 2) gather eligible actions,
-// 3) gate what should not surface, 4) score by lane unlock + urgency,
+// 3) exclude only truly unavailable items, 4) score by track/application leverage,
 // 5) sequence against the remaining day, 6) explain the conclusion lightly.
+// User-selected roles are treated as intentional inputs: Anchor helps make the
+// application stronger and the profile more marketable; it is not a gatekeeper.
 // ─────────────────────────────────────────────────────────────────────────
 
 const CATEGORY_RANK: Record<string, number> = {
@@ -87,7 +89,7 @@ function isDirectionSignal(c: Candidate) {
 }
 
 function isApplicationLike(c: Candidate) {
-  return c.category === "job" || /apply|application|interview|cover|submit|cv|resume|follow up|follow-up/i.test(`${c.title} ${c.whyNow}`);
+  return c.category === "job" || /apply|application|interview|cover|submit|cv|resume|follow up|follow-up|tailor|posting|requirements/i.test(`${c.title} ${c.whyNow}`);
 }
 
 function isProofAsset(c: Candidate) {
@@ -116,14 +118,14 @@ function buildStrategicContext(tasks: Task[], jobs: Job[], learn: Learn[], hustl
   const fallbackLaneModel = buildLaneOperatingModel(tasks, jobs, learn, hustles, []);
   try {
     const log: any[] = [];
-    const goalState = buildCareerGoalState(tasks, jobs, log);
+    buildCareerGoalState(tasks, jobs, log);
     const exploration = buildExplorationQueue(tasks, jobs, log);
-    const applications = fallbackLaneModel.lanes.find((w) => w.name === "Applications");
     const lane = fallbackLaneModel.bottleneckLane;
     return {
       bottleneck: lane.name,
       reason: `${fallbackLaneModel.summary} Unlock move: ${lane.unlockMove}`,
-      applicationsPremature: applications?.stage === "premature" || goalState.workstreams.find((w: any) => w.name === "Applications")?.status === "premature",
+      // Kept for API compatibility, but no longer used to block user-selected role work.
+      applicationsPremature: false,
       recommendedExploration: exploration.recommended?.direction || "",
       laneModel: fallbackLaneModel,
       bottleneckLane: lane.name,
@@ -135,7 +137,7 @@ function buildStrategicContext(tasks: Task[], jobs: Job[], learn: Learn[], hustl
     return {
       bottleneck: lane.name,
       reason: fallbackLaneModel.summary,
-      applicationsPremature: fallbackLaneModel.lanes.find((w) => w.name === "Applications")?.stage === "premature",
+      applicationsPremature: false,
       recommendedExploration: "",
       laneModel: fallbackLaneModel,
       bottleneckLane: lane.name,
@@ -152,18 +154,18 @@ function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; 
   }
   const readiness = j.applicationReadiness || "none";
   if (j.eligibilityRisk && j.eligibilityRisk !== "") {
-    return { action: `Check eligibility before investing time — ${role}`, size: "quick", doneWhen: "You know if you're eligible", why: `flagged: ${j.eligibilityRisk}` };
+    return { action: `Check the constraint and adapt the application angle — ${role}`, size: "quick", doneWhen: "You know how to handle or explain the constraint", why: `application constraint: ${j.eligibilityRisk}` };
   }
   switch (j.status) {
     case "wishlist":
-      if (readiness === "none") return { action: `Open the posting & note what it asks for — ${role}`, size: "quick", doneWhen: "You've listed CV / cover / sample / portal needed", why: "turns a wish into a real plan" };
+      if (readiness === "none") return { action: `Extract requirements and application materials — ${role}`, size: "quick", doneWhen: "You have listed requirements, materials, deadline, and strongest angle", why: "turns the role into an application plan" };
       return { action: `Tailor your CV to this role — ${role}`, size: "deep", doneWhen: "CV reflects this role's language", why: "fit is clear; time to make it land" };
     case "applied":
       return { action: `Follow up on your application — ${role}`, size: "quick", doneWhen: "A polite nudge is sent", why: "applied roles go cold without a nudge" };
     case "interviewing":
       return { action: `Build your story bank — ${role}`, size: "deep", doneWhen: "3 STAR stories ready", why: "you're in the room — prep wins it" };
     default:
-      return { action: `Decide if this is worth pursuing — ${role}`, size: "quick", doneWhen: "You've kept or archived it", why: "needs a keep / drop decision" };
+      return { action: `Build the application plan — ${role}`, size: "quick", doneWhen: "The strongest angle, gaps, and next material are clear", why: "role is in your pipeline; make the application sharper" };
   }
 }
 
@@ -235,7 +237,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: cat, size: guessSize(h.nextStep),
         deadline: "", status: "not_started", skipped: 0,
         sourceUrl: "", sourceNote: h.note || "", sourceStatus: h.stage,
-        doneWhen: "That step is done", whyNow: "proof of your judgement — builds credibility",
+        doneWhen: "That step is done", whyNow: "proof of your judgement — builds credibility over time",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
       });
     }
@@ -243,11 +245,10 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
   return out;
 }
 
-function gateReason(c: Candidate, context: StrategicContext): string | null {
+function gateReason(c: Candidate, _context: StrategicContext): string | null {
   if (c.status === "done") return "already done";
   if (c.blocked) return c.blockerReason ? `blocked: ${c.blockerReason}` : "blocked";
-  if (c.eligibilityRisk === "likely_ineligible") return "likely ineligible";
-  if (context.applicationsPremature && isApplicationLike(c) && !isDirectionSignal(c)) return "applications are premature until direction/proof is clearer";
+  if (c.eligibilityRisk === "likely_ineligible") return "constraint needs handling before submission";
   return null;
 }
 
@@ -292,10 +293,10 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
     trace.push("matches the lane unlock move");
   }
   if (/direction/i.test(context.bottleneck) && isDirectionSignal(c)) { s += 35; trace.push("matches direction bottleneck"); }
-  if (/application/i.test(context.bottleneck) && isApplicationLike(c)) { s += 30; trace.push("matches application bottleneck"); }
-  if (/proof|credibility|evidence/i.test(context.bottleneck) && isProofAsset(c)) { s += 35; trace.push("builds proof/credibility"); }
+  if (/application/i.test(context.bottleneck) && isApplicationLike(c)) { s += 30; trace.push("moves an application forward"); }
+  if (/proof|credibility|evidence/i.test(context.bottleneck) && isProofAsset(c)) { s += 25; trace.push("builds proof/credibility over time"); }
   if (/network/i.test(context.bottleneck) && isNetworkLike(c)) { s += 35; trace.push("moves a relationship lane forward"); }
-  if (/learning/i.test(context.bottleneck) && isLearningLike(c)) { s += 30; trace.push("converts learning into output"); }
+  if (/learning/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("converts learning into track leverage"); }
   if (context.recommendedExploration && `${c.title} ${c.sourceNote}`.toLowerCase().includes(context.recommendedExploration.toLowerCase().slice(0, 20))) {
     s += 30;
     trace.push("matches recommended exploration queue");
@@ -367,7 +368,7 @@ export function planDay(
     return {
       mode,
       plan: [],
-      note: "Nothing actionable right now — add a couple of things and I'll shape a day.",
+      note: "Nothing actionable right now — add a role, task, or track and I'll shape a day.",
       mvdIndex: -1,
       trace: { picked: [], ignored, bottleneck: context.bottleneck, reason: context.reason, remainingMinutes: budget, laneTrace: context.laneModel.trace },
     };
@@ -407,11 +408,11 @@ export function planDay(
   const planMin = picks.reduce((m, r) => m + (SIZE_MINUTES[r.c.size] ?? 45), 0);
   const fits = planMin <= Math.max(15, budget);
   const note =
-    mode === "deadline" ? "A deadline's close — the urgent thing leads. Do that one and today counts."
-    : budget < 45 ? "Very little day left. One tiny useful thing is enough."
-    : budget < 90 ? "One useful thing is enough for the time left today."
+    mode === "deadline" ? "A deadline's close — the urgent application/material step leads. Do that one and today counts."
+    : budget < 45 ? "Very little day left. One tiny useful application or track move is enough."
+    : budget < 90 ? "One useful application or track move is enough for the time left today."
     : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
-    : mode === "strategy" ? `${context.bottleneckLane} is the bottleneck. Anchor is choosing the next unlock move, then sequencing the rest.`
+    : mode === "strategy" ? `${context.bottleneckLane} is the bottleneck. Anchor is choosing the next move to strengthen an application or track.`
     : fits ? "Start at the top. Finish the first one and today already counts."
     : "Full plate for the time you've got. Just do the first one and call it a win.";
 

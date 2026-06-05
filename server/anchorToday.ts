@@ -1,32 +1,20 @@
 import type { Express } from "express";
 import type { Task } from "@shared/schema";
 import { storage } from "./storage";
-import { buildCareerGoalState } from "./goalState";
-import { buildExplorationQueue } from "./explorationQueue";
+import { buildTrackSpine } from "./trackSpine";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ANCHOR TODAY INTELLIGENCE
-// Front-door synthesis layer. The user should not have to decide whether to look
-// at goals, tasks, candidates, or exploration. Anchor Today gives one clear view:
-// what is going on, what matters now, what to do, and what to ignore.
-// ─────────────────────────────────────────────────────────────────────────────
+// Anchor Today is the front door. It must read the same reason graph as the
+// sequencer: the Tracks x Lanes spine. GoalState remains useful as a legacy
+// rollup, but it should not be the daily planning source of truth.
 
 type ExistingTaskAction = "use" | "shrink" | "defer" | "ignore";
 
 function activeTasks(tasks: Task[]) {
-  return tasks.filter((t) => !t.done && ["today", "this_week", "later"].includes(t.list));
+  return tasks.filter((t) => !t.done && ["today", "this_week", "later", "inbox"].includes(t.list));
 }
 
 function taskText(task: Task) {
   return `${task.title} ${task.category} ${task.doneWhen} ${task.sourceType} ${task.sourceNote} ${task.blockerReason}`.toLowerCase();
-}
-
-function isApplicationTask(task: Task) {
-  return /apply|application|interview|cover|submit/i.test(taskText(task));
-}
-
-function isDirectionTask(task: Task) {
-  return /direction|role|career|inspect|signal|attribute|explore|job family|research/i.test(taskText(task));
 }
 
 function hasSteps(task: Task) {
@@ -49,105 +37,106 @@ function firstStepFromTask(task: Task) {
   } catch {}
   if (/role|job|inspect|career|research/i.test(task.title)) return "Open LinkedIn or the saved role.";
   if (/message|person|network|contact/i.test(task.title)) return "Open the contact or message thread.";
+  if (/cv|cover|application/i.test(task.title)) return "Open the role and application material.";
   return "Open the task and do the smallest visible first step.";
 }
 
-function assessExistingTasks(tasks: Task[], applicationsPremature: boolean) {
-  const assessed = activeTasks(tasks).map((task) => {
-    let action: ExistingTaskAction = "ignore";
-    let reason = "Not clearly connected to today's bottleneck.";
-    let score = task.list === "today" ? 2 : 0;
+function taskMatchesSpineMove(task: Task, title: string, lane: string) {
+  const text = taskText(task);
+  const words = title.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 4);
+  const overlap = words.filter((w) => text.includes(w)).length;
+  if (overlap >= 2) return true;
+  if (lane === "Applications" && /apply|application|cv|cover|interview|submit|tailor|requirements/i.test(text)) return true;
+  if (lane === "Network" && /network|contact|message|intro|referral|coffee|person/i.test(text)) return true;
+  if (lane === "Learning and development" && /learn|resource|course|practice|drill|skill|development|study/i.test(text)) return true;
+  if (lane === "Proof assets" && /proof|memo|story|bullet|portfolio|case|evidence/i.test(text)) return true;
+  if (lane === "Direction" && /direction|role|inspect|signal|market|requirements|track/i.test(text) && !/apply|submit/i.test(text)) return true;
+  return false;
+}
 
-    if (isApplicationTask(task) && applicationsPremature) {
-      action = "defer";
-      reason = "Applications are premature until direction/proof is clearer.";
-      score -= 3;
-    } else if (isDirectionTask(task) && isVague(task)) {
+function assessExistingTasks(tasks: Task[], bestMove: { title: string; lane: string }) {
+  return activeTasks(tasks).map((task) => {
+    let action: ExistingTaskAction = "ignore";
+    let reason = "Not clearly connected to the current track move.";
+    let score = task.list === "today" ? 2 : 0;
+    const matches = taskMatchesSpineMove(task, bestMove.title, bestMove.lane);
+    const blocked = task.readiness === "blocked" || !!task.blockerReason;
+
+    if (blocked && matches) {
       action = "shrink";
-      reason = "Aligned with the current need, but too vague to execute as written.";
+      reason = "This matches the spine move but is blocked, so reduce it to the unblock step.";
+      score += 3;
+    } else if (matches && isVague(task)) {
+      action = "shrink";
+      reason = "This matches the spine move, but needs a clearer first step or done condition.";
       score += 4;
-    } else if (isDirectionTask(task)) {
+    } else if (matches) {
       action = "use";
-      reason = "This directly supports direction signal today.";
-      score += 5;
+      reason = "This matches the current Tracks x Lanes spine move.";
+      score += 6;
     } else if (["health", "admin"].includes(task.category)) {
       action = "use";
       reason = "Useful as a stabilising maintenance action, not the strategic move.";
       score += 1;
     }
 
-    return {
-      taskId: task.id,
-      title: task.title,
-      action,
-      reason,
-      firstStep: firstStepFromTask(task),
-      score,
-    };
+    return { taskId: task.id, title: task.title, action, reason, firstStep: firstStepFromTask(task), score };
   }).sort((a, b) => b.score - a.score);
-
-  return assessed;
 }
 
-export function buildAnchorToday(tasks: Task[], jobs: any[], log: any[]) {
-  const goalState = buildCareerGoalState(tasks, jobs, log);
-  const exploration = buildExplorationQueue(tasks, jobs, log);
-  const applications = goalState.workstreams.find((w) => w.name === "Applications");
-  const applicationsPremature = applications?.status === "premature";
-  const assessedTasks = assessExistingTasks(tasks, !!applicationsPremature);
+export function buildAnchorToday(input: { tasks: Task[]; jobs: any[]; learn: any[]; hustles: any[]; contacts: any[]; tracks: any[] }) {
+  const spine = buildTrackSpine(input);
+  const assessedTasks = assessExistingTasks(input.tasks, { title: spine.bestMove.title, lane: spine.bestMove.lane });
   const useExistingTask = assessedTasks.find((t) => t.action === "use" || t.action === "shrink") || null;
   const ignoreForNow = assessedTasks.filter((t) => t.action === "defer" || t.action === "ignore").slice(0, 3);
-  const recommendedExploration = exploration.recommended;
 
-  const headline = goalState.recommendedFocus === "Direction"
-    ? "Today is for direction signal, not applications."
-    : `Today is for ${goalState.recommendedFocus.toLowerCase()} progress.`;
+  const headline = spine.activeTrack
+    ? `${spine.activeTrack.name} is the active track; ${spine.bestMove.lane.toLowerCase()} is the next move.`
+    : `${spine.bestMove.lane} is the next useful move.`;
 
   const bestMove = useExistingTask ? {
     title: useExistingTask.action === "shrink" ? `Shrink and do: ${useExistingTask.title}` : useExistingTask.title,
     firstStep: useExistingTask.firstStep,
-    doneWhen: useExistingTask.action === "shrink" ? "One small useful signal exists." : "The task's next visible outcome is complete.",
-    stopWhen: "Stop after one useful signal or 20 minutes.",
+    doneWhen: useExistingTask.action === "shrink" ? "One smaller useful output exists." : "The task's next visible outcome is complete.",
+    stopWhen: spine.bestMove.stopWhen,
     source: "existing_task",
     reason: useExistingTask.reason,
   } : {
-    title: recommendedExploration?.smallestExperiment.title || goalState.todayPlan.mustDo,
-    firstStep: recommendedExploration?.smallestExperiment.firstStep || "Open the relevant app or note.",
-    doneWhen: recommendedExploration?.smallestExperiment.doneWhen || "One useful signal exists.",
-    stopWhen: recommendedExploration?.smallestExperiment.stopWhen || goalState.todayPlan.stopRule,
-    source: "exploration_queue",
-    reason: recommendedExploration ? `Most worth exploring: ${recommendedExploration.direction}.` : goalState.reason,
+    title: spine.bestMove.title,
+    firstStep: spine.bestMove.firstStep,
+    doneWhen: spine.bestMove.doneWhen,
+    stopWhen: spine.bestMove.stopWhen,
+    source: spine.bestMove.source,
+    reason: spine.bestMove.reason,
   };
 
   return {
     headline,
-    goal: goalState.goal,
-    bottleneck: goalState.recommendedFocus,
-    why: goalState.reason,
+    goal: spine.goal,
+    bottleneck: spine.bestMove.lane,
+    why: spine.bestMove.reason,
     bestMove,
     useExistingTask,
     ignoreForNow,
-    exploration: {
-      recommended: recommendedExploration,
-      topExplorations: exploration.topExplorations,
-    },
-    goalState: {
-      dayType: goalState.dayType,
-      workstreams: goalState.workstreams,
+    spine: {
+      activeTrack: spine.activeTrack,
+      tracks: spine.tracks,
+      globalLanes: spine.globalLanes,
+      marketabilityMode: spine.marketability.mode,
+      marketabilityWeeklyMix: spine.marketability.weeklyMix,
     },
     trace: [
-      "Read goal state, exploration queue, existing tasks, and activity history.",
-      `Goal bottleneck is ${goalState.recommendedFocus}.`,
-      recommendedExploration ? `Exploration queue recommends ${recommendedExploration.direction}.` : "No exploration recommendation found.",
-      useExistingTask ? `Existing task ${useExistingTask.taskId} can be ${useExistingTask.action === "shrink" ? "shrunk" : "used"}.` : "No suitable existing task found, so using exploration fallback.",
-      applicationsPremature ? "Application-like tasks are deferred because applications are premature." : "Applications are not marked premature.",
+      ...spine.trace,
+      useExistingTask ? `Existing task ${useExistingTask.taskId} can be ${useExistingTask.action === "shrink" ? "shrunk" : "used"}.` : "No existing task matched the spine move, so using spine bestMove.",
     ],
   };
 }
 
 export function registerAnchorTodayRoutes(app: Express) {
   app.get("/api/anchor/today", async (_req, res) => {
-    const [tasks, jobs, log] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog()]);
-    res.json(buildAnchorToday(tasks, jobs, log));
+    const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
+      storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(),
+    ]);
+    res.json(buildAnchorToday({ tasks, jobs, learn, hustles, contacts, tracks }));
   });
 }

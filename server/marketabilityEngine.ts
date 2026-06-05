@@ -1,23 +1,23 @@
 import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 
-export type MarketabilityMoveKind = "network" | "asset" | "upskill" | "proof" | "cleanup";
+export type MarketabilityMoveKind = "network" | "asset" | "upskill" | "proof" | "cleanup" | "development";
 export type MarketabilityMode = "role_active" | "interview_active" | "signal_building" | "maintenance";
 
 export type MarketabilityMove = {
   kind: MarketabilityMoveKind;
   title: string;
-  lane: "Network" | "Applications" | "Learning" | "Proof assets" | "Stability" | "Direction";
+  lane: "Network" | "Applications" | "Learning" | "Development" | "Proof assets" | "Stability" | "Direction";
   priority: number;
   trackId?: number;
   trackName?: string;
   doneWhen: string;
   reason: string;
-  outputType: "message" | "cv_bullet" | "story" | "positioning" | "note" | "proof_asset" | "cleanup";
+  outputType: "message" | "cv_bullet" | "story" | "positioning" | "note" | "proof_asset" | "cleanup" | "practice" | "skill_output";
 };
 
 export type MarketabilityPlan = {
   mode: MarketabilityMode;
-  weeklyMix: { applications: number; networking: number; reusableAssets: number; learningProof: number; cleanup: number };
+  weeklyMix: { applications: number; networking: number; reusableAssets: number; learningDevelopment: number; proof: number; cleanup: number };
   moves: MarketabilityMove[];
   topMoves: MarketabilityMove[];
   rationale: string;
@@ -49,6 +49,14 @@ function trackProof(track: CareerTrack, hustles: Hustle[]) {
 function trackJobs(track: CareerTrack, jobs: Job[]) {
   return activeJobs(jobs).filter((j) => j.relatedTrackId === track.id || belongsToTrackName(`${j.title} ${j.company} ${j.roleArchetype} ${j.narrativeAngle} ${j.note}`, track));
 }
+function hasDevelopmentSignal(tasks: Task[], track: CareerTrack) {
+  return hasOpenTask(tasks, /practice|drill|case|storyline|memo|write|presentation|interview answer|mock|skill|development/i, track);
+}
+function hasTooMuchLearning(learn: Learn[], tasks: Task[], track: CareerTrack) {
+  const openLearn = trackLearn(track, learn).filter((l) => !l.done && l.learnStatus !== "closed").length;
+  const openLearningTasks = tasks.filter((task) => !task.done && task.relatedTrackId === track.id && /learn|read|course|resource|study/i.test(t(task.title, task.sourceNote))).length;
+  return openLearn + openLearningTasks >= 3;
+}
 
 export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; learn: Learn[]; hustles: Hustle[]; contacts: Contact[]; tracks: CareerTrack[] }): MarketabilityPlan {
   const jobs = activeJobs(input.jobs);
@@ -57,10 +65,10 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
   const tracks = activeTracks(input.tracks).slice(0, 4);
   const mode: MarketabilityMode = interviews > 0 ? "interview_active" : applicationReady > 0 ? "role_active" : tracks.length > 0 ? "signal_building" : "maintenance";
 
-  const weeklyMix = mode === "interview_active" ? { applications: 55, networking: 15, reusableAssets: 25, learningProof: 5, cleanup: 0 }
-    : mode === "role_active" ? { applications: 60, networking: 20, reusableAssets: 15, learningProof: 5, cleanup: 0 }
-    : mode === "signal_building" ? { applications: 20, networking: 35, reusableAssets: 25, learningProof: 15, cleanup: 5 }
-    : { applications: 20, networking: 25, reusableAssets: 30, learningProof: 15, cleanup: 10 };
+  const weeklyMix = mode === "interview_active" ? { applications: 55, networking: 10, reusableAssets: 20, learningDevelopment: 10, proof: 5, cleanup: 0 }
+    : mode === "role_active" ? { applications: 60, networking: 15, reusableAssets: 15, learningDevelopment: 5, proof: 5, cleanup: 0 }
+    : mode === "signal_building" ? { applications: 15, networking: 30, reusableAssets: 20, learningDevelopment: 20, proof: 10, cleanup: 5 }
+    : { applications: 15, networking: 20, reusableAssets: 25, learningDevelopment: 20, proof: 10, cleanup: 10 };
 
   const moves: MarketabilityMove[] = [];
   for (const track of tracks) {
@@ -69,6 +77,7 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
     const learn = trackLearn(track, input.learn);
     const proof = trackProof(track, input.hustles);
     const roleCount = trackJobs(track, input.jobs).length;
+    const tooMuchLearning = hasTooMuchLearning(input.learn, input.tasks, track);
 
     if (!contacts.some((c) => ["messaged", "replied"].includes(c.status || "")) && !hasOpenTask(input.tasks, /insider|reality-check|reality check|message|contact|network/i, track)) {
       moves.push({
@@ -90,19 +99,39 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
       });
     }
 
-    if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done) && !hasOpenTask(input.tasks, /convert .*resource|useful note|learning item|produce/i, track)) {
+    // Learning is content acquisition. Development is skill practice. Both must
+    // create output and must not crowd out live applications.
+    if (tooMuchLearning) {
       moves.push({
-        kind: "upskill", lane: "Learning", priority: 46, trackId: track.id, trackName: name,
+        kind: "cleanup", lane: "Stability", priority: 84, trackId: track.id, trackName: name,
+        title: `Reduce ${name} learning to one active resource with one output`,
+        doneWhen: "Only one learning item remains active for this track; others are parked",
+        reason: "Too many learning items usually creates avoidance and weakens execution focus.",
+        outputType: "cleanup",
+      });
+    } else if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done) && !hasOpenTask(input.tasks, /convert .*resource|useful note|learning item|produce/i, track)) {
+      moves.push({
+        kind: "upskill", lane: "Learning", priority: mode === "role_active" ? 38 : 56, trackId: track.id, trackName: name,
         title: `Convert one ${name} resource into five usable application or interview bullets`,
         doneWhen: "Five reusable bullets exist; no more consumption is needed today",
-        reason: "Upskilling should produce near-term application/interview leverage.",
+        reason: "Learning should produce near-term application/interview leverage.",
         outputType: "note",
+      });
+    }
+
+    if (!hasDevelopmentSignal(input.tasks, track)) {
+      moves.push({
+        kind: "development", lane: "Development", priority: mode === "interview_active" ? 82 : mode === "role_active" ? 52 : 68, trackId: track.id, trackName: name,
+        title: `Do one ${name} skill drill that produces a reusable example`,
+        doneWhen: "One practice output exists: answer, mini-case, memo outline, or story draft",
+        reason: "Development should build skill through practice, not only reading.",
+        outputType: "practice",
       });
     }
 
     if (proof.length === 0 && !hasOpenTask(input.tasks, /proof asset|proof idea|memo fragment|case example/i, track)) {
       moves.push({
-        kind: "proof", lane: "Proof assets", priority: mode === "role_active" ? 42 : 58, trackId: track.id, trackName: name,
+        kind: "proof", lane: "Proof assets", priority: mode === "role_active" ? 36 : 54, trackId: track.id, trackName: name,
         title: `Define one lightweight proof idea for ${name}`,
         doneWhen: "A small proof idea exists that could later become a paragraph, memo, story, or writing sample",
         reason: "Proof compounds credibility over time but should not block applications.",
@@ -139,9 +168,9 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
     weeklyMix,
     moves: sorted,
     topMoves,
-    rationale: mode === "role_active" ? "Live roles exist, so marketability work should support application quality without crowding it out."
-      : mode === "interview_active" ? "Interviewing is active, so story bank and follow-up prep should dominate."
-      : mode === "signal_building" ? "No dominant live role is active, so networking, reusable assets, and market signal should build baseline competitiveness."
-      : "Maintain baseline competitiveness with lightweight assets, networking, and cleanup.",
+    rationale: mode === "role_active" ? "Live roles exist, so learning and development should support application quality without crowding it out."
+      : mode === "interview_active" ? "Interviewing is active, so story bank, practice, and follow-up prep should dominate."
+      : mode === "signal_building" ? "No dominant live role is active, so networking, reusable assets, learning outputs, and development drills should build baseline competitiveness."
+      : "Maintain baseline competitiveness with lightweight assets, networking, development, and cleanup.",
   };
 }

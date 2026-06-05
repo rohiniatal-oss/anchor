@@ -46,7 +46,7 @@ const jobs: Job[] = [
 ];
 
 test("Anchor Today and Brain read the same Tracks × Lanes spine", () => {
-  const today = buildAnchorToday(tasks, jobs, [], learn, hustles, contacts, tracks);
+  const today = buildAnchorToday({ tasks, jobs, learn, hustles, contacts, tracks });
   const rec = recommend(tasks, jobs, learn, hustles, "medium", contacts, tracks);
   const plan = planDay(tasks, jobs, learn, hustles, "medium", { remainingMinutes: 180 }, contacts, tracks);
 

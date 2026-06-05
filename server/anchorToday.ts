@@ -7,7 +7,7 @@ import { buildTrackSpine } from "./trackSpine";
 // sequencer: the Tracks x Lanes spine. GoalState remains useful as a legacy
 // rollup, but it should not be the daily planning source of truth.
 
-type ExistingTaskAction = "use" | "shrink" | "defer" | "ignore";
+type ExistingTaskAction = "use" | "shrink" | "ignore";
 
 function activeTasks(tasks: Task[]) {
   return tasks.filter((t) => !t.done && ["today", "this_week", "later", "inbox"].includes(t.list));
@@ -88,7 +88,7 @@ export function buildAnchorToday(input: { tasks: Task[]; jobs: any[]; learn: any
   const spine = buildTrackSpine(input);
   const assessedTasks = assessExistingTasks(input.tasks, { title: spine.bestMove.title, lane: spine.bestMove.lane });
   const useExistingTask = assessedTasks.find((t) => t.action === "use" || t.action === "shrink") || null;
-  const ignoreForNow = assessedTasks.filter((t) => t.action === "defer" || t.action === "ignore").slice(0, 3);
+  const ignoreForNow = assessedTasks.filter((t) => t.action === "ignore").slice(0, 3);
 
   const headline = spine.activeTrack
     ? `${spine.activeTrack.name} is the active track; ${spine.bestMove.lane.toLowerCase()} is the next move.`
@@ -114,6 +114,7 @@ export function buildAnchorToday(input: { tasks: Task[]; jobs: any[]; learn: any
     headline,
     goal: spine.goal,
     bottleneck: spine.bestMove.lane,
+    activeTrack: spine.activeTrack,
     why: spine.bestMove.reason,
     bestMove,
     useExistingTask,

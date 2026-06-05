@@ -1,13 +1,12 @@
 // Spine test harness (P4.6a #8). Stands up a throwaway sqlite DB + an in-process
 // express server wired with the REAL routes, so the identity chain can be tested
-// end to end over HTTP. The DB path is set on the env BEFORE storage is imported
-// (storage opens its handle at module load), then schema is created with raw DDL.
+// end to end over HTTP. ANCHOR_DB_PATH is set on the env BEFORE storage is imported;
+// storage opens its handle at module load AND creates the full schema there (one
+// shared place, see SPINE_DDL), so every test DB has all tables from shared/schema.ts.
 import os from "node:os";
 import path from "node:path";
-import fs from "node:fs";
 import { createServer, type Server } from "node:http";
-import Database from "better-sqlite3";
-import { SPINE_DDL } from "./spine.schema.sql";
+import type Database from "better-sqlite3";
 
 export type Harness = {
   base: string;
@@ -36,10 +35,8 @@ export async function makeHarness(): Promise<Harness> {
   // The spine tests never hit model-backed routes.
   process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "test-noop";
 
-  const seed = new Database(dbPath);
-  seed.exec(SPINE_DDL);
-  seed.close();
-
+  // Schema is created by storage.ts on open (one shared place, see SPINE_DDL).
+  // ANCHOR_DB_PATH is set above so the storage import below opens THIS db.
   const express = (await import("express")).default;
   const { registerCaptureRoutes } = await import("./capture");
   const { registerSprint2Routes } = await import("./sprint2");
@@ -49,8 +46,11 @@ export async function makeHarness(): Promise<Harness> {
   const { registerGoalStateRoutes } = await import("./goalState");
   const { registerGoalTaskReconciliationRoutes } = await import("./goalTaskReconciliation");
   const { registerRoutes } = await import("./routes");
-  const { storage } = await import("./storage");
-  const sqlite = new Database(dbPath);
+  const { storage, rawDb } = await import("./storage");
+  // Reset/inspect through the SAME handle storage opened. If a route module pulled
+  // storage in before ANCHOR_DB_PATH was set, storage is on data.db, not dbPath —
+  // using rawDb keeps the harness pointed at whatever DB the routes actually use.
+  const sqlite = rawDb;
 
   const app = express();
   app.use(express.json());
@@ -80,8 +80,9 @@ export async function makeHarness(): Promise<Harness> {
     base, server: httpServer, sqlite, storage, reset,
     close: async () => {
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-      sqlite.close();
-      try { fs.unlinkSync(dbPath); } catch {}
+      // Do not close/unlink here: sqlite is storage's shared handle (closing it
+      // would break any later-loading test file in the same process), and the DB
+      // is a throwaway temp/data file truncated per test by reset().
       singleton = null;
     },
   };

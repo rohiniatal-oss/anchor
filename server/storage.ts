@@ -20,11 +20,20 @@ import Database from "better-sqlite3";
 import { eq, asc, desc } from "drizzle-orm";
 import { templateForArchetype } from "@shared/jobTemplates";
 import { templateForProofAsset } from "@shared/proofAssetTemplates";
+import { SPINE_DDL } from "./spine.schema.sql";
 
 const DB_PATH = process.env.ANCHOR_DB_PATH || "data.db";
 const sqlite = new Database(DB_PATH);
 sqlite.pragma("journal_mode = WAL");
+// Ensure the full current schema exists on open. Idempotent (CREATE TABLE IF NOT
+// EXISTS) so it is a no-op on an already-pushed prod DB and gives throwaway test
+// DBs every table from shared/schema.ts regardless of import order.
+sqlite.exec(SPINE_DDL);
 export const db = drizzle(sqlite);
+// Exposed so the test harness shares the SAME handle storage opened, rather than
+// opening a second connection at a path it has to guess — the two diverged when a
+// route module imported storage before the harness set ANCHOR_DB_PATH.
+export const rawDb = sqlite;
 
 export interface IStorage {
   getTasks(): Promise<Task[]>;

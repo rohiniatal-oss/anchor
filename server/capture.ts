@@ -42,7 +42,10 @@ async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof
 // object routes preserve the original row as list="captured" with route metadata.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const CAPTURE_ROUTES = ["task", "today", "job", "learn", "network", "proof", "decision", "keep"] as const;
+export const CAPTURE_ROUTES = [
+  "task", "today", "subtask", "job", "learn", "network", "proof",
+  "deadline", "blocker", "decision", "note", "duplicate", "parking_lot", "keep",
+] as const;
 export type CaptureRoute = (typeof CAPTURE_ROUTES)[number];
 export type CaptureConfidence = "high" | "medium" | "low";
 
@@ -61,11 +64,17 @@ export type CaptureSuggestion = {
 const ROUTE_LABEL: Record<CaptureRoute, string> = {
   task: "Task",
   today: "Today",
+  subtask: "Subtask",
   job: "Jobs",
   learn: "Learn",
   network: "Network",
   proof: "Proof Assets",
+  deadline: "Deadline",
+  blocker: "Blocker",
   decision: "Decision",
+  note: "Note",
+  duplicate: "Duplicate",
+  parking_lot: "Parking Lot",
   keep: "Keep in Brain Dump",
 };
 
@@ -103,6 +112,32 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   // not safely routeable without the user's intent.
   if (title.split(" ").length <= 2 && !has(t, /\b(read|study|apply|write|pay|book|send|message|call|email|course|job|role)\b/)) {
     return suggestion(id, "keep", "low", "Too little context to route safely", "Is this a person, task, resource, or idea?");
+  }
+
+  // Source hygiene before destination routing: these are updates to existing work,
+  // not standalone jobs/resources by default.
+  if (has(t, /\b(blocked|stuck|waiting on|waiting for|can't|cannot|need from|depends on|no access|missing info|need info)\b/)) {
+    return suggestion(id, "blocker", "high", "This explains why an existing item cannot move");
+  }
+
+  if (has(t, /\b(deadline|due|closes|closing|by\s+(mon|tue|wed|thu|fri|sat|sun|tomorrow|today|\d{1,2})|before\s+\d{1,2}|submit by)\b/)) {
+    return suggestion(id, "deadline", "high", "This looks like a date or deadline update");
+  }
+
+  if (has(t, /\b(step|subtask|part of|for the role|for that job|for the application|for the memo|for substack|for course|under)\b/)) {
+    return suggestion(id, "subtask", "medium", "This sounds like a child action under an existing object", "Which job, learning item, or proof asset should this attach to?");
+  }
+
+  if (has(t, /\b(already added|duplicate|same as|covered by|already have)\b/)) {
+    return suggestion(id, "duplicate", "high", "This appears to duplicate an existing item");
+  }
+
+  if (has(t, /\b(note|remember|thought|insight|interesting|worth noting|quote|context)\b/)) {
+    return suggestion(id, "note", "medium", "This is context to preserve, not necessarily an action");
+  }
+
+  if (has(t, /\b(someday|maybe|parking lot|later idea|not now|one day|could do)\b/)) {
+    return suggestion(id, "parking_lot", "high", "This is an idea to park rather than execute now");
   }
 
   // Applications / opportunities. Fellowships are things you apply to; courses are
@@ -154,6 +189,7 @@ function routeToBlock(_route: CaptureRoute, _task?: Task): string | null {
 
 function routeForClient(route: string): CaptureRoute | null {
   if (route === "hustle") return "proof";
+  if (route === "idea") return "parking_lot";
   return (CAPTURE_ROUTES as readonly string[]).includes(route) ? route as CaptureRoute : null;
 }
 
@@ -168,6 +204,10 @@ async function markCaptureRouted(task: Task, route: CaptureRoute, routedToType: 
   } as any);
 }
 
+function parkedStatus(route: CaptureRoute) {
+  return route === "duplicate" ? "duplicate" : route === "parking_lot" ? "parked" : route === "note" ? "note" : "kept";
+}
+
 export async function routeCapture(id: number, rawRoute: string) {
   const route = routeForClient(rawRoute);
   if (!route) return { status: 400, body: { error: "Unknown route" } };
@@ -178,9 +218,15 @@ export async function routeCapture(id: number, rawRoute: string) {
   const inferred = classifyCapture(task.id, task.title);
   const reason = inferred.reason;
 
-  if (route === "keep") {
-    const updated = await storage.updateTask(id, { sourceStatus: "kept", sourceNote: reason } as any);
-    return { status: 200, body: { moved: "keep", route, task: updated, reason } };
+  if (route === "keep" || route === "note" || route === "duplicate" || route === "parking_lot") {
+    const updated = await storage.updateTask(id, {
+      list: route === "keep" ? task.list : "captured",
+      sourceStatus: parkedStatus(route),
+      sourceNote: reason,
+      readiness: route === "parking_lot" ? "waiting" : task.readiness,
+      pinned: false,
+    } as any);
+    return { status: 200, body: { moved: route === "parking_lot" ? "parking_lot" : route, route, task: updated, reason } };
   }
 
   if (route === "today" || route === "task") {
@@ -193,6 +239,41 @@ export async function routeCapture(id: number, rawRoute: string) {
     };
     const updated = await storage.updateTask(id, patch);
     return { status: 200, body: { moved: route, route, task: updated, reason } };
+  }
+
+  if (route === "subtask") {
+    const updated = await storage.updateTask(id, {
+      list: "inbox",
+      category: task.category || "admin",
+      sourceStatus: "needs_parent",
+      sourceNote: reason,
+      doneWhen: task.doneWhen || "This is attached to the right parent item",
+    } as any);
+    return { status: 200, body: { moved: "subtask", route, task: updated, reason, question: inferred.question } };
+  }
+
+  if (route === "deadline") {
+    const updated = await storage.updateTask(id, {
+      list: "inbox",
+      category: "admin",
+      sourceStatus: "deadline_update",
+      sourceNote: reason,
+      doneWhen: task.doneWhen || "The relevant source item has the correct deadline",
+    } as any);
+    return { status: 200, body: { moved: "deadline", route, task: updated, reason } };
+  }
+
+  if (route === "blocker") {
+    const updated = await storage.updateTask(id, {
+      list: "inbox",
+      category: task.category || "admin",
+      readiness: "blocked",
+      blockerReason: task.title.slice(0, 160),
+      sourceStatus: "blocker_update",
+      sourceNote: reason,
+      doneWhen: task.doneWhen || "The blocker is attached to the right item or resolved",
+    } as any);
+    return { status: 200, body: { moved: "blocker", route, task: updated, reason } };
   }
 
   if (route === "decision") {

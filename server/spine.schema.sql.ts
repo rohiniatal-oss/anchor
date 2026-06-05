@@ -1,8 +1,10 @@
-// Raw DDL mirroring shared/schema.ts — used ONLY by the spine test harness to
-// stand up a throwaway sqlite DB without invoking drizzle-kit push (which is
-// interactive). Kept beside the tests so a schema change here is obvious.
+// Raw DDL mirroring shared/schema.ts. Applied idempotently by storage.ts on DB
+// open so every DB the app touches (prod data.db, dev, and throwaway test DBs)
+// has the full current schema without invoking drizzle-kit push (interactive).
+// CREATE TABLE IF NOT EXISTS makes this safe to run on an already-pushed DB.
+// Kept as one place so a schema change here is obvious and shared everywhere.
 export const SPINE_DDL = `
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   list TEXT NOT NULL DEFAULT 'inbox',
@@ -40,7 +42,7 @@ CREATE TABLE tasks (
   actual_minutes INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   start TEXT NOT NULL DEFAULT '',
@@ -48,7 +50,7 @@ CREATE TABLE events (
   day TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
-CREATE TABLE jobs (
+CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   company TEXT NOT NULL DEFAULT '',
@@ -77,7 +79,7 @@ CREATE TABLE jobs (
   application_window_status TEXT NOT NULL DEFAULT 'open',
   created_at INTEGER NOT NULL
 );
-CREATE TABLE job_pipeline_steps (
+CREATE TABLE IF NOT EXISTS job_pipeline_steps (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id INTEGER NOT NULL,
   step_label TEXT NOT NULL,
@@ -87,7 +89,7 @@ CREATE TABLE job_pipeline_steps (
   task_id INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE proof_asset_steps (
+CREATE TABLE IF NOT EXISTS proof_asset_steps (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   hustle_id INTEGER NOT NULL,
   step_label TEXT NOT NULL,
@@ -97,7 +99,7 @@ CREATE TABLE proof_asset_steps (
   task_id INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE learn (
+CREATE TABLE IF NOT EXISTS learn (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   category TEXT NOT NULL DEFAULT '',
@@ -122,7 +124,7 @@ CREATE TABLE learn (
   deadline_confidence TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
-CREATE TABLE hustles (
+CREATE TABLE IF NOT EXISTS hustles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   note TEXT NOT NULL DEFAULT '',
@@ -136,7 +138,7 @@ CREATE TABLE hustles (
   proof_asset_for_track INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE wins (
+CREATE TABLE IF NOT EXISTS wins (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   text TEXT NOT NULL,
   kind TEXT NOT NULL DEFAULT 'manual',
@@ -144,7 +146,7 @@ CREATE TABLE wins (
   track_id INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE contacts (
+CREATE TABLE IF NOT EXISTS contacts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL DEFAULT '',
   who TEXT NOT NULL DEFAULT '',
@@ -165,7 +167,7 @@ CREATE TABLE contacts (
   related_track_id INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE career_tracks (
+CREATE TABLE IF NOT EXISTS career_tracks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slug TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,
@@ -176,7 +178,7 @@ CREATE TABLE career_tracks (
   why_it_fits TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
-CREATE TABLE day_plans (
+CREATE TABLE IF NOT EXISTS day_plans (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL DEFAULT 'normal',
@@ -188,7 +190,7 @@ CREATE TABLE day_plans (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-CREATE TABLE day_plan_items (
+CREATE TABLE IF NOT EXISTS day_plan_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   plan_id INTEGER NOT NULL,
   sequence INTEGER NOT NULL DEFAULT 0,
@@ -208,7 +210,7 @@ CREATE TABLE day_plan_items (
   parked_at INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE entity_links (
+CREATE TABLE IF NOT EXISTS entity_links (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   from_type TEXT NOT NULL,
   from_id INTEGER NOT NULL,
@@ -217,7 +219,7 @@ CREATE TABLE entity_links (
   relation_type TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE activity_log (
+CREATE TABLE IF NOT EXISTS activity_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_type TEXT NOT NULL,
   source_type TEXT NOT NULL DEFAULT '',

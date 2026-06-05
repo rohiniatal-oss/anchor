@@ -48,7 +48,9 @@ test("low energy with a tiny remaining budget still returns only one MVD", async
 
   assert.equal(r.status, 200);
   assert.equal(r.json.items.length, 1, "tiny budget beats the low-energy two-item cap");
-  assert.match(r.json.plan.note, /One useful thing is enough/i);
+  // Note copy was sharpened by a later merge ("one useful application or track move");
+  // the one-MVD-on-tiny-budget rule (asserted above) is the real invariant.
+  assert.match(r.json.plan.note, /One useful application or track move is enough/i);
 });
 
 test("restart with enough time can still return a shaped sequence", async () => {

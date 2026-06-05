@@ -170,7 +170,10 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   ]);
   const budget = await remainingBudgetFor(day, opts.availableMinutes ?? null);
   const memory = await planningMemoryFor(day);
-  const result = planDay(tasks, jobs, learn, hustles, energy, budget.busyEquivalentMinutes);
+  // Pass the resolved remaining budget directly. Passing busyEquivalentMinutes as a
+  // bare number sent planDay down its wall-clock path (remainingDayMinutes - busy),
+  // which re-introduced clock dependence and ignored the explicit availableMinutes.
+  const result = planDay(tasks, jobs, learn, hustles, energy, { remainingMinutes: budget.remainingMinutes });
   const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
   const corrected = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
   const correctedPlan = corrected.plan;

@@ -10,6 +10,7 @@ import { registerCandidateRoutes } from "./candidates";
 import { registerGoalStateRoutes } from "./goalState";
 import { registerExplorationQueueRoutes } from "./explorationQueue";
 import { registerAnchorTodayRoutes } from "./anchorToday";
+import { registerStrategyBuilderRoutes } from "./strategyBuilderRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
@@ -75,8 +76,8 @@ app.use((req, res, next) => {
 
 (async () => {
   // Capture remains the clean routing contract. Candidate, goal-state,
-  // exploration, and Anchor Today routes sit upstream of generic CRUD because
-  // they create the discovery and planning context.
+  // exploration, Strategy Builder, and Anchor Today routes sit upstream of
+  // generic CRUD because they create the discovery and planning context.
   registerPersistenceAdminRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
@@ -85,6 +86,7 @@ app.use((req, res, next) => {
   registerCandidateRoutes(app);
   registerGoalStateRoutes(app);
   registerExplorationQueueRoutes(app);
+  registerStrategyBuilderRoutes(app);
   registerAnchorTodayRoutes(app);
   await registerRoutes(httpServer, app);
 

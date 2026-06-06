@@ -1441,12 +1441,24 @@ function JobStepRail({ j }: { j: Job }) {
   );
 }
 
+function jobNextAction(j: Job): string | null {
+  if (j.nextStep?.trim()) return j.nextStep.trim();
+  if (j.status === "wishlist") {
+    if (!j.applicationReadiness || j.applicationReadiness === "none") return "Extract requirements and spot your strongest angle";
+    return "Tailor your CV to this role";
+  }
+  if (j.status === "applied") return "Follow up on your application";
+  if (j.status === "interviewing") return "Build your story bank — 3 STAR stories";
+  return null;
+}
+
 function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
   const trackId = getTrackId("jobs", j);
   const linked = useLinkedTaskCount(tasks, "job", j.id);
   const [open, setOpen] = useState(false);
+  const nextAction = jobNextAction(j);
 
   // An eligibility-gated role is a dead end — don't dangle the whole work surface
   // (rail + outreach) under it. It collapses to a quiet "probably skip" state.
@@ -1477,9 +1489,15 @@ function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tra
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
         <TrackChip trackId={trackId} tracks={tracks} />
         {j.deadline && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${deadlineTone(j.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(j.deadline)}</span>}
+        {typeof j.fitScore === "number" && <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary">{j.fitScore}% fit</span>}
         {gated && <ConstraintBadge text={`eligibility: ${j.eligibilityRisk}`} tone="warn" />}
         {windowClosed && !gated && <ConstraintBadge text="window closed" />}
       </div>
+      {!gated && !windowClosed && nextAction && (
+        <p className="mt-1.5 text-xs text-muted-foreground inline-flex items-center gap-1">
+          <ArrowRight className="w-3 h-3 text-primary shrink-0" />{nextAction}
+        </p>
+      )}
 
       {/* ── GATED / CLOSED: quiet dead-end, no work surface ── */}
       {gated ? (

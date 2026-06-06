@@ -462,7 +462,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
       {/* HERO: either the active focus, or the day plan */}
       {pinned ? (
-        <RightNow pinned={pinned} />
+        <RightNow pinned={pinned} onComplete={() => { setPlan(null); setPlanItems([]); }} />
       ) : (
         <div className="mb-6">
           {isLoading || loadingPlan ? (
@@ -845,7 +845,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 }
 
 /* Right Now — activated focus with steps + gentle replanning */
-function RightNow({ pinned }: { pinned: Task }) {
+function RightNow({ pinned, onComplete }: { pinned: Task; onComplete?: () => void }) {
   const { toast } = useToast();
   const [breaking, setBreaking] = useState(false);
   const [unsticking, setUnsticking] = useState(false);
@@ -895,6 +895,7 @@ function RightNow({ pinned }: { pinned: Task }) {
     const result = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
     const parts = [result?.trackName, result?.lane ? `${result.lane} lane` : null, result?.doneThisWeek ? `${result.doneThisWeek} done this week` : null].filter(Boolean);
     toast({ title: "Done and logged.", description: parts.length > 0 ? parts.join(" · ") : "That's momentum." });
+    onComplete?.();
   }
   async function unstick() {
     if (!current) return;

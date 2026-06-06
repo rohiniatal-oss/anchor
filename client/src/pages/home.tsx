@@ -14,6 +14,7 @@ import { NETWORK_LANES, OPEN_LANE, ALL_LANE_KEYS, laneForSourceNetwork, laneLabe
 import { CAPABILITY_DOMAIN_KEYS, domainForLearn, domainLabel } from "@shared/capabilityDomains";
 import { classifyProofAsset, PROOF_ASSET_KIND_LABEL, type ProofAssetKind } from "@shared/proofAssetTemplates";
 import { AnchorLogo } from "@/components/AnchorLogo";
+import { StrategyBuilderPanel } from "@/components/StrategyBuilderPanel";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
@@ -61,15 +62,12 @@ function deadlineTone(d: string): string {
   return "bg-muted text-muted-foreground";
 }
 
-type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins";
+type Tab = "today" | "strategy" | "braindump" | "jobs" | "people" | "build";
 const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] = [
-  { id: "strategy", label: "Strategy", icon: Compass, blurb: "Your paths, at a glance" },
-  { id: "braindump", label: "Brain dump", icon: Sparkles, blurb: "Empty your head" },
-  { id: "jobs", label: "Jobs", icon: Briefcase, blurb: "Your applications" },
-  { id: "network", label: "Network", icon: Users, blurb: "People to reach" },
-  { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
-
-  { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
+  { id: "jobs", label: "Jobs", icon: Briefcase, blurb: "Your pipeline" },
+  { id: "people", label: "People", icon: Users, blurb: "Who you're reaching" },
+  { id: "build", label: "Build", icon: Hammer, blurb: "Learning and proof" },
+  { id: "strategy", label: "Strategy", icon: Compass, blurb: "The big picture" },
 ];
 
 export default function Home() {
@@ -130,10 +128,8 @@ export default function Home() {
         {tab === "strategy" && <StrategyView onOpenTab={go} />}
         {tab === "braindump" && <BrainDumpView />}
         {tab === "jobs" && <JobsView />}
-        {tab === "network" && <NetworkView />}
-        {tab === "learn" && <LearnView />}
-
-        {tab === "wins" && <WinsView />}
+        {tab === "people" && <NetworkView />}
+        {tab === "build" && <BuildView />}
       </main>
     </div>
   );
@@ -439,6 +435,19 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         <Button className="h-10 px-3 shrink-0" variant="outline" onClick={quickCapture} data-testid="button-quick-capture"><Plus className="w-4 h-4 mr-1" /> Capture</Button>
       </div>
 
+      {/* Inbox prompt — surfaces when captures need sorting, links to brain dump */}
+      {(() => {
+        const inboxCount = tasks.filter((t) => t.list === "inbox" && !t.done).length;
+        if (inboxCount === 0) return null;
+        return (
+          <button onClick={() => onOpenTab("braindump")} data-testid="button-inbox-prompt"
+            className="mb-4 w-full flex items-center justify-between gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors">
+            <span className="inline-flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" /> {inboxCount} thing{inboxCount !== 1 ? "s" : ""} in your inbox</span>
+            <span className="inline-flex items-center gap-1 text-primary font-medium">Sort them <ChevronRight className="w-3.5 h-3.5" /></span>
+          </button>
+        );
+      })()}
+
       {/* Thin calendar line */}
       {events.length > 0 && (
         <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
@@ -653,6 +662,7 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
   );
 }
 function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
+  const [builderOpen, setBuilderOpen] = useState(false);
   // P4.6a #5 — ONE unified payload from the single diagnostics engine.
   const { data, isLoading } = useQuery<FrontDoor>({ queryKey: ["/api/strategy/front-door"] });
   const { data: careerTracks = [] } = useCareerTracks();
@@ -699,7 +709,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     );
   };
 
-  const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "learn", contacts: "network", hustles: "strategy" };
+  const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "build", contacts: "people", hustles: "build" };
   const ENTITY_LABEL: Record<UnlinkedItem["entity"], string> = { jobs: "Job", learn: "Learn", contacts: "Contact", hustles: "Proof" };
   async function linkUnlinked(it: UnlinkedItem, trackId: number) {
     await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", "/api/strategy/front-door"]);
@@ -707,8 +717,16 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   return (
     <div>
-      <h1 className="text-xl font-bold tracking-tight">Your paths</h1>
-      <p className="text-sm text-muted-foreground mt-1 mb-5">Where each path stands, and what's holding it back.</p>
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">Strategy</h1>
+          <p className="text-sm text-muted-foreground mt-1">Where each path stands, and what's holding it back.</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setBuilderOpen(true)} data-testid="button-open-strategy-builder">
+          <Sparkles className="w-4 h-4 mr-1.5" /> Strategy builder
+        </Button>
+      </div>
+      <StrategyBuilderPanel open={builderOpen} onClose={() => setBuilderOpen(false)} />
 
       {insights.length > 0 && (
         <div className="mb-6 space-y-2">
@@ -766,15 +784,14 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
 
-      {/* Proof assets live HERE — they exist to make her credible for these tracks,
-          so they belong inside the big-picture view, not as a separate tab. */}
-      <div className="mt-8 pt-6 border-t border-card-border">
-        <ProofAssetsView />
+      <div className="mt-10 pt-8 border-t border-card-border">
+        <WinsView />
       </div>
 
       <div className="flex flex-wrap gap-2 mt-8">
         <Button size="sm" variant="outline" onClick={() => onOpenTab("jobs")}><Briefcase className="w-4 h-4 mr-1" /> Jobs</Button>
-        <Button size="sm" variant="outline" onClick={() => onOpenTab("network")}><Users className="w-4 h-4 mr-1" /> Network</Button>
+        <Button size="sm" variant="outline" onClick={() => onOpenTab("people")}><Users className="w-4 h-4 mr-1" /> People</Button>
+        <Button size="sm" variant="outline" onClick={() => onOpenTab("build")}><Hammer className="w-4 h-4 mr-1" /> Build</Button>
         <Button size="sm" variant="outline" onClick={() => onOpenTab("today")}><Target className="w-4 h-4 mr-1" /> Back to Today</Button>
       </div>
     </div>
@@ -2298,6 +2315,18 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
       <ProofStepRail h={h} />
       <CardActions entity="hustles" id={h.id} trackId={trackId} tracks={tracks}
         onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
+    </div>
+  );
+}
+
+/* ---------------- BUILD (Learn + Proof) ---------------- */
+function BuildView() {
+  return (
+    <div>
+      <LearnView />
+      <div className="mt-10 pt-8 border-t border-card-border">
+        <ProofAssetsView />
+      </div>
     </div>
   );
 }

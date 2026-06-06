@@ -2,6 +2,7 @@ import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/sch
 import { isOpportunityActionable } from "@shared/domainState";
 import { buildTrackSpine } from "./trackSpine";
 import type { CanonicalLaneName } from "./lanes";
+import type { LearningGapSignal } from "./learningStrategy";
 
 // ─────────────────────────────────────────────────────────────────────────
 // ANCHOR BRAIN — adaptive sequencer (NOT a balanced-day picker).
@@ -255,7 +256,7 @@ export function pickDayMode(cands: Candidate[], energy: Energy, context?: Strate
   return "normal";
 }
 
-function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: StrategicContext): RankedCandidate {
+function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: StrategicContext, gapLearnId?: number | null): RankedCandidate {
   let s = 0;
   const trace: string[] = [];
 
@@ -302,6 +303,12 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   s += Math.min(c.skipped, 3) * 4;
   if (c.skipped >= 2) trace.push("has been avoided before, so it should be made smaller");
   if (c.status === "in_progress") { s += 15; trace.push("already in progress"); }
+
+  if (gapLearnId != null && c.source === "learn" && c.sourceId === gapLearnId) {
+    s += 60;
+    trace.push("closes a critical capability gap for the active track");
+  }
+
   if (c.whyNow) trace.push(c.whyNow);
 
   return { c, s, trace };
@@ -344,9 +351,19 @@ export function planDay(
   tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[],
   energy: Energy, capacity: CapacityInput = 0,
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
+  gapSignal?: LearningGapSignal | null,
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const all = gatherCandidates(tasks, jobs, learn, hustles);
+
+  // Surface learning gaps as blockers: when there's an active-track gap with a
+  // resource already in the system, boost that specific Learn item and update its
+  // whyNow so the reason surfaces in the plan explanation.
+  const gapLearnId = (gapSignal?.hasResource && gapSignal.learnId != null) ? gapSignal.learnId : null;
+  if (gapLearnId != null) {
+    const gapc = all.find((c) => c.source === "learn" && c.sourceId === gapLearnId);
+    if (gapc) gapc.whyNow = `closes a critical ${gapSignal!.topGap.label} gap for ${gapSignal!.trackName}`;
+  }
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))
     .filter((x) => x.reason)
@@ -366,7 +383,7 @@ export function planDay(
     };
   }
 
-  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s);
+  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context, gapLearnId)).sort((a, b) => b.s - a.s);
   const maxItems = budget < 45 ? 1
     : budget < 90 ? 1
     : (energy === "low" || mode === "low") ? Math.min(2, cands.length)

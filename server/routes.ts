@@ -6,7 +6,7 @@ import OpenAI from "openai";
 import { recommend, planDay } from "./brain";
 import { createNextTask, materializeJobStep, materializeProofStep, type NextTaskSourceType } from "./nextTask";
 import { getTrackDiagnostics, getUnlinkedItems, getEvidencePayload, getStrategyFrontDoor } from "./strategy";
-import { computeLearningGaps } from "./learningStrategy";
+import { computeLearningGaps, topLearningGapSignal } from "./learningStrategy";
 import { computeWinsSummary } from "./evidence";
 
 import {
@@ -282,9 +282,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.post("/api/brain/plan", async (req, res) => {
     const energy = ["low","medium","high"].includes(req.body?.energy) ? req.body.energy : "medium";
     const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
-    const [tasks, jobs, learn, hustles, events] = await Promise.all([
+    const [tasks, jobs, learn, hustles, events, gapResult] = await Promise.all([
       storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getEvents(day),
+      computeLearningGaps(),
     ]);
+    const gapSignal = topLearningGapSignal(gapResult.tracks);
     // Estimate minutes the calendar already eats (timed events only).
     let busy = 0;
     for (const e of events) {
@@ -295,7 +297,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         if (mins > 0 && mins < 12 * 60) busy += mins;
       } else { busy += 45; } // untimed event -> assume ~45m
     }
-    const r = planDay(tasks, jobs, learn, hustles, energy, busy);
+    const r = planDay(tasks, jobs, learn, hustles, energy, busy, [], [], gapSignal);
     res.json({ ...r, busyMinutes: busy, events });
   });
 
@@ -385,9 +387,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   }
 
   async function buildPlan(day: string, energy: "low"|"medium"|"high") {
-    const [tasks, jobs, learn, hustles] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles()]);
+    const [tasks, jobs, learn, hustles, gapResult] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), computeLearningGaps()]);
+    const gapSignal = topLearningGapSignal(gapResult.tracks);
     const busy = await busyMinutesFor(day);
-    const r = planDay(tasks, jobs, learn, hustles, energy, busy);
+    const r = planDay(tasks, jobs, learn, hustles, energy, busy, [], [], gapSignal);
     let plan = await storage.getPlanByDate(day);
     const planMode = r.mode === "low" ? "low_energy" : r.mode;
     if (!plan) plan = await storage.createPlan({ date: day, mode: planMode, energy, status: "active", enoughForToday: false, note: r.note } as any);

@@ -271,6 +271,7 @@ export type LearningGapSignal = {
   topGap: RankedGap;
   recommendedMove: string;
   hasResource: boolean; // true when a Learn item already addresses the top gap
+  learnId: number | null; // the specific Learn item id to act on next (null when no resource)
 };
 
 export function topLearningGapSignal(gaps: TrackLearningGap[]): LearningGapSignal | null {
@@ -288,6 +289,7 @@ export function topLearningGapSignal(gaps: TrackLearningGap[]): LearningGapSigna
     return {
       trackId: g.trackId, trackName: g.name,
       gapDomains: g.gapDomains, topGap, recommendedMove, hasResource,
+      learnId: step?.learnId ?? null,
     };
   }
   return null;

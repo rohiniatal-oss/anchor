@@ -663,9 +663,39 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
 }
 function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [builderOpen, setBuilderOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState<{ created: string[]; reconciledTracks: { track: string }[] } | null>(null);
+  const { toast } = useToast();
   // P4.6a #5 — ONE unified payload from the single diagnostics engine.
   const { data, isLoading } = useQuery<FrontDoor>({ queryKey: ["/api/strategy/front-door"] });
   const { data: careerTracks = [] } = useCareerTracks();
+
+  async function applyStrategy() {
+    setApplying(true); setApplyResult(null);
+    try {
+      const r = await mutateAndInvalidate("POST", "/api/strategy-builder/apply", {},
+        ["/api/career-tracks", "/api/tasks", "/api/contacts", "/api/learn", "/api/hustles", "/api/strategy/front-door"]);
+      setApplyResult(r);
+    } catch { toast({ title: "Sync failed", description: "Try again in a moment." }); }
+    finally { setApplying(false); }
+  }
+
+  function summarizeSync(created: string[], trackCount: number): string {
+    const tasks = created.filter((x) => x.startsWith("track_")).length;
+    const contacts = created.filter((x) => x.startsWith("contact:")).length;
+    const learns = created.filter((x) => x.startsWith("learn:")).length;
+    const proofs = created.filter((x) => x.startsWith("proof:")).length;
+    const newTracks = created.filter((x) => x.startsWith("track:")).length;
+    const parts: string[] = [];
+    if (trackCount > 0) parts.push(`${trackCount} track${trackCount !== 1 ? "s" : ""} reconciled`);
+    if (newTracks > 0) parts.push(`${newTracks} new track${newTracks !== 1 ? "s" : ""}`);
+    if (tasks > 0) parts.push(`${tasks} task${tasks !== 1 ? "s" : ""} queued`);
+    if (contacts > 0) parts.push(`${contacts} contact${contacts !== 1 ? "s" : ""} added`);
+    if (learns > 0) parts.push(`${learns} resource${learns !== 1 ? "s" : ""} added`);
+    if (proofs > 0) parts.push(`${proofs} proof item${proofs !== 1 ? "s" : ""}`);
+    return parts.length > 0 ? parts.join(" · ") : "Everything's already up to date.";
+  }
+
   if (isLoading) return <Loading />;
   const tracks = data?.tracks || [];
   const insights = (data?.insights || []).map((i) => i.text);
@@ -722,10 +752,25 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           <h1 className="text-xl font-bold tracking-tight">Strategy</h1>
           <p className="text-sm text-muted-foreground mt-1">Where each path stands, and what's holding it back.</p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => setBuilderOpen(true)} data-testid="button-open-strategy-builder">
-          <Sparkles className="w-4 h-4 mr-1.5" /> Strategy builder
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={applyStrategy} disabled={applying} data-testid="button-sync-strategy">
+            {applying ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+            {applying ? "Syncing…" : "Sync"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setBuilderOpen(true)} data-testid="button-open-strategy-builder">
+            <Sparkles className="w-4 h-4 mr-1.5" /> Builder
+          </Button>
+        </div>
       </div>
+      {applyResult && (
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 mb-5 flex items-center justify-between gap-3" data-testid="apply-result-banner">
+          <div>
+            <p className="text-sm font-medium">Strategy synced.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{summarizeSync(applyResult.created, applyResult.reconciledTracks.length)}</p>
+          </div>
+          <button onClick={() => setApplyResult(null)} className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Dismiss"><X className="w-4 h-4" /></button>
+        </div>
+      )}
       <StrategyBuilderPanel open={builderOpen} onClose={() => setBuilderOpen(false)} />
 
       {insights.length > 0 && (

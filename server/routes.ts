@@ -93,10 +93,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } else if (task.sourceType === "hustle" && task.sourceId) {
       const h = (await storage.getHustles()).find((x) => x.id === task.sourceId);
       if (h) {
-        sourceContext = `This is a PROOF-ASSET / project step (${h.title}, stage: ${h.stage}). ${h.note ? "Notes: " + h.note : ""}`;
-        playbook = /substack/i.test(h.title)
-          ? "WRITING playbook: pick audience \u2192 sharpen the claim \u2192 outline \u2192 ugly first draft \u2192 publish. If brand new, first step = decide the angle (a decision, not producing)."
-          : "BUILD playbook: define the smallest testable slice \u2192 build it \u2192 try it \u2192 note what to change.";
+        sourceContext = [
+          `This is a PROOF-ASSET task. Title: "${h.title}", stage: ${h.stage}.`,
+          `A proof asset is a short published piece (150-word essay, Substack post) showing genuine insight \u2014 structure: what's the real problem \u2192 what's usually missed \u2192 your take \u2192 one example from your own work.`,
+          h.coreClaim ? `Target core claim: ${h.coreClaim}.` : "",
+          h.contentPillar ? `Content pillar: ${h.contentPillar}.` : "",
+          h.audience ? `Target audience: ${h.audience}.` : "",
+          h.firstPostIdea ? `First post idea: ${h.firstPostIdea}.` : "",
+          h.note ? `Notes: ${h.note}` : "",
+        ].filter(Boolean).join(" ");
+        const hasAngle = !!(h.coreClaim && h.coreClaim.trim());
+        const isBuildTask = /tool|app|website|portfolio|code|build/i.test(h.title) && !/write|post|essay|substack/i.test(h.title);
+        playbook = isBuildTask
+          ? "BUILD playbook: define the smallest testable slice \u2192 build it \u2192 try it \u2192 note what to change."
+          : hasAngle
+          ? `WRITING playbook (angle already exists): verify the claim still holds \u2192 outline: problem / missed thing / your take / supporting example \u2192 write 150 words \u2192 edit \u2192 post.`
+          : `PROOF-ASSET playbook (no angle yet): A proof asset needs a genuine POV BEFORE drafting. Steps must follow: (1) UNDERSTAND the space \u2014 read 2-3 things on this topic, identify what the conventional wisdom is, spot what practitioners usually miss. (2) FIND YOUR ANGLE \u2014 one observation from your own work (Bain, TBI, Abraaj) that challenges or adds to the conventional take. (3) NAIL THE CLAIM in one sentence: \u201cX is true, and here is why it's missed.\u201d (4) DRAFT 150 words: problem \u2192 missed thing \u2192 your take \u2192 your supporting example. (5) POST. First step must be understanding the problem space \u2014 not writing.`;
       }
     } else if (task.sourceUrl || task.sourceNote) {
       sourceContext = `${task.sourceNote ? "Context: " + task.sourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;

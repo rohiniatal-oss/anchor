@@ -3,7 +3,15 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 
 type WorkObject = "Artifact" | "Decision" | "Knowledge" | "Capability" | "Pipeline" | "Problem";
-type BreakdownStep = { text: string; done: false; substeps?: string[] };
+type WorkflowState = {
+  workObject: WorkObject | string;
+  workflow: string[];
+  currentStage: string;
+  stageOutput: string;
+  advanceCondition: string;
+  confidence?: string;
+};
+type BreakdownStep = { text: string; done: false; substeps?: string[]; workflowState?: WorkflowState };
 type SourceBundle = {
   sourceContext: string;
   playbook: string;
@@ -23,15 +31,16 @@ const WORKFLOWS: Record<WorkObject, string[]> = {
 function compact(value: unknown, max = 90) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
-
 function cleanText(value: unknown, max = 140) {
   return compact(value, max).replace(/^[-*\d.)\s]+/, "").trim();
 }
-
 function keyword(text: string, re: RegExp) {
   return re.test(text.toLowerCase());
 }
-
+function normalizeWorkObject(value: unknown, fallback: WorkObject): WorkObject | string {
+  const v = String(value || "").trim();
+  return ["Artifact", "Decision", "Knowledge", "Capability", "Pipeline", "Problem"].includes(v) ? v : fallback;
+}
 function normalizeStep(raw: any): BreakdownStep | null {
   if (typeof raw === "string") {
     const text = cleanText(raw);
@@ -44,25 +53,20 @@ function normalizeStep(raw: any): BreakdownStep | null {
   const substeps = rawSubsteps.map((s: unknown) => cleanText(s, 120)).filter(Boolean).slice(0, 4);
   return substeps.length ? { text, done: false, substeps } : { text, done: false };
 }
-
-function parseBreakdown(raw: string): { question?: string; steps: BreakdownStep[]; metadata?: Record<string, unknown> } {
+function parseBreakdown(raw: string, fallbackObject: WorkObject): { question?: string; steps: BreakdownStep[]; workflowState?: WorkflowState } {
   const text = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
   try {
     const parsed = JSON.parse(text);
     if (typeof parsed?.question === "string") return { question: cleanText(parsed.question, 160), steps: [] };
     const rawSteps = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.steps) ? parsed.steps : [];
     const steps = rawSteps.map(normalizeStep).filter(Boolean).slice(0, 6) as BreakdownStep[];
-    return {
-      steps,
-      metadata: {
-        workObject: parsed?.workObject,
-        workflow: parsed?.workflow,
-        currentStage: parsed?.currentStage,
-        stageOutput: parsed?.stageOutput,
-        advanceCondition: parsed?.advanceCondition,
-        confidence: parsed?.confidence,
-      },
-    };
+    const workObject = normalizeWorkObject(parsed?.workObject, fallbackObject);
+    const workflow = Array.isArray(parsed?.workflow) ? parsed.workflow.map((x: unknown) => cleanText(x, 80)).filter(Boolean) : WORKFLOWS[workObject as WorkObject] || WORKFLOWS[fallbackObject];
+    const currentStage = cleanText(parsed?.currentStage || "", 80);
+    const stageOutput = cleanText(parsed?.stageOutput || "", 140);
+    const advanceCondition = cleanText(parsed?.advanceCondition || (stageOutput ? `Advance when: ${stageOutput}` : ""), 160);
+    const workflowState = currentStage || stageOutput ? { workObject, workflow, currentStage, stageOutput, advanceCondition, confidence: cleanText(parsed?.confidence || "medium", 20) } : undefined;
+    return { steps, workflowState };
   } catch {}
   const steps = text.split(/\n+/).map((s) => normalizeStep(s)).filter(Boolean).slice(0, 6) as BreakdownStep[];
   return { steps };
@@ -70,11 +74,22 @@ function parseBreakdown(raw: string): { question?: string; steps: BreakdownStep[
 
 function classifyWorkObject(task: any, bundle: SourceBundle): WorkObject {
   const text = `${task?.title || ""} ${task?.category || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${task?.sourceNote || ""} ${bundle.sourceContext}`.toLowerCase();
-  if (bundle.sourceKind === "job" || keyword(text, /job search|pipeline|network|applications|outreach|follow up|follow-up|shortlist|list of people/)) return "Pipeline";
-  if (bundle.sourceKind === "learn" || keyword(text, /learn|read|understand|research|report|guide|resource|synthesize|synthesise/)) return "Knowledge";
-  if (keyword(text, /practice|drill|improve|skill|interviewing|storylining|excel|capability|development/)) return "Capability";
-  if (keyword(text, /decide|choose|prioriti|pick|whether|option|trade[ -]?off/)) return "Decision";
-  if (keyword(text, /fix|blocked|bug|confus|stuck|messy|unblock|not working/)) return "Problem";
+
+  if (keyword(text, /fix|blocked|bug|confus|stuck|messy|unblock|not working|error|broken/)) return "Problem";
+  if (keyword(text, /decide|choose|prioriti|pick|whether|option|trade[ -]?off|select/)) return "Decision";
+  if (keyword(text, /practice|drill|improve|skill|interviewing|storylining|excel|capability|development|mock/)) return "Capability";
+  if (keyword(text, /learn|read|understand|research|report|guide|resource|synthesize|synthesise|market scan|role requirements|inspect/)) return "Knowledge";
+  if (keyword(text, /job search|pipeline|networking campaign|network|outreach list|follow up|follow-up|shortlist|list of people|crm|tracker/)) return "Pipeline";
+  if (bundle.sourceKind === "learn") return keyword(text, /practice|drill|mock/) ? "Capability" : "Knowledge";
+  if (bundle.sourceKind === "job") {
+    // A linked job is not automatically a Pipeline. A CV, cover letter, answer,
+    // submission, or application material is an Artifact. A role-market scan is
+    // Knowledge. Only multi-item job-search/networking work is Pipeline.
+    if (keyword(text, /cv|resume|cover|answer|application material|submit|submission|draft|tailor|rewrite|portfolio|sample/)) return "Artifact";
+    if (keyword(text, /requirements|research|understand role|posting|company|market|inspect/)) return "Knowledge";
+    return "Artifact";
+  }
+  if (bundle.sourceKind === "hustle") return "Artifact";
   return "Artifact";
 }
 
@@ -85,12 +100,16 @@ function inferConcreteNoun(task: any, bundle: SourceBundle) {
   if (bundle.sourceKind === "hustle") return compact(bundle.source?.title || title, 120);
   return title || "this task";
 }
-
 function makeSteps(defs: Array<[string, string[]?]>): BreakdownStep[] {
   return defs.map(([text, substeps]) => ({ text, done: false as const, ...(substeps?.length ? { substeps } : {}) }));
 }
+function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowState): BreakdownStep[] {
+  if (!workflowState || !steps.length) return steps;
+  const [first, ...rest] = steps;
+  return [{ ...first, workflowState }, ...rest];
+}
 
-function fallbackStagePlan(task: any, bundle: SourceBundle): { metadata: Record<string, unknown>; steps: BreakdownStep[] } {
+function fallbackStagePlan(task: any, bundle: SourceBundle): { workflowState: WorkflowState; steps: BreakdownStep[] } {
   const object = classifyWorkObject(task, bundle);
   const workflow = WORKFLOWS[object];
   const noun = inferConcreteNoun(task, bundle);
@@ -100,18 +119,34 @@ function fallbackStagePlan(task: any, bundle: SourceBundle): { metadata: Record<
   let stageOutput = "One concrete stage output exists";
   let actions: string[] = [];
 
-  if (object === "Pipeline" && (bundle.sourceKind === "job" || keyword(text, /role|application|posting|cv|cover/))) {
-    currentStage = keyword(text, /cv|cover|answer|material/) ? "Execute next batch" : "Define target";
-    stageOutput = keyword(text, /cv|cover|answer|material/)
-      ? "One application material is drafted or improved"
-      : "Role requirements and strongest application angle are captured";
-    actions = keyword(text, /cv|cover|answer|material/)
-      ? ["Open the application material", "Identify the role requirement it must prove", "Draft the first useful section", "Save the next gap or edit"]
-      : ["Open the role posting", "Extract must-haves and nice-to-haves", "Mark repeated themes", "Name the strongest application angle"];
+  if (bundle.sourceKind === "job" && object === "Artifact") {
+    if (keyword(text, /cv|resume|tailor|rewrite/)) {
+      currentStage = "Structure";
+      stageOutput = "Three role-relevant CV bullets are selected and ready to rewrite";
+      actions = ["Open CV and role posting", "Highlight repeated role keywords", "Choose three matching bullets", "Mark one missing proof point"];
+    } else if (keyword(text, /cover|answer|question/)) {
+      currentStage = "Structure";
+      stageOutput = "One application answer outline exists";
+      actions = ["Copy the exact question", "State the answer claim", "Pick supporting evidence", "Draft the outline only"];
+    } else {
+      currentStage = "Clarify purpose";
+      stageOutput = "The strongest application angle is clear";
+      actions = ["Open the role posting", "Name the role's real ask", "Map strongest evidence", "Choose next material"];
+    }
+  } else if (object === "Knowledge" && bundle.sourceKind === "job") {
+    currentStage = "Orient";
+    stageOutput = "Must-haves, nice-to-haves, and hidden asks are captured";
+    actions = ["Open the role posting", "Extract must-have requirements", "Extract nice-to-haves", "Mark repeated themes"];
+  } else if (object === "Pipeline") {
+    currentStage = keyword(text, /follow|reply|message|outreach/) ? "Execute next batch" : "Define target";
+    stageOutput = currentStage === "Define target" ? "Target group and success criteria are clear" : "One batch action is sent or logged";
+    actions = currentStage === "Define target"
+      ? ["Name the target group", "Define success criteria", "List the first batch", "Choose the top priority"]
+      : ["Open the batch list", "Choose one target", "Draft the action", "Send or log it"];
   } else if (object === "Knowledge") {
     currentStage = "Orient";
     stageOutput = "One useful slice and output are chosen";
-    actions = ["Open the resource", "Scan headings or summary", "Choose the relevant slice", "Name the output to create"];
+    actions = ["Open the resource", "Scan headings or summary", "Choose the useful slice", "Name the output to create"];
   } else if (object === "Capability") {
     currentStage = "Practise";
     stageOutput = "One practice output exists";
@@ -132,23 +167,22 @@ function fallbackStagePlan(task: any, bundle: SourceBundle): { metadata: Record<
       : ["Open the task context", "Write the intended audience", "Name the final artifact", "List required inputs"];
   }
 
-  return {
-    metadata: {
-      workObject: object,
-      workflow,
-      currentStage,
-      stageOutput,
-      advanceCondition: `Advance when: ${stageOutput}`,
-      confidence: "fallback",
-    },
-    steps: makeSteps([
-      [`Map the ${object.toLowerCase()} workflow`, workflow.slice(0, 5)],
-      ["Locate the current stage", [currentStage]],
-      ["Define this stage output", [stageOutput]],
-      ["Break this stage into actions", actions],
-      ["Execute until this output exists"],
-    ]),
+  const workflowState: WorkflowState = {
+    workObject: object,
+    workflow,
+    currentStage,
+    stageOutput,
+    advanceCondition: `Advance when: ${stageOutput}`,
+    confidence: "fallback",
   };
+  const steps = makeSteps([
+    [`Map the ${object.toLowerCase()} workflow`, workflow.slice(0, 5)],
+    ["Locate the current stage", [currentStage]],
+    ["Define this stage output", [stageOutput]],
+    ["Break this stage into actions", actions],
+    ["Execute until this output exists"],
+  ]);
+  return { workflowState, steps };
 }
 
 async function buildSourceContext(task: any): Promise<SourceBundle> {
@@ -162,7 +196,7 @@ async function buildSourceContext(task: any): Promise<SourceBundle> {
       source = j;
       sourceKind = "job";
       sourceContext = `This is a JOB / OPPORTUNITY item. Role: ${j.title} at ${j.company}. Status: ${j.status}. Readiness: ${j.applicationReadiness}. Fit score: ${j.fitScore ?? "unknown"}. Archetype: ${j.roleArchetype || "unknown"}. Narrative angle: ${j.narrativeAngle || "unset"}. ${j.note ? "Posting notes: " + j.note : ""} ${j.url ? "URL: " + j.url : ""}`;
-      playbook = "Usually Pipeline or Artifact. Map the role/application workflow, locate the current stage, define the stage output, then break only that stage down.";
+      playbook = "Classify by the task intent, not by job source. CV/cover/answers/submission are Artifact. Role research is Knowledge. Multi-role search or networking is Pipeline.";
     }
   } else if (task.sourceType === "learn" && task.sourceId) {
     const l = (await storage.getLearn()).find((x) => x.id === task.sourceId);
@@ -193,10 +227,11 @@ export function registerTaskBreakdownRoutes(app: Express) {
     if (!task) return res.status(404).json({ error: "Not found" });
     const context = String(req.body?.context || "").slice(0, 500);
     const bundle = await buildSourceContext(task);
+    const fallbackObject = classifyWorkObject(task, bundle);
 
     let question = "";
     let steps: BreakdownStep[] = [];
-    let metadata: Record<string, unknown> = {};
+    let workflowState: WorkflowState | undefined;
     try {
       const client = new OpenAI();
       const r = await client.responses.create({
@@ -210,37 +245,33 @@ export function registerTaskBreakdownRoutes(app: Express) {
           `4. Define the output that completes this stage.\n` +
           `5. Break down only the current stage into discrete self-contained actions, with substeps if useful.\n` +
           `6. Define when to advance.\n\n` +
+          `Classify by intent, not source type. A linked job task can be Artifact, Knowledge, Decision, Pipeline, Problem, or Capability. ` +
           `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
           `Return ONLY JSON: {"workObject":"...","workflow":["..."],"currentStage":"...","stageOutput":"...","confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
           `${bundle.playbook ? `Relevant playbook: ${bundle.playbook}\n` : ""}` +
+          `Default work object if uncertain: ${fallbackObject}\n` +
           `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
           `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
           `${context ? `User context: ${context}\n` : ""}`,
       });
-      const parsed = parseBreakdown(r.output_text || "");
+      const parsed = parseBreakdown(r.output_text || "", fallbackObject);
       question = parsed.question || "";
       steps = parsed.steps;
-      metadata = parsed.metadata || {};
+      workflowState = parsed.workflowState;
     } catch {
       steps = [];
     }
 
     if (question && !context) return res.json({ question });
-    if (!steps.length) {
+    if (!steps.length || !workflowState) {
       const fallback = fallbackStagePlan(task, bundle);
       steps = fallback.steps;
-      metadata = fallback.metadata;
+      workflowState = fallback.workflowState;
     }
-    const sourceNoteParts = [
-      metadata.workObject ? `Work object: ${metadata.workObject}` : "",
-      metadata.currentStage ? `Current stage: ${metadata.currentStage}` : "",
-      metadata.stageOutput ? `Stage output: ${metadata.stageOutput}` : "",
-      metadata.advanceCondition ? `Advance: ${metadata.advanceCondition}` : "",
-    ].filter(Boolean);
+    steps = attachWorkflowState(steps, workflowState);
     const updated = await storage.updateTask(id, {
       steps: JSON.stringify(steps),
-      minimumOutcome: typeof metadata.stageOutput === "string" ? metadata.stageOutput : task.minimumOutcome,
-      sourceNote: sourceNoteParts.length ? `${task.sourceNote ? task.sourceNote + "\n" : ""}${sourceNoteParts.join(" | ")}` : task.sourceNote,
+      minimumOutcome: workflowState.stageOutput || task.minimumOutcome,
     });
     res.json(updated);
   });

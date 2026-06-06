@@ -10,6 +10,7 @@ type WorkflowState = {
   stageOutput: string;
   advanceCondition: string;
   confidence?: string;
+  inheritedFrom?: string;
 };
 type BreakdownStep = { text: string; done: false; substeps?: string[]; workflowState?: WorkflowState };
 type SourceBundle = {
@@ -17,6 +18,8 @@ type SourceBundle = {
   playbook: string;
   sourceKind: "job" | "learn" | "hustle" | "task";
   source: any;
+  parentContext: string;
+  parentWorkflow?: WorkflowState;
 };
 
 const WORKFLOWS: Record<WorkObject, string[]> = {
@@ -27,6 +30,9 @@ const WORKFLOWS: Record<WorkObject, string[]> = {
   Pipeline: ["Define target", "Build list", "Prioritise", "Execute next batch", "Track", "Follow up", "Review conversion"],
   Problem: ["Define symptom", "Diagnose cause", "Choose fix options", "Test", "Implement", "Verify"],
 };
+
+const APPLICATION_WORKFLOW = ["Understand role", "Map evidence", "Handle gaps", "Build materials", "Submit", "Follow up"];
+const PROOF_WORKFLOW = ["Define claim", "Choose audience", "Gather evidence", "Draft fragment", "Save for reuse"];
 
 function compact(value: unknown, max = 90) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -53,7 +59,7 @@ function normalizeStep(raw: any): BreakdownStep | null {
   const substeps = rawSubsteps.map((s: unknown) => cleanText(s, 120)).filter(Boolean).slice(0, 4);
   return substeps.length ? { text, done: false, substeps } : { text, done: false };
 }
-function parseBreakdown(raw: string, fallbackObject: WorkObject): { question?: string; steps: BreakdownStep[]; workflowState?: WorkflowState } {
+function parseBreakdown(raw: string, fallbackObject: WorkObject, inheritedWorkflow?: WorkflowState): { question?: string; steps: BreakdownStep[]; workflowState?: WorkflowState } {
   const text = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
   try {
     const parsed = JSON.parse(text);
@@ -61,11 +67,11 @@ function parseBreakdown(raw: string, fallbackObject: WorkObject): { question?: s
     const rawSteps = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.steps) ? parsed.steps : [];
     const steps = rawSteps.map(normalizeStep).filter(Boolean).slice(0, 6) as BreakdownStep[];
     const workObject = normalizeWorkObject(parsed?.workObject, fallbackObject);
-    const workflow = Array.isArray(parsed?.workflow) ? parsed.workflow.map((x: unknown) => cleanText(x, 80)).filter(Boolean) : WORKFLOWS[workObject as WorkObject] || WORKFLOWS[fallbackObject];
-    const currentStage = cleanText(parsed?.currentStage || "", 80);
-    const stageOutput = cleanText(parsed?.stageOutput || "", 140);
-    const advanceCondition = cleanText(parsed?.advanceCondition || (stageOutput ? `Advance when: ${stageOutput}` : ""), 160);
-    const workflowState = currentStage || stageOutput ? { workObject, workflow, currentStage, stageOutput, advanceCondition, confidence: cleanText(parsed?.confidence || "medium", 20) } : undefined;
+    const workflow = Array.isArray(parsed?.workflow) ? parsed.workflow.map((x: unknown) => cleanText(x, 80)).filter(Boolean) : inheritedWorkflow?.workflow || WORKFLOWS[workObject as WorkObject] || WORKFLOWS[fallbackObject];
+    const currentStage = cleanText(parsed?.currentStage || inheritedWorkflow?.currentStage || "", 80);
+    const stageOutput = cleanText(parsed?.stageOutput || inheritedWorkflow?.stageOutput || "", 140);
+    const advanceCondition = cleanText(parsed?.advanceCondition || inheritedWorkflow?.advanceCondition || (stageOutput ? `Advance when: ${stageOutput}` : ""), 160);
+    const workflowState = currentStage || stageOutput ? { workObject, workflow, currentStage, stageOutput, advanceCondition, confidence: cleanText(parsed?.confidence || "medium", 20), inheritedFrom: inheritedWorkflow?.inheritedFrom } : undefined;
     return { steps, workflowState };
   } catch {}
   const steps = text.split(/\n+/).map((s) => normalizeStep(s)).filter(Boolean).slice(0, 6) as BreakdownStep[];
@@ -82,9 +88,6 @@ function classifyWorkObject(task: any, bundle: SourceBundle): WorkObject {
   if (keyword(text, /job search|pipeline|networking campaign|network|outreach list|follow up|follow-up|shortlist|list of people|crm|tracker/)) return "Pipeline";
   if (bundle.sourceKind === "learn") return keyword(text, /practice|drill|mock/) ? "Capability" : "Knowledge";
   if (bundle.sourceKind === "job") {
-    // A linked job is not automatically a Pipeline. A CV, cover letter, answer,
-    // submission, or application material is an Artifact. A role-market scan is
-    // Knowledge. Only multi-item job-search/networking work is Pipeline.
     if (keyword(text, /cv|resume|cover|answer|application material|submit|submission|draft|tailor|rewrite|portfolio|sample/)) return "Artifact";
     if (keyword(text, /requirements|research|understand role|posting|company|market|inspect/)) return "Knowledge";
     return "Artifact";
@@ -108,63 +111,82 @@ function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowSta
   const [first, ...rest] = steps;
   return [{ ...first, workflowState }, ...rest];
 }
+function parentWorkflowFor(task: any, bundle: SourceBundle): WorkflowState | undefined {
+  const text = `${task?.title || ""} ${task?.category || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
+  if (bundle.sourceKind === "job") {
+    const readiness = String(bundle.source?.applicationReadiness || "none");
+    const status = String(bundle.source?.status || "wishlist");
+    const currentStage = status === "applied" ? "Follow up"
+      : status === "interviewing" ? "Build materials"
+      : keyword(text, /cv|cover|answer|question|material|sample|draft|tailor|submit/) || readiness !== "none" ? "Build materials"
+      : keyword(text, /gap|eligibility|visa|constraint/) ? "Handle gaps"
+      : keyword(text, /evidence|story|experience|proof/) ? "Map evidence"
+      : "Understand role";
+    const stageOutput = currentStage === "Understand role" ? "Role requirements and hidden asks are captured"
+      : currentStage === "Map evidence" ? "Requirements are matched to credible evidence"
+      : currentStage === "Handle gaps" ? "Gaps and constraints have mitigation lines"
+      : currentStage === "Build materials" ? "The next application material is drafted or improved"
+      : currentStage === "Submit" ? "Application is submitted with required materials"
+      : "Follow-up action is sent or logged";
+    return { workObject: "Artifact", workflow: APPLICATION_WORKFLOW, currentStage, stageOutput, advanceCondition: `Advance when: ${stageOutput}`, confidence: "parent", inheritedFrom: `job:${bundle.source?.id || task.sourceId || "unknown"}` };
+  }
+  if (bundle.sourceKind === "learn") {
+    const workflow = keyword(text, /practice|drill|mock/) ? WORKFLOWS.Capability : WORKFLOWS.Knowledge;
+    const workObject = keyword(text, /practice|drill|mock/) ? "Capability" : "Knowledge";
+    const currentStage = workObject === "Capability" ? "Practise" : "Orient";
+    const stageOutput = bundle.source?.requiredOutput || (workObject === "Capability" ? "One practice output exists" : "One useful slice and output are chosen");
+    return { workObject, workflow, currentStage, stageOutput, advanceCondition: `Advance when: ${stageOutput}`, confidence: "parent", inheritedFrom: `learn:${bundle.source?.id || task.sourceId || "unknown"}` };
+  }
+  if (bundle.sourceKind === "hustle") {
+    const currentStage = bundle.source?.coreClaim ? "Gather evidence" : "Define claim";
+    const stageOutput = currentStage === "Define claim" ? "One clear proof claim exists" : "Evidence for the proof claim is selected";
+    return { workObject: "Artifact", workflow: PROOF_WORKFLOW, currentStage, stageOutput, advanceCondition: `Advance when: ${stageOutput}`, confidence: "parent", inheritedFrom: `hustle:${bundle.source?.id || task.sourceId || "unknown"}` };
+  }
+  return undefined;
+}
 
 function fallbackStagePlan(task: any, bundle: SourceBundle): { workflowState: WorkflowState; steps: BreakdownStep[] } {
-  const object = classifyWorkObject(task, bundle);
-  const workflow = WORKFLOWS[object];
-  const noun = inferConcreteNoun(task, bundle);
+  const inherited = bundle.parentWorkflow;
+  const object = (inherited?.workObject as WorkObject) || classifyWorkObject(task, bundle);
+  const workflow = inherited?.workflow || WORKFLOWS[object];
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
 
-  let currentStage = workflow[0];
-  let stageOutput = "One concrete stage output exists";
+  let currentStage = inherited?.currentStage || workflow[0];
+  let stageOutput = inherited?.stageOutput || "One concrete stage output exists";
   let actions: string[] = [];
 
   if (bundle.sourceKind === "job" && object === "Artifact") {
-    if (keyword(text, /cv|resume|tailor|rewrite/)) {
-      currentStage = "Structure";
-      stageOutput = "Three role-relevant CV bullets are selected and ready to rewrite";
-      actions = ["Open CV and role posting", "Highlight repeated role keywords", "Choose three matching bullets", "Mark one missing proof point"];
-    } else if (keyword(text, /cover|answer|question/)) {
-      currentStage = "Structure";
-      stageOutput = "One application answer outline exists";
-      actions = ["Copy the exact question", "State the answer claim", "Pick supporting evidence", "Draft the outline only"];
+    if (currentStage === "Understand role") {
+      actions = ["Open the role posting", "Extract must-have requirements", "Extract nice-to-haves", "Mark hidden asks"];
+    } else if (currentStage === "Map evidence") {
+      actions = ["List key requirements", "Match one example to each", "Flag weak proof", "Choose strongest story"];
+    } else if (currentStage === "Handle gaps") {
+      actions = ["Name the gap", "Choose explain or reframe", "Draft mitigation line", "Add to notes"];
+    } else if (currentStage === "Build materials") {
+      if (keyword(text, /cv|resume|tailor|rewrite/)) actions = ["Open CV and role posting", "Highlight repeated role keywords", "Choose three matching bullets", "Rewrite the first bullet"];
+      else if (keyword(text, /cover|answer|question/)) actions = ["Copy the exact question", "State the answer claim", "Pick supporting evidence", "Draft the outline only"];
+      else actions = ["Open application material", "Identify what it must prove", "Draft the first useful section", "Save next gap"];
     } else {
-      currentStage = "Clarify purpose";
-      stageOutput = "The strongest application angle is clear";
-      actions = ["Open the role posting", "Name the role's real ask", "Map strongest evidence", "Choose next material"];
+      actions = ["Open the related application", "Choose the next required action", "Complete or log it", "Record follow-up"];
     }
-  } else if (object === "Knowledge" && bundle.sourceKind === "job") {
-    currentStage = "Orient";
-    stageOutput = "Must-haves, nice-to-haves, and hidden asks are captured";
-    actions = ["Open the role posting", "Extract must-have requirements", "Extract nice-to-haves", "Mark repeated themes"];
   } else if (object === "Pipeline") {
-    currentStage = keyword(text, /follow|reply|message|outreach/) ? "Execute next batch" : "Define target";
-    stageOutput = currentStage === "Define target" ? "Target group and success criteria are clear" : "One batch action is sent or logged";
+    currentStage = inherited?.currentStage || (keyword(text, /follow|reply|message|outreach/) ? "Execute next batch" : "Define target");
+    stageOutput = inherited?.stageOutput || (currentStage === "Define target" ? "Target group and success criteria are clear" : "One batch action is sent or logged");
     actions = currentStage === "Define target"
       ? ["Name the target group", "Define success criteria", "List the first batch", "Choose the top priority"]
       : ["Open the batch list", "Choose one target", "Draft the action", "Send or log it"];
   } else if (object === "Knowledge") {
-    currentStage = "Orient";
-    stageOutput = "One useful slice and output are chosen";
-    actions = ["Open the resource", "Scan headings or summary", "Choose the useful slice", "Name the output to create"];
+    actions = ["Open the resource or source", "Scan headings or summary", "Choose the useful slice", "Name the output to create"];
   } else if (object === "Capability") {
-    currentStage = "Practise";
-    stageOutput = "One practice output exists";
     actions = ["Open a blank practice note", "Pick the exact skill to drill", "Do one small attempt", "Write one improvement note"];
   } else if (object === "Decision") {
-    currentStage = "Frame question";
-    stageOutput = "The decision question and criteria are clear";
     actions = ["Write the decision question", "List the real options", "Choose three criteria", "Mark the current default"];
   } else if (object === "Problem") {
-    currentStage = "Define symptom";
-    stageOutput = "The blocker is stated clearly";
     actions = ["Describe what is not working", "Name when it happens", "List likely causes", "Choose the first cause to test"];
   } else {
-    currentStage = keyword(text, /draft|write|build|create/) ? "Draft" : "Clarify purpose";
-    stageOutput = task?.doneWhen || task?.minimumOutcome || "The current-stage artifact exists";
-    actions = currentStage === "Draft"
-      ? ["Open the working document", "Write the rough first section", "Add missing input notes", "Stop before refining"]
-      : ["Open the task context", "Write the intended audience", "Name the final artifact", "List required inputs"];
+    currentStage = inherited?.currentStage || (keyword(text, /draft|write|build|create/) ? "Draft" : "Clarify purpose");
+    stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "The current-stage artifact exists";
+    actions = currentStage === "Draft" ? ["Open the working document", "Write the rough first section", "Add missing input notes", "Stop before refining"] : ["Open the task context", "Write the intended audience", "Name the final artifact", "List required inputs"];
   }
 
   const workflowState: WorkflowState = {
@@ -172,11 +194,12 @@ function fallbackStagePlan(task: any, bundle: SourceBundle): { workflowState: Wo
     workflow,
     currentStage,
     stageOutput,
-    advanceCondition: `Advance when: ${stageOutput}`,
-    confidence: "fallback",
+    advanceCondition: inherited?.advanceCondition || `Advance when: ${stageOutput}`,
+    confidence: inherited ? "parent+fallback" : "fallback",
+    inheritedFrom: inherited?.inheritedFrom,
   };
   const steps = makeSteps([
-    [`Map the ${object.toLowerCase()} workflow`, workflow.slice(0, 5)],
+    [`Use the inherited ${String(object).toLowerCase()} workflow`, workflow.slice(0, 5)],
     ["Locate the current stage", [currentStage]],
     ["Define this stage output", [stageOutput]],
     ["Break this stage into actions", actions],
@@ -196,7 +219,7 @@ async function buildSourceContext(task: any): Promise<SourceBundle> {
       source = j;
       sourceKind = "job";
       sourceContext = `This is a JOB / OPPORTUNITY item. Role: ${j.title} at ${j.company}. Status: ${j.status}. Readiness: ${j.applicationReadiness}. Fit score: ${j.fitScore ?? "unknown"}. Archetype: ${j.roleArchetype || "unknown"}. Narrative angle: ${j.narrativeAngle || "unset"}. ${j.note ? "Posting notes: " + j.note : ""} ${j.url ? "URL: " + j.url : ""}`;
-      playbook = "Classify by the task intent, not by job source. CV/cover/answers/submission are Artifact. Role research is Knowledge. Multi-role search or networking is Pipeline.";
+      playbook = "Use the parent application workflow first. Then classify the specific task intent: CV/cover/answers/submission are Artifact; role research is Knowledge; multi-role search or networking is Pipeline.";
     }
   } else if (task.sourceType === "learn" && task.sourceId) {
     const l = (await storage.getLearn()).find((x) => x.id === task.sourceId);
@@ -204,7 +227,7 @@ async function buildSourceContext(task: any): Promise<SourceBundle> {
       source = l;
       sourceKind = "learn";
       sourceContext = `This is a LEARNING / DEVELOPMENT item. Title: ${l.title}. Type: ${l.type}. ${l.url ? "URL: " + l.url + ". " : ""}${l.note ? "Notes: " + l.note + ". " : ""}${l.capabilityBuilt ? "Capability: " + l.capabilityBuilt + ". " : ""}Required output: ${l.requiredOutput || "a concrete reusable output"}.`;
-      playbook = "Usually Knowledge or Capability. Do not just read; locate the stage and produce a reusable output.";
+      playbook = "Use the parent learning/capability workflow first. Do not just read; locate the stage and produce a reusable output.";
     }
   } else if (task.sourceType === "hustle" && task.sourceId) {
     const h = (await storage.getHustles()).find((x) => x.id === task.sourceId);
@@ -212,12 +235,17 @@ async function buildSourceContext(task: any): Promise<SourceBundle> {
       source = h;
       sourceKind = "hustle";
       sourceContext = `This is a PROOF-ASSET / project step. Title: ${h.title}. Stage: ${h.stage}. Content pillar: ${h.contentPillar || "unset"}. Core claim: ${h.coreClaim || "unset"}. ${h.note ? "Notes: " + h.note : ""}`;
-      playbook = "Usually Artifact. Map claim → audience → evidence → draft → reuse, then break only the current stage.";
+      playbook = "Use the parent proof workflow first: claim → audience → evidence → draft → reuse. Then break only the current stage.";
     }
   } else if (task.sourceUrl || task.sourceNote) {
     sourceContext = `${task.sourceNote ? "Context: " + task.sourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
   }
-  return { sourceContext, playbook, sourceKind, source };
+  const tempBundle = { sourceContext, playbook, sourceKind, source, parentContext: "" } as SourceBundle;
+  const parentWorkflow = parentWorkflowFor(task, tempBundle);
+  const parentContext = parentWorkflow
+    ? `Inherited workflow from parent ${parentWorkflow.inheritedFrom}: ${parentWorkflow.workflow.join(" → ")}. Current stage: ${parentWorkflow.currentStage}. Stage output: ${parentWorkflow.stageOutput}.`
+    : "";
+  return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow };
 }
 
 export function registerTaskBreakdownRoutes(app: Express) {
@@ -227,7 +255,7 @@ export function registerTaskBreakdownRoutes(app: Express) {
     if (!task) return res.status(404).json({ error: "Not found" });
     const context = String(req.body?.context || "").slice(0, 500);
     const bundle = await buildSourceContext(task);
-    const fallbackObject = classifyWorkObject(task, bundle);
+    const fallbackObject = (bundle.parentWorkflow?.workObject as WorkObject) || classifyWorkObject(task, bundle);
 
     let question = "";
     let steps: BreakdownStep[] = [];
@@ -239,22 +267,24 @@ export function registerTaskBreakdownRoutes(app: Express) {
         input:
           `You are Anchor's workflow-state decomposition engine. Do not jump from task title to steps.\n\n` +
           `Use exactly this logic:\n` +
-          `1. Classify the work object as one of: Artifact, Decision, Knowledge, Capability, Pipeline, Problem.\n` +
-          `2. Select the matching workflow template.\n` +
-          `3. Locate the single current stage. Only one stage may be active.\n` +
-          `4. Define the output that completes this stage.\n` +
-          `5. Break down only the current stage into discrete self-contained actions, with substeps if useful.\n` +
-          `6. Define when to advance.\n\n` +
-          `Classify by intent, not source type. A linked job task can be Artifact, Knowledge, Decision, Pipeline, Problem, or Capability. ` +
+          `1. Read inherited parent workflow first, if present.\n` +
+          `2. Classify the specific task intent as one of: Artifact, Decision, Knowledge, Capability, Pipeline, Problem.\n` +
+          `3. Select or refine the workflow template.\n` +
+          `4. Locate the single current stage. Only one stage may be active.\n` +
+          `5. Define the output that completes this stage.\n` +
+          `6. Break down only the current stage into discrete self-contained actions, with substeps if useful.\n` +
+          `7. Define when to advance.\n\n` +
+          `Prefer inherited workflow context over rediscovering from scratch, but let task intent refine the stage. ` +
           `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
           `Return ONLY JSON: {"workObject":"...","workflow":["..."],"currentStage":"...","stageOutput":"...","confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
           `${bundle.playbook ? `Relevant playbook: ${bundle.playbook}\n` : ""}` +
+          `${bundle.parentContext ? `Parent workflow context: ${bundle.parentContext}\n` : ""}` +
           `Default work object if uncertain: ${fallbackObject}\n` +
           `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
           `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
           `${context ? `User context: ${context}\n` : ""}`,
       });
-      const parsed = parseBreakdown(r.output_text || "", fallbackObject);
+      const parsed = parseBreakdown(r.output_text || "", fallbackObject, bundle.parentWorkflow);
       question = parsed.question || "";
       steps = parsed.steps;
       workflowState = parsed.workflowState;

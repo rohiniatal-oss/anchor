@@ -1489,7 +1489,6 @@ function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tra
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
         <TrackChip trackId={trackId} tracks={tracks} />
         {j.deadline && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${deadlineTone(j.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(j.deadline)}</span>}
-        {typeof j.fitScore === "number" && <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary">{j.fitScore}% fit</span>}
         {gated && <ConstraintBadge text={`eligibility: ${j.eligibilityRisk}`} tone="warn" />}
         {windowClosed && !gated && <ConstraintBadge text="window closed" />}
       </div>

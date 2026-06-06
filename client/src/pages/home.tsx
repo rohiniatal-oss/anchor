@@ -368,7 +368,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tracks = [], isLoading: tracksLoading } = useCareerTracks();
   const day = todayKey();
   const { data: events = [] } = useQuery<Event[]>({ queryKey: ["/api/events", day] });
-  const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
+  const { data: stats } = useQuery<{ doneThisWeek: number; topLane?: string | null; topTrack?: string | null }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
   const today = tasks.filter((t) => t.list === "today" && !t.done);
@@ -542,8 +542,10 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             <div className="flex items-center justify-between mb-2.5">
               <GroupLabel>{alsoToday.length > 0 ? "Also on your list" : "Done today"}</GroupLabel>
               {stats && stats.doneThisWeek > 0 && (
-                <span className="text-xs text-muted-foreground inline-flex items-center gap-1" data-testid="text-momentum">
+                <span className="text-xs text-muted-foreground inline-flex items-center gap-1 flex-wrap justify-end" data-testid="text-momentum">
                   <Trophy className="w-3.5 h-3.5 text-primary" /> {stats.doneThisWeek} done this week
+                  {stats.topLane && <span className="opacity-60">· mostly {stats.topLane}</span>}
+                  {stats.topTrack && <span className="opacity-60">· {stats.topTrack}</span>}
                 </span>
               )}
             </div>
@@ -827,8 +829,9 @@ function RightNow({ pinned }: { pinned: Task }) {
   // Completion goes through the real endpoint: marks done, logs a win, updates the
   // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
-    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
-    toast({ title: "Done — and logged as a win 🎉", description: "That's momentum. Pick your next thing when ready." });
+    const result = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
+    const parts = [result?.trackName, result?.lane ? `${result.lane} lane` : null, result?.doneThisWeek ? `${result.doneThisWeek} done this week` : null].filter(Boolean);
+    toast({ title: "Done and logged.", description: parts.length > 0 ? parts.join(" · ") : "That's momentum." });
   }
   async function unstick() {
     if (!current) return;

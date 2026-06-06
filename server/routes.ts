@@ -17,6 +17,11 @@ import {
 import { isSubmitStep } from "@shared/jobTemplates";
 import { migrateFellowshipLearnRows } from "./fellowshipMigration";
 
+const WIN_CATEGORY_TO_LANE: Record<string, string> = {
+  job_progress: "Applications", learning: "Learning",
+  proof_asset: "Proof", network: "Network", admin: "Stability", mindset: "Mindset",
+};
+
 function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
   create: (d: any) => Promise<any>, update: (id: number, d: any) => Promise<any>, del: (id: number) => Promise<any>) {
   app.get(`/api/${name}`, async (_q, res) => res.json(await get()));
@@ -173,11 +178,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
 
-  // "Done this week" count for momentum (wins logged in the last 7 days).
+  // "Done this week" count plus top lane and track for the weekly pulse chip.
   app.get("/api/stats", async (_req, res) => {
     const weekAgo = Date.now() - 7 * 86400000;
-    const wins = await storage.getWins();
-    res.json({ doneThisWeek: wins.filter((w) => w.createdAt >= weekAgo).length });
+    const [wins, tracks] = await Promise.all([storage.getWins(), storage.getCareerTracks()]);
+    const recent = wins.filter((w) => w.createdAt >= weekAgo);
+    const byLane: Record<string, number> = {};
+    for (const w of recent) {
+      const lane = WIN_CATEGORY_TO_LANE[w.winCategory as string] ?? null;
+      if (lane) byLane[lane] = (byLane[lane] ?? 0) + 1;
+    }
+    const topLane = Object.entries(byLane).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    const trackCounts: Record<number, number> = {};
+    for (const w of recent) {
+      if (w.trackId) trackCounts[w.trackId] = (trackCounts[w.trackId] ?? 0) + 1;
+    }
+    const topTrackId = Object.entries(trackCounts).sort((a, b) => Number(b[1]) - Number(a[1]))[0]?.[0];
+    const topTrack = topTrackId ? (tracks.find((t) => t.id === Number(topTrackId))?.name ?? null) : null;
+    res.json({ doneThisWeek: recent.length, topLane, topTrack });
   });
 
   // Sort brain dump
@@ -518,7 +536,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     // The old fuzzy auto-applied trigger is CUT.
     await syncPlanItem(day, task, { status: "completed", completedAt: Date.now() });
     await refreshDoneEnough(day);
-    res.json({ ok: true });
+    const [allWins, tracks] = await Promise.all([storage.getWins(), storage.getCareerTracks()]);
+    const weekAgo = Date.now() - 7 * 86400000;
+    const doneThisWeek = allWins.filter((w) => w.createdAt >= weekAgo).length;
+    const track = task.relatedTrackId ? tracks.find((t) => t.id === task.relatedTrackId) : null;
+    res.json({ ok: true, trackName: track?.name ?? null, lane: WIN_CATEGORY_TO_LANE[winCategory] ?? null, doneThisWeek });
   });
 
   app.post("/api/tasks/:id/block", async (req, res) => {

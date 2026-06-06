@@ -594,6 +594,8 @@ type TrackDiagnostic = {
     topGapLabel: string | null; topGapHasResource: boolean; recommendedMove: string | null;
   } | null;
   bottleneck: string; bottleneckLabel: string; recommendedMove: string;
+  arcStage?: "define" | "signal" | "network" | "convert" | "maintain";
+  arcHealth?: "empty" | "thin" | "building" | "ready" | "overloaded";
 };
 type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
 type StrategyInsight = { kind: string; text: string };
@@ -661,6 +663,30 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
     </div>
   );
 }
+
+type ArcStage = "define" | "signal" | "network" | "convert" | "maintain";
+const ARC_STEPS: { stage: ArcStage[]; label: string; cls: string }[] = [
+  { stage: ["define", "signal"], label: "Explore", cls: "bg-slate-200 text-slate-600" },
+  { stage: ["network"],          label: "Build",   cls: "bg-amber-100 text-amber-700" },
+  { stage: ["convert"],          label: "Ready",   cls: "bg-emerald-100 text-emerald-700" },
+  { stage: ["maintain"],         label: "Applying", cls: "bg-primary/15 text-primary" },
+];
+function ArcPhaseStrip({ stage }: { stage: ArcStage }) {
+  const activeIdx = ARC_STEPS.findIndex((s) => s.stage.includes(stage));
+  return (
+    <div className="flex items-center gap-1 mt-2.5" aria-label={`Arc phase: ${stage}`}>
+      {ARC_STEPS.map((s, i) => (
+        <span key={s.label}
+          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full transition-colors ${
+            i === activeIdx ? s.cls : i < activeIdx ? "text-muted-foreground/50 line-through" : "text-muted-foreground/30"
+          }`}>
+          {s.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -711,19 +737,18 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   );
 
   const Card = ({ t }: { t: TrackDiagnostic }) => {
-    const health = t.bottleneck ?? "none";
+    const bnk = t.bottleneck ?? "none";
     return (
       <div className="rounded-xl border border-card-border bg-card p-4" data-testid={`track-${t.slug}`}>
-        <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="font-semibold text-sm leading-snug">{t.name}</h3>
             {t.whyItFits && <p className="text-xs text-muted-foreground mt-0.5">{t.whyItFits}</p>}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className={`rounded-full text-[11px] font-semibold px-2 py-0.5 ${health === "none" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`} data-testid={`track-health-${t.slug}`}>{BOTTLENECK_LABEL[health] || health}</span>
-          </div>
+          <span className={`shrink-0 rounded-full text-[11px] font-semibold px-2 py-0.5 ${bnk === "none" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`} data-testid={`track-health-${t.slug}`}>{BOTTLENECK_LABEL[bnk] || bnk}</span>
         </div>
-        <div className="grid grid-cols-4 gap-2 mb-3">
+        {t.arcStage && <ArcPhaseStrip stage={t.arcStage} />}
+        <div className="grid grid-cols-4 gap-2 mt-3 mb-3">
           <Stat label="Roles" value={t.counts.jobs} dim={t.counts.jobs === 0} />
           <Stat label="Learning" value={t.counts.learn} dim={t.counts.learn === 0} />
           <Stat label="Contacts" value={t.counts.contacts} dim={t.counts.contacts === 0} />

@@ -7,6 +7,7 @@ import {
 import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evidence";
 import { computeLearningGaps, topLearningGapSignal, type TrackLearningGap, type LearningGapSignal } from "./learningStrategy";
+import { buildTrackPlan, type TrackStage } from "./trackPlanner";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the five bottleneck types, and a
@@ -59,6 +60,9 @@ export type TrackDiagnostic = {
   bottleneck: BottleneckType;
   bottleneckLabel: string;
   recommendedMove: string;
+  // Arc position: where this track is in the explore → build → apply → maintain lifecycle.
+  arcStage: TrackStage;
+  arcHealth: "empty" | "thin" | "building" | "ready" | "overloaded";
 };
 
 const LOW_WARMTH = 40; // warmPathScore threshold
@@ -304,9 +308,12 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
   const learningGaps = await computeLearningGaps();
   const lgByTrack = new Map<number, TrackLearningGap>();
   for (const g of learningGaps.tracks) lgByTrack.set(g.trackId, g);
-  const diagnostics = tracks.map((t) =>
-    diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob, proofStepsByHustle,
-      evidence.byTrack.get(t.id) ?? emptyEv(t.id), lgByTrack.get(t.id)));
+  const diagnostics = tracks.map((t) => {
+    const diag = diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob, proofStepsByHustle,
+      evidence.byTrack.get(t.id) ?? emptyEv(t.id), lgByTrack.get(t.id));
+    const plan = buildTrackPlan(t, { tasks, jobs, learn, hustles, contacts });
+    return { ...diag, arcStage: plan.stage, arcHealth: plan.health };
+  });
 
   // P4.5 — evidence is a TIEBREAKER for the per-track ranking, applied AFTER the
   // existing priority order (track.priority, then bottleneck severity). It only
@@ -389,6 +396,20 @@ function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
   const learningTrack = active.find((t) => t.bottleneck === "learning" && t.learningGap);
   if (learningTrack && learningTrack.learningGap?.recommendedMove)
     out.push({ kind: "learning", text: `${learningTrack.name}: ${learningTrack.learningGap.recommendedMove}.` });
+
+  // Arc-level insight: surface where the search is in the lifecycle so the user
+  // knows what mode of work should dominate right now.
+  if (out.length < 3) {
+    const applyingTrack = active.find((t) => t.arcStage === "maintain");
+    const readyTrack = active.find((t) => t.arcStage === "convert");
+    const buildingTracks = active.filter((t) => t.arcStage === "signal" || t.arcStage === "network" || t.arcStage === "define");
+    if (applyingTrack)
+      out.push({ kind: "arc", text: `${applyingTrack.name} is in the applying phase. Keep applications as the anchor — proof and network stay support, not prerequisites.` });
+    else if (readyTrack)
+      out.push({ kind: "arc", text: `${readyTrack.name} is ready to convert. High-fit roles exist — start converting rather than building more proof.` });
+    else if (buildingTracks.length >= 2)
+      out.push({ kind: "arc", text: `Both active tracks are in exploration or build. That's the right order — but pick one to move to applying first once signals are clear.` });
+  }
 
   if (out.length === 0 && active.length)
     out.push({ kind: "focus", text: `Most focus is on ${active[0].name}. That's your spine — keep it moving and let the rest stay light.` });

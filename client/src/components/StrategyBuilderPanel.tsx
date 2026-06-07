@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Compass, Loader2, Plus, Sparkles, Users, BookOpen, FileText, Briefcase, X } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 type StrategyBuild = {
   headline: string;
@@ -21,12 +22,7 @@ type StrategyBuild = {
 };
 
 async function post(path: string, body: any) {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Request failed: ${path}`);
+  const res = await apiRequest("POST", path, body);
   return res.json();
 }
 
@@ -60,8 +56,7 @@ export function StrategyBuilderPanel() {
   async function load() {
     setLoading(true); setError(null);
     try {
-      const res = await fetch("/api/strategy-builder");
-      if (!res.ok) throw new Error("Could not load strategy");
+      const res = await apiRequest("GET", "/api/strategy-builder");
       setData(await res.json());
     } catch {
       setError("Could not build the strategy plan right now.");

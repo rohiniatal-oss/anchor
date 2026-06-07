@@ -276,7 +276,7 @@ function OnboardingView() {
   const { toast } = useToast();
 
   useEffect(() => {
-    fetch("/api/strategy-builder")
+    apiRequest("GET", "/api/strategy-builder")
       .then((r) => r.json())
       .then((d) => setRoles((d.roleArchetypes || []).slice(0, 4)))
       .catch(() => {})
@@ -286,11 +286,7 @@ function OnboardingView() {
   async function acceptRole(r: OnboardingRole) {
     setAccepting(r.archetype);
     try {
-      await fetch("/api/strategy-builder/accept-role", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(r),
-      });
+      await apiRequest("POST", "/api/strategy-builder/accept-role", r);
       setAccepted((prev) => new Set([...prev, r.archetype]));
       queryClient.invalidateQueries({ queryKey: ["/api/career-tracks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
@@ -365,7 +361,7 @@ const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "L
 
 function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
-  const { data: tracks = [], isLoading: tracksLoading } = useCareerTracks();
+  const { data: tracks = [], isLoading: tracksLoading, isError: tracksError } = useCareerTracks();
   const day = todayKey();
   const { data: events = [] } = useQuery<Event[]>({ queryKey: ["/api/events", day] });
   const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
@@ -425,7 +421,11 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 
-  if (!tracksLoading && !isLoading && tracks.length === 0) return <OnboardingView />;
+  // Only gate to onboarding once the tracks query has GENUINELY resolved to an
+  // empty list. On a cold backend wake the query can error (retry is off), which
+  // leaves tracks defaulting to [] — treating that as "zero tracks" would flash
+  // onboarding at a user who actually has data. So an error is NOT empty.
+  if (!tracksLoading && !tracksError && !isLoading && tracks.length === 0) return <OnboardingView />;
 
   return (
     <div>

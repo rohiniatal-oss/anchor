@@ -170,13 +170,14 @@ function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowSta
   return [{ ...first, workflowState }, ...rest];
 }
 
-function parentWorkflowFor(task: any, bundle: SourceBundle): WorkflowState | undefined {
+export function parentWorkflowFor(task: any, bundle: SourceBundle): WorkflowState | undefined {
   const text = `${task?.title || ""} ${task?.category || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
   if (bundle.sourceKind === "job") {
     const readiness = String(bundle.source?.applicationReadiness || "none");
     const status = String(bundle.source?.status || "wishlist");
     const currentStage = status === "applied" ? "Follow up"
       : status === "interviewing" ? "Build materials"
+      : readiness === "submitted" ? "Submit"
       : keyword(text, /cv|cover|answer|question|material|sample|draft|tailor|submit/) || readiness !== "none" ? "Build materials"
       : keyword(text, /gap|eligibility|visa|constraint/) ? "Handle gaps"
       : keyword(text, /evidence|story|experience|proof/) ? "Map evidence"

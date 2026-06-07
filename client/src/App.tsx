@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
-import { queryClient } from "./lib/queryClient";
+import { apiRequest, queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -20,12 +20,7 @@ function RestartFromHereButton() {
   async function restart() {
     setBusy(true);
     try {
-      const res = await fetch("/api/plan/restart", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ day: todayKey(), energy: "medium" }),
-      });
-      if (!res.ok) throw new Error("restart failed");
+      await apiRequest("POST", "/api/plan/restart", { day: todayKey(), energy: "medium" });
       await queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/plan/current"] });
       window.location.hash = "/";

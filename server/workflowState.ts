@@ -9,22 +9,4 @@ export type WorkflowState = {
   currentStage: string;
   stageOutput: string;
   completionCriteria: string[];
-  advanceCondition: string;
-  nextStage?: string;
-  confidence?: string;
-  inheritedFrom?: string;
-};
-
-export type WorkflowSourceBundle = {
-  sourceContext: string;
-  playbook: string;
-  sourceKind: SourceKind;
-  source: any;
-  parentContext: string;
-  parentWorkflow?: WorkflowState;
-};
-
-export const WORKFLOWS: Record<WorkObject, string[]> = {
-  Artifact: ["Clarify purpose", "Gather inputs", "Structure", "Draft", "Refine", "QC", "Deliver"],
-  Decision: ["Frame question", "Define criteria", "Generate options", "Evaluate", "Decide", "Commit"],
-  Knowledge: ["Orient", "Scope useful slice",
+  advance

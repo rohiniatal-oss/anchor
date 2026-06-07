@@ -1,12 +1,4 @@
-export type WorkObject = "Artifact" | "Decision" | "Knowledge" | "Capability" | "Pipeline" | "Problem";
-export type WorkflowKind = "finite" | "continuous";
-export type SourceKind = "job" | "learn" | "hustle" | "task";
-
-export type WorkflowState = {
-  workObject: WorkObject | string;
-  workflow: string[];
-  workflowKind: WorkflowKind;
-  currentStage: string;
-  stageOutput: string;
-  completionCriteria: string[];
-  advance
+// Placeholder module intentionally kept valid after an incomplete extraction attempt.
+// Workflow logic currently remains in taskBreakdownRoutes.ts until it can be
+// extracted safely in a smaller PR.
+export {};

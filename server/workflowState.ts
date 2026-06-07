@@ -27,7 +27,4 @@ export type WorkflowSourceBundle = {
 export const WORKFLOWS: Record<WorkObject, string[]> = {
   Artifact: ["Clarify purpose", "Gather inputs", "Structure", "Draft", "Refine", "QC", "Deliver"],
   Decision: ["Frame question", "Define criteria", "Generate options", "Evaluate", "Decide", "Commit"],
-  Knowledge: ["Orient", "Scope useful slice", "Inspect", "Extract", "Synthesize", "Store"],
-  Capability: ["Define capability", "Learn model", "Practise", "Apply in context", "Reflect", "Consolidate"],
-  Pipeline: ["Define target", "Build list", "Prioritise", "Execute next batch", "Track", "Follow up", "Review conversion"],
-  Problem: ["Define symptom
+  Knowledge: ["Orient", "Scope useful slice",

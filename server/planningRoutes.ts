@@ -180,7 +180,7 @@ export function registerPlanningRoutes(app: Express) {
         // Leave steps as-is if the helper call fails.
       }
     }
-    const updated = await storage.updateTask(id, { skipped, steps });
+    const updated = await storage.updateTask(id, { skipped, steps, pinned: false, status: "not_started" });
     await syncPlanItem(day, task, { status: "skipped", skippedAt: Date.now() });
     const activity: InsertActivityLog = {
       eventType: "skipped",

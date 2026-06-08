@@ -108,6 +108,8 @@ test("skipping a started task marks its plan item skipped and logs the avoidance
 
   const skipped = await api(h.base, "POST", `/api/tasks/${taskId}/skip`, { day: DAY });
   assert.equal(skipped.status, 200);
+  assert.equal(skipped.json.pinned, false, "skipped task is no longer pinned as the current task");
+  assert.equal(skipped.json.status, "not_started", "skipping resets the task out of active execution state");
 
   const pi = await h.storage.getPlanItem(item.id);
   assert.equal(pi!.status, "skipped", "plan item marked skipped");

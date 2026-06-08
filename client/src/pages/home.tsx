@@ -358,11 +358,113 @@ function OnboardingView() {
 type PlanItemExplanationT = { summary: string; whyNow: string; whyThis: string; supportingReasons: string[]; firstStep: string; stopRule: string };
 type PlanItemT = { id: number; slot: string; title: string; whySelected: string; doneWhen: string; status: string; sourceType: string; sourceId: number | null; taskId: number | null; explanation?: PlanItemExplanationT };
 type DayPlanT = { id: number; mode: string; note: string; status: string; minimumViableItemId: number | null; enoughForToday: boolean };
+type GoalTrajectoryT = { key: string; title: string; status: "complete" | "current" | "pending"; description: string };
+type GoalTodayPlanT = { mustDo: string; next: string; optional: string; stopRule: string };
+type GoalPortfolioItemT = { combination: string; whyPlausible: string; nextMove: string };
+type CareerGoalT = {
+  goal: string;
+  objective: string;
+  phase: "fit-discovery" | "lane-narrowing" | "role-targeting" | "interview-prep";
+  dayType: string;
+  recommendedFocus: string;
+  reason: string;
+  decisionQuestion: string;
+  decisionMode: "single-track" | "forced-comparison" | "parallel-exploration" | "broad-parallel-pursuit";
+  landingPriority: string;
+  selectionRule: string;
+  pursuitPortfolio?: GoalPortfolioItemT[];
+  trajectory: GoalTrajectoryT[];
+  todayPlan: GoalTodayPlanT;
+};
+type GoalsStateResponseT = { goals: CareerGoalT[] };
 const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "Later", bonus: "Bonus" };
+const PHASE_LABEL: Record<CareerGoalT["phase"], string> = {
+  "fit-discovery": "Discover fit",
+  "lane-narrowing": "Narrow lanes",
+  "role-targeting": "Target roles",
+  "interview-prep": "Interview prep",
+};
+const DECISION_MODE_LABEL: Record<CareerGoalT["decisionMode"], string> = {
+  "single-track": "Single track",
+  "forced-comparison": "Forced comparison",
+  "parallel-exploration": "Parallel exploration",
+  "broad-parallel-pursuit": "Broad pursuit",
+};
+
+function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: (t: Tab) => void }) {
+  return (
+    <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5" data-testid="career-compass">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-[11px] font-semibold">
+              <Compass className="w-3 h-3" /> {PHASE_LABEL[goal.phase]}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-card text-muted-foreground px-2 py-0.5 text-[11px] font-medium border border-card-border">
+              {DECISION_MODE_LABEL[goal.decisionMode]}
+            </span>
+            {goal.landingPriority === "credible-role-quickly" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-card text-muted-foreground px-2 py-0.5 text-[11px] font-medium border border-card-border">
+                land something credible soon
+              </span>
+            )}
+          </div>
+          <h2 className="text-sm font-semibold leading-snug">Career compass</h2>
+          <p className="text-xs text-muted-foreground mt-1">{goal.reason}</p>
+        </div>
+        <button onClick={() => onOpenTab("strategy")} className="shrink-0 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1" data-testid="button-open-strategy-from-compass">
+          Open strategy <ArrowUpRight className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-card-border bg-card p-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Today&apos;s strategic aim</p>
+          <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
+          <p className="text-xs text-muted-foreground mt-1">{goal.todayPlan.stopRule}</p>
+        </div>
+        <div className="rounded-xl border border-card-border bg-card p-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Decision rule</p>
+          <p className="text-sm font-medium mt-1">{goal.selectionRule}</p>
+          <p className="text-xs text-muted-foreground mt-1">{goal.decisionQuestion}</p>
+        </div>
+      </div>
+
+      {goal.pursuitPortfolio && goal.pursuitPortfolio.length > 0 && (
+        <div className="mt-3 rounded-xl border border-card-border bg-card p-3">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Parallel pursuit lanes</p>
+          <div className="flex flex-wrap gap-1.5">
+            {goal.pursuitPortfolio.slice(0, 4).map((item) => (
+              <span key={item.combination} className="inline-flex rounded-full bg-muted px-2 py-1 text-[11px] font-medium text-foreground">
+                {item.combination}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Trajectory</p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {goal.trajectory.map((step) => (
+            <div key={step.key} className={`rounded-xl border p-2.5 ${step.status === "current" ? "border-primary/30 bg-card" : "border-card-border bg-card/70"}`}>
+              <div className="flex items-center gap-1.5 mb-1">
+                {step.status === "complete" ? <CheckCircle2 className="w-3.5 h-3.5 text-primary" /> : step.status === "current" ? <Target className="w-3.5 h-3.5 text-primary" /> : <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />}
+                <p className="text-xs font-medium">{step.title}</p>
+              </div>
+              <p className="text-[11px] text-muted-foreground">{step.description}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { data: tracks = [], isLoading: tracksLoading, isError: tracksError } = useCareerTracks();
+  const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const day = todayKey();
   const { data: events = [] } = useQuery<Event[]>({ queryKey: ["/api/events", day] });
   const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
@@ -427,6 +529,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   // leaves tracks defaulting to [] — treating that as "zero tracks" would flash
   // onboarding at a user who actually has data. So an error is NOT empty.
   if (!tracksLoading && !tracksError && !isLoading && tracks.length === 0) return <OnboardingView />;
+  const activeGoal = goalState?.goals?.[0] || null;
 
   return (
     <div>
@@ -434,6 +537,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       <p className="text-sm text-muted-foreground mt-1 mb-3">Here's your day. Start at the top — you don't have to decide.</p>
 
       {/* Quick-capture — always here so a stray thought never needs another tab. */}
+      {activeGoal && <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} />}
       <div className="mb-5 flex gap-2">
         <Input value={quickText} onChange={(e) => setQuickText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") quickCapture(); }}
           placeholder="Add anything on your mind…" className="h-10" data-testid="input-quick-capture" />

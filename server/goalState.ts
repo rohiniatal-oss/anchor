@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { ActivityLog, Contact, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse } from "./candidates";
+import { computeJobTruthStrip, type JobTruthAction, type JobTruthStrip } from "./jobTruth";
 
 type WorkstreamStatus = "active" | "underdeveloped" | "premature" | "blocked" | "stale" | "sufficient_for_now";
 type NextMoveType = "learning" | "relationship" | "preparation" | "execution" | "maintenance" | "wait";
@@ -55,6 +56,9 @@ type GoalSnapshot = {
   dueFollowUpCount: number;
   draftedContactCount: number;
   hasApplicationTask: boolean;
+  viableApplicationCount: number;
+  applicationActionCounts: Record<JobTruthAction, number>;
+  leadApplicationTruth: JobTruthStrip | null;
   hasProofTask: boolean;
   activeLearnCount: number;
   evidencedLearnCount: number;
@@ -89,6 +93,15 @@ const ROLE_SHAPE_LABELS = {
 } as const;
 
 const LOCATION_PRIORITY = ["UAE", "Remote", "London"] as const;
+const APPLICATION_ACTION_PRIORITY: Record<JobTruthAction, number> = {
+  prepare: 100,
+  follow_up: 92,
+  apply: 84,
+  warm: 74,
+  prove: 66,
+  clarify: 58,
+  reject: 0,
+};
 
 function isCareerTask(t: Task) {
   return !t.done && (t.category === "job" || /job|career|role|cv|interview|application|network|contact|message|proof|course|learn|skill/i.test(t.title));
@@ -275,6 +288,23 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   const dueFollowUpCount = openContacts.filter(isContactFollowUpDue).length;
   const draftedContactCount = openContacts.filter(hasDraftedContactMove).length;
   const hasApplicationTask = careerTasks.some((t) => /apply|application|cv|cover|interview/i.test(t.title));
+  const applicationTruth = savedJobs.map(computeJobTruthStrip);
+  const viableApplicationTruth = applicationTruth.filter((t) => t.action !== "reject");
+  const applicationActionCounts: Record<JobTruthAction, number> = {
+    apply: 0,
+    warm: 0,
+    prove: 0,
+    reject: 0,
+    clarify: 0,
+    prepare: 0,
+    follow_up: 0,
+  };
+  for (const truth of applicationTruth) applicationActionCounts[truth.action] += 1;
+  const leadApplicationTruth = [...viableApplicationTruth].sort((a, b) => {
+    const priorityDiff = APPLICATION_ACTION_PRIORITY[b.action] - APPLICATION_ACTION_PRIORITY[a.action];
+    if (priorityDiff !== 0) return priorityDiff;
+    return (b.fit.score ?? 0) - (a.fit.score ?? 0);
+  })[0] || null;
   const hasProofTask = careerTasks.some((t) => /proof|gap|bullet|story|portfolio|sample/i.test(t.title));
   const activeLearn = learn.filter((l) => !l.done && l.learnStatus !== "closed");
   const evidencedLearnCount = learn.filter((l) => !!(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
@@ -306,6 +336,9 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     dueFollowUpCount,
     draftedContactCount,
     hasApplicationTask,
+    viableApplicationCount: viableApplicationTruth.length,
+    applicationActionCounts,
+    leadApplicationTruth,
     hasProofTask,
     activeLearnCount: activeLearn.length,
     evidencedLearnCount,
@@ -378,6 +411,43 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         : snapshot.activeConversationCount === 0
           ? ["turn one draft into a sent message", "pick the warmest contact and send a concrete ask", "schedule one follow-up date"]
           : ["move one active thread forward", "make the next ask more specific", "log the next follow-up date"];
+  const applicationLead = snapshot.leadApplicationTruth;
+  const applicationStatus: WorkstreamStatus = snapshot.viableApplicationCount === 0
+    ? (snapshot.directionReady ? "underdeveloped" : "premature")
+    : "active";
+  const applicationProgress: WorkstreamState["progress"] = applicationLead?.action === "prepare" || applicationLead?.action === "follow_up"
+    ? "developing"
+    : snapshot.viableApplicationCount > 0
+      ? "early"
+      : "not_started";
+  const applicationBottleneck = applicationLead?.action === "prepare"
+    ? `${snapshot.applicationActionCounts.prepare} live role${snapshot.applicationActionCounts.prepare === 1 ? "" : "s"} need interview or process preparation`
+    : applicationLead?.action === "follow_up"
+      ? `${snapshot.applicationActionCounts.follow_up} role${snapshot.applicationActionCounts.follow_up === 1 ? "" : "s"} need follow-up or a warm nudge`
+      : applicationLead?.action === "apply"
+        ? `${snapshot.applicationActionCounts.apply} role${snapshot.applicationActionCounts.apply === 1 ? " is" : "s are"} ready for a concrete application step`
+        : applicationLead?.action === "warm"
+          ? `${snapshot.applicationActionCounts.warm} promising role${snapshot.applicationActionCounts.warm === 1 ? " should" : "s should"} use a warm path before going cold`
+          : applicationLead?.action === "prove"
+            ? `${snapshot.applicationActionCounts.prove} strong role${snapshot.applicationActionCounts.prove === 1 ? " needs" : "s need"} stronger proof or narrative`
+            : applicationLead?.action === "clarify"
+              ? `${snapshot.applicationActionCounts.clarify} role${snapshot.applicationActionCounts.clarify === 1 ? " still needs" : "s still need"} clarification before real conversion`
+              : snapshot.directionReady
+                ? "current roles are not yet strong enough to convert"
+                : "direction and proof are not ready enough for broad applications";
+  const applicationNextMoves = applicationLead?.action === "prepare"
+    ? [applicationLead.nextMove, "review the most likely interview themes", "tighten one role-specific story or proof point"]
+    : applicationLead?.action === "follow_up"
+      ? [applicationLead.nextMove, "identify the warmest internal nudge for that role", "log the next follow-up point so the role does not disappear"]
+      : applicationLead?.action === "apply"
+        ? [applicationLead.nextMove, "finish the strongest application material", "submit or clearly schedule the exact next application step"]
+        : applicationLead?.action === "warm"
+          ? [applicationLead.nextMove, "tie one contact to the live role before applying cold", "send one warm-path message that advances the role"]
+          : applicationLead?.action === "prove"
+            ? [applicationLead.nextMove, "add one proof bullet or narrative angle for the role", "map one requirement to concrete evidence you already have"]
+            : applicationLead?.action === "clarify"
+              ? [applicationLead.nextMove, "confirm the role facts before spending more effort", "decide whether the role is worth keeping in the portfolio"]
+              : ["do not mass apply yet"];
 
   return [
     {
@@ -446,12 +516,22 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     },
     {
       name: "Applications",
-      status: snapshot.applicationsReady || snapshot.hasApplicationTask ? "active" : "premature",
-      progress: snapshot.hasApplicationTask ? "early" : "not_started",
-      bottleneck: snapshot.interviewingJobs > 0 ? "live roles are in play and need selective preparation" : snapshot.applicationsReady ? "needs selective execution" : "direction and proof are not ready enough for broad applications",
-      nextMoveType: snapshot.applicationsReady ? "execution" : "wait",
-      evidence: [snapshot.hasApplicationTask ? "application-related task exists" : "no active application task", snapshot.applicationsReady ? "direction/proof signals exist" : "direction/proof gates incomplete"],
-      nextMoves: snapshot.interviewingJobs > 0 ? ["review the strongest live role", "extract likely interview themes", "map your best examples to that role"] : snapshot.applicationsReady ? ["tailor one CV bullet", "prepare one application", "send one warm follow-up"] : ["do not mass apply yet"],
+      status: applicationStatus,
+      progress: applicationProgress,
+      bottleneck: applicationBottleneck,
+      nextMoveType: applicationLead?.action === "prepare" ? "preparation" : snapshot.viableApplicationCount > 0 ? "execution" : "wait",
+      evidence: [
+        `${snapshot.savedJobs.length} open or saved role${snapshot.savedJobs.length === 1 ? "" : "s"}`,
+        `${snapshot.viableApplicationCount} viable role${snapshot.viableApplicationCount === 1 ? "" : "s"}`,
+        `${snapshot.applicationActionCounts.apply} ready-to-apply`,
+        `${snapshot.applicationActionCounts.warm} warm-path-first`,
+        `${snapshot.applicationActionCounts.prove} proof-needed`,
+        `${snapshot.applicationActionCounts.clarify} clarify-first`,
+        `${snapshot.applicationActionCounts.follow_up} follow-up`,
+        `${snapshot.applicationActionCounts.prepare} interview/process-prep`,
+        snapshot.hasApplicationTask ? "application-related task exists" : "no active application task",
+      ],
+      nextMoves: applicationNextMoves,
     },
     {
       name: "Interview readiness",

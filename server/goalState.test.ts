@@ -118,6 +118,32 @@ test("career goal state reflects real networking progress from live contacts", (
   assert.ok(network.nextMoves.some((move) => /follow up/i.test(move)));
 });
 
+test("career goal state reflects recruiting truth for follow-up-led application work", () => {
+  const jobs = [
+    {
+      id: 2,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      status: "applied",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      fitScore: 82,
+      applicationReadiness: "follow_up",
+      deadlineConfidence: "high",
+      warmPathScore: 72,
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, []);
+  const applications = state.workstreams.find((w) => w.name === "Applications")!;
+  assert.equal(state.phase, "role-targeting");
+  assert.equal(state.recommendedFocus, "Applications");
+  assert.equal(applications.status, "active");
+  assert.match(applications.bottleneck, /follow-up|warm nudge/i);
+  assert.ok(applications.evidence.some((e) => /1 follow-up/i.test(e)));
+  assert.ok(applications.nextMoves.some((move) => /follow-up|warm nudge/i.test(move)));
+});
+
 test("goal state API returns active goal with workstreams and today plan", async () => {
   const r = await api(h.base, "GET", "/api/goals/state");
   assert.equal(r.status, 200);

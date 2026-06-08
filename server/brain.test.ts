@@ -221,6 +221,38 @@ test("brain can recommend a warm networking move as a first-class candidate", ()
   assert.ok(result.trace?.some((line: string) => /warm|referral|draft/i.test(line)));
 });
 
+test("brain prioritizes target-role insiders over broader alumni contacts", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const contacts = [
+    contact({
+      id: 10,
+      who: "SIPA alum in policy",
+      status: "to_contact",
+      relationshipStrength: "cold",
+      askType: "advice",
+      sourceNetwork: "SIPA",
+      why: "Can share a general perspective on policy careers",
+      nextFollowUpDate: today,
+    }),
+    contact({
+      id: 11,
+      who: "Strategy manager at Frontier Lab",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "referral",
+      targetOrg: "Frontier Lab",
+      targetRole: "AI Strategy Associate",
+      messageDraft: "Following up on the AI Strategy Associate role.",
+      nextFollowUpDate: today,
+    }),
+  ];
+
+  const result = recommend([], [], [], [], "medium", contacts);
+  assert.equal(result.pick?.source, "contact");
+  assert.equal(result.pick?.sourceId, 11);
+  assert.ok(result.trace?.some((line: string) => /specific target role or org/i.test(line)));
+});
+
 test("planner can keep job pursuit and networking in parallel when both are live", () => {
   const today = new Date().toISOString().slice(0, 10);
   const jobs = [

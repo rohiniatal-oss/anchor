@@ -55,6 +55,9 @@ export type Candidate = {
   relationshipStrength?: string;
   askType?: string;
   messageDraft?: string;
+  sourceNetwork?: string;
+  targetOrg?: string;
+  targetRole?: string;
 };
 
 type StrategicContext = {
@@ -313,6 +316,10 @@ function contactMomentum(c: Candidate) {
     trace.push("draft already exists");
   }
 
+  const archetype = classifyContactArchetype(c);
+  s += archetype.score;
+  trace.push(archetype.reason);
+
   if (c.askType === "referral") {
     s += 18;
     trace.push("referral path could unlock applications");
@@ -325,6 +332,25 @@ function contactMomentum(c: Candidate) {
   }
 
   return { score: s, trace };
+}
+
+function classifyContactArchetype(c: Candidate) {
+  const sourceNetwork = (c.sourceNetwork || "").toLowerCase();
+  const text = `${c.title} ${c.sourceNote} ${c.targetOrg || ""} ${c.targetRole || ""} ${sourceNetwork}`.toLowerCase();
+
+  if ((c.targetOrg && c.targetOrg.trim()) || (c.targetRole && c.targetRole.trim()) || /\b(hiring manager|target org|target role)\b/.test(text)) {
+    return { key: "role-insider", score: 24, reason: "close to a specific target role or org" };
+  }
+  if (/\b(ex-|former|worked together|coworker|co-worker|colleague|manager|teammate|boss|mentor)\b/.test(text) || /\b(ex-bain|ex-tbi|ex-abraaj)\b/.test(sourceNetwork)) {
+    return { key: "shared-history", score: 20, reason: "shared work history makes the ask easier" };
+  }
+  if (/\b(sipa|columbia|lsr|alumni|alumna|alum|graduate)\b/.test(text)) {
+    return { key: "shared-institution", score: 14, reason: "shared institution gives you a natural opener" };
+  }
+  if (/\b(recruiter|talent|founder|advisor|adviser|analyst|researcher|operator|principal|partner)\b/.test(text)) {
+    return { key: "market-guide", score: 10, reason: "can provide a useful market or process signal" };
+  }
+  return { key: "exploratory", score: 4, reason: "exploratory networking contact" };
 }
 
 function isActionableContact(c: Contact) {
@@ -357,7 +383,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         whyNow: isLaneAlignedSystemMove ? "spine says this supports the active track or marketability plan" : "already on today's list",
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
-        relationshipStrength: "", askType: "", messageDraft: "",
+        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "",
       });
     }
   }
@@ -379,7 +405,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         applicationReadiness: j.applicationReadiness || "none",
         deadlineConfidence: j.deadlineConfidence || "",
         narrativeAngle: j.narrativeAngle || "",
-        relationshipStrength: "", askType: "", messageDraft: "",
+        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "",
       });
     }
   }
@@ -404,7 +430,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         doneWhen: l.requiredOutput || "You've made real progress", whyNow: "builds a capability your tracks need",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
-        relationshipStrength: "", askType: "", messageDraft: "",
+        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "",
       });
     }
   }
@@ -421,6 +447,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
       blocked: false, blockerReason: "", eligibilityRisk: "",
       location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
       relationshipStrength: c.relationshipStrength || "cold", askType: c.askType || "", messageDraft: c.messageDraft || "",
+      sourceNetwork: c.sourceNetwork || "", targetOrg: c.targetOrg || "", targetRole: c.targetRole || "",
     });
   }
 

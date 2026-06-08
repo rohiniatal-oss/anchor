@@ -27,7 +27,7 @@ type Energy = "low" | "medium" | "high";
 const SIZE_MINUTES: Record<string, number> = { quick: 15, medium: 45, deep: 120 };
 
 export type Candidate = {
-  source: "task" | "job" | "learn" | "hustle";
+  source: "task" | "job" | "learn" | "hustle" | "contact";
   sourceId: number;
   title: string;
   category: string;
@@ -52,6 +52,9 @@ export type Candidate = {
   applicationReadiness?: string;
   deadlineConfidence?: string;
   narrativeAngle?: string;
+  relationshipStrength?: string;
+  askType?: string;
+  messageDraft?: string;
 };
 
 type StrategicContext = {
@@ -247,9 +250,86 @@ function jobMomentum(c: Candidate) {
   return { score: s, trace };
 }
 
+function contactNextStep(c: Contact): { action: string; size: string; doneWhen: string; why: string } {
+  const target = c.who || c.name || "contact";
+  const ask = c.askType || "soft";
+  const hasDraft = !!(c.messageDraft && c.messageDraft.trim());
+  const hasFollowUp = !!(c.nextFollowUpDate && c.nextFollowUpDate.trim());
+
+  if (c.status === "replied") {
+    return {
+      action: `Reply to ${target}`,
+      size: "quick",
+      doneWhen: "A reply is sent or the next concrete ask is drafted",
+      why: "warm conversation already exists",
+    };
+  }
+  if (c.status === "messaged" && hasFollowUp) {
+    return {
+      action: `Follow up with ${target}`,
+      size: "quick",
+      doneWhen: "A follow-up is sent or clearly scheduled",
+      why: "the relationship will stale without a nudge",
+    };
+  }
+  if (hasDraft) {
+    return {
+      action: `Send ${ask} outreach to ${target}`,
+      size: "quick",
+      doneWhen: "The message is sent",
+      why: "draft exists, so this can become real access quickly",
+    };
+  }
+  return {
+    action: `Draft ${ask} outreach to ${target}`,
+    size: "quick",
+    doneWhen: "A message draft is ready to send",
+    why: "network access needs one concrete message, not vague intent",
+  };
+}
+
+function contactMomentum(c: Candidate) {
+  let s = 0;
+  const trace: string[] = [];
+
+  if (c.sourceStatus === "replied") {
+    s += 28;
+    trace.push("already warm and responsive");
+  } else if (c.sourceStatus === "messaged") {
+    s += 16;
+    trace.push("conversation already started");
+  }
+
+  if (c.relationshipStrength === "strong") {
+    s += 20;
+    trace.push("strong relationship path");
+  } else if (c.relationshipStrength === "warm") {
+    s += 12;
+    trace.push("warm relationship path");
+  }
+
+  if (c.messageDraft && c.messageDraft.trim()) {
+    s += 18;
+    trace.push("draft already exists");
+  }
+
+  if (c.askType === "referral") {
+    s += 18;
+    trace.push("referral path could unlock applications");
+  } else if (c.askType === "follow_up") {
+    s += 10;
+    trace.push("follow-up ask is time-sensitive");
+  } else if (c.askType === "advice") {
+    s += 8;
+    trace.push("can generate market signal quickly");
+  }
+
+  return { score: s, trace };
+}
+
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
-export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[]): Candidate[] {
+export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = []): Candidate[] {
   const out: Candidate[] = [];
 
   for (const t of tasks) {
@@ -266,6 +346,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         whyNow: isLaneAlignedSystemMove ? "spine says this supports the active track or marketability plan" : "already on today's list",
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
+        relationshipStrength: "", askType: "", messageDraft: "",
       });
     }
   }
@@ -287,6 +368,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         applicationReadiness: j.applicationReadiness || "none",
         deadlineConfidence: j.deadlineConfidence || "",
         narrativeAngle: j.narrativeAngle || "",
+        relationshipStrength: "", askType: "", messageDraft: "",
       });
     }
   }
@@ -311,8 +393,23 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         doneWhen: l.requiredOutput || "You've made real progress", whyNow: "builds a capability your tracks need",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
+        relationshipStrength: "", askType: "", messageDraft: "",
       });
     }
+  }
+
+  for (const c of contacts) {
+    const { action, size, doneWhen, why } = contactNextStep(c);
+    out.push({
+      source: "contact", sourceId: c.id, taskId: null,
+      title: action, category: "admin", size,
+      deadline: c.nextFollowUpDate || "", status: "not_started", skipped: 0,
+      sourceUrl: "", sourceNote: `${c.why || c.note || ""} ${c.targetOrg || ""} ${c.targetRole || ""}`.trim(), sourceStatus: c.status,
+      doneWhen, whyNow: why, fitScore: null,
+      blocked: false, blockerReason: "", eligibilityRisk: "",
+      location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
+      relationshipStrength: c.relationshipStrength || "cold", askType: c.askType || "", messageDraft: c.messageDraft || "",
+    });
   }
 
   for (const h of hustles) {
@@ -372,6 +469,11 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
 
   if (c.source === "job") {
     const momentum = jobMomentum(c);
+    s += momentum.score;
+    trace.push(...momentum.trace);
+  }
+  if (c.source === "contact") {
+    const momentum = contactMomentum(c);
     s += momentum.score;
     trace.push(...momentum.trace);
   }
@@ -449,7 +551,7 @@ export function planDay(
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
-  const all = gatherCandidates(tasks, jobs, learn, hustles);
+  const all = gatherCandidates(tasks, jobs, learn, hustles, contacts);
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))
     .filter((x) => x.reason)
@@ -532,7 +634,7 @@ export function recommend(
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
 ) {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
-  const cands = gatherCandidates(tasks, jobs, learn, hustles).filter((c) => passesGates(c, context));
+  const cands = gatherCandidates(tasks, jobs, learn, hustles, contacts).filter((c) => passesGates(c, context));
   const mode = pickDayMode(cands, energy, context);
   if (cands.length === 0) return { mode, pick: null, alternative: null };
   const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s);

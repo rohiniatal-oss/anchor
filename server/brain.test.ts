@@ -77,6 +77,31 @@ function job(overrides: Record<string, any>) {
   } as any;
 }
 
+function contact(overrides: Record<string, any>) {
+  return {
+    id: overrides.id ?? 1,
+    name: overrides.name ?? "Ally",
+    who: overrides.who ?? "Ally at Target Org",
+    sector: overrides.sector ?? "",
+    why: overrides.why ?? "",
+    status: overrides.status ?? "to_contact",
+    note: overrides.note ?? "",
+    relationshipStrength: overrides.relationshipStrength ?? "cold",
+    sourceNetwork: overrides.sourceNetwork ?? "",
+    targetOrg: overrides.targetOrg ?? "",
+    targetRole: overrides.targetRole ?? "",
+    askType: overrides.askType ?? "soft",
+    messageDraft: overrides.messageDraft ?? "",
+    lastMessage: overrides.lastMessage ?? "",
+    nextFollowUpDate: overrides.nextFollowUpDate ?? "",
+    referralPotential: overrides.referralPotential ?? "",
+    warmthScore: overrides.warmthScore ?? null,
+    relatedTrackId: overrides.relatedTrackId ?? null,
+    createdAt: Date.now(),
+    ...overrides,
+  } as any;
+}
+
 test("planner favours direction signal before premature application work", () => {
   const tasks = [
     task({ id: 1, title: "Apply to several saved roles", category: "job" }),
@@ -172,4 +197,58 @@ test("planner keeps job pursuit and capability-building in parallel when time al
   const result = planDay([], jobs, learn, [], "medium", { remainingMinutes: 240 });
   assert.ok(result.plan.some((item) => item.candidate.source === "job"), "live role stays in the plan");
   assert.ok(result.plan.some((item) => item.candidate.source === "learn"), "capability-building stays in parallel");
+});
+
+test("brain can recommend a warm networking move as a first-class candidate", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const contacts = [
+    contact({
+      id: 1,
+      who: "Hiring manager at Frontier Lab",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "referral",
+      messageDraft: "Checking in on the role and asking for a quick steer.",
+      nextFollowUpDate: today,
+      targetRole: "AI strategy manager",
+      targetOrg: "Frontier Lab",
+    }),
+  ];
+
+  const result = recommend([], [], [], [], "medium", contacts);
+  assert.equal(result.pick?.source, "contact");
+  assert.equal(result.pick?.sourceId, 1);
+  assert.ok(result.trace?.some((line: string) => /warm|referral|draft/i.test(line)));
+});
+
+test("planner can keep job pursuit and networking in parallel when both are live", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const jobs = [
+    job({
+      id: 1,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      fitScore: 74,
+      warmPathScore: 65,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+    }),
+  ];
+  const contacts = [
+    contact({
+      id: 2,
+      who: "Ally at Frontier Lab",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "referral",
+      nextFollowUpDate: today,
+      targetRole: "AI Strategy Associate",
+      targetOrg: "Frontier Lab",
+    }),
+  ];
+
+  const result = planDay([], jobs, [], [], "medium", { remainingMinutes: 240 }, contacts);
+  assert.ok(result.plan.some((item) => item.candidate.source === "job"), "live role stays in the plan");
+  assert.ok(result.plan.some((item) => item.candidate.source === "contact"), "networking stays in parallel");
 });

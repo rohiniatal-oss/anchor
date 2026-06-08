@@ -58,6 +58,7 @@ export type Candidate = {
   sourceNetwork?: string;
   targetOrg?: string;
   targetRole?: string;
+  followUpDate?: string;
 };
 
 type StrategicContext = {
@@ -344,9 +345,38 @@ function contactNextStep(c: Contact): { action: string; size: string; doneWhen: 
   };
 }
 
+function contactFollowUpDays(c: Candidate) {
+  return daysUntil(c.followUpDate || "");
+}
+
 function contactMomentum(c: Candidate, context: StrategicContext) {
   let s = 0;
   const trace: string[] = [];
+  const followUpDays = contactFollowUpDays(c);
+
+  if (c.sourceStatus === "messaged" || c.sourceStatus === "replied") {
+    if (followUpDays !== null && followUpDays <= 0) {
+      s += 18;
+      trace.push("follow-up is due or overdue");
+    } else if (followUpDays !== null && followUpDays <= 2) {
+      s += 8;
+      trace.push("follow-up window is approaching");
+    } else if (followUpDays !== null && followUpDays > 2) {
+      s -= 22;
+      trace.push("follow-up is scheduled for later");
+    }
+  } else if (followUpDays !== null) {
+    if (followUpDays <= 0) {
+      s += 6;
+      trace.push("outreach date is due now");
+    } else if (followUpDays <= 2) {
+      s += 3;
+      trace.push("outreach date is approaching");
+    } else {
+      s -= 8;
+      trace.push("outreach is scheduled for later");
+    }
+  }
 
   if (c.sourceStatus === "replied") {
     s += 28;
@@ -514,7 +544,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         whyNow: isLaneAlignedSystemMove ? "spine says this supports the active track or marketability plan" : "already on today's list",
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
-        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "",
+        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
       });
     }
   }
@@ -536,7 +566,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         applicationReadiness: j.applicationReadiness || "none",
         deadlineConfidence: j.deadlineConfidence || "",
         narrativeAngle: j.narrativeAngle || "",
-        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "",
+        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
       });
     }
   }
@@ -561,7 +591,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         doneWhen: l.requiredOutput || "You've made real progress", whyNow: "builds a capability your tracks need",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
-        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "",
+        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
       });
     }
   }
@@ -572,13 +602,13 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
     out.push({
       source: "contact", sourceId: c.id, taskId: null,
       title: action, category: "admin", size,
-      deadline: c.nextFollowUpDate || "", status: "not_started", skipped: 0,
+      deadline: "", status: "not_started", skipped: 0,
       sourceUrl: "", sourceNote: `${c.why || c.note || ""} ${c.targetOrg || ""} ${c.targetRole || ""}`.trim(), sourceStatus: c.status,
       doneWhen, whyNow: why, fitScore: null,
       blocked: false, blockerReason: "", eligibilityRisk: "",
       location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
       relationshipStrength: c.relationshipStrength || "cold", askType: c.askType || "", messageDraft: c.messageDraft || "",
-      sourceNetwork: c.sourceNetwork || "", targetOrg: c.targetOrg || "", targetRole: c.targetRole || "",
+      sourceNetwork: c.sourceNetwork || "", targetOrg: c.targetOrg || "", targetRole: c.targetRole || "", followUpDate: c.nextFollowUpDate || "",
     });
   }
 
@@ -604,6 +634,10 @@ function gateReason(c: Candidate, _context: StrategicContext): string | null {
   if (c.status === "done") return "already done";
   if (c.blocked) return c.blockerReason ? `blocked: ${c.blockerReason}` : "blocked";
   if (c.eligibilityRisk === "likely_ineligible") return "constraint needs handling before submission";
+  if (c.source === "contact" && (c.sourceStatus === "messaged" || c.sourceStatus === "replied")) {
+    const followUpDays = contactFollowUpDays(c);
+    if (followUpDays !== null && followUpDays > 0) return "follow-up is scheduled for later";
+  }
   return null;
 }
 

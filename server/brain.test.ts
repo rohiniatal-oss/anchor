@@ -606,3 +606,43 @@ test("planner ignores contacts with no actionable networking move", () => {
   const result = recommend([], [], [], [], "medium", contacts);
   assert.equal(result.pick, null);
 });
+
+test("planner ignores a follow-up contact when the follow-up date is still in the future", () => {
+  const future = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const contacts = [
+    contact({
+      id: 4,
+      who: "Warm operator",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "follow_up",
+      messageDraft: "Checking back in on our last conversation.",
+      nextFollowUpDate: future,
+    }),
+  ];
+
+  const result = recommend([], [], [], [], "medium", contacts);
+  assert.equal(result.pick, null);
+});
+
+test("future contact follow-ups do not trigger deadline mode on the day plan", () => {
+  const future = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const tasks = [
+    task({ id: 61, title: "Inspect one role family", category: "learning", size: "quick" }),
+  ];
+  const contacts = [
+    contact({
+      id: 62,
+      who: "Warm operator",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "follow_up",
+      messageDraft: "Checking back in on our last conversation.",
+      nextFollowUpDate: future,
+    }),
+  ];
+
+  const result = planDay(tasks, [], [], [], "medium", { remainingMinutes: 120 }, contacts);
+  assert.notEqual(result.mode, "deadline");
+  assert.equal(result.plan[0].candidate.source, "task");
+});

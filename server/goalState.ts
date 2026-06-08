@@ -235,9 +235,14 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   };
 }
 
+function hasBroadParallelLanes(snapshot: GoalSnapshot) {
+  return snapshot.savedJobs.length > 0 && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2;
+}
+
 function inferGoalPhase(snapshot: GoalSnapshot): GoalPhase {
   if (snapshot.interviewingJobs > 0) return "interview-prep";
   if (!snapshot.directionStarted) return "fit-discovery";
+  if (hasBroadParallelLanes(snapshot)) return "role-targeting";
   if ((snapshot.roleHypotheses.length >= 2 || snapshot.topicHypotheses.length >= 2 || snapshot.roleShapeHypotheses.length >= 2) && !snapshot.hasApplicationTask) return "lane-narrowing";
   return "role-targeting";
 }
@@ -384,6 +389,9 @@ function phaseObjective(phase: GoalPhase) {
 }
 
 function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot) {
+  if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
+    return `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice.`;
+  }
   if (phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
     return `You have multiple plausible topics (${snapshot.topicHypotheses.join(" vs ")}) and multiple plausible role shapes (${snapshot.roleShapeHypotheses.join(" vs ")}). Anchor should narrow on both axes together.`;
   }
@@ -398,6 +406,9 @@ function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSna
 
 function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
   if (phase === "fit-discovery") return "What kinds of work actually fit your interests, goals, and energy well enough to test in the market?";
+  if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
+    return "Which live roles are most gettable, credible, and worth pushing right now while keeping the other lanes open?";
+  }
   if (phase === "lane-narrowing") {
     if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
       return `What are you learning from each of the four combinations, and which ones keep earning more attention over time?`;
@@ -426,6 +437,14 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
 }
 
 function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot, candidateUniverse: ReturnType<typeof generateCandidateUniverse>) {
+  if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
+    return {
+      mustDo: "Advance the most gettable live role now and keep the other plausible lanes warm in parallel",
+      next: "Add or refresh one credible role in a second lane so you are not betting everything on a single path",
+      optional: "Capture which lanes are producing the best mix of fit, realism, and response",
+      stopRule: "Stop after one real conversion move and one parallel-portfolio maintenance move.",
+    };
+  }
   if (phase === "lane-narrowing") {
     if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
       const topicA = snapshot.topicHypotheses[0] || "topic one";
@@ -509,6 +528,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
   const parallelExperiments = phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
     ? buildParallelExperiments(snapshot)
     : [];
+  const broadParallelPursuit = phase === "role-targeting" && hasBroadParallelLanes(snapshot);
 
   return {
     goal: "Find the right role, then become interview- and job-ready",
@@ -519,7 +539,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     recommendedFocus: focus.name,
     reason: phaseReason(phase, focus, snapshot),
     decisionQuestion: phaseDecisionQuestion(phase, snapshot),
-    decisionMode: parallelExperiments.length ? "parallel-exploration" : phase === "lane-narrowing" ? "forced-comparison" : "single-track",
+    decisionMode: broadParallelPursuit ? "broad-parallel-pursuit" : parallelExperiments.length ? "parallel-exploration" : phase === "lane-narrowing" ? "forced-comparison" : "single-track",
     roleHypotheses: snapshot.roleHypotheses,
     comparisonAxes: {
       mode: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2 ? "two-axis" : snapshot.roleHypotheses.length >= 2 ? "single-axis" : "none",
@@ -527,18 +547,26 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
       roleShapeHypotheses: snapshot.roleShapeHypotheses,
       combinations: snapshot.topicHypotheses.slice(0, 2).flatMap((topic) => snapshot.roleShapeHypotheses.slice(0, 2).map((shape) => `${topic} x ${shape}`)),
     },
-    comparisonCriteria: parallelExperiments.length
+    comparisonCriteria: (parallelExperiments.length || broadParallelPursuit)
       ? [
           "How energised would you feel doing this work weekly?",
           "How strong is your existing credibility for this combination?",
+          "How likely is this lane to convert into a real offer soon?",
           "How much interview and on-the-job upskilling would it require?",
           "How attractive is the day-to-day work shape, not just the topic?",
         ]
       : [],
-    explorationStrategy: parallelExperiments.length
+    explorationStrategy: broadParallelPursuit
+      ? "Run all four combinations as a broad pursuit portfolio; convert live roles while keeping parallel lanes warm."
+      : parallelExperiments.length
       ? "Run all four combinations in parallel for now; collect evidence before forcing a winner."
       : "",
-    experiments: parallelExperiments,
+    experiments: broadParallelPursuit ? [] : parallelExperiments,
+    pursuitPortfolio: broadParallelPursuit ? buildParallelExperiments(snapshot).map((x) => ({
+      combination: x.combination,
+      whyPlausible: x.whyPlausible,
+      nextMove: x.nextTest.replace(/^Find one /, "Pursue one "),
+    })) : [],
     trajectory: trajectoryFor(phase),
     workstreams,
     todayPlan: buildTodayPlan(phase, focus, snapshot, candidateUniverse),

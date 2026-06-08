@@ -40,25 +40,25 @@ test("career goal state reflects saved roles and feedback", () => {
   assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "premature"));
 });
 
-test("career goal state enters lane-narrowing when multiple role hypotheses are live", () => {
+test("career goal state enters broad parallel pursuit when multiple plausible lanes already have live roles", () => {
   const jobs = [
     { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "strategy" },
     { id: 2, title: "Geopolitical Risk Analyst", company: "Advisory Group", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "advisory" },
     { id: 3, title: "Chief of Staff", company: "AI Lab", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "operations" },
   ] as any;
   const state = buildCareerGoalState([], jobs, []);
-  assert.equal(state.phase, "lane-narrowing");
+  assert.equal(state.phase, "role-targeting");
   assert.ok(state.roleHypotheses.includes("AI strategy"));
   assert.ok(state.roleHypotheses.includes("Geopolitics / geopolitical advisory"));
   assert.equal(state.comparisonAxes.mode, "two-axis");
-  assert.equal(state.decisionMode, "parallel-exploration");
+  assert.equal(state.decisionMode, "broad-parallel-pursuit");
   assert.ok(state.comparisonAxes.topicHypotheses.includes("AI / technology strategy"));
   assert.ok(state.comparisonAxes.topicHypotheses.includes("Geopolitics / geopolitical advisory"));
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Strategy / advisory"));
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Ops / chief of staff"));
-  assert.equal(state.experiments.length, 4);
-  assert.match(state.decisionQuestion, /What are you learning from each of the four combinations/i);
-  assert.match(state.explorationStrategy, /Run all four combinations in parallel/i);
+  assert.equal(state.pursuitPortfolio.length, 4);
+  assert.match(state.decisionQuestion, /Which live roles are most gettable/i);
+  assert.match(state.explorationStrategy, /broad pursuit portfolio/i);
 });
 
 test("goal state API returns active goal with workstreams and today plan", async () => {

@@ -9,7 +9,8 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "test": "node script/run-tests.mjs",
-    "verify": "npm run check && npm test && npm run build",
+    "audit:css-sources": "node script/audit-css-sources.mjs",
+    "verify": "npm run check && npm test && npm run audit:css-sources && npm run build",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
@@ -81,7 +82,6 @@
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
-    "@tailwindcss/vite": "^4.1.18",
     "@types/better-sqlite3": "^7.6.12",
     "@types/express": "^5.0.0",
     "@types/express-session": "^1.18.0",

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
   Sun, Moon, Sparkles, ListTodo, Briefcase, GraduationCap, Trophy,
   Plus, X, ArrowRight, Check, ExternalLink, Clock, Trash2,
@@ -74,11 +75,46 @@ const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] =
 
 const GOAL_SPINE_QUERY_KEYS = ["/api/goals/state", "/api/strategy/front-door", "/api/strategy/diagnostics"] as const;
 
+function tabFromPath(path: string): Tab {
+  switch (path) {
+    case "/strategy":
+      return "strategy";
+    case "/braindump":
+      return "braindump";
+    case "/jobs":
+      return "jobs";
+    case "/network":
+      return "network";
+    case "/learn":
+      return "learn";
+    case "/wins":
+      return "wins";
+    default:
+      return "today";
+  }
+}
+
+function pathForTab(tab: Tab): string {
+  return tab === "today" ? "/" : `/${tab}`;
+}
+
 export default function Home() {
   const { theme, toggle } = useTheme();
-  const [tab, setTab] = useState<Tab>("today");
+  const [location, navigate] = useLocation();
+  const [tab, setTab] = useState<Tab>(() => tabFromPath(location));
   const [moreOpen, setMoreOpen] = useState(false);
-  function go(t: Tab) { setTab(t); setMoreOpen(false); }
+
+  useEffect(() => {
+    const next = tabFromPath(location);
+    setTab((current) => (current === next ? current : next));
+  }, [location]);
+
+  function go(t: Tab) {
+    setTab(t);
+    setMoreOpen(false);
+    const nextPath = pathForTab(t);
+    if (location !== nextPath) navigate(nextPath);
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -122,7 +158,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 sm:px-6 py-7">
+      <main className="mx-auto max-w-3xl px-4 sm:px-6 py-7 pb-28 sm:pb-24">
         {tab !== "today" && (
           <button onClick={() => go("today")} data-testid="button-back-today" className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
             <ChevronRight className="w-4 h-4 rotate-180" /> Back to Today

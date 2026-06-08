@@ -37,7 +37,7 @@ function RestartFromHereButton() {
       onClick={restart}
       disabled={busy}
       data-testid="button-restart-from-here"
-      className="fixed bottom-4 right-4 z-50 rounded-full border border-primary/30 bg-card/95 px-4 py-2 text-sm font-medium text-primary shadow-lg backdrop-blur hover:bg-primary/10 disabled:opacity-60"
+      className="mx-4 mb-4 w-[calc(100%-2rem)] rounded-full border border-primary/30 bg-card/95 px-4 py-2 text-sm font-medium text-primary shadow-lg backdrop-blur hover:bg-primary/10 disabled:opacity-60 sm:fixed sm:bottom-4 sm:right-4 sm:left-auto sm:z-50 sm:mb-0 sm:w-auto"
       aria-label="Restart from here"
     >
       {busy ? "Restarting…" : "Restart from here"}
@@ -131,6 +131,12 @@ function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/strategy" component={Home} />
+      <Route path="/braindump" component={Home} />
+      <Route path="/jobs" component={Home} />
+      <Route path="/network" component={Home} />
+      <Route path="/learn" component={Home} />
+      <Route path="/wins" component={Home} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1841,10 +1841,13 @@ function NetworkView() {
   }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/contacts/${id}`, undefined, ["/api/contacts", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]); }
 
-  // Group contacts into warm lanes via the tolerant normalizer; "Open" last.
+  // Group contacts into warm lanes via the tolerant normalizer.
   const byLane = new Map<string, Contact[]>(ALL_LANE_KEYS.map((k) => [k, []]));
   for (const c of contacts) byLane.get(laneForSourceNetwork(c.sourceNetwork))!.push(c);
-  const activeLaneKeys = ALL_LANE_KEYS.filter((k) => (byLane.get(k)!.length > 0) || k !== OPEN_LANE);
+  const populatedLaneKeys = ALL_LANE_KEYS.filter((k) => byLane.get(k)!.length > 0);
+  const quietLaneKeys = NETWORK_LANES
+    .map((lane) => lane.key)
+    .filter((key) => byLane.get(key)!.length === 0);
 
   return (
     <div>
@@ -1876,7 +1879,7 @@ function NetworkView() {
         <Empty icon={Users} text="No one on your warm list yet. Add the suggestion above to start warming a path." />
       ) : (
         <div className="space-y-5">
-          {activeLaneKeys.map((key) => {
+          {populatedLaneKeys.map((key) => {
             const items = byLane.get(key)!;
             const overdue = items.filter(isFollowUpOverdue).length;
             return (
@@ -1900,6 +1903,25 @@ function NetworkView() {
               </div>
             );
           })}
+
+          {quietLaneKeys.length > 0 && (
+            <div className="rounded-xl border border-dashed border-border bg-card/60 p-4" data-testid="quiet-network-lanes">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h2 className="font-semibold text-sm">Other warm lanes</h2>
+                <span className="text-xs text-muted-foreground">{quietLaneKeys.length} empty</span>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                Keep these in mind as optional routes to warm later. They do not need attention before your live contacts.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {quietLaneKeys.map((key) => (
+                  <span key={key} className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
+                    {laneLabel(key)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -239,7 +239,7 @@ function jobMoveSize(action: JobTruthAction) {
 
 function jobDoneWhen(action: JobTruthAction) {
   if (action === "warm") return "A warm-path message or referral ask is sent";
-  if (action === "prove") return "One stronger narrative angle or proof point exists";
+  if (action === "prove") return "One stronger reusable capability signal exists";
   if (action === "clarify") return "The missing facts are confirmed";
   if (action === "follow_up") return "A follow-up or warm nudge is sent";
   if (action === "prepare") return "The interview stories or prep packet are stronger";
@@ -805,7 +805,7 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
 function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "job") {
     if (candidate?.jobTruthAction === "warm") return "Open the role and write the shortest warm-path message or referral ask.";
-    if (candidate?.jobTruthAction === "prove") return "Open the role and write one stronger narrative angle or proof bullet.";
+    if (candidate?.jobTruthAction === "prove") return "Open your strongest learning or proof asset and turn it into one reusable capability signal.";
     if (candidate?.jobTruthAction === "clarify") return "Open the source and confirm the missing facts before spending more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "Open the role and send the polite follow-up or warm nudge.";
     if (candidate?.jobTruthAction === "prepare") return "Open the role and draft the strongest interview stories or prep notes.";
@@ -826,7 +826,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "job") {
     if (candidate?.jobTruthAction === "warm") return "Stop after one warm-path message or referral ask is drafted, sent, or scheduled.";
-    if (candidate?.jobTruthAction === "prove") return "Stop after one stronger narrative angle or proof point exists.";
+    if (candidate?.jobTruthAction === "prove") return "Stop after one reusable capability signal is clearer or more reusable than it was before.";
     if (candidate?.jobTruthAction === "clarify") return "Stop after the key missing facts are confirmed.";
     if (candidate?.jobTruthAction === "follow_up") return "Stop after one follow-up or warm nudge is sent.";
     if (candidate?.jobTruthAction === "prepare") return "Stop after one interview-prep artifact is stronger than it was before.";
@@ -847,7 +847,7 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "job") {
     if (candidate?.jobTruthAction === "warm") return "This role is promising, but the best move is to use a warm path before going cold.";
-    if (candidate?.jobTruthAction === "prove") return "This role is promising, but the next move is to strengthen credibility before pushing harder.";
+    if (candidate?.jobTruthAction === "prove") return "This role is promising, but the lane needs stronger reusable capability evidence before pushing harder.";
     if (candidate?.jobTruthAction === "clarify") return "This role needs one clarification pass before it deserves more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "This role has already moved into the pipeline, so follow-through matters most right now.";
     if (candidate?.jobTruthAction === "prepare") return "This role is live, so preparation is the value driver right now.";

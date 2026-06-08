@@ -213,9 +213,9 @@ test("job recommendations use recruiting truth for prove-fit roles", () => {
   const result = recommend([], jobs, [], [], "medium");
   assert.equal(result.pick?.source, "job");
   assert.equal(result.pick?.jobTruthAction, "prove");
-  assert.match(result.pick?.title || "", /narrative angle|proof bullet/i);
-  assert.match(result.explanation.summary, /strengthen credibility/i);
-  assert.match(result.explanation.firstStep, /narrative angle|proof bullet/i);
+  assert.match(result.pick?.title || "", /capability signal/i);
+  assert.match(result.explanation.summary, /capability evidence/i);
+  assert.match(result.explanation.firstStep, /learning or proof asset|capability signal/i);
 });
 
 test("planner keeps job pursuit and capability-building in parallel when time allows", () => {

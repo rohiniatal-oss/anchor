@@ -166,8 +166,8 @@ export function computeJobTruthStrip(job: Job): JobTruthStrip {
     nextMove = "Send one warm-path message or referral ask";
   } else if (proof.level !== "strong" && ((fit.score ?? 0) >= 70 || (job.strategicValue ?? 0) >= 70)) {
     action = "prove";
-    headline = "Strong enough to pursue, but needs proof of credibility";
-    nextMove = "Write the narrative angle or one proof bullet for this role";
+    headline = "Strong enough to pursue, but the lane still needs stronger reusable capability evidence";
+    nextMove = "Strengthen one reusable capability signal for this lane";
   } else if (readiness.level === "weak") {
     action = "clarify";
     headline = "Turn this from saved role into application requirements";

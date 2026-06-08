@@ -438,7 +438,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
               ? "no role is ready for a concrete conversion move yet"
               : "direction is not ready enough for broad applications";
   const applicationNextMoves = applicationLead?.action === "prepare"
-      ? [applicationLead.nextMove, "review the most likely interview themes", "tighten one role-specific story or proof point"]
+      ? [applicationLead.nextMove, "review the most likely interview themes", "tighten one reusable interview story or capability example"]
     : applicationLead?.action === "follow_up"
       ? [applicationLead.nextMove, "identify the warmest internal nudge for that role", "log the next follow-up point so the role does not disappear"]
     : applicationLead?.action === "apply"
@@ -468,8 +468,8 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
   const proofNextMoves = snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
     ? ["keep proof as a secondary upskilling layer for now", "start one proof asset only when it will compound your learning", "define the smallest publishable or shippable proof output when you are ready"]
     : snapshot.liveProofAssetCount > 0
-      ? ["produce the next concrete output on the live proof asset", "package one existing output into reusable evidence", "connect the proof asset to the strongest live role"]
-      : ["turn one proof idea into a real asset", "pick one output format you can sustain", "connect the asset to a learning goal, not just a role requirement"];
+      ? ["produce the next concrete output on the live proof asset", "package one existing output into reusable evidence", "connect the proof asset back to the capability it is building"]
+      : ["turn one proof idea into a real asset", "pick one output format you can sustain", "connect the asset to a learning goal, not a single role"];
   const capabilityStatus: WorkstreamStatus = snapshot.directionReady || snapshot.interviewingJobs > 0
     ? (snapshot.activeLearnCount > 0 || snapshot.evidencedLearnCount > 0 ? "active" : "underdeveloped")
     : "premature";
@@ -498,9 +498,9 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
   const capabilityNextMoves = snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
     ? ["choose one role-relevant capability to strengthen", "start one learning item with a clear output in mind", "define what reusable evidence this learning should produce"]
     : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
-      ? ["finish one reusable learning output for the strongest role", "turn that output into a proof bullet or interview artifact", "capture the evidence so Anchor can reuse it later"]
+      ? ["finish one reusable learning output for the current lane", "turn that output into a reusable interview or credibility artifact", "capture the evidence so Anchor can reuse it later"]
     : snapshot.proofSupportDemandCount > 0
-      ? ["strengthen one credibility signal for the strongest role", "turn existing learning into a reusable proof point", "package one output as interview or application evidence"]
+      ? ["strengthen one reusable capability signal for the current lane", "turn existing learning into a reusable proof point", "package one output as reusable evidence"]
     : snapshot.learningOutputGapCount > 0
       ? ["finish one reusable learning output", "attach evidence to the learning item", "turn one learning output into interview or job-ready material"]
         : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0

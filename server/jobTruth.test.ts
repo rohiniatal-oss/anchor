@@ -64,7 +64,8 @@ test("job truth strip recommends prove when role is strong but narrative is miss
   const r = await api(h.base, "GET", `/api/jobs/${job.id}/truth-strip`);
   assert.equal(r.status, 200);
   assert.equal(r.json.action, "prove");
-  assert.match(r.json.nextMove, /narrative|proof/i);
+  assert.match(r.json.headline, /reusable capability evidence/i);
+  assert.match(r.json.nextMove, /capability signal/i);
 });
 
 test("job truth strip recommends apply when fit and readiness are sufficient", async () => {

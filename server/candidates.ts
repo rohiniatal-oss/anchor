@@ -75,6 +75,10 @@ type AttributeFeedback = {
   timestamp?: number;
 };
 
+function norm(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 const STARTER_ASSETS: CareerAsset[] = [
   { key: "exp-bain", kind: "experience", label: "Bain", note: "strategy consulting and alumni network", strength: 9, active: true },
   { key: "net-sipa", kind: "network", label: "SIPA", note: "policy and international affairs network", strength: 8, active: true },
@@ -113,8 +117,8 @@ function normaliseAsset(raw: any): CareerAsset {
 
 function normaliseFeedback(raw: any): AttributeFeedback {
   const rawType = String(raw.attributeType || "");
-  const attributeType = ["workContent", "topicAreas", "environment", "mechanics", "capabilityGap", "credibilityAsset"].includes(rawType)
-    ? rawType
+  const attributeType: AttributeFeedback["attributeType"] = ["workContent", "topicAreas", "environment", "mechanics", "capabilityGap", "credibilityAsset"].includes(rawType)
+    ? rawType as AttributeFeedback["attributeType"]
     : rawType === "proofGap"
       ? "capabilityGap"
       : "workContent";

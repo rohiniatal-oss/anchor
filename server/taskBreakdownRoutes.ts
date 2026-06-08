@@ -28,6 +28,18 @@ type SourceBundle = {
   parentWorkflow?: WorkflowState;
 };
 
+function jobSource(bundle: SourceBundle): Job | null {
+  return bundle.sourceKind === "job" ? bundle.source as Job | null : null;
+}
+
+function learnSource(bundle: SourceBundle): Learn | null {
+  return bundle.sourceKind === "learn" ? bundle.source as Learn | null : null;
+}
+
+function hustleSource(bundle: SourceBundle): Hustle | null {
+  return bundle.sourceKind === "hustle" ? bundle.source as Hustle | null : null;
+}
+
 const WORKFLOWS: Record<WorkObject, string[]> = {
   Artifact: ["Clarify purpose", "Gather inputs", "Structure", "Draft", "Refine", "QC", "Deliver"],
   Decision: ["Frame question", "Define criteria", "Generate options", "Evaluate", "Decide", "Commit"],
@@ -181,8 +193,9 @@ function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowSta
 export function parentWorkflowFor(task: Task, bundle: SourceBundle): WorkflowState | undefined {
   const text = `${task?.title || ""} ${task?.category || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
   if (bundle.sourceKind === "job") {
-    const readiness = String(bundle.source?.applicationReadiness || "none");
-    const status = String(bundle.source?.status || "wishlist");
+    const source = jobSource(bundle);
+    const readiness = String(source?.applicationReadiness || "none");
+    const status = String(source?.status || "wishlist");
     const currentStage = status === "applied" ? "Follow up"
       : status === "interviewing" ? "Build materials"
       : readiness === "submitted" ? "Submit"
@@ -196,18 +209,20 @@ export function parentWorkflowFor(task: Task, bundle: SourceBundle): WorkflowSta
       : currentStage === "Build materials" ? "The next application material is drafted or improved"
       : currentStage === "Submit" ? "Application is submitted with required materials"
       : "Follow-up action is sent or logged";
-    return makeWorkflowState({ workObject: "Artifact", workflow: APPLICATION_WORKFLOW, currentStage, stageOutput, inheritedFrom: `job:${bundle.source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "job" });
+    return makeWorkflowState({ workObject: "Artifact", workflow: APPLICATION_WORKFLOW, currentStage, stageOutput, inheritedFrom: `job:${source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "job" });
   }
   if (bundle.sourceKind === "learn") {
+    const source = learnSource(bundle);
     const workObject: WorkObject = keyword(text, /practice|drill|mock/) ? "Capability" : "Knowledge";
     const currentStage = workObject === "Capability" ? "Practise" : "Orient";
-    const stageOutput = bundle.source?.requiredOutput || (workObject === "Capability" ? "One practice output exists" : "One useful slice and output are chosen");
-    return makeWorkflowState({ workObject, workflow: WORKFLOWS[workObject], currentStage, stageOutput, inheritedFrom: `learn:${bundle.source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "learn" });
+    const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "One practice output exists" : "One useful slice and output are chosen");
+    return makeWorkflowState({ workObject, workflow: WORKFLOWS[workObject], currentStage, stageOutput, inheritedFrom: `learn:${source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "learn" });
   }
   if (bundle.sourceKind === "hustle") {
-    const currentStage = bundle.source?.coreClaim ? "Gather evidence" : "Define claim";
+    const source = hustleSource(bundle);
+    const currentStage = source?.coreClaim ? "Gather evidence" : "Define claim";
     const stageOutput = currentStage === "Define claim" ? "One clear proof claim exists" : "Evidence for the proof claim is selected";
-    return makeWorkflowState({ workObject: "Artifact", workflow: PROOF_WORKFLOW, currentStage, stageOutput, inheritedFrom: `hustle:${bundle.source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "hustle" });
+    return makeWorkflowState({ workObject: "Artifact", workflow: PROOF_WORKFLOW, currentStage, stageOutput, inheritedFrom: `hustle:${source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "hustle" });
   }
   return undefined;
 }

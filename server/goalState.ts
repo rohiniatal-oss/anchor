@@ -151,6 +151,15 @@ function daysUntil(deadline: string): number | null {
   return Math.ceil((d.getTime() - Date.now()) / 86400000);
 }
 
+function calendarDaysUntil(date: string): number | null {
+  if (!date) return null;
+  const due = new Date(`${date}T12:00:00`);
+  if (isNaN(due.getTime())) return null;
+  const now = new Date();
+  const today = new Date(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T12:00:00`);
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
+
 function isOpenContact(c: Contact) {
   return c.status !== "closed";
 }
@@ -172,7 +181,7 @@ function isRoleLinkedContact(c: Contact) {
 }
 
 function isContactFollowUpDue(c: Contact) {
-  const due = daysUntil(c.nextFollowUpDate || "");
+  const due = calendarDaysUntil(c.nextFollowUpDate || "");
   return due !== null && due <= 0;
 }
 
@@ -193,7 +202,7 @@ function scoreHypothesesFromText(text: string, scores: Map<string, number>) {
   if (/\b(ai|artificial intelligence|ai governance|tech policy|machine learning|frontier model|safety)\b/.test(lower)) {
     addHypothesisScore(scores, "ai_strategy", 2);
   }
-  if (/\b(geopolitic|foreign policy|international|security|middle east|geostrateg|geopolitical risk|risk advisory)\b/.test(lower)) {
+  if (/\b(geopolitic\w*|foreign policy|international|security|middle east|geostrateg\w*|geopolitical risk|risk advisory)\b/.test(lower)) {
     addHypothesisScore(scores, "geopolitics", 2);
   }
   if (/\b(policy|public sector|think tank|government|advisory|advisor|advisory work)\b/.test(lower)) {
@@ -209,7 +218,7 @@ function scoreTopicHypothesesFromText(text: string, scores: Map<string, number>)
   if (/\b(ai|artificial intelligence|ai governance|tech policy|machine learning|frontier model|safety)\b/.test(lower)) {
     addAxisScore(scores, "ai", 2);
   }
-  if (/\b(geopolitic|foreign policy|international|security|middle east|geostrateg|geopolitical risk|risk advisory)\b/.test(lower)) {
+  if (/\b(geopolitic\w*|foreign policy|international|security|middle east|geostrateg\w*|geopolitical risk|risk advisory)\b/.test(lower)) {
     addAxisScore(scores, "geopolitics", 2);
   }
   if (/\b(policy|public sector|think tank|government|regulation|public affairs)\b/.test(lower)) {
@@ -232,9 +241,8 @@ function scoreRoleShapeHypothesesFromText(text: string, scores: Map<string, numb
 
 function rankedHypotheses<T extends string>(scores: Map<string, number>, labels: Record<T, string>) {
   const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1]);
-  const topScore = ranked[0]?.[1] || 0;
   return ranked
-    .filter(([, score]) => score >= Math.max(2, topScore - 1))
+    .filter(([, score]) => score >= 2)
     .map(([key]) => labels[key as T])
     .slice(0, 3);
 }
@@ -372,6 +380,7 @@ function inferGoalPhase(snapshot: GoalSnapshot): GoalPhase {
   if (snapshot.interviewingJobs > 0) return "interview-prep";
   if (!snapshot.directionStarted) return "fit-discovery";
   if (hasBroadParallelLanes(snapshot)) return "role-targeting";
+  if (snapshot.savedJobs.length >= 5) return "role-targeting";
   if ((snapshot.roleHypotheses.length >= 2 || snapshot.topicHypotheses.length >= 2 || snapshot.roleShapeHypotheses.length >= 2) && !snapshot.hasApplicationTask) return "lane-narrowing";
   return "role-targeting";
 }
@@ -422,11 +431,20 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         : snapshot.activeConversationCount === 0
           ? ["turn one draft into a sent message", "pick the warmest contact and send a concrete ask", "schedule one follow-up date"]
           : ["move one active thread forward", "make the next ask more specific", "log the next follow-up date"];
-  const applicationLead = snapshot.leadApplicationTruth;
+  const clarifyOnlyApplications = snapshot.viableApplicationCount > 0
+    && snapshot.applicationActionCounts.clarify === snapshot.viableApplicationCount
+    && snapshot.applicationActionCounts.apply === 0
+    && snapshot.applicationActionCounts.warm === 0
+    && snapshot.applicationActionCounts.follow_up === 0
+    && snapshot.applicationActionCounts.prepare === 0;
+  const applicationLead = clarifyOnlyApplications ? null : snapshot.leadApplicationTruth;
   const applicationStatus: WorkstreamStatus = snapshot.viableApplicationCount === 0
     ? (snapshot.directionReady ? "underdeveloped" : "premature")
+    : clarifyOnlyApplications ? "premature"
     : applicationLead ? "active" : "underdeveloped";
-  const applicationProgress: WorkstreamState["progress"] = applicationLead?.action === "prepare" || applicationLead?.action === "follow_up"
+  const applicationProgress: WorkstreamState["progress"] = clarifyOnlyApplications
+    ? "not_started"
+    : applicationLead?.action === "prepare" || applicationLead?.action === "follow_up"
     ? "developing"
     : applicationLead
       ? "early"
@@ -457,7 +475,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     : applicationLead?.action === "clarify"
       ? [applicationLead.nextMove, "confirm the role facts before spending more effort", "decide whether the role is worth keeping in the portfolio"]
       : ["wait until one role has a concrete conversion move", "keep the pipeline selective rather than forcing an application", "do not mass apply yet"];
-  const proofStatus: WorkstreamStatus = !snapshot.directionReady && snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
+  const proofStatus: WorkstreamStatus = !snapshot.directionStarted && snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
     ? "premature"
     : snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
       ? "sufficient_for_now"
@@ -591,7 +609,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       status: applicationStatus,
       progress: applicationProgress,
       bottleneck: applicationBottleneck,
-      nextMoveType: applicationLead?.action === "prepare" ? "preparation" : applicationLead ? "execution" : "wait",
+      nextMoveType: clarifyOnlyApplications ? "wait" : applicationLead?.action === "prepare" ? "preparation" : applicationLead ? "execution" : "wait",
       evidence: [
         `${snapshot.savedJobs.length} open or saved role${snapshot.savedJobs.length === 1 ? "" : "s"}`,
         `${snapshot.viableApplicationCount} viable role${snapshot.viableApplicationCount === 1 ? "" : "s"}`,

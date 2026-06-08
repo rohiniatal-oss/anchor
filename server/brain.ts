@@ -81,6 +81,23 @@ type StrategicContext = {
   planningPosture: "exploration" | "conversion" | "interview" | "capability";
 };
 
+const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
+  bottleneck: "Progress",
+  reason: "",
+  applicationsPremature: false,
+  recommendedExploration: "",
+  laneModel: { trace: [] },
+  bottleneckLane: "Stability",
+  laneStage: "steady",
+  laneUnlockMove: "",
+  activeTrackName: "",
+  liveJobTargets: [],
+  goalPhase: "fit-discovery",
+  goalDayType: "exploration",
+  decisionMode: "parallel-exploration",
+  planningPosture: "exploration",
+};
+
 type RankedCandidate = { c: Candidate; s: number; trace: string[] };
 
 export type PlanTrace = {
@@ -139,6 +156,7 @@ function isApplicationLike(c: Candidate) {
 }
 
 function isDirectionSignal(c: Candidate) {
+  if (c.source === "contact" && ((c.targetOrg && c.targetOrg.trim()) || (c.targetRole && c.targetRole.trim()))) return true;
   if (isApplicationLike(c)) return false;
   return /direction|role|career|inspect|signal|attribute|explore|job family|research|fit|path|market map|pattern/i.test(`${c.title} ${c.whyNow} ${c.sourceNote}`);
 }
@@ -373,7 +391,13 @@ function contactNextStep(c: Contact): { action: string; size: string; doneWhen: 
 }
 
 function contactFollowUpDays(c: Candidate) {
-  return daysUntil(c.followUpDate || "");
+  const raw = (c.followUpDate || "").trim();
+  if (!raw) return null;
+  const due = new Date(`${raw}T12:00:00`);
+  if (Number.isNaN(due.getTime())) return null;
+  const now = new Date();
+  const today = new Date(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T12:00:00`);
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
 }
 
 function contactMomentum(c: Candidate, context: StrategicContext) {
@@ -424,6 +448,16 @@ function contactMomentum(c: Candidate, context: StrategicContext) {
   if (c.messageDraft && c.messageDraft.trim()) {
     s += 18;
     trace.push("draft already exists");
+  }
+
+  if ((c.targetOrg && c.targetOrg.trim()) || (c.targetRole && c.targetRole.trim())) {
+    if (c.sourceStatus === "messaged" || c.sourceStatus === "replied") {
+      s += 18;
+      trace.push("specific target role or org is already in motion");
+    } else {
+      s += 8;
+      trace.push("specific target role or org is already defined");
+    }
   }
 
   const roleFit = liveRoleContactFit(c, context);
@@ -516,6 +550,7 @@ function contactIntent(c: Candidate, context: StrategicContext): NetworkingInten
   const liveFit = liveRoleContactFit(c, context);
   const hasTargetSignal = !!(c.targetOrg && c.targetOrg.trim()) || !!(c.targetRole && c.targetRole.trim()) || liveFit.score >= 18;
   const activeThread = c.sourceStatus === "messaged" || c.sourceStatus === "replied";
+  if (hasTargetSignal && activeThread && (c.askType === "referral" || c.askType === "follow_up")) return "conversion";
   if (context.planningPosture === "interview" && (hasTargetSignal || activeThread || c.askType === "follow_up")) return "interview";
   if (liveFit.score >= 26) return "conversion";
   if (context.planningPosture === "conversion" && (hasTargetSignal || c.askType === "referral" || c.askType === "follow_up")) return "conversion";
@@ -770,10 +805,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
 }
 
 function score(c: Candidate, energy: Energy, mode: DayMode): number {
-  return scoreWithTrace(c, energy, mode, {
-    bottleneck: "Progress", reason: "", applicationsPremature: false, recommendedExploration: "",
-    laneModel: { trace: [] }, bottleneckLane: "Stability", laneStage: "steady", laneUnlockMove: "", activeTrackName: "",
-  }).s;
+  return scoreWithTrace(c, energy, mode, DEFAULT_STRATEGIC_CONTEXT).s;
 }
 
 export type SlotName = "now" | "next" | "later" | "bonus";
@@ -806,7 +838,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
   if (source === "job") {
     if (candidate?.jobTruthAction === "warm") return "Open the role and write the shortest warm-path message or referral ask.";
     if (candidate?.jobTruthAction === "prove") return "Open your strongest learning or proof asset and turn it into one reusable capability signal.";
-    if (candidate?.jobTruthAction === "clarify") return "Open the source and confirm the missing facts before spending more effort.";
+    if (candidate?.jobTruthAction === "clarify") return "Open the role and confirm the missing facts before spending more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "Open the role and send the polite follow-up or warm nudge.";
     if (candidate?.jobTruthAction === "prepare") return "Open the role and draft the strongest interview stories or prep notes.";
     return "Open the role, your CV, and the application materials for this step.";
@@ -846,7 +878,7 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "This role is promising, but the best move is to use a warm path before going cold.";
+    if (candidate?.jobTruthAction === "warm") return "This role is still one of the strongest conversion moves right now, but the best next step is to use a warm path before going cold.";
     if (candidate?.jobTruthAction === "prove") return "This role is promising, but the lane needs stronger reusable capability evidence before pushing harder.";
     if (candidate?.jobTruthAction === "clarify") return "This role needs one clarification pass before it deserves more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "This role has already moved into the pipeline, so follow-through matters most right now.";

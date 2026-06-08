@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
-import { planDay } from "./brain";
+import { explainPersistedPlanItem, planDay } from "./brain";
 import { dayPlans, dayPlanItems, insertTaskSchema, type DayPlan, type Task, type CareerTrack } from "@shared/schema";
 import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey, refinedEstimateFromSteps, stepsWithEstimatedMinutes } from "./planningFeedback";
 
@@ -254,7 +254,10 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
     return current;
   });
 
-  const items = await storage.getPlanItems(plan.id);
+  const items = (await storage.getPlanItems(plan.id)).map((item) => ({
+    ...item,
+    explanation: explainPersistedPlanItem(item),
+  }));
   const events = await storage.getEvents(day);
   return { plan, items, events, budget, memory: { yesterday: memory.yesterday, missedMvd: !!memory.missedMvdKey, skipped: memory.skippedKeys.size, parked: memory.parkedKeys.size }, restart: !!opts.restart };
 }
@@ -428,7 +431,10 @@ export function registerSprint2Routes(app: Express) {
     const energy = coerceEnergy(req.query.energy);
     const plan = await storage.getPlanByDate(day);
     if (!plan) return res.json(await buildAdaptivePlan(day, energy));
-    const items = await storage.getPlanItems(plan.id);
+    const items = (await storage.getPlanItems(plan.id)).map((item) => ({
+      ...item,
+      explanation: explainPersistedPlanItem(item),
+    }));
     const events = await storage.getEvents(day);
     const budget = await remainingBudgetFor(day, readAvailableMinutes(req.query.availableMinutes));
     const memory = await planningMemoryFor(day);

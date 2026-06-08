@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
-import { planDay } from "./brain";
+import { explainPersistedPlanItem, planDay } from "./brain";
 import { classifyCapture, routeCapture, type CaptureRoute } from "./capture";
 import {
   dayPlans,
@@ -180,7 +180,15 @@ async function buildPlanTransactional(day: string, energy: Energy) {
 
   const items = await storage.getPlanItems(plan.id);
   const events = await storage.getEvents(day);
-  return { plan, items, events, busyMinutes: busy };
+  return {
+    plan,
+    items: items.map((item) => ({
+      ...item,
+      explanation: explainPersistedPlanItem(item),
+    })),
+    events,
+    busyMinutes: busy,
+  };
 }
 
 function legacyTriageShape(id: number, title: string) {
@@ -234,7 +242,14 @@ export function registerSprint1Routes(app: Express) {
     if (!plan) return res.json(await buildPlanTransactional(day, energy));
     const items = await storage.getPlanItems(plan.id);
     const events = await storage.getEvents(day);
-    res.json({ plan, items, events });
+    res.json({
+      plan,
+      items: items.map((item) => ({
+        ...item,
+        explanation: explainPersistedPlanItem(item),
+      })),
+      events,
+    });
   });
 
   app.post("/api/plan/recompute", async (req, res) => {

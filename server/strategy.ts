@@ -157,7 +157,7 @@ export function diagnoseTrack(
   // a tiebreaker — DELIBERATELY computed last and gated so it can only surface as
   // the recommended move once every structural gap is clear. It is NOT folded
   // into any other gap's math, so it can never become the loud primary blocker.
-  const hasLiveWork = liveObjects > 0 || tTasks.some((t) => !isTaskDone(t));
+  const hasLiveWork = tLearn.some(isLearnActive) || tHustles.some(isProofLive) || tTasks.some((t) => !isTaskDone(t));
   const evidenceGap = (hasLiveWork && ev.evidenceCount === 0) ? 1 : 0;
 
   // P5 — learning gap: count of REQUIRED capability domains for this track not yet

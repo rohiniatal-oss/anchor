@@ -1,5 +1,5 @@
 import type { ActivityLog, DayPlanItem, Task } from "@shared/schema";
-import type { PlanItem, Candidate, SlotName } from "./brain";
+import { explainPersistedPlanItem, type PlanItem, type Candidate, type SlotName } from "./brain";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PLANNING FEEDBACK
@@ -93,7 +93,17 @@ function cloneCandidate(c: Candidate, patch: Partial<Candidate>): Candidate {
 }
 
 function asPlanItem(candidate: Candidate, why: string, slot: SlotName = "now", isMVD = false): PlanItem {
-  return { candidate, why, slot, isMVD };
+  return {
+    candidate,
+    why,
+    slot,
+    isMVD,
+    explanation: explainPersistedPlanItem({
+      sourceType: candidate.source,
+      whySelected: why,
+      doneWhen: candidate.doneWhen || "",
+    }),
+  };
 }
 
 function unblockPlanItems(tasks: Task[]): PlanItem[] {

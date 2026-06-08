@@ -92,6 +92,11 @@ function hasRealSource(job: Job) {
   return !!(job.url || job.sourceUrl || job.note);
 }
 
+function hasBasicRoleFacts(job: Job) {
+  const company = (job.company || "").trim().toLowerCase();
+  return hasRealSource(job) || !!(company && company !== "unknown");
+}
+
 function proofLevel(job: Job): TruthLevel {
   if (job.narrativeAngle && job.narrativeAngle.trim()) return "strong";
   if ((job.fitScore ?? 0) >= 75 || (job.strategicValue ?? 0) >= 70) return "medium";
@@ -156,7 +161,7 @@ export function computeJobTruthStrip(job: Job): JobTruthStrip {
     action = "follow_up";
     headline = "This has moved from applying to follow-up";
     nextMove = "Send one polite follow-up or identify a warm nudge";
-  } else if (job.eligibilityRisk || !hasRealSource(job) || !job.deadlineConfidence) {
+  } else if (job.eligibilityRisk || !hasBasicRoleFacts(job) || !job.deadlineConfidence) {
     action = "clarify";
     headline = "Clarify the facts before spending effort";
     nextMove = job.eligibilityRisk ? "Check the eligibility requirement first" : "Open the source and confirm deadline, materials, and fit";

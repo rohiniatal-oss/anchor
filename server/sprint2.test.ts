@@ -94,6 +94,45 @@ test("current plan response exposes a remaining-day budget for the frontend", as
   assert.equal(r.json.restart, false);
 });
 
+test("current plan refreshes stale single-lane carry-forward work when broad parallel pursuit is active", async () => {
+  await h.storage.createTask({
+    title: "Inspect three AI governance strategy roles and capture repeated requirements.",
+    list: "today",
+    done: false,
+    status: "not_started",
+    category: "job",
+    size: "deep",
+  } as any);
+
+  const initial = await api(h.base, "POST", "/api/plan/recompute", {
+    day: DAY,
+    energy: "medium",
+    availableMinutes: 180,
+  });
+  assert.equal(initial.status, 200);
+  assert.equal(initial.json.items[0]?.sourceType, "task");
+
+  await h.storage.createCareerTrack({
+    slug: "ai-strategy",
+    name: "AI strategy",
+    status: "active",
+    priority: 80,
+    targetRoleArchetype: "AI strategy advisory",
+  } as any);
+  await h.storage.createCareerTrack({
+    slug: "geo-ops",
+    name: "Geopolitics ops",
+    status: "active",
+    priority: 70,
+    targetRoleArchetype: "geopolitics chief of staff operations",
+  } as any);
+
+  const refreshed = await api(h.base, "GET", `/api/plan/current?day=${DAY}&energy=medium&availableMinutes=180`);
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.json.items[0]?.sourceType, "goal");
+  assert.match(refreshed.json.items[0]?.title || "", /Add or apply to one credible role/i);
+});
+
 test("avoidance review distinguishes repeated avoidance from normal tasks", async () => {
   const avoided = await h.storage.createTask({ title: "Rewrite whole CV", list: "today", done: false, status: "not_started", category: "job", size: "deep", skipped: 2 } as any);
   const normal = await h.storage.createTask({ title: "Send one email", list: "today", done: false, status: "not_started", category: "admin", size: "quick", skipped: 0 } as any);

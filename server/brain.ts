@@ -29,7 +29,7 @@ type Energy = "low" | "medium" | "high";
 const SIZE_MINUTES: Record<string, number> = { quick: 15, medium: 45, deep: 120 };
 
 export type Candidate = {
-  source: "task" | "job" | "learn" | "hustle" | "contact";
+  source: "task" | "job" | "learn" | "hustle" | "contact" | "goal";
   sourceId: number;
   title: string;
   category: string;
@@ -232,21 +232,66 @@ function buildStrategicContext(
     spine.bestMove.lane,
     learn.some((l) => !l.done && l.learnStatus !== "closed"),
   );
+  const liveJobTargets = jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" }));
+  const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && liveJobTargets.length === 0;
   return {
-    bottleneck: spine.bestMove.lane,
-    reason: `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase}${goalFrame.decisionMode === "single-track" ? "" : ` (${goalFrame.decisionMode})`}.`,
+    bottleneck: broadPursuitNeedsRealRoles ? "Applications" : spine.bestMove.lane,
+    reason: broadPursuitNeedsRealRoles
+      ? `Broad pursuit is active across plausible lanes, but there are no live actionable roles yet. Turn each lane into one real pipeline move before doing narrower comparison work.${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase} (${goalFrame.decisionMode}).`
+      : `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase}${goalFrame.decisionMode === "single-track" ? "" : ` (${goalFrame.decisionMode})`}.`,
     applicationsPremature: false,
     recommendedExploration: spine.bestMove.trackName || spine.activeTrack?.name || "",
     laneModel: { trace: spine.trace },
-    bottleneckLane: spine.bestMove.lane,
-    laneStage: lane?.stage || "active",
-    laneUnlockMove: spine.bestMove.title,
+    bottleneckLane: broadPursuitNeedsRealRoles ? "Applications" : spine.bestMove.lane,
+    laneStage: broadPursuitNeedsRealRoles ? "active" : lane?.stage || "active",
+    laneUnlockMove: broadPursuitNeedsRealRoles ? "Add or apply to one credible role in each plausible lane that still looks real" : spine.bestMove.title,
     activeTrackName: spine.bestMove.trackName || spine.activeTrack?.name || "",
-    liveJobTargets: jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" })),
+    liveJobTargets,
     goalPhase: goalFrame.phase,
     goalDayType: goalFrame.dayType,
     decisionMode: goalFrame.decisionMode,
     planningPosture,
+  };
+}
+
+function needsBroadPursuitGoalCandidate(context: StrategicContext) {
+  return context.decisionMode === "broad-parallel-pursuit" && context.liveJobTargets.length === 0;
+}
+
+function buildBroadPursuitGoalCandidate(): Candidate {
+  return {
+    source: "goal",
+    sourceId: 1,
+    taskId: null,
+    title: "Add or apply to one credible role in each plausible lane that still looks real",
+    category: "job",
+    size: "deep",
+    deadline: "",
+    status: "not_started",
+    skipped: 0,
+    sourceUrl: "",
+    sourceNote: "Broad pursuit is active across all plausible lanes. Create one real pipeline move in each lane instead of narrowing abstractly.",
+    sourceStatus: "broad_parallel_pursuit",
+    doneWhen: "One concrete role or application move exists in each active lane",
+    whyNow: "the strategy is to pursue all plausible lanes in parallel until the market gives clearer signal",
+    fitScore: null,
+    blocked: false,
+    blockerReason: "",
+    eligibilityRisk: "",
+    location: "",
+    warmPathScore: null,
+    strategicValue: null,
+    frictionScore: null,
+    applicationReadiness: "",
+    deadlineConfidence: "",
+    narrativeAngle: "",
+    relationshipStrength: "",
+    askType: "",
+    messageDraft: "",
+    sourceNetwork: "",
+    targetOrg: "",
+    targetRole: "",
+    followUpDate: "",
   };
 }
 
@@ -533,6 +578,7 @@ function isActionableContact(c: Contact) {
 }
 
 function candidateStrategicLane(c: Candidate, context: StrategicContext): CanonicalLaneName {
+  if (c.source === "goal") return "Applications";
   if (c.source === "job") {
     if (c.jobTruthAction === "warm") return "Network";
     if (c.jobTruthAction === "prove") return "Learning and development";
@@ -749,6 +795,10 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
     s += momentum.score;
     trace.push(...momentum.trace);
   }
+  if (c.source === "goal") {
+    s += 42;
+    trace.push("broad pursuit needs real roles across all plausible lanes");
+  }
 
   s += (8 - (CATEGORY_RANK[c.category] ?? 7)) * 6;
 
@@ -829,12 +879,18 @@ function capacityMinutes(input: CapacityInput = 0): number {
 }
 
 function whyLine(r: RankedCandidate, context: StrategicContext) {
-  const lane = context.bottleneckLane;
+  const lane = candidateStrategicLane(r.c, context);
   const top = r.trace.filter(Boolean).slice(0, 2).join("; ");
+  if (r.c.source === "goal" && needsBroadPursuitGoalCandidate(context)) {
+    return `Broad pursuit. ${top || context.laneUnlockMove || "Best available next move"}.`;
+  }
   return `${lane} lane. ${top || context.laneUnlockMove || "Best available next move"}.`;
 }
 
 function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
+  if (source === "goal") {
+    return "Open your job sources and add or apply to one credible role in each active lane before doing narrower comparison work.";
+  }
   if (source === "job") {
     if (candidate?.jobTruthAction === "warm") return "Open the role and write the shortest warm-path message or referral ask.";
     if (candidate?.jobTruthAction === "prove") return "Open your strongest learning or proof asset and turn it into one reusable capability signal.";
@@ -856,6 +912,9 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
 }
 
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
+  if (source === "goal") {
+    return "Stop after one concrete role or application move exists in each active lane.";
+  }
   if (source === "job") {
     if (candidate?.jobTruthAction === "warm") return "Stop after one warm-path message or referral ask is drafted, sent, or scheduled.";
     if (candidate?.jobTruthAction === "prove") return "Stop after one reusable capability signal is clearer or more reusable than it was before.";
@@ -877,6 +936,9 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 }
 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
+  if (source === "goal") {
+    return "Broad parallel pursuit is the live strategy, so the best move is to turn each plausible lane into a real role or application signal.";
+  }
   if (source === "job") {
     if (candidate?.jobTruthAction === "warm") return "This role is still one of the strongest conversion moves right now, but the best next step is to use a warm path before going cold.";
     if (candidate?.jobTruthAction === "prove") return "This role is promising, but the lane needs stronger reusable capability evidence before pushing harder.";
@@ -966,6 +1028,9 @@ export function planDay(
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const all = gatherCandidates(tasks, jobs, learn, hustles, contacts);
+  if (needsBroadPursuitGoalCandidate(context)) {
+    all.unshift(buildBroadPursuitGoalCandidate());
+  }
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))
     .filter((x) => x.reason)
@@ -1051,6 +1116,7 @@ export function planDay(
     : budget < 45 ? "Very little day left. One tiny useful application or track move is enough."
     : budget < 90 ? "One useful application or track move is enough for the time left today."
     : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
+    : mode === "strategy" && needsBroadPursuitGoalCandidate(context) ? "Broad pursuit is active. Turn each plausible lane into one real role or application move before narrowing anything."
     : mode === "strategy" ? `${context.bottleneckLane} is the bottleneck. Anchor is choosing the next move from the Tracks × Lanes spine.`
     : fits ? "Start at the top. Finish the first one and today already counts."
     : "Full plate for the time you've got. Just do the first one and call it a win.";

@@ -3,7 +3,9 @@ import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { explainPersistedPlanItem, planDay } from "./brain";
 import { dayPlans, dayPlanItems, insertTaskSchema, type DayPlan, type Task, type CareerTrack } from "@shared/schema";
+import { isOpportunityActionable } from "@shared/domainState";
 import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey, refinedEstimateFromSteps, stepsWithEstimatedMinutes } from "./planningFeedback";
+import { deriveCareerGoalFrame } from "./goalState";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
@@ -165,18 +167,41 @@ async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes
 }
 
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
-  const [tasks, jobs, learn, hustles] = await Promise.all([
-    storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(),
+  const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
+    storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(),
   ]);
   const budget = await remainingBudgetFor(day, opts.availableMinutes ?? null);
   const memory = await planningMemoryFor(day);
+  const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts, hustles, tracks);
+  const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && !jobs.some((job) => isOpportunityActionable(job));
   // Pass the resolved remaining budget directly. Passing busyEquivalentMinutes as a
   // bare number sent planDay down its wall-clock path (remainingDayMinutes - busy),
   // which re-introduced clock dependence and ignored the explicit availableMinutes.
-  const result = planDay(tasks, jobs, learn, hustles, energy, { remainingMinutes: budget.remainingMinutes });
+  const result = planDay(tasks, jobs, learn, hustles, energy, { remainingMinutes: budget.remainingMinutes }, contacts, tracks);
   const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
   const corrected = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
-  const correctedPlan = corrected.plan;
+  const correctedPlan = broadPursuitNeedsRealRoles
+    ? corrected.plan.map((item, index) => {
+        if (item.candidate.source !== "goal") return item;
+        return {
+          ...item,
+          why: "Broad pursuit. Create one real role or application move in each plausible lane before narrowing anything.",
+          explanation: {
+            ...item.explanation,
+            summary: "Broad pursuit is active, so this move turns all four plausible lanes into real pipeline signal.",
+            whyNow: "You said to apply across all plausible lanes in parallel, not choose one abstract lane first.",
+            whyThis: index === 0
+              ? "It beats narrower comparison work because the market can only separate the lanes once real roles are in the pipeline."
+              : item.explanation.whyThis,
+            supportingReasons: [
+              "Broad pursuit is active across all plausible lanes.",
+              "There are no live actionable roles yet.",
+              "Real role and application moves are more valuable now than abstract narrowing.",
+            ],
+          },
+        };
+      })
+    : corrected.plan;
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
   const feedbackNote = feedbackSummary(memory);
   // Surface the cut-down note whenever time pressure shrank the day below the
@@ -186,7 +211,10 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   const actionableToday = tasks.filter((t) => t.list === "today" && !t.done).length;
   const trimmedForTime = corrected.trimmed || (correctedPlan.length < actionableToday && budget.remainingMinutes > 0 && budget.remainingMinutes < 120);
   const overloadNote = trimmedForTime ? "Today was cut down to what can realistically fit." : "";
-  const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, result.note].filter(Boolean).join(" ");
+  const plannerNote = broadPursuitNeedsRealRoles
+    ? "Broad pursuit is active. Turn each plausible lane into one real role or application move before narrowing anything."
+    : result.note;
+  const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, plannerNote].filter(Boolean).join(" ");
 
   const plan = db.transaction((tx) => {
     const now = Date.now();
@@ -260,6 +288,21 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   }));
   const events = await storage.getEvents(day);
   return { plan, items, events, budget, memory: { yesterday: memory.yesterday, missedMvd: !!memory.missedMvdKey, skipped: memory.skippedKeys.size, parked: memory.parkedKeys.size }, restart: !!opts.restart };
+}
+
+async function shouldRefreshBroadPursuitPlan(items: Array<{ sourceType?: string | null }>) {
+  const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
+    storage.getTasks(),
+    storage.getJobs(),
+    storage.getLearn(),
+    storage.getHustles(),
+    storage.getContacts(),
+    storage.getCareerTracks(),
+  ]);
+  const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts, hustles, tracks);
+  if (goalFrame.decisionMode !== "broad-parallel-pursuit") return false;
+  if (jobs.some((job) => isOpportunityActionable(job))) return false;
+  return !items.some((item) => item.sourceType === "goal");
 }
 
 function readAvailableMinutes(raw: unknown) {
@@ -431,7 +474,11 @@ export function registerSprint2Routes(app: Express) {
     const energy = coerceEnergy(req.query.energy);
     const plan = await storage.getPlanByDate(day);
     if (!plan) return res.json(await buildAdaptivePlan(day, energy));
-    const items = (await storage.getPlanItems(plan.id)).map((item) => ({
+    const persistedItems = await storage.getPlanItems(plan.id);
+    if (await shouldRefreshBroadPursuitPlan(persistedItems)) {
+      return res.json(await buildAdaptivePlan(day, energy, { availableMinutes: readAvailableMinutes(req.query.availableMinutes), restart: false }));
+    }
+    const items = persistedItems.map((item) => ({
       ...item,
       explanation: explainPersistedPlanItem(item),
     }));

@@ -44,12 +44,18 @@ test("career goal state enters lane-narrowing when multiple role hypotheses are 
   const jobs = [
     { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "strategy" },
     { id: 2, title: "Geopolitical Risk Analyst", company: "Advisory Group", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "advisory" },
+    { id: 3, title: "Chief of Staff", company: "AI Lab", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "operations" },
   ] as any;
   const state = buildCareerGoalState([], jobs, []);
   assert.equal(state.phase, "lane-narrowing");
   assert.ok(state.roleHypotheses.includes("AI strategy"));
   assert.ok(state.roleHypotheses.includes("Geopolitics / geopolitical advisory"));
-  assert.match(state.decisionQuestion, /AI strategy|Geopolitics/i);
+  assert.equal(state.comparisonAxes.mode, "two-axis");
+  assert.ok(state.comparisonAxes.topicHypotheses.includes("AI / technology strategy"));
+  assert.ok(state.comparisonAxes.topicHypotheses.includes("Geopolitics / geopolitical advisory"));
+  assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Strategy / advisory"));
+  assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Ops / chief of staff"));
+  assert.match(state.decisionQuestion, /Which combination deserves the next focused test/i);
 });
 
 test("goal state API returns active goal with workstreams and today plan", async () => {
@@ -61,6 +67,7 @@ test("goal state API returns active goal with workstreams and today plan", async
   assert.ok(goal.workstreams.length >= 5);
   assert.ok(goal.todayPlan.mustDo);
   assert.ok(goal.phase);
+  assert.ok(goal.comparisonAxes);
   assert.ok(Array.isArray(goal.trajectory) && goal.trajectory.length >= 4);
   assert.ok(goal.trace.length >= 1);
 });

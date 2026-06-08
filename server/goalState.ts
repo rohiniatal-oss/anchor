@@ -42,6 +42,8 @@ type GoalSnapshot = {
   learningOutputGapCount: number;
   interviewingJobs: number;
   roleHypotheses: string[];
+  topicHypotheses: string[];
+  roleShapeHypotheses: string[];
   directionReady: boolean;
   directionStarted: boolean;
   proofStarted: boolean;
@@ -53,6 +55,18 @@ const HYPOTHESIS_LABELS = {
   geopolitics: "Geopolitics / geopolitical advisory",
   policy_advisory: "Policy / advisory",
   operations_strategy: "Strategy / chief of staff / operations",
+} as const;
+
+const TOPIC_LABELS = {
+  ai: "AI / technology strategy",
+  geopolitics: "Geopolitics / geopolitical advisory",
+  policy: "Policy / public sector",
+} as const;
+
+const ROLE_SHAPE_LABELS = {
+  strategy_advisory: "Strategy / advisory",
+  ops_cos: "Ops / chief of staff",
+  research_analysis: "Research / analysis",
 } as const;
 
 function isCareerTask(t: Task) {
@@ -75,6 +89,10 @@ function addHypothesisScore(scores: Map<string, number>, key: keyof typeof HYPOT
   scores.set(key, (scores.get(key) || 0) + amount);
 }
 
+function addAxisScore<T extends string>(scores: Map<T, number>, key: T, amount = 1) {
+  scores.set(key, (scores.get(key) || 0) + amount);
+}
+
 function scoreHypothesesFromText(text: string, scores: Map<string, number>) {
   const lower = text.toLowerCase();
   if (/\b(ai|artificial intelligence|ai governance|tech policy|machine learning|frontier model|safety)\b/.test(lower)) {
@@ -91,6 +109,41 @@ function scoreHypothesesFromText(text: string, scores: Map<string, number>) {
   }
 }
 
+function scoreTopicHypothesesFromText(text: string, scores: Map<string, number>) {
+  const lower = text.toLowerCase();
+  if (/\b(ai|artificial intelligence|ai governance|tech policy|machine learning|frontier model|safety)\b/.test(lower)) {
+    addAxisScore(scores, "ai", 2);
+  }
+  if (/\b(geopolitic|foreign policy|international|security|middle east|geostrateg|geopolitical risk|risk advisory)\b/.test(lower)) {
+    addAxisScore(scores, "geopolitics", 2);
+  }
+  if (/\b(policy|public sector|think tank|government|regulation|public affairs)\b/.test(lower)) {
+    addAxisScore(scores, "policy", 1);
+  }
+}
+
+function scoreRoleShapeHypothesesFromText(text: string, scores: Map<string, number>) {
+  const lower = text.toLowerCase();
+  if (/\b(strategy|advisory|advisor|consult|strategic|risk analyst|analyst)\b/.test(lower)) {
+    addAxisScore(scores, "strategy_advisory", 2);
+  }
+  if (/\b(chief of staff|operations|ops|program management|delivery|partnerships|execution)\b/.test(lower)) {
+    addAxisScore(scores, "ops_cos", 2);
+  }
+  if (/\b(research|analysis|analyst|researcher|insights)\b/.test(lower)) {
+    addAxisScore(scores, "research_analysis", 1);
+  }
+}
+
+function rankedHypotheses<T extends string>(scores: Map<string, number>, labels: Record<T, string>) {
+  const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1]);
+  const topScore = ranked[0]?.[1] || 0;
+  return ranked
+    .filter(([, score]) => score >= Math.max(2, topScore - 1))
+    .map(([key]) => labels[key as T])
+    .slice(0, 3);
+}
+
 function detectRoleHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
   const scores = new Map<string, number>();
   for (const j of jobs) {
@@ -102,12 +155,27 @@ function detectRoleHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
   for (const e of log) {
     if (e.eventType === "role_attribute_feedback") scoreHypothesesFromText(e.metadata || "", scores);
   }
-  const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1]);
-  const topScore = ranked[0]?.[1] || 0;
-  return ranked
-    .filter(([, score]) => score >= Math.max(2, topScore - 1))
-    .map(([key]) => HYPOTHESIS_LABELS[key as keyof typeof HYPOTHESIS_LABELS])
-    .slice(0, 3);
+  return rankedHypotheses(scores, HYPOTHESIS_LABELS);
+}
+
+function detectTopicHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
+  const scores = new Map<string, number>();
+  for (const j of jobs) scoreTopicHypothesesFromText(`${j.title} ${j.roleArchetype || ""} ${j.narrativeAngle || ""} ${j.note || ""}`, scores);
+  for (const t of tasks) scoreTopicHypothesesFromText(`${t.title} ${t.sourceNote || ""} ${t.doneWhen || ""}`, scores);
+  for (const e of log) {
+    if (e.eventType === "role_attribute_feedback") scoreTopicHypothesesFromText(e.metadata || "", scores);
+  }
+  return rankedHypotheses(scores, TOPIC_LABELS);
+}
+
+function detectRoleShapeHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
+  const scores = new Map<string, number>();
+  for (const j of jobs) scoreRoleShapeHypothesesFromText(`${j.title} ${j.roleArchetype || ""} ${j.narrativeAngle || ""} ${j.note || ""}`, scores);
+  for (const t of tasks) scoreRoleShapeHypothesesFromText(`${t.title} ${t.sourceNote || ""} ${t.doneWhen || ""}`, scores);
+  for (const e of log) {
+    if (e.eventType === "role_attribute_feedback") scoreRoleShapeHypothesesFromText(e.metadata || "", scores);
+  }
+  return rankedHypotheses(scores, ROLE_SHAPE_LABELS);
 }
 
 function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = []): GoalSnapshot {
@@ -127,6 +195,8 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   const learningOutputGapCount = activeLearn.filter((l) => !!(l.requiredOutput || l.proofIntent) && !(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
   const interviewingJobs = savedJobs.filter((j) => j.status === "interviewing").length;
   const roleHypotheses = detectRoleHypotheses(tasks, savedJobs, log);
+  const topicHypotheses = detectTopicHypotheses(tasks, savedJobs, log);
+  const roleShapeHypotheses = detectRoleShapeHypotheses(tasks, savedJobs, log);
 
   const directionReady = savedJobs.length >= 5 || roleFeedbackCount >= 3 || hasSignal(feedbackSummary, "energising") || hasSignal(feedbackSummary, "credible");
   const directionStarted = savedJobs.length > 0 || candidateCommits > 0 || roleFeedbackCount > 0;
@@ -150,6 +220,8 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     learningOutputGapCount,
     interviewingJobs,
     roleHypotheses,
+    topicHypotheses,
+    roleShapeHypotheses,
     directionReady,
     directionStarted,
     proofStarted,
@@ -160,7 +232,7 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
 function inferGoalPhase(snapshot: GoalSnapshot): GoalPhase {
   if (snapshot.interviewingJobs > 0) return "interview-prep";
   if (!snapshot.directionStarted) return "fit-discovery";
-  if (snapshot.roleHypotheses.length >= 2 && !snapshot.hasApplicationTask) return "lane-narrowing";
+  if ((snapshot.roleHypotheses.length >= 2 || snapshot.topicHypotheses.length >= 2 || snapshot.roleShapeHypotheses.length >= 2) && !snapshot.hasApplicationTask) return "lane-narrowing";
   return "role-targeting";
 }
 
@@ -171,6 +243,8 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     snapshot.candidateCommits ? `${snapshot.candidateCommits} candidate activities committed` : "no candidate activity committed",
     snapshot.roleFeedbackCount ? `${snapshot.roleFeedbackCount} role attribute signals captured` : "no role attribute signals captured",
     snapshot.roleHypotheses.length ? `current hypotheses: ${snapshot.roleHypotheses.join(" vs ")}` : "no clear role hypotheses yet",
+    snapshot.topicHypotheses.length ? `topic axis: ${snapshot.topicHypotheses.join(" vs ")}` : "topic axis still unclear",
+    snapshot.roleShapeHypotheses.length ? `role-shape axis: ${snapshot.roleShapeHypotheses.join(" vs ")}` : "role-shape axis still unclear",
   ];
 
   const networkStarted = snapshot.hasNetworkTask || snapshot.assets.some((a) => a.kind === "network");
@@ -180,11 +254,17 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       name: "Direction",
       status: snapshot.directionReady ? "active" : "underdeveloped",
       progress: snapshot.directionReady ? "developing" : snapshot.directionStarted ? "early" : "not_started",
-      bottleneck: snapshot.roleHypotheses.length >= 2 ? "you still need to choose which lane deserves focused testing" : snapshot.directionReady ? "signals need narrowing into one role lane" : "not enough role-family signal",
+      bottleneck: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
+        ? "you need to compare both topic and role shape before choosing a lane"
+        : snapshot.roleHypotheses.length >= 2
+          ? "you still need to choose which lane deserves focused testing"
+          : snapshot.directionReady ? "signals need narrowing into one role lane" : "not enough role-family signal",
       nextMoveType: "learning",
       evidence: directionEvidence,
-      nextMoves: snapshot.roleHypotheses.length >= 2
-        ? [`compare ${snapshot.roleHypotheses[0]} vs ${snapshot.roleHypotheses[1]}`, "define what a good-fit role must include", "save one concrete example from each lane"]
+      nextMoves: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
+        ? [`compare ${snapshot.topicHypotheses[0]} x ${snapshot.roleShapeHypotheses[0]} vs ${snapshot.topicHypotheses[1]} x ${snapshot.roleShapeHypotheses[0]}`, "define what matters most across topic and role shape", "save one concrete role example for each strong combination"]
+        : snapshot.roleHypotheses.length >= 2
+          ? [`compare ${snapshot.roleHypotheses[0]} vs ${snapshot.roleHypotheses[1]}`, "define what a good-fit role must include", "save one concrete example from each lane"]
         : snapshot.directionReady
           ? ["summarise patterns", "compare the strongest lanes", "inspect one adjacent role"]
           : ["inspect one asset-backed role", "save one plausible role", "note one useful attribute"],
@@ -298,6 +378,9 @@ function phaseObjective(phase: GoalPhase) {
 }
 
 function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot) {
+  if (phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
+    return `You have multiple plausible topics (${snapshot.topicHypotheses.join(" vs ")}) and multiple plausible role shapes (${snapshot.roleShapeHypotheses.join(" vs ")}). Anchor should narrow on both axes together.`;
+  }
   if (phase === "lane-narrowing" && snapshot.roleHypotheses.length >= 2) {
     return `You have multiple plausible lanes in play (${snapshot.roleHypotheses.join(" vs ")}). Anchor should narrow before it overcommits.`;
   }
@@ -310,6 +393,9 @@ function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSna
 function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
   if (phase === "fit-discovery") return "What kinds of work actually fit your interests, goals, and energy well enough to test in the market?";
   if (phase === "lane-narrowing") {
+    if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
+      return `Which combination deserves the next focused test: ${snapshot.topicHypotheses[0]} x ${snapshot.roleShapeHypotheses[0]}, ${snapshot.topicHypotheses[0]} x ${snapshot.roleShapeHypotheses[1]}, ${snapshot.topicHypotheses[1]} x ${snapshot.roleShapeHypotheses[0]}, or ${snapshot.topicHypotheses[1]} x ${snapshot.roleShapeHypotheses[1]}?`;
+    }
     if (snapshot.roleHypotheses.length >= 2) return `Which lane deserves the next focused test: ${snapshot.roleHypotheses[0]} or ${snapshot.roleHypotheses[1]}?`;
     return "Which promising role lane deserves focused testing next?";
   }
@@ -335,6 +421,18 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
 
 function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot, candidateUniverse: ReturnType<typeof generateCandidateUniverse>) {
   if (phase === "lane-narrowing") {
+    if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
+      const topicA = snapshot.topicHypotheses[0] || "topic one";
+      const topicB = snapshot.topicHypotheses[1] || "topic two";
+      const shapeA = snapshot.roleShapeHypotheses[0] || "role shape one";
+      const shapeB = snapshot.roleShapeHypotheses[1] || "role shape two";
+      return {
+        mustDo: `Compare ${topicA} x ${shapeA}, ${topicA} x ${shapeB}, ${topicB} x ${shapeA}, and ${topicB} x ${shapeB}`,
+        next: "Pick the two most promising combinations and save one real role example for each",
+        optional: "Ask one warm contact which combination seems strongest from the outside",
+        stopRule: "Stop after one real comparison grid and one short verdict; do not spiral into open-ended browsing.",
+      };
+    }
     const left = snapshot.roleHypotheses[0] || "lane one";
     const right = snapshot.roleHypotheses[1] || "lane two";
     return {
@@ -385,6 +483,12 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     reason: phaseReason(phase, focus, snapshot),
     decisionQuestion: phaseDecisionQuestion(phase, snapshot),
     roleHypotheses: snapshot.roleHypotheses,
+    comparisonAxes: {
+      mode: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2 ? "two-axis" : snapshot.roleHypotheses.length >= 2 ? "single-axis" : "none",
+      topicHypotheses: snapshot.topicHypotheses,
+      roleShapeHypotheses: snapshot.roleShapeHypotheses,
+      combinations: snapshot.topicHypotheses.slice(0, 2).flatMap((topic) => snapshot.roleShapeHypotheses.slice(0, 2).map((shape) => `${topic} x ${shape}`)),
+    },
     trajectory: trajectoryFor(phase),
     workstreams,
     todayPlan: buildTodayPlan(phase, focus, snapshot, candidateUniverse),

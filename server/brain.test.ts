@@ -252,3 +252,23 @@ test("planner can keep job pursuit and networking in parallel when both are live
   assert.ok(result.plan.some((item) => item.candidate.source === "job"), "live role stays in the plan");
   assert.ok(result.plan.some((item) => item.candidate.source === "contact"), "networking stays in parallel");
 });
+
+test("planner ignores contacts with no actionable networking move", () => {
+  const contacts = [
+    contact({
+      id: 3,
+      who: "Vague person",
+      status: "to_contact",
+      relationshipStrength: "cold",
+      askType: "",
+      why: "",
+      targetOrg: "",
+      targetRole: "",
+      messageDraft: "",
+      nextFollowUpDate: "",
+    }),
+  ];
+
+  const result = recommend([], [], [], [], "medium", contacts);
+  assert.equal(result.pick, null);
+});

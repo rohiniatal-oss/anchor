@@ -327,6 +327,17 @@ function contactMomentum(c: Candidate) {
   return { score: s, trace };
 }
 
+function isActionableContact(c: Contact) {
+  if (c.status === "messaged" || c.status === "replied") return true;
+  if (c.messageDraft && c.messageDraft.trim()) return true;
+  if (c.nextFollowUpDate && c.nextFollowUpDate.trim()) return true;
+  if (c.askType && c.askType.trim()) return true;
+  if (c.targetOrg && c.targetOrg.trim()) return true;
+  if (c.targetRole && c.targetRole.trim()) return true;
+  if (c.why && c.why.trim()) return true;
+  return false;
+}
+
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
 export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = []): Candidate[] {
@@ -399,6 +410,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
   }
 
   for (const c of contacts) {
+    if (!isActionableContact(c)) continue;
     const { action, size, doneWhen, why } = contactNextStep(c);
     out.push({
       source: "contact", sourceId: c.id, taskId: null,

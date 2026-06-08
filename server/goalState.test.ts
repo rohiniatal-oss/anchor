@@ -40,6 +40,37 @@ test("career goal state reflects saved roles and feedback", () => {
   assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "premature"));
 });
 
+test("career goal state reads active career tracks as real direction signal", () => {
+  const tracks = [
+    {
+      id: 1,
+      name: "AI strategy",
+      slug: "ai-strategy",
+      status: "active",
+      targetRoleArchetype: "AI strategy / advisory",
+      whyItFits: "Technology strategy and advisory fit",
+      description: "Explore AI strategy roles in parallel with geopolitical lanes",
+    },
+    {
+      id: 2,
+      name: "Geopolitical advisory",
+      slug: "geopolitical-advisory",
+      status: "active",
+      targetRoleArchetype: "geopolitical advisory",
+      whyItFits: "Strong geopolitical and advisory fit",
+      description: "Parallel geopolitical advisory lane",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], [], [], [], [], [], tracks);
+  const direction = state.workstreams.find((w) => w.name === "Direction")!;
+  assert.equal(state.phase, "lane-narrowing");
+  assert.ok(state.roleHypotheses.includes("AI strategy"));
+  assert.ok(state.roleHypotheses.includes("Geopolitics / geopolitical advisory"));
+  assert.ok(direction.evidence.some((e) => /2 active career tracks/i.test(e)));
+  assert.equal(state.decisionMode, "forced-comparison");
+});
+
 test("career goal state enters broad parallel pursuit when multiple plausible lanes already have live roles", () => {
   const jobs = [
     { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "strategy" },

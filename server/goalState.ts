@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import type { ActivityLog, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
+import type { ActivityLog, CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse } from "./candidates";
 import { computeJobTruthStrip, type JobTruthAction, type JobTruthStrip } from "./jobTruth";
@@ -44,6 +44,7 @@ type GoalSnapshot = {
   feedback: ReturnType<typeof attributeFeedbackFromActivity>;
   feedbackSummary: ReturnType<typeof attributeFeedbackSummary>;
   savedJobs: Job[];
+  activeTracks: CareerTrack[];
   careerTasks: Task[];
   candidateCommits: number;
   deconstructionCommits: number;
@@ -238,7 +239,7 @@ function rankedHypotheses<T extends string>(scores: Map<string, number>, labels:
     .slice(0, 3);
 }
 
-function detectRoleHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
+function detectRoleHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[], tracks: CareerTrack[] = []) {
   const scores = new Map<string, number>();
   for (const j of jobs) {
     scoreHypothesesFromText(`${j.title} ${j.roleArchetype || ""} ${j.narrativeAngle || ""} ${j.note || ""}`, scores);
@@ -246,37 +247,43 @@ function detectRoleHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
   for (const t of tasks) {
     scoreHypothesesFromText(`${t.title} ${t.sourceNote || ""} ${t.doneWhen || ""}`, scores);
   }
+  for (const track of tracks) {
+    scoreHypothesesFromText(`${track.name} ${track.targetRoleArchetype || ""} ${track.whyItFits || ""} ${track.description || ""}`, scores);
+  }
   for (const e of log) {
     if (e.eventType === "role_attribute_feedback") scoreHypothesesFromText(e.metadata || "", scores);
   }
   return rankedHypotheses(scores, HYPOTHESIS_LABELS);
 }
 
-function detectTopicHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
+function detectTopicHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[], tracks: CareerTrack[] = []) {
   const scores = new Map<string, number>();
   for (const j of jobs) scoreTopicHypothesesFromText(`${j.title} ${j.roleArchetype || ""} ${j.narrativeAngle || ""} ${j.note || ""}`, scores);
   for (const t of tasks) scoreTopicHypothesesFromText(`${t.title} ${t.sourceNote || ""} ${t.doneWhen || ""}`, scores);
+  for (const track of tracks) scoreTopicHypothesesFromText(`${track.name} ${track.targetRoleArchetype || ""} ${track.whyItFits || ""} ${track.description || ""}`, scores);
   for (const e of log) {
     if (e.eventType === "role_attribute_feedback") scoreTopicHypothesesFromText(e.metadata || "", scores);
   }
   return rankedHypotheses(scores, TOPIC_LABELS);
 }
 
-function detectRoleShapeHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
+function detectRoleShapeHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[], tracks: CareerTrack[] = []) {
   const scores = new Map<string, number>();
   for (const j of jobs) scoreRoleShapeHypothesesFromText(`${j.title} ${j.roleArchetype || ""} ${j.narrativeAngle || ""} ${j.note || ""}`, scores);
   for (const t of tasks) scoreRoleShapeHypothesesFromText(`${t.title} ${t.sourceNote || ""} ${t.doneWhen || ""}`, scores);
+  for (const track of tracks) scoreRoleShapeHypothesesFromText(`${track.name} ${track.targetRoleArchetype || ""} ${track.whyItFits || ""} ${track.description || ""}`, scores);
   for (const e of log) {
     if (e.eventType === "role_attribute_feedback") scoreRoleShapeHypothesesFromText(e.metadata || "", scores);
   }
   return rankedHypotheses(scores, ROLE_SHAPE_LABELS);
 }
 
-function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = []): GoalSnapshot {
+function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = [], tracks: CareerTrack[] = []): GoalSnapshot {
   const assets = careerAssetsFromActivity(log);
   const feedback = attributeFeedbackFromActivity(log);
   const feedbackSummary = attributeFeedbackSummary(feedback);
   const savedJobs = openJobs(jobs);
+  const activeTracks = tracks.filter((t) => t.status === "active");
   const careerTasks = tasks.filter(isCareerTask);
   const candidateCommits = countEvents(log, "candidate_committed");
   const deconstructionCommits = countEvents(log, "role_deconstruction_committed");
@@ -314,17 +321,18 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   const evidencedLearnCount = learn.filter((l) => !!(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
   const learningOutputGapCount = activeLearn.filter((l) => !!(l.requiredOutput || l.proofIntent) && !(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
   const interviewingJobs = savedJobs.filter((j) => j.status === "interviewing").length;
-  const roleHypotheses = detectRoleHypotheses(tasks, savedJobs, log);
-  const topicHypotheses = detectTopicHypotheses(tasks, savedJobs, log);
-  const roleShapeHypotheses = detectRoleShapeHypotheses(tasks, savedJobs, log);
+  const roleHypotheses = detectRoleHypotheses(tasks, savedJobs, log, activeTracks);
+  const topicHypotheses = detectTopicHypotheses(tasks, savedJobs, log, activeTracks);
+  const roleShapeHypotheses = detectRoleShapeHypotheses(tasks, savedJobs, log, activeTracks);
 
   const directionReady = savedJobs.length >= 5 || roleFeedbackCount >= 3 || hasSignal(feedbackSummary, "energising") || hasSignal(feedbackSummary, "credible");
-  const directionStarted = savedJobs.length > 0 || candidateCommits > 0 || roleFeedbackCount > 0;
+  const directionStarted = savedJobs.length > 0 || activeTracks.length > 0 || candidateCommits > 0 || roleFeedbackCount > 0;
   return {
     assets,
     feedback,
     feedbackSummary,
     savedJobs,
+    activeTracks,
     careerTasks,
     candidateCommits,
     deconstructionCommits,
@@ -371,6 +379,7 @@ function inferGoalPhase(snapshot: GoalSnapshot): GoalPhase {
 function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
   const directionEvidence = [
     snapshot.assets.length ? `${snapshot.assets.length} career assets available` : "no career assets recorded",
+    snapshot.activeTracks.length ? `${snapshot.activeTracks.length} active career track${snapshot.activeTracks.length === 1 ? "" : "s"}` : "no active career tracks",
     snapshot.savedJobs.length ? `${snapshot.savedJobs.length} open or saved roles` : "no open or saved roles",
     snapshot.candidateCommits ? `${snapshot.candidateCommits} candidate activities committed` : "no candidate activity committed",
     snapshot.roleFeedbackCount ? `${snapshot.roleFeedbackCount} role attribute signals captured` : "no role attribute signals captured",
@@ -825,8 +834,8 @@ function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamSta
   };
 }
 
-export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = []) {
-  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles);
+export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = [], tracks: CareerTrack[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles, tracks);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
 
@@ -841,8 +850,8 @@ export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityL
   };
 }
 
-export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = []) {
-  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles);
+export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = [], tracks: CareerTrack[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles, tracks);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
   const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback);
@@ -902,7 +911,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
 
 export function registerGoalStateRoutes(app: Express) {
   app.get("/api/goals/state", async (_req, res) => {
-    const [tasks, jobs, log, learn, contacts, hustles] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getLearn(), storage.getContacts(), storage.getHustles()]);
-    res.json({ goals: [buildCareerGoalState(tasks, jobs, log, learn, contacts, hustles)] });
+    const [tasks, jobs, log, learn, contacts, hustles, tracks] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getLearn(), storage.getContacts(), storage.getHustles(), storage.getCareerTracks()]);
+    res.json({ goals: [buildCareerGoalState(tasks, jobs, log, learn, contacts, hustles, tracks)] });
   });
 }

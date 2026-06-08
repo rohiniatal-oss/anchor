@@ -43,8 +43,8 @@ test("career goal state reflects saved roles and feedback", () => {
 test("career goal state enters broad parallel pursuit when multiple plausible lanes already have live roles", () => {
   const jobs = [
     { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "strategy" },
-    { id: 2, title: "Geopolitical Risk Analyst", company: "Advisory Group", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "advisory" },
-    { id: 3, title: "Chief of Staff", company: "AI Lab", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "operations" },
+    { id: 2, title: "Geopolitical Risk Analyst", company: "Advisory Group", status: "wishlist", applicationWindowStatus: "open", location: "Dubai, UAE", roleArchetype: "advisory" },
+    { id: 3, title: "Chief of Staff", company: "AI Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "operations" },
   ] as any;
   const state = buildCareerGoalState([], jobs, []);
   assert.equal(state.phase, "role-targeting");
@@ -58,7 +58,10 @@ test("career goal state enters broad parallel pursuit when multiple plausible la
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Ops / chief of staff"));
   assert.equal(state.pursuitPortfolio.length, 4);
   assert.equal(state.landingPriority, "credible-role-quickly");
-  assert.match(state.selectionRule, /credible role that can land soon/i);
+  assert.match(state.selectionRule, /UAE, Remote, or London/i);
+  assert.equal(state.locationPreference.flexible, true);
+  assert.deepEqual(state.locationPreference.ordered, ["UAE", "Remote", "London"]);
+  assert.equal(state.locationPreference.counts.acceptable, 3);
   assert.match(state.decisionQuestion, /Which live roles are most gettable/i);
   assert.match(state.explorationStrategy, /broad pursuit portfolio/i);
 });
@@ -74,6 +77,7 @@ test("goal state API returns active goal with workstreams and today plan", async
   assert.ok(goal.phase);
   assert.ok(goal.comparisonAxes);
   assert.ok(goal.selectionRule);
+  assert.ok(goal.locationPreference);
   assert.ok(Array.isArray(goal.trajectory) && goal.trajectory.length >= 4);
   assert.ok(goal.trace.length >= 1);
 });

@@ -31,6 +31,12 @@ type CombinationTest = {
   nextTest: string;
 };
 
+type LocationPreference = {
+  flexible: boolean;
+  ordered: string[];
+  counts: { preferred: number; acceptable: number; other: number };
+};
+
 type GoalSnapshot = {
   assets: ReturnType<typeof careerAssetsFromActivity>;
   feedback: ReturnType<typeof attributeFeedbackFromActivity>;
@@ -75,12 +81,41 @@ const ROLE_SHAPE_LABELS = {
   research_analysis: "Research / analysis",
 } as const;
 
+const LOCATION_PRIORITY = ["UAE", "Remote", "London"] as const;
+
 function isCareerTask(t: Task) {
   return !t.done && (t.category === "job" || /job|career|role|cv|interview|application|network|contact|message|proof|course|learn|skill/i.test(t.title));
 }
 
 function openJobs(jobs: Job[]) {
   return jobs.filter((j) => !["closed", "rejected"].includes(j.status || "") && j.applicationWindowStatus !== "closed");
+}
+
+function locationTier(location: string) {
+  const lower = (location || "").toLowerCase();
+  if (/\b(uae|dubai|abu dhabi|emirates)\b/.test(lower)) return "UAE";
+  if (/\b(remote|distributed|anywhere|work from home|wfh)\b/.test(lower)) return "Remote";
+  if (/\b(london|uk|united kingdom|england)\b/.test(lower)) return "London";
+  return "Other";
+}
+
+function buildLocationPreference(jobs: Job[]): LocationPreference {
+  let preferred = 0;
+  let acceptable = 0;
+  let other = 0;
+  for (const j of jobs) {
+    const tier = locationTier(j.location || "");
+    if (tier === "Other") other += 1;
+    else {
+      acceptable += 1;
+      if (tier === "UAE" || tier === "Remote" || tier === "London") preferred += 1;
+    }
+  }
+  return {
+    flexible: true,
+    ordered: [...LOCATION_PRIORITY],
+    counts: { preferred, acceptable, other },
+  };
 }
 
 function countEvents(log: ActivityLog[], eventType: string) {
@@ -390,7 +425,7 @@ function phaseObjective(phase: GoalPhase) {
 
 function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot) {
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
-    return `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice.`;
+    return `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.`;
   }
   if (phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
     return `You have multiple plausible topics (${snapshot.topicHypotheses.join(" vs ")}) and multiple plausible role shapes (${snapshot.roleShapeHypotheses.join(" vs ")}). Anchor should narrow on both axes together.`;
@@ -542,8 +577,9 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     decisionMode: broadParallelPursuit ? "broad-parallel-pursuit" : parallelExperiments.length ? "parallel-exploration" : phase === "lane-narrowing" ? "forced-comparison" : "single-track",
     landingPriority: broadParallelPursuit ? "credible-role-quickly" : "best-fit-over-time",
     selectionRule: broadParallelPursuit
-      ? "Take any credible role that can land soon; keep stronger-fit alternatives warm in parallel."
+      ? "Take any credible role that can land soon across UAE, Remote, or London; keep stronger-fit alternatives warm in parallel."
       : "Prefer the strongest-fit lane unless live evidence says otherwise.",
+    locationPreference: buildLocationPreference(snapshot.savedJobs),
     roleHypotheses: snapshot.roleHypotheses,
     comparisonAxes: {
       mode: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2 ? "two-axis" : snapshot.roleHypotheses.length >= 2 ? "single-axis" : "none",

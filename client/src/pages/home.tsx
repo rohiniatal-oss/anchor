@@ -238,7 +238,7 @@ function CardActions({ entity, id, trackId, tracks, onViewTasks }: { entity: Exc
     setBusy(true);
     try {
       const r = await mutateAndInvalidate("POST", `/api/${entity}/${id}/create-next-task`, {}, ["/api/tasks", ...GOAL_SPINE_QUERY_KEYS]);
-      toast({ title: r?.reused ? "Already on your list." : "Next task created.", description: r?.reused ? "There's already an open task for this." : "Find it in your inbox / brain dump." });
+      toast({ title: r?.reused ? "Already on your list." : "Next task created.", description: r?.reused ? "There's already an open task for this." : "Find it in Brain dump, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
@@ -1467,7 +1467,7 @@ function JobStepRail({ j }: { j: Job }) {
     try {
       const r = await mutateAndInvalidate("POST", `/api/steps/${s.id}/materialize`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       await reloadInto();
-      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this role." : "Find it in your inbox / today list." });
+      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this role." : "Find it in Brain dump, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
@@ -1681,7 +1681,7 @@ function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tra
               <JobStepRail j={j} />
               <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
               <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
-                onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
+                onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} />
             </div>
           )}
         </>
@@ -1719,7 +1719,7 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
     setBusyId(c.id);
     try {
       const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
-      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in your inbox / today list." });
+      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusyId(null); }
   }
@@ -1954,7 +1954,7 @@ function ContactCard({ c, tracks, tasks, onPatch, onRemove }: { c: Contact; trac
           <MessageSquare className="w-3.5 h-3.5" /> {c.messageDraft ? "Edit message" : "Draft message"}
         </button>
         <LinkTrackControl entity="contacts" id={c.id} trackId={trackId} tracks={tracks} />
-        <button data-testid={`button-view-tasks-contacts-${c.id}`} onClick={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <button data-testid={`button-view-tasks-contacts-${c.id}`} onClick={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
           <ListChecks className="w-3.5 h-3.5" /> View linked tasks
         </button>
       </div>
@@ -1972,7 +1972,7 @@ function CreateNextContactTask({ c }: { c: Contact }) {
     setBusy(true);
     try {
       const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
-      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in your inbox / today list." });
+      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
@@ -2120,7 +2120,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
     setBusy(true);
     try {
       const r = await mutateAndInvalidate("POST", `/api/learn/${l.id}/create-output-task`, {}, ["/api/tasks", ...GOAL_SPINE_QUERY_KEYS]);
-      toast({ title: r?.reused ? "Already on your list." : "Output task created.", description: r?.reused ? "There's already an open task for this." : "Find it in your inbox / today list." });
+      toast({ title: r?.reused ? "Already on your list." : "Output task created.", description: r?.reused ? "There's already an open task for this." : "Find it in Brain dump, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
@@ -2241,7 +2241,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
           )}
 
           <CardActions entity="learn" id={l.id} trackId={trackId} tracks={tracks}
-            onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create output task' to make one." })} />
+            onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create output task' to make one." })} />
         </div>
       </div>
     </div>
@@ -2303,7 +2303,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
     try {
       const r = await mutateAndInvalidate("POST", `/api/proof-steps/${s.id}/materialize`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
       await reloadInto();
-      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this asset." : "Find it in your inbox / today list." });
+      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this asset." : "Find it in Brain dump, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
@@ -2529,7 +2529,7 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
       </div>
       <ProofStepRail h={h} />
       <CardActions entity="hustles" id={h.id} trackId={trackId} tracks={tracks}
-        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "They're in your inbox / today list." : "Use 'Create next task' to make one." })} />
+        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} />
     </div>
   );
 }

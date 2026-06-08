@@ -1,6 +1,6 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { buildCareerGoalState } from "./goalState";
+import { buildCareerGoalState, deriveCareerGoalFrame } from "./goalState";
 import { makeHarness, api, type Harness } from "./spine.harness";
 
 let h: Harness;
@@ -64,6 +64,28 @@ test("career goal state enters broad parallel pursuit when multiple plausible la
   assert.equal(state.locationPreference.counts.acceptable, 3);
   assert.match(state.decisionQuestion, /Which live roles are most gettable/i);
   assert.match(state.explorationStrategy, /broad pursuit portfolio/i);
+});
+
+test("career goal frame stays in fit-discovery when learning exists but role signal does not", () => {
+  const learn = [{
+    id: 1,
+    title: "AI strategy memo drill",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const frame = deriveCareerGoalFrame([], [], [], learn);
+  assert.equal(frame.phase, "fit-discovery");
+  assert.equal(frame.recommendedFocus, "Direction");
+  assert.equal(frame.dayType, "signal-building");
+  assert.equal(frame.decisionMode, "single-track");
 });
 
 test("goal state API returns active goal with workstreams and today plan", async () => {

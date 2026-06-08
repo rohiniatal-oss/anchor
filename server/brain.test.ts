@@ -402,6 +402,40 @@ test("exploration posture prefers advice over referral when the lane is still un
   assert.ok(result.trace?.some((line: string) => /right ask while narrowing lanes/i.test(line)));
 });
 
+test("fit-discovery keeps exploratory networking ahead of pure capability drills", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const contacts = [
+    contact({
+      id: 30,
+      who: "SIPA alum in policy",
+      status: "to_contact",
+      relationshipStrength: "cold",
+      askType: "advice",
+      sourceNetwork: "SIPA",
+      why: "Can reality-check possible role families",
+      nextFollowUpDate: today,
+    }),
+  ];
+  const learn = [{
+    id: 31,
+    title: "Policy memo drill",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const result = recommend([], [], learn, [], "medium", contacts);
+  assert.equal(result.pick?.source, "contact");
+  assert.equal(result.pick?.sourceId, 30);
+  assert.match(result.explanation.summary, /reducing role uncertainty/i);
+});
+
 test("planner can keep job pursuit and networking in parallel when both are live", () => {
   const today = new Date().toISOString().slice(0, 10);
   const jobs = [

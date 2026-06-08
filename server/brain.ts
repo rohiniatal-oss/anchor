@@ -1,6 +1,7 @@
 import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { isOpportunityActionable } from "@shared/domainState";
 import { buildTrackSpine } from "./trackSpine";
+import { deriveCareerGoalFrame } from "./goalState";
 import type { CanonicalLaneName } from "./lanes";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -72,6 +73,9 @@ type StrategicContext = {
   laneUnlockMove: string;
   activeTrackName: string;
   liveJobTargets: Array<{ title: string; company: string; roleArchetype?: string }>;
+  goalPhase: ReturnType<typeof deriveCareerGoalFrame>["phase"];
+  goalDayType: ReturnType<typeof deriveCareerGoalFrame>["dayType"];
+  decisionMode: ReturnType<typeof deriveCareerGoalFrame>["decisionMode"];
   planningPosture: "exploration" | "conversion" | "interview" | "capability";
 };
 
@@ -159,17 +163,20 @@ function candidateMatchesLane(c: Candidate, lane: CanonicalLaneName) {
   return false;
 }
 
-function derivePlanningPosture(
-  jobs: Job[],
-  learn: Learn[],
+function planningPostureFromGoalFrame(
+  goalFrame: ReturnType<typeof deriveCareerGoalFrame>,
   bottleneckLane: CanonicalLaneName,
+  hasActiveLearning: boolean,
 ): StrategicContext["planningPosture"] {
-  const liveJobs = jobs.filter((j) => isOpportunityActionable(j));
-  if (liveJobs.some((j) => j.status === "interviewing")) return "interview";
-  if (liveJobs.length > 0) return "conversion";
-  if (bottleneckLane === "Direction" || bottleneckLane === "Network") return "exploration";
-  if (bottleneckLane === "Learning and development" || bottleneckLane === "Proof assets") return "capability";
-  if (learn.some((l) => !l.done && l.learnStatus !== "closed")) return "capability";
+  if (goalFrame.phase === "interview-prep") return "interview";
+  if (goalFrame.phase === "fit-discovery" || goalFrame.phase === "lane-narrowing") return "exploration";
+  if (goalFrame.recommendedFocus === "Capability ramp" || goalFrame.recommendedFocus === "Proof") return "capability";
+  if (goalFrame.recommendedFocus === "Applications" || goalFrame.recommendedFocus === "Network" || goalFrame.recommendedFocus === "Positioning") {
+    return "conversion";
+  }
+  if (goalFrame.decisionMode === "broad-parallel-pursuit") return "conversion";
+  if (bottleneckLane === "Learning and development" || bottleneckLane === "Proof assets" || hasActiveLearning) return "capability";
+  if (goalFrame.dayType === "conversion") return "conversion";
   return "exploration";
 }
 
@@ -197,10 +204,15 @@ function buildStrategicContext(
 ): StrategicContext {
   const spine = buildTrackSpine({ tasks, jobs, learn, hustles, contacts, tracks });
   const lane = spine.globalLanes.find((l) => l.name === spine.bestMove.lane) || spine.globalLanes[0];
-  const planningPosture = derivePlanningPosture(jobs, learn, spine.bestMove.lane);
+  const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn);
+  const planningPosture = planningPostureFromGoalFrame(
+    goalFrame,
+    spine.bestMove.lane,
+    learn.some((l) => !l.done && l.learnStatus !== "closed"),
+  );
   return {
     bottleneck: spine.bestMove.lane,
-    reason: `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""}`,
+    reason: `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase}${goalFrame.decisionMode === "single-track" ? "" : ` (${goalFrame.decisionMode})`}.`,
     applicationsPremature: false,
     recommendedExploration: spine.bestMove.trackName || spine.activeTrack?.name || "",
     laneModel: { trace: spine.trace },
@@ -209,6 +221,9 @@ function buildStrategicContext(
     laneUnlockMove: spine.bestMove.title,
     activeTrackName: spine.bestMove.trackName || spine.activeTrack?.name || "",
     liveJobTargets: jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" })),
+    goalPhase: goalFrame.phase,
+    goalDayType: goalFrame.dayType,
+    decisionMode: goalFrame.decisionMode,
     planningPosture,
   };
 }

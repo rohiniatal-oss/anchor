@@ -7,6 +7,7 @@ type WorkstreamStatus = "active" | "underdeveloped" | "premature" | "blocked" | 
 type NextMoveType = "learning" | "relationship" | "preparation" | "execution" | "maintenance" | "wait";
 type GoalPhase = "fit-discovery" | "lane-narrowing" | "role-targeting" | "interview-prep";
 type TrajectoryStatus = "complete" | "current" | "pending";
+type DecisionMode = "single-track" | "forced-comparison" | "parallel-exploration" | "broad-parallel-pursuit";
 
 type WorkstreamState = {
   name: string;
@@ -554,31 +555,71 @@ function buildParallelExperiments(snapshot: GoalSnapshot): CombinationTest[] {
   })));
 }
 
-export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = []) {
-  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn);
-  const workstreams = workstreamStates(snapshot);
+function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamState[]) {
   const phase = inferGoalPhase(snapshot);
   const focus = recommendedFocus(workstreams, phase);
-  const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback);
   const parallelExperiments = phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
     ? buildParallelExperiments(snapshot)
     : [];
   const broadParallelPursuit = phase === "role-targeting" && hasBroadParallelLanes(snapshot);
+  const decisionMode: DecisionMode = broadParallelPursuit
+    ? "broad-parallel-pursuit"
+    : parallelExperiments.length
+      ? "parallel-exploration"
+      : phase === "lane-narrowing"
+        ? "forced-comparison"
+        : "single-track";
+  const landingPriority = broadParallelPursuit ? "credible-role-quickly" : "best-fit-over-time";
+  const selectionRule = broadParallelPursuit
+    ? "Take any credible role that can land soon across UAE, Remote, or London; keep stronger-fit alternatives warm in parallel."
+    : "Prefer the strongest-fit lane unless live evidence says otherwise.";
+
+  return {
+    phase,
+    focus,
+    parallelExperiments,
+    broadParallelPursuit,
+    dayType: dayTypeFor(focus),
+    decisionMode,
+    landingPriority,
+    selectionRule,
+  };
+}
+
+export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn);
+  const workstreams = workstreamStates(snapshot);
+  const frame = buildCareerGoalFrame(snapshot, workstreams);
+
+  return {
+    phase: frame.phase,
+    dayType: frame.dayType,
+    decisionMode: frame.decisionMode,
+    landingPriority: frame.landingPriority,
+    selectionRule: frame.selectionRule,
+    broadParallelPursuit: frame.broadParallelPursuit,
+    recommendedFocus: frame.focus.name,
+  };
+}
+
+export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn);
+  const workstreams = workstreamStates(snapshot);
+  const frame = buildCareerGoalFrame(snapshot, workstreams);
+  const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback);
 
   return {
     goal: "Find the right role, then become interview- and job-ready",
     status: "active",
-    objective: phaseObjective(phase),
-    phase,
-    dayType: dayTypeFor(focus),
-    recommendedFocus: focus.name,
-    reason: phaseReason(phase, focus, snapshot),
-    decisionQuestion: phaseDecisionQuestion(phase, snapshot),
-    decisionMode: broadParallelPursuit ? "broad-parallel-pursuit" : parallelExperiments.length ? "parallel-exploration" : phase === "lane-narrowing" ? "forced-comparison" : "single-track",
-    landingPriority: broadParallelPursuit ? "credible-role-quickly" : "best-fit-over-time",
-    selectionRule: broadParallelPursuit
-      ? "Take any credible role that can land soon across UAE, Remote, or London; keep stronger-fit alternatives warm in parallel."
-      : "Prefer the strongest-fit lane unless live evidence says otherwise.",
+    objective: phaseObjective(frame.phase),
+    phase: frame.phase,
+    dayType: frame.dayType,
+    recommendedFocus: frame.focus.name,
+    reason: phaseReason(frame.phase, frame.focus, snapshot),
+    decisionQuestion: phaseDecisionQuestion(frame.phase, snapshot),
+    decisionMode: frame.decisionMode,
+    landingPriority: frame.landingPriority,
+    selectionRule: frame.selectionRule,
     locationPreference: buildLocationPreference(snapshot.savedJobs),
     roleHypotheses: snapshot.roleHypotheses,
     comparisonAxes: {
@@ -587,7 +628,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
       roleShapeHypotheses: snapshot.roleShapeHypotheses,
       combinations: snapshot.topicHypotheses.slice(0, 2).flatMap((topic) => snapshot.roleShapeHypotheses.slice(0, 2).map((shape) => `${topic} x ${shape}`)),
     },
-    comparisonCriteria: (parallelExperiments.length || broadParallelPursuit)
+    comparisonCriteria: (frame.parallelExperiments.length || frame.broadParallelPursuit)
       ? [
           "How energised would you feel doing this work weekly?",
           "How strong is your existing credibility for this combination?",
@@ -596,25 +637,25 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
           "How attractive is the day-to-day work shape, not just the topic?",
         ]
       : [],
-    explorationStrategy: broadParallelPursuit
+    explorationStrategy: frame.broadParallelPursuit
       ? "Run all four combinations as a broad pursuit portfolio; convert live roles while keeping parallel lanes warm."
-      : parallelExperiments.length
+      : frame.parallelExperiments.length
       ? "Run all four combinations in parallel for now; collect evidence before forcing a winner."
       : "",
-    experiments: broadParallelPursuit ? [] : parallelExperiments,
-    pursuitPortfolio: broadParallelPursuit ? buildParallelExperiments(snapshot).map((x) => ({
+    experiments: frame.broadParallelPursuit ? [] : frame.parallelExperiments,
+    pursuitPortfolio: frame.broadParallelPursuit ? buildParallelExperiments(snapshot).map((x) => ({
       combination: x.combination,
       whyPlausible: x.whyPlausible,
       nextMove: x.nextTest.replace(/^Find one /, "Pursue one "),
     })) : [],
-    trajectory: trajectoryFor(phase),
+    trajectory: trajectoryFor(frame.phase),
     workstreams,
-    todayPlan: buildTodayPlan(phase, focus, snapshot, candidateUniverse),
+    todayPlan: buildTodayPlan(frame.phase, frame.focus, snapshot, candidateUniverse),
     trace: [
       "Read career assets, saved jobs, learning items, tasks, role feedback, and activity history.",
-      `Current phase is ${phase}.`,
-      `Selected ${focus.name} because ${focus.bottleneck}.`,
-      `Day type is ${dayTypeFor(focus)}.`,
+      `Current phase is ${frame.phase}.`,
+      `Selected ${frame.focus.name} because ${frame.focus.bottleneck}.`,
+      `Day type is ${frame.dayType}.`,
       "Today plan is a small surface of the goal state, not the whole goal.",
     ],
   };

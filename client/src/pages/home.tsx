@@ -508,6 +508,57 @@ function WorkstreamGrid({ goal }: { goal: CareerGoalT }) {
   );
 }
 
+function workstreamTone(name: string, goal: CareerGoalT) {
+  return goal.recommendedFocus === name
+    ? "bg-primary/10 text-primary border-primary/20"
+    : "bg-muted text-muted-foreground border-card-border";
+}
+
+function viewRelevantWorkstreams(view: "jobs" | "network" | "learn", goal: CareerGoalT) {
+  const map: Record<typeof view, string[]> = {
+    jobs: ["Applications", "Positioning", "Interview readiness", "Proof"],
+    network: ["Network", "Applications", "Interview readiness", "Direction"],
+    learn: ["Capability ramp", "Proof", "Positioning", "Direction"],
+  };
+  return map[view]
+    .map((name) => goal.workstreams.find((w) => w.name === name))
+    .filter(Boolean) as GoalWorkstreamT[];
+}
+
+function ViewSpineCallout({
+  view,
+  goal,
+}: {
+  view: "jobs" | "network" | "learn";
+  goal: CareerGoalT;
+}) {
+  const relevant = viewRelevantWorkstreams(view, goal);
+  if (relevant.length === 0) return null;
+  const lead = relevant[0];
+
+  return (
+    <div className="mb-5 rounded-xl border border-card-border bg-card p-4" data-testid={`${view}-spine-callout`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">How this view fits the plan</p>
+          <p className="text-sm font-medium mt-1">{lead.nextMoves[0] || goal.todayPlan.mustDo}</p>
+          <p className="text-xs text-muted-foreground mt-1">{lead.bottleneck}</p>
+        </div>
+        <span className="inline-flex shrink-0 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">
+          {goal.dayType}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        {relevant.map((w) => (
+          <span key={w.name} className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${workstreamTone(w.name, goal)}`}>
+            {w.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { data: tracks = [], isLoading: tracksLoading, isError: tracksError } = useCareerTracks();
@@ -1262,9 +1313,11 @@ function sortJobs(a: Job, b: Job): number {
 }
 function JobsView() {
   const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
+  const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { data: contacts = [] } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
+  const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", company: "", location: "", url: "", note: "", nextStep: "", deadline: "" });
   async function add() {
@@ -1300,6 +1353,7 @@ function JobsView() {
         <SectionHeading title="Jobs" sub="Roles and applications, soonest deadlines first." />
         <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
       </div>
+      {activeGoal && <ViewSpineCallout view="jobs" goal={activeGoal} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
           <Input placeholder="Role title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-job-title" />
@@ -1709,9 +1763,11 @@ function isFollowUpOverdue(c: Contact): boolean {
 
 function NetworkView() {
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
+  const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { toast } = useToast();
+  const activeGoal = goalState?.goals?.[0] || null;
   const [sug, setSug] = useState<{ who: string; sector: string; why: string } | null>(null);
   const [sugLoading, setSugLoading] = useState(false);
   const [seen, setSeen] = useState<string[]>([]);
@@ -1743,6 +1799,7 @@ function NetworkView() {
   return (
     <div>
       <SectionHeading title="Network" sub="People to reach, by warmth. Each card leads with the ask." />
+      {activeGoal && <ViewSpineCallout view="network" goal={activeGoal} />}
 
       {/* One networking suggestion: who to reach next */}
       {(sugLoading || sug) && (
@@ -1932,8 +1989,10 @@ const LEARN_STATUS_LABEL: Record<LearnStatus, string> = {
 
 function LearnView() {
   const { data: items = [], isLoading } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
+  const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+  const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [form, setForm] = useState({ title: "", category: "", url: "", note: "" });
@@ -1976,6 +2035,7 @@ function LearnView() {
         <SectionHeading title="Learn" sub="What you're building. Give an item an output to make it count as proof." />
         <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
       </div>
+      {activeGoal && <ViewSpineCallout view="learn" goal={activeGoal} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
           <Input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-learn-title" />

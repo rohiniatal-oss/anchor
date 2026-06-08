@@ -854,7 +854,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
   const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles, tracks);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
-  const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback);
+  const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback, snapshot.activeTracks);
 
   return {
     goal: "Find the right role, then become interview- and job-ready",

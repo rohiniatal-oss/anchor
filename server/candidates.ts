@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import type { ActivityLog, Job, Task } from "@shared/schema";
+import type { ActivityLog, CareerTrack, Job, Task } from "@shared/schema";
 import { storage } from "./storage";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -265,7 +265,37 @@ function careerTasks(tasks: Task[]) {
   return tasks.filter((t) => !t.done && (t.category === "job" || /job|career|role|cv|interview|application/i.test(t.title)));
 }
 
-export function starterDirections(assets: CareerAsset[] = STARTER_ASSETS): CareerDirection[] {
+function directionsFromTracks(tracks: CareerTrack[], assets: CareerAsset[]): CareerDirection[] {
+  const network = labels(assets, "network");
+  const experience = labels(assets, "experience");
+  const geography = labels(assets, "geography");
+  const warmNetworks = Array.from(new Set([
+    ...network,
+    ...experience.filter((x) => /Bain|TBI|Worldpay|FIS|Abraaj|Humania/i.test(x)),
+    ...geography,
+  ]));
+
+  return tracks
+    .filter((t) => t.status === "active")
+    .map((t) => ({
+      name: t.name,
+      whyPlausible: t.whyItFits || t.description || `You explicitly chose ${t.name} as a live lane to explore.`,
+      roleSearches: [
+        `${t.targetRoleArchetype || t.name} roles`,
+        `${t.name} strategy roles`,
+        `${t.name} advisory roles`,
+      ],
+      peopleToFind: [
+        `${t.name} insider`,
+        `${t.targetRoleArchetype || t.name} hiring manager`,
+        `${t.name} operator or advisor`,
+      ],
+      warmNetworks,
+    }))
+    .filter((d, index, arr) => arr.findIndex((x) => norm(x.name) === norm(d.name)) === index);
+}
+
+export function starterDirections(assets: CareerAsset[] = STARTER_ASSETS, tracks: CareerTrack[] = []): CareerDirection[] {
   const network = labels(assets, "network");
   const experience = labels(assets, "experience");
   const geography = labels(assets, "geography");
@@ -317,7 +347,8 @@ export function starterDirections(assets: CareerAsset[] = STARTER_ASSETS): Caree
     },
   ];
 
-  return directions;
+  const explicitTrackDirections = directionsFromTracks(tracks, assets);
+  return [...explicitTrackDirections, ...directions].filter((d, index, arr) => arr.findIndex((x) => norm(x.name) === norm(d.name)) === index);
 }
 
 function feedbackBoostFor(activity: SignalActivity, feedback: AttributeFeedback[]) {
@@ -332,8 +363,8 @@ function feedbackBoostFor(activity: SignalActivity, feedback: AttributeFeedback[
   return boost;
 }
 
-function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[], feedback: AttributeFeedback[] = []) {
-  const directions = starterDirections(assets);
+function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[], feedback: AttributeFeedback[] = [], tracks: CareerTrack[] = []) {
+  const directions = starterDirections(assets, tracks);
   const savedJobs = openJobs(jobs);
   const hasCareerWork = careerTasks(tasks).length > 0;
   const firstDirection = directions[0];
@@ -436,10 +467,10 @@ function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[]
     .sort((a, b) => b.score - a.score);
 }
 
-export function generateCandidateUniverse(tasks: Task[], jobs: Job[], assets: CareerAsset[] = STARTER_ASSETS, feedback: AttributeFeedback[] = []) {
+export function generateCandidateUniverse(tasks: Task[], jobs: Job[], assets: CareerAsset[] = STARTER_ASSETS, feedback: AttributeFeedback[] = [], tracks: CareerTrack[] = []) {
   const activeAssets = assets.length ? assets : STARTER_ASSETS;
-  const directions = starterDirections(activeAssets);
-  const activities = buildSignalActivities(tasks, jobs, activeAssets, feedback).slice(0, 5);
+  const directions = starterDirections(activeAssets, tracks);
+  const activities = buildSignalActivities(tasks, jobs, activeAssets, feedback, tracks).slice(0, 5);
   return {
     purpose: "Build the list of possible jobs, people, tasks, and activities before choosing what to do.",
     grounding: labels(activeAssets),
@@ -478,13 +509,13 @@ export function registerCandidateRoutes(app: Express) {
   });
 
   app.get("/api/candidates", async (_req, res) => {
-    const [tasks, jobs, log] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog()]);
-    res.json(generateCandidateUniverse(tasks, jobs, careerAssetsFromActivity(log), attributeFeedbackFromActivity(log)));
+    const [tasks, jobs, log, tracks] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getCareerTracks()]);
+    res.json(generateCandidateUniverse(tasks, jobs, careerAssetsFromActivity(log), attributeFeedbackFromActivity(log), tracks));
   });
 
   app.post("/api/candidates/commit", async (_req, res) => {
-    const [tasks, jobs, log] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog()]);
-    const { recommended } = generateCandidateUniverse(tasks, jobs, careerAssetsFromActivity(log), attributeFeedbackFromActivity(log));
+    const [tasks, jobs, log, tracks] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getCareerTracks()]);
+    const { recommended } = generateCandidateUniverse(tasks, jobs, careerAssetsFromActivity(log), attributeFeedbackFromActivity(log), tracks);
     const task = await storage.createTask({
       title: recommended.createsTaskTitle,
       list: "today",

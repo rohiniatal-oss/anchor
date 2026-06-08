@@ -18,6 +18,20 @@ test("starter directions are grounded in real assets and warm networks", () => {
   assert.ok(directions.some((d) => d.warmNetworks.includes("Worldpay/FIS")));
 });
 
+test("starter directions include active career tracks as explicit lanes", () => {
+  const directions = starterDirections([], [{
+    id: 1,
+    name: "AI strategy",
+    slug: "ai-strategy",
+    status: "active",
+    targetRoleArchetype: "AI strategy / advisory",
+    whyItFits: "Chosen lane",
+    description: "Parallel lane to pursue",
+  }] as any);
+  assert.ok(directions.some((d) => d.name === "AI strategy"));
+  assert.ok(directions[0].name === "AI strategy");
+});
+
 test("candidate universe builds directions, activities, and one recommendation", () => {
   const universe = generateCandidateUniverse([], []);
   assert.ok(universe.directions.length >= 5);
@@ -25,6 +39,19 @@ test("candidate universe builds directions, activities, and one recommendation",
   assert.ok(universe.recommended);
   assert.ok(universe.grounding.includes("Bain"));
   assert.match(universe.recommended.firstStep, /Search|Look|Write|Open/i);
+});
+
+test("candidate universe reflects active career tracks in its directions", () => {
+  const universe = generateCandidateUniverse([], [], [], [], [{
+    id: 1,
+    name: "Geopolitical advisory",
+    slug: "geopolitical-advisory",
+    status: "active",
+    targetRoleArchetype: "geopolitical advisory",
+    whyItFits: "Strong fit",
+    description: "Chosen lane",
+  }] as any);
+  assert.ok(universe.directions.some((d) => d.name === "Geopolitical advisory"));
 });
 
 test("career assets can be reconstructed from activity log", () => {

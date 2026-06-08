@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import type { ActivityLog, Job, Task } from "@shared/schema";
+import type { ActivityLog, CareerTrack, Job, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse, starterDirections } from "./candidates";
 
@@ -52,12 +52,12 @@ function notesFor(log: ActivityLog[]) {
   return log.map((e) => String(e.metadata || "").toLowerCase()).join(" ");
 }
 
-export function buildExplorationQueue(tasks: Task[], jobs: Job[], log: ActivityLog[]) {
+export function buildExplorationQueue(tasks: Task[], jobs: Job[], log: ActivityLog[], tracks: CareerTrack[] = []) {
   const assets = careerAssetsFromActivity(log);
   const feedback = attributeFeedbackFromActivity(log);
   const summary = attributeFeedbackSummary(feedback);
-  const directions = starterDirections(assets);
-  const candidateUniverse = generateCandidateUniverse(tasks, jobs, assets, feedback);
+  const directions = starterDirections(assets, tracks);
+  const candidateUniverse = generateCandidateUniverse(tasks, jobs, assets, feedback, tracks);
   const logText = notesFor(log);
 
   const items: ExplorationItem[] = directions.map((direction) => {
@@ -126,7 +126,7 @@ export function buildExplorationQueue(tasks: Task[], jobs: Job[], log: ActivityL
 
 export function registerExplorationQueueRoutes(app: Express) {
   app.get("/api/exploration-queue", async (_req, res) => {
-    const [tasks, jobs, log] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog()]);
-    res.json(buildExplorationQueue(tasks, jobs, log));
+    const [tasks, jobs, log, tracks] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getCareerTracks()]);
+    res.json(buildExplorationQueue(tasks, jobs, log, tracks));
   });
 }

@@ -170,6 +170,54 @@ test("brain prefers the more gettable role across flexible target locations", ()
   assert.match(result.explanation.firstStep, /Open the role|application materials/i);
 });
 
+test("job recommendations use recruiting truth for warm-path roles", () => {
+  const jobs = [
+    job({
+      id: 70,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      location: "Remote",
+      fitScore: 78,
+      warmPathScore: 82,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+      sourceUrl: "https://example.com/job",
+    }),
+  ];
+
+  const result = recommend([], jobs, [], [], "medium");
+  assert.equal(result.pick?.source, "job");
+  assert.equal(result.pick?.jobTruthAction, "warm");
+  assert.match(result.pick?.title || "", /warm-path message|referral ask/i);
+  assert.match(result.explanation.summary, /warm path/i);
+  assert.match(result.explanation.firstStep, /warm-path message|referral ask/i);
+});
+
+test("job recommendations use recruiting truth for prove-fit roles", () => {
+  const jobs = [
+    job({
+      id: 71,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      location: "Remote",
+      fitScore: 84,
+      strategicValue: 80,
+      warmPathScore: 20,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+      narrativeAngle: "",
+      sourceUrl: "https://example.com/job",
+    }),
+  ];
+
+  const result = recommend([], jobs, [], [], "medium");
+  assert.equal(result.pick?.source, "job");
+  assert.equal(result.pick?.jobTruthAction, "prove");
+  assert.match(result.pick?.title || "", /narrative angle|proof bullet/i);
+  assert.match(result.explanation.summary, /strengthen credibility/i);
+  assert.match(result.explanation.firstStep, /narrative angle|proof bullet/i);
+});
+
 test("planner keeps job pursuit and capability-building in parallel when time allows", () => {
   const jobs = [
     job({

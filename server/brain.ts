@@ -3,6 +3,7 @@ import { getLearnOutputState, isOpportunityActionable } from "@shared/domainStat
 import { buildTrackSpine } from "./trackSpine";
 import { deriveCareerGoalFrame } from "./goalState";
 import type { CanonicalLaneName } from "./lanes";
+import { computeJobTruthStrip, type JobTruthAction } from "./jobTruth";
 
 // ─────────────────────────────────────────────────────────────────────────
 // ANCHOR BRAIN — adaptive sequencer (NOT a balanced-day picker).
@@ -60,6 +61,7 @@ export type Candidate = {
   targetOrg?: string;
   targetRole?: string;
   followUpDate?: string;
+  jobTruthAction?: JobTruthAction;
 };
 
 type StrategicContext = {
@@ -230,26 +232,34 @@ function buildStrategicContext(
   };
 }
 
-function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; why: string } {
+function jobMoveSize(action: JobTruthAction) {
+  if (action === "apply" || action === "prepare" || action === "prove") return "deep";
+  return "quick";
+}
+
+function jobDoneWhen(action: JobTruthAction) {
+  if (action === "warm") return "A warm-path message or referral ask is sent";
+  if (action === "prove") return "One stronger narrative angle or proof point exists";
+  if (action === "clarify") return "The missing facts are confirmed";
+  if (action === "follow_up") return "A follow-up or warm nudge is sent";
+  if (action === "prepare") return "The interview stories or prep packet are stronger";
+  if (action === "reject") return "The role is clearly parked or archived";
+  return "One concrete application step is complete";
+}
+
+function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; why: string; truthAction?: JobTruthAction } {
   const role = `${j.title}${j.company ? " — " + j.company : ""}`;
   if (j.nextStep && j.nextStep.trim()) {
     return { action: `${j.nextStep.trim()} — ${role}`, size: guessSize(j.nextStep), doneWhen: "That step is done", why: "your own next step on this role" };
   }
-  const readiness = j.applicationReadiness || "none";
-  if (j.eligibilityRisk && j.eligibilityRisk !== "") {
-    return { action: `Check the constraint and adapt the application angle — ${role}`, size: "quick", doneWhen: "You know how to handle or explain the constraint", why: `application constraint: ${j.eligibilityRisk}` };
-  }
-  switch (j.status) {
-    case "wishlist":
-      if (readiness === "none") return { action: `Extract requirements and application materials — ${role}`, size: "quick", doneWhen: "You have listed requirements, materials, deadline, and strongest angle", why: "turns the role into an application plan" };
-      return { action: `Tailor your CV to this role — ${role}`, size: "deep", doneWhen: "CV reflects this role's language", why: "fit is clear; time to make it land" };
-    case "applied":
-      return { action: `Follow up on your application — ${role}`, size: "quick", doneWhen: "A polite nudge is sent", why: "applied roles go cold without a nudge" };
-    case "interviewing":
-      return { action: `Build your story bank — ${role}`, size: "deep", doneWhen: "3 STAR stories ready", why: "you're in the room — prep wins it" };
-    default:
-      return { action: `Build the application plan — ${role}`, size: "quick", doneWhen: "The strongest angle, gaps, and next material are clear", why: "role is in your pipeline; make the application sharper" };
-  }
+  const truth = computeJobTruthStrip(j);
+  return {
+    action: `${truth.nextMove} — ${role}`,
+    size: jobMoveSize(truth.action),
+    doneWhen: jobDoneWhen(truth.action),
+    why: truth.headline,
+    truthAction: truth.action,
+  };
 }
 
 function readinessMomentum(readiness: string) {
@@ -489,7 +499,11 @@ function isActionableContact(c: Contact) {
 }
 
 function candidateStrategicLane(c: Candidate, context: StrategicContext): CanonicalLaneName {
-  if (c.source === "job") return "Applications";
+  if (c.source === "job") {
+    if (c.jobTruthAction === "warm") return "Network";
+    if (c.jobTruthAction === "prove") return "Learning and development";
+    return "Applications";
+  }
   if (c.source === "contact") return "Network";
   if (c.source === "learn") return "Learning and development";
   if (c.source === "hustle") return "Proof assets";
@@ -568,7 +582,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
 
   for (const j of jobs) {
     if (isOpportunityActionable(j)) {
-      const { action, size, doneWhen, why } = jobNextStep(j);
+      const { action, size, doneWhen, why, truthAction } = jobNextStep(j);
       out.push({
         source: "job", sourceId: j.id, taskId: null,
         title: action, category: "job", size,
@@ -583,6 +597,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         applicationReadiness: j.applicationReadiness || "none",
         deadlineConfidence: j.deadlineConfidence || "",
         narrativeAngle: j.narrativeAngle || "",
+        jobTruthAction: truthAction,
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
       });
     }
@@ -788,7 +803,14 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
 }
 
 function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
-  if (source === "job") return "Open the role, your CV, and the application materials for this step.";
+  if (source === "job") {
+    if (candidate?.jobTruthAction === "warm") return "Open the role and write the shortest warm-path message or referral ask.";
+    if (candidate?.jobTruthAction === "prove") return "Open the role and write one stronger narrative angle or proof bullet.";
+    if (candidate?.jobTruthAction === "clarify") return "Open the source and confirm the missing facts before spending more effort.";
+    if (candidate?.jobTruthAction === "follow_up") return "Open the role and send the polite follow-up or warm nudge.";
+    if (candidate?.jobTruthAction === "prepare") return "Open the role and draft the strongest interview stories or prep notes.";
+    return "Open the role, your CV, and the application materials for this step.";
+  }
   if (source === "contact") {
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
     if (intent === "conversion") return "Open the thread and write the shortest message that advances the live role right now.";
@@ -802,7 +824,14 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
 }
 
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
-  if (source === "job") return "Stop after one concrete application or materials step is complete.";
+  if (source === "job") {
+    if (candidate?.jobTruthAction === "warm") return "Stop after one warm-path message or referral ask is drafted, sent, or scheduled.";
+    if (candidate?.jobTruthAction === "prove") return "Stop after one stronger narrative angle or proof point exists.";
+    if (candidate?.jobTruthAction === "clarify") return "Stop after the key missing facts are confirmed.";
+    if (candidate?.jobTruthAction === "follow_up") return "Stop after one follow-up or warm nudge is sent.";
+    if (candidate?.jobTruthAction === "prepare") return "Stop after one interview-prep artifact is stronger than it was before.";
+    return "Stop after one concrete application or materials step is complete.";
+  }
   if (source === "contact") {
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
     if (intent === "conversion") return "Stop after the live-role message is drafted, sent, or clearly scheduled.";
@@ -816,7 +845,14 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 }
 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
-  if (source === "job") return "This role is the strongest conversion move right now.";
+  if (source === "job") {
+    if (candidate?.jobTruthAction === "warm") return "This role is promising, but the best move is to use a warm path before going cold.";
+    if (candidate?.jobTruthAction === "prove") return "This role is promising, but the next move is to strengthen credibility before pushing harder.";
+    if (candidate?.jobTruthAction === "clarify") return "This role needs one clarification pass before it deserves more effort.";
+    if (candidate?.jobTruthAction === "follow_up") return "This role has already moved into the pipeline, so follow-through matters most right now.";
+    if (candidate?.jobTruthAction === "prepare") return "This role is live, so preparation is the value driver right now.";
+    return "This role is the strongest conversion move right now.";
+  }
   if (source === "contact") {
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
     if (intent === "conversion") return "This person is the highest-leverage contact for converting a live role right now.";

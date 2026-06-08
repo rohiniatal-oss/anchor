@@ -334,6 +334,65 @@ test("planner can keep job pursuit and networking in parallel when both are live
   assert.ok(result.plan.some((item) => item.candidate.source === "contact"), "networking stays in parallel");
 });
 
+test("planner balances applications, networking, and learning when the day has room", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const jobs = [
+    job({
+      id: 31,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      fitScore: 78,
+      warmPathScore: 70,
+      applicationReadiness: "questions",
+      deadlineConfidence: "high",
+    }),
+    job({
+      id: 32,
+      title: "Policy Analyst",
+      company: "Policy House",
+      location: "London",
+      fitScore: 72,
+      warmPathScore: 58,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+    }),
+  ];
+  const contacts = [
+    contact({
+      id: 33,
+      who: "Insider at Frontier Lab",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "referral",
+      targetOrg: "Frontier Lab",
+      targetRole: "AI Strategy Associate",
+      nextFollowUpDate: today,
+      messageDraft: "Following up on the AI Strategy Associate role.",
+    }),
+  ];
+  const learn = [{
+    id: 34,
+    title: "AI governance memo practice",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const result = planDay([], jobs, learn, [], "medium", { remainingMinutes: 240 }, contacts);
+  const sources = new Set(result.plan.map((item) => item.candidate.source));
+  assert.ok(sources.has("job"), "applications lane is present");
+  assert.ok(sources.has("contact"), "network lane is present");
+  assert.ok(sources.has("learn"), "learning lane is present");
+  assert.equal(result.plan.length, 3);
+});
+
 test("planner ignores contacts with no actionable networking move", () => {
   const contacts = [
     contact({

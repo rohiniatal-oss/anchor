@@ -416,6 +416,16 @@ function isActionableContact(c: Contact) {
   return false;
 }
 
+function candidateStrategicLane(c: Candidate, context: StrategicContext): CanonicalLaneName {
+  if (c.source === "job") return "Applications";
+  if (c.source === "contact") return "Network";
+  if (c.source === "learn") return "Learning and development";
+  if (c.source === "hustle") return "Proof assets";
+  if (candidateMatchesLane(c, context.bottleneckLane)) return context.bottleneckLane;
+  const order: CanonicalLaneName[] = ["Applications", "Network", "Learning and development", "Proof assets", "Direction", "Stability"];
+  return order.find((lane) => candidateMatchesLane(c, lane)) || "Stability";
+}
+
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
 export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = []): Candidate[] {
@@ -755,15 +765,25 @@ export function planDay(
 
   const picks: RankedCandidate[] = [];
   const usedFamily = new Set<string>();
+  const usedLanes = new Set<CanonicalLaneName>();
   for (const r of ranked) {
     if (picks.length >= maxItems) break;
     const fam = CATEGORY_FAMILY[r.c.category] ?? "care";
+    const lane = candidateStrategicLane(r.c, context);
     if (usedFamily.has(fam)) {
       const betterDiff = ranked.find(other => !usedFamily.has(CATEGORY_FAMILY[other.c.category] ?? "care")
         && !picks.includes(other) && (r.s - other.s) <= 25);
       if (betterDiff) continue;
     }
-    picks.push(r); usedFamily.add(fam);
+    if (maxItems > 1 && mode !== "deadline" && usedLanes.has(lane)) {
+      const betterLane = ranked.find((other) => {
+        if (picks.includes(other)) return false;
+        const otherLane = candidateStrategicLane(other.c, context);
+        return !usedLanes.has(otherLane) && (r.s - other.s) <= 28;
+      });
+      if (betterLane) continue;
+    }
+    picks.push(r); usedFamily.add(fam); usedLanes.add(lane);
   }
   if (picks.length < maxItems) {
     for (const r of ranked) {

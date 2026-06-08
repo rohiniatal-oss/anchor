@@ -22,18 +22,78 @@ import { templateForArchetype } from "@shared/jobTemplates";
 import { templateForProofAsset } from "@shared/proofAssetTemplates";
 import { SPINE_DDL } from "./spine.schema.sql";
 
-const DB_PATH = process.env.ANCHOR_DB_PATH || "data.db";
-const sqlite = new Database(DB_PATH);
-sqlite.pragma("journal_mode = WAL");
-// Ensure the full current schema exists on open. Idempotent (CREATE TABLE IF NOT
-// EXISTS) so it is a no-op on an already-pushed prod DB and gives throwaway test
-// DBs every table from shared/schema.ts regardless of import order.
-sqlite.exec(SPINE_DDL);
-export const db = drizzle(sqlite);
-// Exposed so the test harness shares the SAME handle storage opened, rather than
-// opening a second connection at a path it has to guess — the two diverged when a
-// route module imported storage before the harness set ANCHOR_DB_PATH.
-export const rawDb = sqlite;
+type DbClient = ReturnType<typeof drizzle>;
+type SqliteHandle = InstanceType<typeof Database>;
+
+function resolveDbPath(explicitDbPath?: string) {
+  return explicitDbPath || process.env.ANCHOR_DB_PATH || "data.db";
+}
+
+export type StorageRuntime = {
+  db: DbClient;
+  rawDb: SqliteHandle;
+  storage: DatabaseStorage;
+  dbPath: string;
+};
+
+function openStorageRuntime(dbPath: string): StorageRuntime {
+  const sqlite = new Database(dbPath);
+  sqlite.pragma("journal_mode = WAL");
+  // Ensure the full current schema exists on open. Idempotent (CREATE TABLE IF NOT
+  // EXISTS) so it is a no-op on an already-pushed prod DB and gives throwaway test
+  // DBs every table from shared/schema.ts regardless of import order.
+  sqlite.exec(SPINE_DDL);
+  return {
+    db: drizzle(sqlite),
+    rawDb: sqlite,
+    storage: new DatabaseStorage(),
+    dbPath,
+  };
+}
+
+let activeRuntime: StorageRuntime | null = null;
+
+export function initStorage(explicitDbPath?: string): StorageRuntime {
+  const dbPath = resolveDbPath(explicitDbPath);
+  if (!activeRuntime) {
+    activeRuntime = openStorageRuntime(dbPath);
+    return activeRuntime;
+  }
+  if (activeRuntime.dbPath !== dbPath) {
+    throw new Error(`Storage already initialized for ${activeRuntime.dbPath}; cannot reinitialize for ${dbPath}`);
+  }
+  return activeRuntime;
+}
+
+export function getStorageRuntime(): StorageRuntime {
+  return activeRuntime ?? initStorage();
+}
+
+function bindProxy<T extends object>(getTarget: () => T): T {
+  return new Proxy({} as T, {
+    get(_target, prop, receiver) {
+      const target = getTarget();
+      const value = Reflect.get(target as object, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+    set(_target, prop, value, receiver) {
+      return Reflect.set(getTarget() as object, prop, value, receiver);
+    },
+    has(_target, prop) {
+      return prop in getTarget();
+    },
+    ownKeys() {
+      return Reflect.ownKeys(getTarget() as object);
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      return Object.getOwnPropertyDescriptor(getTarget() as object, prop);
+    },
+  });
+}
+
+export const db = bindProxy<DbClient>(() => getStorageRuntime().db);
+export const rawDb = bindProxy<SqliteHandle>(() => getStorageRuntime().rawDb);
+
 
 export interface IStorage {
   getTasks(): Promise<Task[]>;
@@ -266,4 +326,4 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = bindProxy<IStorage>(() => getStorageRuntime().storage);

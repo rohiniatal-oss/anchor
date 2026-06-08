@@ -17,6 +17,7 @@ import { registerBrainSpineRoutes } from "./brainSpineRoutes";
 import { registerTaskBreakdownRoutes } from "./taskBreakdownRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { serveStatic } from "./static";
+import { initStorage } from "./storage";
 import { createServer } from "node:http";
 
 const app = express();
@@ -37,6 +38,7 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+initStorage();
 warnIfUsingDefaultDbPath();
 registerOptionalBasicAuth(app);
 startOptionalSqliteBackups();

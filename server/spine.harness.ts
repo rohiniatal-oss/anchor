@@ -1,8 +1,7 @@
 // Spine test harness (P4.6a #8). Stands up a throwaway sqlite DB + an in-process
 // express server wired with the REAL routes, so the identity chain can be tested
-// end to end over HTTP. ANCHOR_DB_PATH is set on the env BEFORE storage is imported;
-// storage opens its handle at module load AND creates the full schema there (one
-// shared place, see SPINE_DDL), so every test DB has all tables from shared/schema.ts.
+// end to end over HTTP. The harness picks the DB path explicitly via initStorage()
+// before any route work begins, so tests no longer depend on storage import order.
 import os from "node:os";
 import path from "node:path";
 import { createServer, type Server } from "node:http";
@@ -23,9 +22,8 @@ const TABLES = [
   "day_plans", "day_plan_items", "entity_links", "activity_log",
 ];
 
-// storage opens ONE db handle at module load and ES imports are cached, so the
-// whole suite shares a single harness/DB. Per-test isolation comes from reset(),
-// which truncates every table. Set ANCHOR_DB_PATH BEFORE importing storage.
+// The suite shares one initialized harness/DB per process. Per-test isolation
+// comes from reset(), which truncates every table.
 let singleton: Harness | null = null;
 
 export async function makeHarness(): Promise<Harness> {
@@ -35,8 +33,7 @@ export async function makeHarness(): Promise<Harness> {
   // The spine tests never hit model-backed routes.
   process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "test-noop";
 
-  // Schema is created by storage.ts on open (one shared place, see SPINE_DDL).
-  // ANCHOR_DB_PATH is set above so the storage import below opens THIS db.
+  // Schema is created by storage.ts during explicit initStorage(dbPath).
   const express = (await import("express")).default;
   const { registerCaptureRoutes } = await import("./capture");
   const { registerSprint2Routes } = await import("./sprint2");
@@ -46,11 +43,10 @@ export async function makeHarness(): Promise<Harness> {
   const { registerGoalStateRoutes } = await import("./goalState");
   const { registerTaskBreakdownRoutes } = await import("./taskBreakdownRoutes");
   const { registerRoutes } = await import("./routes");
-  const { storage, rawDb } = await import("./storage");
-  // Reset/inspect through the SAME handle storage opened. If a route module pulled
-  // storage in before ANCHOR_DB_PATH was set, storage is on data.db, not dbPath —
-  // using rawDb keeps the harness pointed at whatever DB the routes actually use.
-  const sqlite = rawDb;
+  const { initStorage, storage } = await import("./storage");
+  // Reset/inspect through the same handle the harness initialized for this DB.
+  const runtime = initStorage(dbPath);
+  const sqlite = runtime.rawDb;
 
   const app = express();
   app.use(express.json());

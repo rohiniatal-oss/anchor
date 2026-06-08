@@ -88,6 +88,36 @@ test("career goal frame stays in fit-discovery when learning exists but role sig
   assert.equal(frame.decisionMode, "single-track");
 });
 
+test("career goal state reflects real networking progress from live contacts", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const jobs = [
+    { id: 1, title: "AI Strategy Associate", company: "GovAI", status: "wishlist", applicationWindowStatus: "open", location: "Remote" },
+  ] as any;
+  const contacts = [
+    {
+      id: 1,
+      who: "Operator at GovAI",
+      status: "messaged",
+      relationshipStrength: "warm",
+      targetOrg: "GovAI",
+      targetRole: "AI Strategy Associate",
+      nextFollowUpDate: today,
+      messageDraft: "Following up on the AI Strategy Associate role.",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, [], [], contacts);
+  const network = state.workstreams.find((w) => w.name === "Network")!;
+  assert.equal(state.phase, "role-targeting");
+  assert.equal(state.recommendedFocus, "Network");
+  assert.equal(network.status, "stale");
+  assert.equal(network.progress, "developing");
+  assert.match(network.bottleneck, /follow-up/i);
+  assert.ok(network.evidence.some((e) => /1 active conversation/i.test(e)));
+  assert.ok(network.evidence.some((e) => /1 role-linked contact/i.test(e)));
+  assert.ok(network.nextMoves.some((move) => /follow up/i.test(move)));
+});
+
 test("goal state API returns active goal with workstreams and today plan", async () => {
   const r = await api(h.base, "GET", "/api/goals/state");
   assert.equal(r.status, 200);

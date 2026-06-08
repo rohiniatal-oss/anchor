@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import type { ActivityLog, Job, Learn, Task } from "@shared/schema";
+import type { ActivityLog, Contact, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse } from "./candidates";
 
@@ -48,6 +48,12 @@ type GoalSnapshot = {
   deconstructionCommits: number;
   roleFeedbackCount: number;
   hasNetworkTask: boolean;
+  networkContactsCount: number;
+  activeConversationCount: number;
+  warmContactCount: number;
+  roleLinkedContactCount: number;
+  dueFollowUpCount: number;
+  draftedContactCount: number;
   hasApplicationTask: boolean;
   hasProofTask: boolean;
   activeLearnCount: number;
@@ -121,6 +127,38 @@ function buildLocationPreference(jobs: Job[]): LocationPreference {
 
 function countEvents(log: ActivityLog[], eventType: string) {
   return log.filter((e) => e.eventType === eventType).length;
+}
+
+function daysUntil(deadline: string): number | null {
+  if (!deadline) return null;
+  const d = new Date(deadline + "T23:59:59");
+  if (isNaN(d.getTime())) return null;
+  return Math.ceil((d.getTime() - Date.now()) / 86400000);
+}
+
+function isOpenContact(c: Contact) {
+  return c.status !== "closed";
+}
+
+function hasActiveConversation(c: Contact) {
+  return c.status === "messaged" || c.status === "replied";
+}
+
+function hasDraftedContactMove(c: Contact) {
+  return !!((c.messageDraft && c.messageDraft.trim()) || (c.lastMessage && c.lastMessage.trim()));
+}
+
+function isWarmContact(c: Contact) {
+  return c.relationshipStrength === "warm" || c.relationshipStrength === "strong";
+}
+
+function isRoleLinkedContact(c: Contact) {
+  return !!((c.targetOrg && c.targetOrg.trim()) || (c.targetRole && c.targetRole.trim()));
+}
+
+function isContactFollowUpDue(c: Contact) {
+  const due = daysUntil(c.nextFollowUpDate || "");
+  return due !== null && due <= 0;
 }
 
 function hasSignal(summary: ReturnType<typeof attributeFeedbackSummary>, reaction: keyof ReturnType<typeof attributeFeedbackSummary>) {
@@ -220,7 +258,7 @@ function detectRoleShapeHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[
   return rankedHypotheses(scores, ROLE_SHAPE_LABELS);
 }
 
-function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = []): GoalSnapshot {
+function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = []): GoalSnapshot {
   const assets = careerAssetsFromActivity(log);
   const feedback = attributeFeedbackFromActivity(log);
   const feedbackSummary = attributeFeedbackSummary(feedback);
@@ -230,6 +268,12 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   const deconstructionCommits = countEvents(log, "role_deconstruction_committed");
   const roleFeedbackCount = feedback.length;
   const hasNetworkTask = careerTasks.some((t) => /person|contact|message|network|alum|colleague/i.test(t.title));
+  const openContacts = contacts.filter(isOpenContact);
+  const activeConversationCount = openContacts.filter(hasActiveConversation).length;
+  const warmContactCount = openContacts.filter(isWarmContact).length;
+  const roleLinkedContactCount = openContacts.filter(isRoleLinkedContact).length;
+  const dueFollowUpCount = openContacts.filter(isContactFollowUpDue).length;
+  const draftedContactCount = openContacts.filter(hasDraftedContactMove).length;
   const hasApplicationTask = careerTasks.some((t) => /apply|application|cv|cover|interview/i.test(t.title));
   const hasProofTask = careerTasks.some((t) => /proof|gap|bullet|story|portfolio|sample/i.test(t.title));
   const activeLearn = learn.filter((l) => !l.done && l.learnStatus !== "closed");
@@ -255,6 +299,12 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     deconstructionCommits,
     roleFeedbackCount,
     hasNetworkTask,
+    networkContactsCount: openContacts.length,
+    activeConversationCount,
+    warmContactCount,
+    roleLinkedContactCount,
+    dueFollowUpCount,
+    draftedContactCount,
     hasApplicationTask,
     hasProofTask,
     activeLearnCount: activeLearn.length,
@@ -294,7 +344,40 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     snapshot.roleShapeHypotheses.length ? `role-shape axis: ${snapshot.roleShapeHypotheses.join(" vs ")}` : "role-shape axis still unclear",
   ];
 
-  const networkStarted = snapshot.hasNetworkTask || snapshot.assets.some((a) => a.kind === "network");
+  const networkAssets = snapshot.assets.some((a) => a.kind === "network");
+  const networkStarted = snapshot.hasNetworkTask || networkAssets || snapshot.networkContactsCount > 0;
+  const networkStatus: WorkstreamStatus = !networkStarted
+    ? "underdeveloped"
+    : snapshot.dueFollowUpCount > 0
+      ? "stale"
+      : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
+        ? "underdeveloped"
+        : "active";
+  const networkProgress: WorkstreamState["progress"] = snapshot.activeConversationCount > 0 || snapshot.roleLinkedContactCount > 0
+    ? "developing"
+    : networkStarted
+      ? "early"
+      : "not_started";
+  const networkBottleneck = !networkStarted
+    ? "few warm conversations created"
+    : snapshot.dueFollowUpCount > 0
+      ? `${snapshot.dueFollowUpCount} follow-up${snapshot.dueFollowUpCount > 1 ? "s are" : " is"} due or overdue`
+      : snapshot.networkContactsCount > 0 && snapshot.warmContactCount === 0
+        ? "contacts exist, but none are warm enough to create easy momentum yet"
+      : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
+        ? "live roles exist, but few contacts are tied to them yet"
+        : snapshot.activeConversationCount === 0
+          ? "contacts exist, but no active conversation is moving"
+          : "active conversations need sharper asks, replies, or role linkage";
+  const networkNextMoves = !networkStarted
+    ? ["find one warm-network person", "draft one reality-check message", "send or save one soft ask"]
+    : snapshot.dueFollowUpCount > 0
+      ? ["follow up with the warmest overdue contact", "send one concise nudge tied to the current role or ask", "schedule the next touch so the thread does not go cold again"]
+      : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
+        ? ["tie one contact to the strongest live role", "identify who can warm the best current application", "draft one role-linked outreach message"]
+        : snapshot.activeConversationCount === 0
+          ? ["turn one draft into a sent message", "pick the warmest contact and send a concrete ask", "schedule one follow-up date"]
+          : ["move one active thread forward", "make the next ask more specific", "log the next follow-up date"];
 
   return [
     {
@@ -327,12 +410,21 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     },
     {
       name: "Network",
-      status: networkStarted ? "active" : "underdeveloped",
-      progress: networkStarted ? "early" : "not_started",
-      bottleneck: networkStarted ? "needs active conversations or replies" : "few warm conversations created",
+      status: networkStatus,
+      progress: networkProgress,
+      bottleneck: networkBottleneck,
       nextMoveType: "relationship",
-      evidence: [snapshot.hasNetworkTask ? "network task exists" : "no clear network task", snapshot.assets.some((a) => a.kind === "network") ? "network assets available" : "no explicit network assets"],
-      nextMoves: ["find one warm-network person", "draft one reality-check message", "send or save one soft ask"],
+      evidence: [
+        `${snapshot.networkContactsCount} open contact${snapshot.networkContactsCount === 1 ? "" : "s"}`,
+        `${snapshot.warmContactCount} warm contact${snapshot.warmContactCount === 1 ? "" : "s"}`,
+        `${snapshot.draftedContactCount} drafted/message-bearing contact${snapshot.draftedContactCount === 1 ? "" : "s"}`,
+        `${snapshot.activeConversationCount} active conversation${snapshot.activeConversationCount === 1 ? "" : "s"}`,
+        `${snapshot.roleLinkedContactCount} role-linked contact${snapshot.roleLinkedContactCount === 1 ? "" : "s"}`,
+        `${snapshot.dueFollowUpCount} due follow-up${snapshot.dueFollowUpCount === 1 ? "" : "s"}`,
+        snapshot.hasNetworkTask ? "network task exists" : "no clear network task",
+        networkAssets ? "network assets available" : "no explicit network assets",
+      ],
+      nextMoves: networkNextMoves,
     },
     {
       name: "Positioning",
@@ -398,11 +490,14 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
 }
 
 function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase) {
+  const network = workstreams.find((w) => w.name === "Network");
+  if ((phase === "role-targeting" || phase === "interview-prep") && network?.status === "stale") return network;
+
   const priorityByPhase: Record<GoalPhase, string[]> = {
     "fit-discovery": ["Direction", "Market map", "Network", "Energy and stability"],
     "lane-narrowing": ["Direction", "Positioning", "Market map", "Network", "Energy and stability"],
-    "role-targeting": ["Applications", "Proof", "Positioning", "Network", "Capability ramp", "Energy and stability"],
-    "interview-prep": ["Interview readiness", "Capability ramp", "Proof", "Applications", "Energy and stability"],
+    "role-targeting": ["Applications", "Network", "Proof", "Positioning", "Capability ramp", "Energy and stability"],
+    "interview-prep": ["Interview readiness", "Network", "Capability ramp", "Proof", "Applications", "Energy and stability"],
   };
   return priorityByPhase[phase]
     .map((name) => workstreams.find((w) => w.name === name))
@@ -586,8 +681,8 @@ function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamSta
   };
 }
 
-export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = []) {
-  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn);
+export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = [], contacts: Contact[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
 
@@ -602,8 +697,8 @@ export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityL
   };
 }
 
-export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = []) {
-  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn);
+export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
   const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback);
@@ -663,7 +758,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
 
 export function registerGoalStateRoutes(app: Express) {
   app.get("/api/goals/state", async (_req, res) => {
-    const [tasks, jobs, log, learn] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getLearn()]);
-    res.json({ goals: [buildCareerGoalState(tasks, jobs, log, learn)] });
+    const [tasks, jobs, log, learn, contacts] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getLearn(), storage.getContacts()]);
+    res.json({ goals: [buildCareerGoalState(tasks, jobs, log, learn, contacts)] });
   });
 }

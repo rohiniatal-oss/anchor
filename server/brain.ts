@@ -204,7 +204,7 @@ function buildStrategicContext(
 ): StrategicContext {
   const spine = buildTrackSpine({ tasks, jobs, learn, hustles, contacts, tracks });
   const lane = spine.globalLanes.find((l) => l.name === spine.bestMove.lane) || spine.globalLanes[0];
-  const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn);
+  const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts);
   const planningPosture = planningPostureFromGoalFrame(
     goalFrame,
     spine.bestMove.lane,

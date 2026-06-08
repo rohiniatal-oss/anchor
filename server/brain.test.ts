@@ -200,6 +200,7 @@ test("planner keeps job pursuit and capability-building in parallel when time al
   const result = planDay([], jobs, learn, [], "medium", { remainingMinutes: 240 });
   assert.ok(result.plan.some((item) => item.candidate.source === "job"), "live role stays in the plan");
   assert.ok(result.plan.some((item) => item.candidate.source === "learn"), "capability-building stays in parallel");
+  assert.ok(result.plan.every((item) => item.explanation && item.explanation.summary && item.explanation.firstStep), "plan items carry structured explanations");
 });
 
 test("brain can recommend a warm networking move as a first-class candidate", () => {

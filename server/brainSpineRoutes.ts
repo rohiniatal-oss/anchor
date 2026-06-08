@@ -1,9 +1,16 @@
 import type { Express } from "express";
 import { storage } from "./storage";
-import { planDay, recommend } from "./brain";
+import { explainPersistedPlanItem, planDay, recommend } from "./brain";
 
 function validEnergy(value: unknown): "low" | "medium" | "high" {
   return ["low", "medium", "high"].includes(String(value)) ? String(value) as any : "medium";
+}
+
+function decoratePlanItems(items: any[]) {
+  return items.map((item) => ({
+    ...item,
+    explanation: explainPersistedPlanItem(item),
+  }));
 }
 
 async function busyMinutesFor(day: string): Promise<number> {
@@ -60,7 +67,7 @@ async function buildAndPersistPlan(day: string, energy: "low" | "medium" | "high
       sourceId: c.sourceId,
       taskId: c.taskId ?? undefined,
       title: c.title,
-      whySelected: pi.why,
+      whySelected: pi.explanation.summary || pi.why,
       doneWhen: c.doneWhen,
       status: prev ? prev.status : "planned",
       plannedFor: day,
@@ -102,7 +109,7 @@ export function registerBrainSpineRoutes(app: Express) {
       plan = await storage.getPlanByDate(day);
       const items = plan ? await storage.getPlanItems(plan.id) : [];
       const events = await storage.getEvents(day);
-      res.json({ plan, items, events });
+      res.json({ plan, items: decoratePlanItems(items), events });
     } catch (err) { next(err); }
   });
 
@@ -113,7 +120,7 @@ export function registerBrainSpineRoutes(app: Express) {
       await buildAndPersistPlan(day, energy);
       const plan = await storage.getPlanByDate(day);
       const items = plan ? await storage.getPlanItems(plan.id) : [];
-      res.json({ plan, items });
+      res.json({ plan, items: decoratePlanItems(items) });
     } catch (err) { next(err); }
   });
 }

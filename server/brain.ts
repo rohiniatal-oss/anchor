@@ -93,6 +93,8 @@ export type RecommendationExplanation = {
   stopRule: string;
 };
 
+type SourceKind = Candidate["source"] | "task";
+
 function daysUntil(deadline: string): number | null {
   if (!deadline) return null;
   const d = new Date(deadline + "T23:59:59");
@@ -609,7 +611,7 @@ function score(c: Candidate, energy: Energy, mode: DayMode): number {
 }
 
 export type SlotName = "now" | "next" | "later" | "bonus";
-export type PlanItem = { slot: SlotName; candidate: Candidate; why: string; isMVD: boolean };
+export type PlanItem = { slot: SlotName; candidate: Candidate; why: string; isMVD: boolean; explanation: RecommendationExplanation };
 
 type CapacityInput = number | { busyMinutes?: number; now?: Date; remainingMinutes?: number };
 
@@ -634,27 +636,27 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
   return `${lane} lane. ${top || context.laneUnlockMove || "Best available next move"}.`;
 }
 
-function firstStepForCandidate(c: Candidate) {
-  if (c.source === "job") return "Open the role, your CV, and the application materials for this step.";
-  if (c.source === "contact") return "Open the thread or a blank draft and write the message before editing it.";
-  if (c.source === "learn") return "Open the resource or a blank note and produce the smallest useful output.";
-  if (c.source === "hustle") return "Open the proof asset and make the smallest publishable or reusable fragment.";
+function firstStepForSource(source: SourceKind) {
+  if (source === "job") return "Open the role, your CV, and the application materials for this step.";
+  if (source === "contact") return "Open the thread or a blank draft and write the message before editing it.";
+  if (source === "learn") return "Open the resource or a blank note and produce the smallest useful output.";
+  if (source === "hustle") return "Open the proof asset and make the smallest publishable or reusable fragment.";
   return "Open the task and do the first visible action, not the whole project.";
 }
 
-function stopRuleForCandidate(c: Candidate) {
-  if (c.source === "job") return "Stop after one concrete application or materials step is complete.";
-  if (c.source === "contact") return "Stop after the message is drafted, sent, or clearly scheduled.";
-  if (c.source === "learn") return "Stop after one reusable learning output exists.";
-  if (c.source === "hustle") return "Stop after one proof fragment or next asset step exists.";
+function stopRuleForSource(source: SourceKind) {
+  if (source === "job") return "Stop after one concrete application or materials step is complete.";
+  if (source === "contact") return "Stop after the message is drafted, sent, or clearly scheduled.";
+  if (source === "learn") return "Stop after one reusable learning output exists.";
+  if (source === "hustle") return "Stop after one proof fragment or next asset step exists.";
   return "Stop after one concrete move changes the state of the work.";
 }
 
-function candidateFrame(c: Candidate) {
-  if (c.source === "job") return "This role is the strongest conversion move right now.";
-  if (c.source === "contact") return "This person is the highest-leverage networking move right now.";
-  if (c.source === "learn") return "This upskilling move compounds your profile without blocking applications.";
-  if (c.source === "hustle") return "This proof move builds reusable credibility over time.";
+function sourceFrame(source: SourceKind) {
+  if (source === "job") return "This role is the strongest conversion move right now.";
+  if (source === "contact") return "This person is the highest-leverage networking move right now.";
+  if (source === "learn") return "This upskilling move compounds your profile without blocking applications.";
+  if (source === "hustle") return "This proof move builds reusable credibility over time.";
   return "This is the best already-live move in the system right now.";
 }
 
@@ -672,12 +674,49 @@ function explainRecommendation(
     : `It is the clearest available move on the ${context.bottleneckLane.toLowerCase()} lane right now.`;
 
   return {
-    summary: `${candidateFrame(pick)} ${context.bottleneckLane} is the current bottleneck${context.activeTrackName ? ` for ${context.activeTrackName}` : ""}.`,
+    summary: `${sourceFrame(pick.source)} ${context.bottleneckLane} is the current bottleneck${context.activeTrackName ? ` for ${context.activeTrackName}` : ""}.`,
     whyNow,
     whyThis,
     supportingReasons,
-    firstStep: firstStepForCandidate(pick),
-    stopRule: stopRuleForCandidate(pick),
+    firstStep: firstStepForSource(pick.source),
+    stopRule: stopRuleForSource(pick.source),
+  };
+}
+
+function explainRankedPlanItem(
+  ranked: RankedCandidate[],
+  index: number,
+  context: StrategicContext,
+): RecommendationExplanation {
+  const current = ranked[index];
+  const next = ranked[index + 1];
+  const supportingReasons = current.trace.filter(Boolean).slice(0, 4);
+  return {
+    summary: `${sourceFrame(current.c.source)} ${context.bottleneckLane} is why this slot exists${context.activeTrackName ? ` for ${context.activeTrackName}` : ""}.`,
+    whyNow: supportingReasons[0] || current.c.whyNow || context.reason,
+    whyThis: next
+      ? `It outranks the next option because it has stronger immediate leverage on ${context.bottleneckLane.toLowerCase()} right now.`
+      : `It remains in the plan because it is still a useful move on the ${context.bottleneckLane.toLowerCase()} lane.`,
+    supportingReasons,
+    firstStep: firstStepForSource(current.c.source),
+    stopRule: stopRuleForSource(current.c.source),
+  };
+}
+
+export function explainPersistedPlanItem(item: {
+  sourceType?: string | null;
+  whySelected?: string | null;
+  doneWhen?: string | null;
+}): RecommendationExplanation {
+  const source = (item.sourceType || "task") as SourceKind;
+  const why = (item.whySelected || "").trim();
+  return {
+    summary: why || sourceFrame(source),
+    whyNow: why || "This move remains in today's plan because it supports the current sequencing.",
+    whyThis: "It has already been selected into the persisted plan as one of today's highest-leverage moves.",
+    supportingReasons: why ? [why] : [],
+    firstStep: firstStepForSource(source),
+    stopRule: item.doneWhen?.trim() ? `Stop when: ${item.doneWhen.trim()}` : stopRuleForSource(source),
   };
 }
 
@@ -736,7 +775,13 @@ export function planDay(
 
   const mvd = picks[0];
   const slots: SlotName[] = ["now", "next", "later", "bonus"];
-  const plan: PlanItem[] = picks.map((r, i) => ({ slot: slots[Math.min(i, slots.length - 1)], candidate: r.c, why: whyLine(r, context), isMVD: r === mvd }));
+  const plan: PlanItem[] = picks.map((r, i) => ({
+    slot: slots[Math.min(i, slots.length - 1)],
+    candidate: r.c,
+    why: whyLine(r, context),
+    isMVD: r === mvd,
+    explanation: explainRankedPlanItem(picks, i, context),
+  }));
 
   const planMin = picks.reduce((m, r) => m + (SIZE_MINUTES[r.c.size] ?? 45), 0);
   const fits = planMin <= Math.max(15, budget);

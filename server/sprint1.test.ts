@@ -108,8 +108,10 @@ test("persisted plan recompute remains available through the current Today depen
   assert.ok(r.json.plan?.id, "plan returned");
   assert.ok(Array.isArray(r.json.items), "items returned");
   assert.ok(r.json.items.length >= 1, "plan items created");
+  assert.ok(r.json.items[0].explanation?.summary, "plan items expose structured explanations");
 
   const current = await api(h.base, "GET", `/api/plan/current?day=${DAY}&energy=medium`);
   assert.equal(current.status, 200);
   assert.equal(current.json.plan.id, r.json.plan.id, "current reads the persisted plan");
+  assert.ok(current.json.items[0].explanation?.firstStep, "persisted plan current endpoint preserves plan-item explanations");
 });

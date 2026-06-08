@@ -1,11 +1,18 @@
 import type { Express } from "express";
 import OpenAI from "openai";
-import { recommend, planDay } from "./brain";
+import { explainPersistedPlanItem, recommend, planDay } from "./brain";
 import { createNextTask } from "./nextTask";
 import { storage } from "./storage";
 import { insertEventSchema, type InsertActivityLog, type InsertDayPlanItem } from "@shared/schema";
 
 type Energy = "low" | "medium" | "high";
+
+function decoratePlanItems(items: any[]) {
+  return items.map((item) => ({
+    ...item,
+    explanation: explainPersistedPlanItem(item),
+  }));
+}
 
 async function busyMinutesFor(day: string): Promise<number> {
   const events = await storage.getEvents(day);
@@ -54,7 +61,7 @@ async function buildPlan(day: string, energy: Energy) {
       sourceId: c.sourceId,
       taskId: c.taskId ?? undefined,
       title: c.title,
-      whySelected: pi.why,
+      whySelected: pi.explanation.summary || pi.why,
       doneWhen: c.doneWhen,
       status: prev ? prev.status : "planned",
       plannedFor: day,
@@ -238,7 +245,7 @@ export function registerPlanningRoutes(app: Express) {
     plan = await storage.getPlanByDate(day);
     const items = plan ? await storage.getPlanItems(plan.id) : [];
     const events = await storage.getEvents(day);
-    res.json({ plan, items, events });
+    res.json({ plan, items: decoratePlanItems(items), events });
   });
 
   const SLOT_TO_BLOCK: Record<string, string> = { now: "morning", next: "afternoon", later: "evening", bonus: "evening" };
@@ -307,7 +314,7 @@ export function registerPlanningRoutes(app: Express) {
     await buildPlan(day, energy);
     const plan = await storage.getPlanByDate(day);
     const items = plan ? await storage.getPlanItems(plan.id) : [];
-    res.json({ plan, items });
+    res.json({ plan, items: decoratePlanItems(items) });
   });
 
   app.post("/api/tasks/:id/complete", async (req, res) => {

@@ -355,7 +355,8 @@ function OnboardingView() {
 }
 
 /* ================= TODAY (day-first hero) ================= */
-type PlanItemT = { id: number; slot: string; title: string; whySelected: string; doneWhen: string; status: string; sourceType: string; sourceId: number | null; taskId: number | null };
+type PlanItemExplanationT = { summary: string; whyNow: string; whyThis: string; supportingReasons: string[]; firstStep: string; stopRule: string };
+type PlanItemT = { id: number; slot: string; title: string; whySelected: string; doneWhen: string; status: string; sourceType: string; sourceId: number | null; taskId: number | null; explanation?: PlanItemExplanationT };
 type DayPlanT = { id: number; mode: string; note: string; status: string; minimumViableItemId: number | null; enoughForToday: boolean };
 const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "Later", bonus: "Bonus" };
 
@@ -499,7 +500,8 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                         <p className="text-sm font-medium leading-snug">{it.title}</p>
                         {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
                       </div>
-                      {it.whySelected && <p className="text-xs text-muted-foreground mt-0.5">{it.whySelected}</p>}
+                      {(it.explanation?.summary || it.whySelected) && <p className="text-xs text-muted-foreground mt-0.5">{it.explanation?.summary || it.whySelected}</p>}
+                      {it.explanation?.whyNow && it.explanation.whyNow !== (it.explanation.summary || it.whySelected) && <p className="text-xs text-muted-foreground/80 mt-0.5">{it.explanation.whyNow}</p>}
                       {it.doneWhen && <p className="text-xs text-muted-foreground/80 mt-0.5 inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {it.doneWhen}</p>}
                     </div>
                     <span className="shrink-0 self-center text-muted-foreground group-hover:text-primary inline-flex items-center gap-1 text-xs font-medium">Start <ChevronRight className="w-4 h-4" /></span>

@@ -11,11 +11,13 @@ beforeEach(() => { h.reset(); });
 
 test("career goal state prioritises Direction when no signal exists", () => {
   const state = buildCareerGoalState([], [], []);
-  assert.equal(state.goal, "Find a fulfilling next role");
+  assert.equal(state.goal, "Find the right role, then become interview- and job-ready");
+  assert.equal(state.phase, "fit-discovery");
   assert.equal(state.recommendedFocus, "Direction");
   assert.equal(state.dayType, "signal-building");
   assert.match(state.reason, /Direction/);
   assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "premature"));
+  assert.ok(state.trajectory.some((s) => s.key === "discover-fit" && s.status === "current"));
 });
 
 test("career goal state reflects saved roles and feedback", () => {
@@ -34,7 +36,20 @@ test("career goal state reflects saved roles and feedback", () => {
   const direction = state.workstreams.find((w) => w.name === "Direction")!;
   assert.equal(direction.progress, "developing");
   assert.ok(direction.evidence.some((e) => e.includes("open or saved roles")));
+  assert.equal(state.phase, "role-targeting");
   assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "premature"));
+});
+
+test("career goal state enters lane-narrowing when multiple role hypotheses are live", () => {
+  const jobs = [
+    { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "strategy" },
+    { id: 2, title: "Geopolitical Risk Analyst", company: "Advisory Group", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "advisory" },
+  ] as any;
+  const state = buildCareerGoalState([], jobs, []);
+  assert.equal(state.phase, "lane-narrowing");
+  assert.ok(state.roleHypotheses.includes("AI strategy"));
+  assert.ok(state.roleHypotheses.includes("Geopolitics / geopolitical advisory"));
+  assert.match(state.decisionQuestion, /AI strategy|Geopolitics/i);
 });
 
 test("goal state API returns active goal with workstreams and today plan", async () => {
@@ -45,5 +60,7 @@ test("goal state API returns active goal with workstreams and today plan", async
   assert.equal(goal.status, "active");
   assert.ok(goal.workstreams.length >= 5);
   assert.ok(goal.todayPlan.mustDo);
+  assert.ok(goal.phase);
+  assert.ok(Array.isArray(goal.trajectory) && goal.trajectory.length >= 4);
   assert.ok(goal.trace.length >= 1);
 });

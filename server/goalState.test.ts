@@ -57,6 +57,8 @@ test("career goal state enters broad parallel pursuit when multiple plausible la
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Strategy / advisory"));
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Ops / chief of staff"));
   assert.equal(state.pursuitPortfolio.length, 4);
+  assert.equal(state.landingPriority, "credible-role-quickly");
+  assert.match(state.selectionRule, /credible role that can land soon/i);
   assert.match(state.decisionQuestion, /Which live roles are most gettable/i);
   assert.match(state.explorationStrategy, /broad pursuit portfolio/i);
 });
@@ -71,6 +73,7 @@ test("goal state API returns active goal with workstreams and today plan", async
   assert.ok(goal.todayPlan.mustDo);
   assert.ok(goal.phase);
   assert.ok(goal.comparisonAxes);
+  assert.ok(goal.selectionRule);
   assert.ok(Array.isArray(goal.trajectory) && goal.trajectory.length >= 4);
   assert.ok(goal.trace.length >= 1);
 });

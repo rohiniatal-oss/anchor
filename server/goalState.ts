@@ -540,6 +540,10 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     reason: phaseReason(phase, focus, snapshot),
     decisionQuestion: phaseDecisionQuestion(phase, snapshot),
     decisionMode: broadParallelPursuit ? "broad-parallel-pursuit" : parallelExperiments.length ? "parallel-exploration" : phase === "lane-narrowing" ? "forced-comparison" : "single-track",
+    landingPriority: broadParallelPursuit ? "credible-role-quickly" : "best-fit-over-time",
+    selectionRule: broadParallelPursuit
+      ? "Take any credible role that can land soon; keep stronger-fit alternatives warm in parallel."
+      : "Prefer the strongest-fit lane unless live evidence says otherwise.",
     roleHypotheses: snapshot.roleHypotheses,
     comparisonAxes: {
       mode: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2 ? "two-axis" : snapshot.roleHypotheses.length >= 2 ? "single-axis" : "none",

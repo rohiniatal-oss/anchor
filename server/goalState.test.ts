@@ -51,11 +51,14 @@ test("career goal state enters lane-narrowing when multiple role hypotheses are 
   assert.ok(state.roleHypotheses.includes("AI strategy"));
   assert.ok(state.roleHypotheses.includes("Geopolitics / geopolitical advisory"));
   assert.equal(state.comparisonAxes.mode, "two-axis");
+  assert.equal(state.decisionMode, "parallel-exploration");
   assert.ok(state.comparisonAxes.topicHypotheses.includes("AI / technology strategy"));
   assert.ok(state.comparisonAxes.topicHypotheses.includes("Geopolitics / geopolitical advisory"));
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Strategy / advisory"));
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Ops / chief of staff"));
-  assert.match(state.decisionQuestion, /Which combination deserves the next focused test/i);
+  assert.equal(state.experiments.length, 4);
+  assert.match(state.decisionQuestion, /What are you learning from each of the four combinations/i);
+  assert.match(state.explorationStrategy, /Run all four combinations in parallel/i);
 });
 
 test("goal state API returns active goal with workstreams and today plan", async () => {

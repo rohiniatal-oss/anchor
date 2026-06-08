@@ -25,6 +25,12 @@ type GoalTrajectoryStep = {
   description: string;
 };
 
+type CombinationTest = {
+  combination: string;
+  whyPlausible: string;
+  nextTest: string;
+};
+
 type GoalSnapshot = {
   assets: ReturnType<typeof careerAssetsFromActivity>;
   feedback: ReturnType<typeof attributeFeedbackFromActivity>;
@@ -394,7 +400,7 @@ function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
   if (phase === "fit-discovery") return "What kinds of work actually fit your interests, goals, and energy well enough to test in the market?";
   if (phase === "lane-narrowing") {
     if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
-      return `Which combination deserves the next focused test: ${snapshot.topicHypotheses[0]} x ${snapshot.roleShapeHypotheses[0]}, ${snapshot.topicHypotheses[0]} x ${snapshot.roleShapeHypotheses[1]}, ${snapshot.topicHypotheses[1]} x ${snapshot.roleShapeHypotheses[0]}, or ${snapshot.topicHypotheses[1]} x ${snapshot.roleShapeHypotheses[1]}?`;
+      return `What are you learning from each of the four combinations, and which ones keep earning more attention over time?`;
     }
     if (snapshot.roleHypotheses.length >= 2) return `Which lane deserves the next focused test: ${snapshot.roleHypotheses[0]} or ${snapshot.roleHypotheses[1]}?`;
     return "Which promising role lane deserves focused testing next?";
@@ -428,9 +434,9 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
       const shapeB = snapshot.roleShapeHypotheses[1] || "role shape two";
       return {
         mustDo: `Compare ${topicA} x ${shapeA}, ${topicA} x ${shapeB}, ${topicB} x ${shapeA}, and ${topicB} x ${shapeB}`,
-        next: "Pick the two most promising combinations and save one real role example for each",
-        optional: "Ask one warm contact which combination seems strongest from the outside",
-        stopRule: "Stop after one real comparison grid and one short verdict; do not spiral into open-ended browsing.",
+        next: "Save one real role example for each of the four combinations and note what energises, drains, or surprises you",
+        optional: "Ask one warm contact which of the four combinations looks strongest from the outside",
+        stopRule: "Stop after one real comparison grid and one concrete note for each combination; do not spiral into open-ended browsing.",
       };
     }
     const left = snapshot.roleHypotheses[0] || "lane one";
@@ -466,12 +472,43 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
   };
 }
 
+function whyPlausibleForCombination(topic: string, shape: string) {
+  if (/AI/i.test(topic) && /Strategy|advisory/i.test(shape)) return "Matches your interest in AI while preserving strategic, externally-facing work.";
+  if (/AI/i.test(topic) && /Ops|chief of staff/i.test(shape)) return "Lets you stay close to AI while testing whether you prefer execution and operating rhythm.";
+  if (/Geopolitics/i.test(topic) && /Strategy|advisory/i.test(shape)) return "Matches substantive geopolitical interest with a classic advisory shape.";
+  if (/Geopolitics/i.test(topic) && /Ops|chief of staff/i.test(shape)) return "Tests whether you want geopolitical substance with a more internal, execution-heavy role shape.";
+  return "Plausible based on the signals Anchor has seen so far.";
+}
+
+function nextTestForCombination(topic: string, shape: string) {
+  if (/Strategy|advisory/i.test(shape)) {
+    return `Find one ${topic} role in a strategy/advisory shape and note the decisions, deliverables, and client/stakeholder exposure it requires.`;
+  }
+  if (/Ops|chief of staff/i.test(shape)) {
+    return `Find one ${topic} role in an ops/chief-of-staff shape and note the cadence, coordination load, and execution ownership it requires.`;
+  }
+  return `Find one real ${topic} x ${shape} role and capture what the day-to-day work actually looks like.`;
+}
+
+function buildParallelExperiments(snapshot: GoalSnapshot): CombinationTest[] {
+  const topics = snapshot.topicHypotheses.slice(0, 2);
+  const shapes = snapshot.roleShapeHypotheses.slice(0, 2);
+  return topics.flatMap((topic) => shapes.map((shape) => ({
+    combination: `${topic} x ${shape}`,
+    whyPlausible: whyPlausibleForCombination(topic, shape),
+    nextTest: nextTestForCombination(topic, shape),
+  })));
+}
+
 export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = []) {
   const snapshot = buildGoalSnapshot(tasks, jobs, log, learn);
   const workstreams = workstreamStates(snapshot);
   const phase = inferGoalPhase(snapshot);
   const focus = recommendedFocus(workstreams, phase);
   const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback);
+  const parallelExperiments = phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
+    ? buildParallelExperiments(snapshot)
+    : [];
 
   return {
     goal: "Find the right role, then become interview- and job-ready",
@@ -482,6 +519,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     recommendedFocus: focus.name,
     reason: phaseReason(phase, focus, snapshot),
     decisionQuestion: phaseDecisionQuestion(phase, snapshot),
+    decisionMode: parallelExperiments.length ? "parallel-exploration" : phase === "lane-narrowing" ? "forced-comparison" : "single-track",
     roleHypotheses: snapshot.roleHypotheses,
     comparisonAxes: {
       mode: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2 ? "two-axis" : snapshot.roleHypotheses.length >= 2 ? "single-axis" : "none",
@@ -489,6 +527,18 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
       roleShapeHypotheses: snapshot.roleShapeHypotheses,
       combinations: snapshot.topicHypotheses.slice(0, 2).flatMap((topic) => snapshot.roleShapeHypotheses.slice(0, 2).map((shape) => `${topic} x ${shape}`)),
     },
+    comparisonCriteria: parallelExperiments.length
+      ? [
+          "How energised would you feel doing this work weekly?",
+          "How strong is your existing credibility for this combination?",
+          "How much interview and on-the-job upskilling would it require?",
+          "How attractive is the day-to-day work shape, not just the topic?",
+        ]
+      : [],
+    explorationStrategy: parallelExperiments.length
+      ? "Run all four combinations in parallel for now; collect evidence before forcing a winner."
+      : "",
+    experiments: parallelExperiments,
     trajectory: trajectoryFor(phase),
     workstreams,
     todayPlan: buildTodayPlan(phase, focus, snapshot, candidateUniverse),

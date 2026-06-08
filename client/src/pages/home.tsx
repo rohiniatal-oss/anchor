@@ -361,6 +361,15 @@ type DayPlanT = { id: number; mode: string; note: string; status: string; minimu
 type GoalTrajectoryT = { key: string; title: string; status: "complete" | "current" | "pending"; description: string };
 type GoalTodayPlanT = { mustDo: string; next: string; optional: string; stopRule: string };
 type GoalPortfolioItemT = { combination: string; whyPlausible: string; nextMove: string };
+type GoalWorkstreamT = {
+  name: string;
+  status: "active" | "underdeveloped" | "premature" | "blocked" | "stale" | "sufficient_for_now";
+  progress: "not_started" | "early" | "developing" | "ready";
+  bottleneck: string;
+  nextMoveType: "learning" | "relationship" | "preparation" | "execution" | "maintenance" | "wait";
+  evidence: string[];
+  nextMoves: string[];
+};
 type CareerGoalT = {
   goal: string;
   objective: string;
@@ -374,6 +383,7 @@ type CareerGoalT = {
   selectionRule: string;
   pursuitPortfolio?: GoalPortfolioItemT[];
   trajectory: GoalTrajectoryT[];
+  workstreams: GoalWorkstreamT[];
   todayPlan: GoalTodayPlanT;
 };
 type GoalsStateResponseT = { goals: CareerGoalT[] };
@@ -456,6 +466,43 @@ function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: 
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkstreamGrid({ goal }: { goal: CareerGoalT }) {
+  const top = goal.workstreams.filter((w) => w.nextMoveType !== "wait").slice(0, 6);
+  const toneFor = (status: GoalWorkstreamT["status"]) => {
+    if (status === "active") return "border-primary/30 bg-primary/5";
+    if (status === "underdeveloped" || status === "blocked" || status === "stale") return "border-card-border bg-card";
+    if (status === "premature") return "border-card-border bg-muted/40";
+    return "border-card-border bg-card/70";
+  };
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <GroupLabel>Workstreams</GroupLabel>
+        <span className="text-xs text-muted-foreground">{goal.recommendedFocus} is the current focus</span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {top.map((w) => (
+          <div key={w.name} className={`rounded-xl border p-3 ${toneFor(w.status)}`} data-testid={`workstream-${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div>
+                <p className="text-sm font-medium">{w.name}</p>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{w.progress.replace("_", " ")}</p>
+              </div>
+              {goal.recommendedFocus === w.name && (
+                <span className="inline-flex rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">focus</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">{w.bottleneck}</p>
+            {w.nextMoves[0] && <p className="text-xs text-primary mt-2 inline-flex items-start gap-1"><ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {w.nextMoves[0]}</p>}
+            {w.evidence.length > 0 && <p className="text-[11px] text-muted-foreground/80 mt-2">{w.evidence[0]}</p>}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -759,8 +806,10 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
 function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   // P4.6a #5 — ONE unified payload from the single diagnostics engine.
   const { data, isLoading } = useQuery<FrontDoor>({ queryKey: ["/api/strategy/front-door"] });
+  const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: careerTracks = [] } = useCareerTracks();
   if (isLoading) return <Loading />;
+  const activeGoal = goalState?.goals?.[0] || null;
   const tracks = data?.tracks || [];
   const insights = (data?.insights || []).map((i) => i.text);
   const unlinkedItems = data?.unlinked?.items || [];
@@ -813,6 +862,12 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     <div>
       <h1 className="text-xl font-bold tracking-tight">Your paths</h1>
       <p className="text-sm text-muted-foreground mt-1 mb-5">Where each path stands, and what's holding it back.</p>
+      {activeGoal && (
+        <>
+          <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} />
+          <WorkstreamGrid goal={activeGoal} />
+        </>
+      )}
 
       {insights.length > 0 && (
         <div className="mb-6 space-y-2">

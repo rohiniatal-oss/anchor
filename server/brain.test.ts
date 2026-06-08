@@ -253,6 +253,49 @@ test("brain prioritizes target-role insiders over broader alumni contacts", () =
   assert.ok(result.trace?.some((line: string) => /specific target role or org/i.test(line)));
 });
 
+test("brain prioritizes contacts tied to a live role over unrelated good contacts", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const jobs = [
+    job({
+      id: 21,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      location: "Remote",
+      fitScore: 76,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+    }),
+  ];
+  const contacts = [
+    contact({
+      id: 22,
+      who: "Warm alum in policy",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "advice",
+      sourceNetwork: "SIPA",
+      messageDraft: "Would love your view on AI policy roles.",
+      nextFollowUpDate: today,
+    }),
+    contact({
+      id: 23,
+      who: "Operator at GovAI",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "referral",
+      targetOrg: "GovAI",
+      targetRole: "AI Strategy Associate",
+      messageDraft: "Following up on the AI Strategy Associate role at GovAI.",
+      nextFollowUpDate: today,
+    }),
+  ];
+
+  const result = recommend([], jobs, [], [], "medium", contacts);
+  assert.equal(result.pick?.source, "contact");
+  assert.equal(result.pick?.sourceId, 23);
+  assert.ok(result.trace?.some((line: string) => /live role|target org/i.test(line)));
+});
+
 test("planner can keep job pursuit and networking in parallel when both are live", () => {
   const today = new Date().toISOString().slice(0, 10);
   const jobs = [

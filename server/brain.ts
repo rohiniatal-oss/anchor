@@ -70,6 +70,7 @@ type StrategicContext = {
   laneStage: string;
   laneUnlockMove: string;
   activeTrackName: string;
+  liveJobTargets: Array<{ title: string; company: string; roleArchetype?: string }>;
 };
 
 type RankedCandidate = { c: Candidate; s: number; trace: string[] };
@@ -103,6 +104,14 @@ function guessSize(title: string, fallback = "medium"): string {
   if (/\b(open|check|confirm|email|message|send|note|skim|read one|sign up|list|book|call)\b/.test(t)) return "quick";
   if (/\b(write|draft|apply|prepare|build|outline|tailor|research|finish)\b/.test(t)) return "deep";
   return fallback;
+}
+
+function normalizeText(text: string) {
+  return (text || "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function significantWords(text: string) {
+  return normalizeText(text).split(" ").filter((w) => w.length >= 4);
 }
 
 function isApplicationLike(c: Candidate) {
@@ -156,6 +165,7 @@ function buildStrategicContext(
     laneStage: lane?.stage || "active",
     laneUnlockMove: spine.bestMove.title,
     activeTrackName: spine.bestMove.trackName || spine.activeTrack?.name || "",
+    liveJobTargets: jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" })),
   };
 }
 
@@ -291,7 +301,7 @@ function contactNextStep(c: Contact): { action: string; size: string; doneWhen: 
   };
 }
 
-function contactMomentum(c: Candidate) {
+function contactMomentum(c: Candidate, context: StrategicContext) {
   let s = 0;
   const trace: string[] = [];
 
@@ -316,6 +326,10 @@ function contactMomentum(c: Candidate) {
     trace.push("draft already exists");
   }
 
+  const roleFit = liveRoleContactFit(c, context);
+  s += roleFit.score;
+  if (roleFit.reason) trace.push(roleFit.reason);
+
   const archetype = classifyContactArchetype(c);
   s += archetype.score;
   trace.push(archetype.reason);
@@ -332,6 +346,33 @@ function contactMomentum(c: Candidate) {
   }
 
   return { score: s, trace };
+}
+
+function liveRoleContactFit(c: Candidate, context: StrategicContext) {
+  const candidateText = normalizeText(`${c.title} ${c.sourceNote} ${c.targetOrg || ""} ${c.targetRole || ""}`);
+  const targetOrg = normalizeText(c.targetOrg || "");
+  const targetRoleWords = significantWords(c.targetRole || "");
+
+  let best = { score: 0, reason: "" };
+  for (const job of context.liveJobTargets) {
+    const company = normalizeText(job.company || "");
+    const titleWords = significantWords(job.title || "");
+    const companyMatch = !!targetOrg && !!company && (targetOrg.includes(company) || company.includes(targetOrg) || candidateText.includes(company));
+    const roleOverlap = targetRoleWords.filter((word) => titleWords.includes(word)).length;
+
+    if (companyMatch && roleOverlap >= 1 && best.score < 34) {
+      best = { score: 34, reason: "supports a live role at the exact target org" };
+      continue;
+    }
+    if (companyMatch && best.score < 26) {
+      best = { score: 26, reason: "connected to a live target org" };
+      continue;
+    }
+    if (roleOverlap >= 2 && best.score < 18) {
+      best = { score: 18, reason: "aligned with a live target role family" };
+    }
+  }
+  return best;
 }
 
 function classifyContactArchetype(c: Candidate) {
@@ -512,7 +553,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
     trace.push(...momentum.trace);
   }
   if (c.source === "contact") {
-    const momentum = contactMomentum(c);
+    const momentum = contactMomentum(c, context);
     s += momentum.score;
     trace.push(...momentum.trace);
   }

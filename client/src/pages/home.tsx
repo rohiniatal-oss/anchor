@@ -292,6 +292,10 @@ function OnboardingView() {
       setAccepted((prev) => new Set([...prev, r.archetype]));
       queryClient.invalidateQueries({ queryKey: ["/api/career-tracks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/goals/state"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/strategy/front-door"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/strategy/diagnostics"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/plan/current"] });
     } catch {
       toast({ title: "Couldn't add that track", description: "Try again in a moment." });
     } finally {
@@ -303,7 +307,7 @@ function OnboardingView() {
     <div>
       <h1 className="text-xl font-bold tracking-tight">Let's set up your strategy</h1>
       <p className="text-sm text-muted-foreground mt-1 mb-6">
-        Pick one or two roles you're actively exploring. Anchor will shape your first plan around them.
+        Add the lanes you want to pursue first. Anchor can shape your plan around several plausible tracks in parallel and then narrow from live evidence.
       </p>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -348,7 +352,7 @@ function OnboardingView() {
           <Loader2 className="w-4 h-4 shrink-0 animate-spin text-primary" />
           <div>
             <p className="text-sm font-medium">{accepted.size === 1 ? "1 track added" : `${accepted.size} tracks added`} — building your plan…</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Anchor is shaping today around {accepted.size === 1 ? "it" : "them"}. Your first moves will appear in a moment.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Anchor is shaping today around {accepted.size === 1 ? "it" : "them"} while keeping the wider search coherent. Your first moves will appear in a moment.</p>
           </div>
         </div>
       )}

@@ -701,7 +701,7 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
   const titles: Record<GoalTrajectoryStep["key"], Omit<GoalTrajectoryStep, "status">> = {
     "discover-fit": { key: "discover-fit", title: "Discover fit", description: "Figure out which kinds of roles genuinely fit your interests, strengths, and goals." },
     "narrow-lane": { key: "narrow-lane", title: "Narrow the lane", description: "Compare promising lanes and choose which one deserves focused testing next." },
-    "target-role": { key: "target-role", title: "Target live roles", description: "Turn the chosen lane into real roles, proof, and selective applications." },
+    "target-role": { key: "target-role", title: "Target live roles", description: "Turn the chosen lane into real roles, capability support, and selective applications." },
     "prepare-interview": { key: "prepare-interview", title: "Prepare for interviews", description: "Build stories, examples, and role knowledge for live interview processes." },
     "capability-ramp": { key: "capability-ramp", title: "Build job-ready capability", description: "Upskill for the interview and the role so you can perform strongly once in seat." },
   };
@@ -760,7 +760,7 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
   }
   return {
     mustDo: focus.nextMoves[0] || candidateUniverse.recommended?.createsTaskTitle || "Convert one live role into the next concrete move",
-    next: focus.nextMoves[1] || candidateUniverse.recommended?.activity || "Strengthen one proof or positioning asset",
+    next: focus.nextMoves[1] || candidateUniverse.recommended?.activity || "Strengthen one capability or positioning asset",
     optional: focus.name === "Energy and stability" ? "Stop after the minimum viable action" : "Do one small maintenance action so the day stays sustainable",
     stopRule: focus.nextMoveType === "learning" ? "Stop after one useful signal or 20 minutes." : "Stop once the defined small action is complete.",
   };

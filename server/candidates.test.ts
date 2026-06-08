@@ -45,7 +45,7 @@ test("career asset API adds custom assets used by candidates", async () => {
   assert.ok(candidates.json.grounding.includes("Oxford network"));
 });
 
-test("role deconstruction extracts attributes and proof gaps instead of whole-role reactions", () => {
+test("role deconstruction extracts attributes and capability gaps instead of whole-role reactions", () => {
   const role = {
     id: 1,
     title: "AI Policy Strategy Manager",
@@ -61,7 +61,8 @@ test("role deconstruction extracts attributes and proof gaps instead of whole-ro
   assert.ok(d.attributes.topicAreas.includes("AI or technology"));
   assert.ok(d.attributes.environment.includes("government or public sector"));
   assert.ok(d.nextSignalAction.title.includes("AI Policy Strategy Manager"));
-  assert.ok(d.proofGaps.length >= 1);
+  assert.ok(d.capabilityGaps.length >= 1);
+  assert.match(d.nextSignalAction.title, /capability gap/i);
 });
 
 test("attribute feedback is reconstructed and grouped", () => {
@@ -89,7 +90,7 @@ test("role attribute feedback API stores signals and exposes them through candid
   assert.ok(candidates.json.attributeFeedback.energising.includes("strategy"));
 });
 
-test("role deconstruction route can commit one Today proof-gap task", async () => {
+test("role deconstruction route can commit one Today capability-gap task", async () => {
   const job = await h.storage.createJob({
     title: "Investment Attraction Strategy Lead",
     company: "Example Org",
@@ -109,6 +110,7 @@ test("role deconstruction route can commit one Today proof-gap task", async () =
   assert.equal(r.status, 200);
   assert.ok(r.json.task?.id);
   assert.equal(r.json.task.sourceType, "role_deconstruction");
+  assert.match(r.json.task.title, /capability gap/i);
   const steps = JSON.parse(r.json.task.steps);
   assert.ok(steps.length >= 1);
 

@@ -57,7 +57,7 @@ type RoleDeconstruction = {
     mechanics: string[];
   };
   credibilityAssets: string[];
-  proofGaps: string[];
+  capabilityGaps: string[];
   usefulQuestions: string[];
   nextSignalAction: {
     title: string;
@@ -68,7 +68,7 @@ type RoleDeconstruction = {
 
 type AttributeFeedback = {
   jobId?: number | null;
-  attributeType: "workContent" | "topicAreas" | "environment" | "mechanics" | "proofGap" | "credibilityAsset";
+  attributeType: "workContent" | "topicAreas" | "environment" | "mechanics" | "capabilityGap" | "credibilityAsset";
   attribute: string;
   reaction: AttributeReaction;
   note: string;
@@ -112,7 +112,12 @@ function normaliseAsset(raw: any): CareerAsset {
 }
 
 function normaliseFeedback(raw: any): AttributeFeedback {
-  const attributeType = ["workContent", "topicAreas", "environment", "mechanics", "proofGap", "credibilityAsset"].includes(raw.attributeType) ? raw.attributeType : "workContent";
+  const rawType = String(raw.attributeType || "");
+  const attributeType = ["workContent", "topicAreas", "environment", "mechanics", "capabilityGap", "credibilityAsset"].includes(rawType)
+    ? rawType
+    : rawType === "proofGap"
+      ? "capabilityGap"
+      : "workContent";
   const reaction = ["energising", "draining", "credible", "gap", "unclear"].includes(raw.reaction) ? raw.reaction : "unclear";
   return {
     jobId: raw.jobId == null ? null : Number(raw.jobId),
@@ -215,23 +220,23 @@ export function deconstructRole(job: Job, assets: CareerAsset[] = STARTER_ASSETS
     .map((a) => a.label)
     .slice(0, 5);
 
-  const proofGaps: string[] = [];
-  if (topicAreas.includes("AI or technology") && !credibilityAssets.some((a) => /Worldpay|FIS|technology|digital/i.test(a))) proofGaps.push("AI or technology proof");
-  if (workContent.includes("investment or capital") && !credibilityAssets.some((a) => /Abraaj|Humania|investment|capital/i.test(a))) proofGaps.push("investment or capital proof");
-  if (mechanics.includes("delivery heavy") && !credibilityAssets.some((a) => /TBI|Bain/i.test(a))) proofGaps.push("delivery or implementation proof");
-  if (workContent.includes("writing or thought leadership") && assets.filter((a) => a.kind === "proof").length === 0) proofGaps.push("writing sample or proof asset");
-  if (proofGaps.length === 0) proofGaps.push("specific evidence that proves the most important requirement");
+  const capabilityGaps: string[] = [];
+  if (topicAreas.includes("AI or technology") && !credibilityAssets.some((a) => /Worldpay|FIS|technology|digital/i.test(a))) capabilityGaps.push("AI or technology capability signal");
+  if (workContent.includes("investment or capital") && !credibilityAssets.some((a) => /Abraaj|Humania|investment|capital/i.test(a))) capabilityGaps.push("investment or capital capability signal");
+  if (mechanics.includes("delivery heavy") && !credibilityAssets.some((a) => /TBI|Bain/i.test(a))) capabilityGaps.push("delivery or implementation example");
+  if (workContent.includes("writing or thought leadership") && assets.filter((a) => a.kind === "proof").length === 0) capabilityGaps.push("writing sample or reusable output");
+  if (capabilityGaps.length === 0) capabilityGaps.push("specific evidence that strengthens the most important requirement");
 
   const usefulQuestions = [
     "Which responsibility sounds energising versus merely impressive?",
     "Which requirement is already proven by existing experience?",
-    "Which requirement would need a proof asset or conversation?",
+    "Which requirement would need stronger reusable evidence or a conversation?",
   ];
 
-  const firstGap = proofGaps[0];
+  const firstGap = capabilityGaps[0];
   const nextSignalAction = {
-    title: `Check one proof gap for ${job.title}`,
-    why: "The role is a bundle. The useful next move is to test the weakest important attribute, not judge the whole role.",
+    title: `Check one capability gap for ${job.title}`,
+    why: "The role is a bundle. The useful next move is to test the weakest important capability signal, not judge the whole role.",
     firstStep: `Highlight the line in the role that creates this gap: ${firstGap}.`,
   };
 
@@ -246,7 +251,7 @@ export function deconstructRole(job: Job, assets: CareerAsset[] = STARTER_ASSETS
       mechanics: mechanics.length ? mechanics : ["unclear role mechanics"],
     },
     credibilityAssets,
-    proofGaps,
+    capabilityGaps,
     usefulQuestions,
     nextSignalAction,
   };
@@ -368,13 +373,13 @@ function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[]
       createsTaskTitle: "Write one rough career direction sentence from real experience",
     },
     {
-      activity: "Identify one proof gap from one plausible role",
-      why: "If a direction looks interesting, the next question is what proof from your real experience makes you credible.",
+      activity: "Identify one capability gap from one plausible role",
+      why: "If a direction looks interesting, the next question is which capability signal from your real experience is still weakest.",
       firstStep: "Open one role and highlight the requirement you least clearly prove.",
       signalValue: 7,
       friction: 4,
       score: score(7, 4),
-      createsTaskTitle: "Identify one proof gap from one plausible role",
+      createsTaskTitle: "Identify one capability gap from one plausible role",
     },
   ];
 
@@ -392,13 +397,13 @@ function buildSignalActivities(tasks: Task[], jobs: Job[], assets: CareerAsset[]
 
   if (gapAttribute) {
     activities.push({
-      activity: `Clarify proof for ${gapAttribute}`,
+      activity: `Clarify capability support for ${gapAttribute}`,
       why: `You marked ${gapAttribute} as a gap, so the useful move is to find what evidence would close it.`,
       firstStep: `Open one role and highlight the line that requires ${gapAttribute}.`,
       signalValue: 8,
       friction: 3,
       score: score(8, 3),
-      createsTaskTitle: `Clarify one proof gap for ${gapAttribute}`,
+      createsTaskTitle: `Clarify one capability gap for ${gapAttribute}`,
     });
   }
 
@@ -547,7 +552,7 @@ export function registerCandidateRoutes(app: Express) {
       estimateMinutes: 15,
       estimateConfidence: "low",
       estimateReason: "role_deconstruction",
-      doneWhen: "One role attribute or proof gap has been clarified",
+      doneWhen: "One role attribute or capability gap has been clarified",
       steps: JSON.stringify([{ text: deconstruction.nextSignalAction.firstStep, done: false, estimateMinutes: 5 }]),
       status: "not_started",
       sourceType: "role_deconstruction",

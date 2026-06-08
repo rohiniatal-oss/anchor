@@ -129,7 +129,7 @@ export function registerStrategyBuilderRoutes(app: Express) {
 
       if (needsNetworkSupport) {
         const person = strategy.peopleMap.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
-          || { category: `${plan.track.name} insider`, why: `Reality-check ${plan.track.name}`, ask: "Ask what profiles actually get hired and what proof matters.", linkedArchetype: plan.track.name };
+          || { category: `${plan.track.name} insider`, why: `Reality-check ${plan.track.name}`, ask: "Ask what profiles actually get hired and which capability signals matter.", linkedArchetype: plan.track.name };
         if (!existingContactKeys.has(norm(person.category))) {
           await storage.createContact({
             name: "", who: person.category, sector: plan.track.name, why: safeText(person.why, 240), status: "to_contact",
@@ -147,7 +147,7 @@ export function registerStrategyBuilderRoutes(app: Express) {
           await storage.createLearn({
             title: resource.category, category: plan.track.name, cost: "", url: "", note: safeText(resource.why, 300), done: false,
             active: false, type: "resource", learnStatus: "open", capabilityBuilt: plan.track.name,
-            requiredOutput: safeText(resource.output || "A reusable note or proof bullet", 240), proofIntent: true, relatedTrackId: plan.track.id,
+            requiredOutput: safeText(resource.output || "A reusable note, paragraph, or interview example", 240), proofIntent: true, relatedTrackId: plan.track.id,
           } as any);
           existingLearnKeys.add(norm(resource.category));
           created.push(`learn:${resource.category}`);
@@ -155,15 +155,15 @@ export function registerStrategyBuilderRoutes(app: Express) {
       }
 
       if (needsProofSupport) {
-        const proof = strategy.proofGaps.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
-          || { asset: `Reusable proof asset for ${plan.track.name}`, gap: `Evidence gap for ${plan.track.name}`, doneWhen: "A reusable paragraph, link, or bullet exists", linkedArchetype: plan.track.name };
-        if (!existingProofKeys.has(norm(proof.asset))) {
+        const support = strategy.capabilitySupport.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
+          || { asset: `Reusable capability-support asset for ${plan.track.name}`, need: `Capability-support gap for ${plan.track.name}`, doneWhen: "A reusable paragraph, link, bullet, or interview example exists", linkedArchetype: plan.track.name };
+        if (!existingProofKeys.has(norm(support.asset))) {
           await storage.createHustle({
-            title: proof.asset, note: safeText(`${proof.gap}. Done when: ${proof.doneWhen}`, 400), nextStep: "Define the claim and smallest reusable output",
+            title: support.asset, note: safeText(`${support.need}. Done when: ${support.doneWhen}`, 400), nextStep: "Define the claim and smallest reusable output",
             stage: "idea", coreClaim: "", contentPillar: plan.track.name, proofAssetForTrack: plan.track.id,
           } as any);
-          existingProofKeys.add(norm(proof.asset));
-          created.push(`proof:${proof.asset}`);
+          existingProofKeys.add(norm(support.asset));
+          created.push(`support:${support.asset}`);
         }
       }
     }
@@ -193,16 +193,18 @@ export function registerStrategyBuilderRoutes(app: Express) {
   app.post("/api/strategy-builder/accept-resource", async (req, res) => {
     const category = safeText(req.body?.category, 180);
     if (!category) return res.status(400).json({ error: "Need category" });
-    const created = await storage.createLearn({ title: category, category: safeText(req.body?.linkedArchetype, 80), cost: "", url: "", note: safeText(req.body?.why || "From Strategy Builder", 300), done: false, active: false, type: "resource", learnStatus: "open", capabilityBuilt: safeText(req.body?.linkedArchetype, 120), requiredOutput: safeText(req.body?.output || "A reusable note or proof bullet", 240), proofIntent: true } as any);
+    const created = await storage.createLearn({ title: category, category: safeText(req.body?.linkedArchetype, 80), cost: "", url: "", note: safeText(req.body?.why || "From Strategy Builder", 300), done: false, active: false, type: "resource", learnStatus: "open", capabilityBuilt: safeText(req.body?.linkedArchetype, 120), requiredOutput: safeText(req.body?.output || "A reusable note, paragraph, or interview example", 240), proofIntent: true } as any);
     res.json({ ok: true, learn: created });
   });
 
-  app.post("/api/strategy-builder/accept-proof", async (req, res) => {
+  async function acceptSupport(req: any, res: any) {
     const asset = safeText(req.body?.asset, 180);
     if (!asset) return res.status(400).json({ error: "Need asset" });
-    const created = await storage.createHustle({ title: asset, note: safeText(`${req.body?.gap || "Proof gap"}. Done when: ${req.body?.doneWhen || "Reusable proof exists."}`, 400), nextStep: "Define the claim and smallest reusable output", stage: "idea", coreClaim: "", contentPillar: safeText(req.body?.linkedArchetype, 100) } as any);
+    const created = await storage.createHustle({ title: asset, note: safeText(`${req.body?.need || req.body?.gap || "Capability-support gap"}. Done when: ${req.body?.doneWhen || "Reusable capability support exists."}`, 400), nextStep: "Define the claim and smallest reusable output", stage: "idea", coreClaim: "", contentPillar: safeText(req.body?.linkedArchetype, 100) } as any);
     res.json({ ok: true, hustle: created });
-  });
+  }
+  app.post("/api/strategy-builder/accept-support", acceptSupport);
+  app.post("/api/strategy-builder/accept-proof", acceptSupport);
 
   app.post("/api/strategy-builder/accept-role", async (req, res) => {
     const archetype = safeText(req.body?.archetype, 140);

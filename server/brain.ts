@@ -815,7 +815,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
     if (intent === "conversion") return "Open the thread and write the shortest message that advances the live role right now.";
     if (intent === "interview") return "Open the thread and ask the one question that sharpens the interview or active process.";
-    if (intent === "capability") return "Open the thread and ask for one concrete steer on the skill or proof gap.";
+    if (intent === "capability") return "Open the thread and ask for one concrete steer on the skill or capability gap.";
     return "Open the thread and write a short message asking for one concrete market reality-check.";
   }
   if (source === "learn") return "Open the resource or a blank note and produce the smallest useful output.";

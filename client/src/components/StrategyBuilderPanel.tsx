@@ -9,14 +9,14 @@ type StrategyBuild = {
     priority: string;
     fitLogic: string;
     credibilityGap: string;
-    proofNeeded: string;
+    capabilitySignal: string;
     peopleToFind: string[];
     resourceNeed: string;
     nextExperiment: string;
   }>;
   peopleMap?: Array<{ category: string; why: string; ask: string; linkedArchetype: string }>;
   resourceMap?: Array<{ category: string; why: string; output: string; linkedArchetype: string }>;
-  proofGaps?: Array<{ gap: string; asset: string; doneWhen: string; linkedArchetype: string }>;
+  capabilitySupport?: Array<{ need: string; asset: string; doneWhen: string; linkedArchetype: string }>;
   planShifts?: Array<{ action: string; target: string; reason: string }>;
   weeklyShape?: Record<string, number>;
 };
@@ -84,7 +84,7 @@ export function StrategyBuilderPanel() {
                 <div>
                   <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary"><Sparkles className="h-4 w-4" /> Strategy Builder</div>
                   <h2 className="mt-1 text-lg font-bold tracking-tight">What Anchor thinks ahead</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Suggested roles, people, resources, proof gaps, and plan shifts. Nothing is added unless you accept it.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Suggested roles, people, resources, capability support ideas, and plan shifts. Nothing is added unless you accept it.</p>
                 </div>
                 <button onClick={() => setOpen(false)} className="rounded-md p-1 text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
               </div>
@@ -158,17 +158,17 @@ export function StrategyBuilderPanel() {
                     </section>
 
                     <section>
-                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><FileText className="h-4 w-4 text-primary" /> Proof gaps</h3>
+                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><FileText className="h-4 w-4 text-primary" /> Capability support ideas</h3>
                       <div className="space-y-2">
-                        {(data.proofGaps || []).slice(0, 3).map((p) => (
+                        {(data.capabilitySupport || []).slice(0, 3).map((p) => (
                           <div key={`${p.asset}-${p.linkedArchetype}`} className="rounded-xl border border-card-border bg-background/40 p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div>
                                 <p className="text-sm font-semibold">{p.asset}</p>
-                                <p className="mt-1 text-xs text-muted-foreground">{p.gap}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">{p.need}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Done when:</span> {p.doneWhen}</p>
                               </div>
-                              <AcceptButton label="Add proof" onClick={() => post("/api/strategy-builder/accept-proof", p)} />
+                              <AcceptButton label="Add support asset" onClick={() => post("/api/strategy-builder/accept-support", p)} />
                             </div>
                           </div>
                         ))}

@@ -145,7 +145,10 @@ export async function materializeJobStep(step: JobPipelineStep): Promise<CreateR
     if (updated) result.task = updated;
   }
 
-  db.update(jobPipelineSteps).set({ taskId: result.task.id }).where(eq(jobPipelineSteps.id, step.id)).run();
+  db.update(jobPipelineSteps)
+    .set({ taskId: result.task.id, status: "done" })
+    .where(eq(jobPipelineSteps.id, step.id))
+    .run();
   return result;
 }
 
@@ -169,6 +172,9 @@ export async function materializeProofStep(step: ProofAssetStep): Promise<Create
     if (updated) result.task = updated;
   }
 
-  db.update(proofAssetSteps).set({ taskId: result.task.id }).where(eq(proofAssetSteps.id, step.id)).run();
+  db.update(proofAssetSteps)
+    .set({ taskId: result.task.id, status: "done" })
+    .where(eq(proofAssetSteps.id, step.id))
+    .run();
   return result;
 }

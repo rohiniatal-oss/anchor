@@ -173,6 +173,52 @@ test("create-next-task dedupe keeps a single open task per source", async () => 
   assert.equal(jobTasks.length, 1, "two materializations reuse one open task");
 });
 
+test("materializing a job step marks it done and clears the rail stall signal", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ops", name: "Ops", status: "active", priority: 5 } as any);
+  const job = await h.storage.createJob({
+    title: "Role",
+    company: "Org",
+    status: "wishlist",
+    relatedTrackId: track.id,
+    applicationReadiness: "questions",
+    warmPathScore: 80,
+  } as any);
+  await h.storage.createContact({ name: "Ally", who: "Ally", status: "replied", relatedTrackId: track.id } as any);
+  const created = await api(h.base, "POST", `/api/jobs/${job.id}/steps`, { stepLabel: "Write cover" });
+
+  const materialized = await api(h.base, "POST", `/api/steps/${created.json.id}/materialize`, {});
+  assert.equal(materialized.status, 200);
+
+  const step = await h.storage.getJobStep(created.json.id);
+  assert.equal(step!.status, "done", "materialized step counts as progress on the rail");
+  assert.ok(step!.taskId, "materialized step stores the linked task id");
+
+  const fd = await api(h.base, "GET", "/api/strategy/front-door");
+  const diag = fd.json.tracks.find((x: any) => x.id === track.id)!;
+  assert.equal(diag.signals.readinessGap, 0, "a fully materialized single-step rail is not scored as stalled");
+});
+
+test("materializing a proof step marks it done and clears the proof stall signal", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "proof", name: "Proof", status: "active", priority: 5 } as any);
+  const hustle = await h.storage.createHustle({
+    title: "Memo series",
+    stage: "earning",
+    proofAssetForTrack: track.id,
+  } as any);
+  const created = await api(h.base, "POST", `/api/hustles/${hustle.id}/steps`, { stepLabel: "Draft memo" });
+
+  const materialized = await api(h.base, "POST", `/api/proof-steps/${created.json.id}/materialize`, {});
+  assert.equal(materialized.status, 200);
+
+  const step = await h.storage.getProofAssetStep(created.json.id);
+  assert.equal(step!.status, "done", "materialized proof step counts as progress on the rail");
+  assert.ok(step!.taskId, "materialized proof step stores the linked task id");
+
+  const fd = await api(h.base, "GET", "/api/strategy/front-door");
+  const diag = fd.json.tracks.find((x: any) => x.id === track.id)!;
+  assert.equal(diag.signals.proofGap, 0, "a fully materialized single-step proof rail is not scored as stalled");
+});
+
 // P4.6a #5 — the unified front-door is the ONE strategy payload, and the legacy
 // /api/strategy delegates to the same engine (no parallel computation).
 test("strategy front-door returns the unified payload off one engine", async () => {

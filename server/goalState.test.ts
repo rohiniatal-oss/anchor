@@ -64,11 +64,13 @@ test("career goal state reads active career tracks as real direction signal", ()
 
   const state = buildCareerGoalState([], [], [], [], [], [], tracks);
   const direction = state.workstreams.find((w) => w.name === "Direction")!;
-  assert.equal(state.phase, "lane-narrowing");
+  assert.equal(state.phase, "role-targeting");
   assert.ok(state.roleHypotheses.includes("AI strategy"));
   assert.ok(state.roleHypotheses.includes("Geopolitics / geopolitical advisory"));
   assert.ok(direction.evidence.some((e) => /2 active career tracks/i.test(e)));
-  assert.equal(state.decisionMode, "forced-comparison");
+  assert.equal(state.decisionMode, "broad-parallel-pursuit");
+  assert.match(state.selectionRule, /keep stronger-fit alternatives warm in parallel/i);
+  assert.match(state.todayPlan.mustDo, /Add or apply to one credible role/i);
 });
 
 test("career goal state enters broad parallel pursuit when multiple plausible lanes already have live roles", () => {

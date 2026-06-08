@@ -333,8 +333,12 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   const topicHypotheses = detectTopicHypotheses(tasks, savedJobs, log, activeTracks);
   const roleShapeHypotheses = detectRoleShapeHypotheses(tasks, savedJobs, log, activeTracks);
 
-  const directionReady = savedJobs.length >= 5 || roleFeedbackCount >= 3 || hasSignal(feedbackSummary, "energising") || hasSignal(feedbackSummary, "credible");
   const directionStarted = savedJobs.length > 0 || activeTracks.length > 0 || candidateCommits > 0 || roleFeedbackCount > 0;
+  const directionReady = savedJobs.length >= 5
+    || roleFeedbackCount >= 3
+    || hasSignal(feedbackSummary, "energising")
+    || hasSignal(feedbackSummary, "credible")
+    || (directionStarted && roleHypotheses.length >= 2);
   return {
     assets,
     feedback,
@@ -373,7 +377,7 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
 }
 
 function hasBroadParallelLanes(snapshot: GoalSnapshot) {
-  return snapshot.savedJobs.length > 0 && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2;
+  return snapshot.directionStarted && snapshot.roleHypotheses.length >= 2;
 }
 
 function inferGoalPhase(snapshot: GoalSnapshot): GoalPhase {
@@ -685,20 +689,22 @@ function dayTypeFor(focus: WorkstreamState) {
 
 function phaseObjective(phase: GoalPhase) {
   if (phase === "fit-discovery") return "identify role families that genuinely fit your interests, goals, and energy";
-  if (phase === "lane-narrowing") return "decide which promising lane deserves focused testing before over-investing in applications";
+  if (phase === "lane-narrowing") return "gather enough live signal to narrow promising lanes without forcing a premature choice";
   if (phase === "role-targeting") return "convert the chosen lane into live roles, selective applications, and stronger positioning";
   return "prepare to perform strongly in the interview and strengthen the capabilities the role will demand";
 }
 
 function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot) {
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
-    return `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.`;
+    return snapshot.savedJobs.length > 0
+      ? `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.`
+      : `You need a job, so Anchor should open multiple plausible lanes in parallel and turn them into live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.`;
   }
   if (phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
-    return `You have multiple plausible topics (${snapshot.topicHypotheses.join(" vs ")}) and multiple plausible role shapes (${snapshot.roleShapeHypotheses.join(" vs ")}). Anchor should narrow on both axes together.`;
+    return `You have multiple plausible topics (${snapshot.topicHypotheses.join(" vs ")}) and multiple plausible role shapes (${snapshot.roleShapeHypotheses.join(" vs ")}). Anchor should keep the combinations alive in parallel until live evidence starts separating them.`;
   }
   if (phase === "lane-narrowing" && snapshot.roleHypotheses.length >= 2) {
-    return `You have multiple plausible lanes in play (${snapshot.roleHypotheses.join(" vs ")}). Anchor should narrow before it overcommits.`;
+    return `You have multiple plausible lanes in play (${snapshot.roleHypotheses.join(" vs ")}). Anchor should keep them live in parallel long enough to learn from real roles, energy, and response before narrowing.`;
   }
   if (phase === "interview-prep") {
     return `A live interview path exists, so the bottleneck shifts from generic exploration to interview and role readiness.`;
@@ -709,14 +715,16 @@ function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSna
 function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
   if (phase === "fit-discovery") return "What kinds of work actually fit your interests, goals, and energy well enough to test in the market?";
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
-    return "Which live roles are most gettable, credible, and worth pushing right now while keeping the other lanes open?";
+    return snapshot.savedJobs.length > 0
+      ? "Which live roles are most gettable, credible, and worth pushing right now while keeping the other lanes open?"
+      : "Which plausible lanes need one real role or application move next so the market can start separating them for you?";
   }
   if (phase === "lane-narrowing") {
     if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
-      return `What are you learning from each of the four combinations, and which ones keep earning more attention over time?`;
+      return `Which combinations keep earning more attention from real roles, energy, and response over time?`;
     }
-    if (snapshot.roleHypotheses.length >= 2) return `Which lane deserves the next focused test: ${snapshot.roleHypotheses[0]} or ${snapshot.roleHypotheses[1]}?`;
-    return "Which promising role lane deserves focused testing next?";
+    if (snapshot.roleHypotheses.length >= 2) return "Which lanes keep earning more attention from real role examples, energy, and response?";
+    return "Which promising role lane keeps earning more attention from live evidence?";
   }
   if (phase === "role-targeting") return "Which specific role family should you convert first?";
   return "What stories, knowledge, and capabilities will make you strong in the interview and in the role?";
@@ -727,7 +735,7 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
   const currentIndex = phase === "fit-discovery" ? 0 : phase === "lane-narrowing" ? 1 : phase === "role-targeting" ? 2 : 3;
   const titles: Record<GoalTrajectoryStep["key"], Omit<GoalTrajectoryStep, "status">> = {
     "discover-fit": { key: "discover-fit", title: "Discover fit", description: "Figure out which kinds of roles genuinely fit your interests, strengths, and goals." },
-    "narrow-lane": { key: "narrow-lane", title: "Narrow the lane", description: "Compare promising lanes and choose which one deserves focused testing next." },
+    "narrow-lane": { key: "narrow-lane", title: "Narrow with evidence", description: "Keep plausible lanes alive long enough to gather signal, then narrow from real evidence instead of guesswork." },
     "target-role": { key: "target-role", title: "Target live roles", description: "Turn the chosen lane into real roles, capability support, and selective applications." },
     "prepare-interview": { key: "prepare-interview", title: "Prepare for interviews", description: "Build stories, examples, and role knowledge for live interview processes." },
     "capability-ramp": { key: "capability-ramp", title: "Build job-ready capability", description: "Upskill for the interview and the role so you can perform strongly once in seat." },
@@ -740,6 +748,14 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
 
 function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot, candidateUniverse: ReturnType<typeof generateCandidateUniverse>) {
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
+    if (snapshot.savedJobs.length === 0) {
+      return {
+        mustDo: "Add or apply to one credible role in each plausible lane that still looks real",
+        next: "Capture what each role family actually demands so the market can start separating the lanes for you",
+        optional: "Send one warm message that supports the lane with the strongest near-term odds",
+        stopRule: "Stop after one concrete pipeline move in each active lane; do not drift back into abstract comparison.",
+      };
+    }
     return {
       mustDo: "Advance the most gettable live role now and keep the other plausible lanes warm in parallel",
       next: "Add or refresh one credible role in a second lane so you are not betting everything on a single path",
@@ -754,19 +770,18 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
       const shapeA = snapshot.roleShapeHypotheses[0] || "role shape one";
       const shapeB = snapshot.roleShapeHypotheses[1] || "role shape two";
       return {
-        mustDo: `Compare ${topicA} x ${shapeA}, ${topicA} x ${shapeB}, ${topicB} x ${shapeA}, and ${topicB} x ${shapeB}`,
-        next: "Save one real role example for each of the four combinations and note what energises, drains, or surprises you",
+        mustDo: `Collect one real role signal for each live combination: ${topicA} x ${shapeA}, ${topicA} x ${shapeB}, ${topicB} x ${shapeA}, and ${topicB} x ${shapeB}`,
+        next: "Note which combinations gain energy, lose energy, or look more gettable once you see the real work",
         optional: "Ask one warm contact which of the four combinations looks strongest from the outside",
-        stopRule: "Stop after one real comparison grid and one concrete note for each combination; do not spiral into open-ended browsing.",
+        stopRule: "Stop after one concrete signal per live combination and one shortlist note; do not force a winner just to feel finished.",
       };
     }
-    const left = snapshot.roleHypotheses[0] || "lane one";
-    const right = snapshot.roleHypotheses[1] || "lane two";
+    const lanes = snapshot.roleHypotheses.slice(0, 4);
     return {
-      mustDo: `Compare ${left} vs ${right} against fit, energy, and long-term goals`,
-      next: "Save one real role example from each lane and note what excites or drains you",
-      optional: "Ask one warm contact which lane looks stronger from the outside",
-      stopRule: "Stop after one real comparison and one decision note; do not spiral into endless browsing.",
+      mustDo: `Collect one real role signal from each live lane: ${lanes.join(", ")}`,
+      next: "Note which lanes gain energy, lose energy, or look more credible once you inspect the real work",
+      optional: "Ask one warm contact which lane looks most credible from the outside",
+      stopRule: "Stop after one concrete signal per live lane and one shortlist note; do not force a final identity choice today.",
     };
   }
   if (phase === "fit-discovery") {
@@ -830,15 +845,15 @@ function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamSta
   const broadParallelPursuit = phase === "role-targeting" && hasBroadParallelLanes(snapshot);
   const decisionMode: DecisionMode = broadParallelPursuit
     ? "broad-parallel-pursuit"
-    : parallelExperiments.length
+    : phase === "lane-narrowing" || parallelExperiments.length
       ? "parallel-exploration"
-      : phase === "lane-narrowing"
-        ? "forced-comparison"
-        : "single-track";
-  const landingPriority = broadParallelPursuit ? "credible-role-quickly" : "best-fit-over-time";
+      : "single-track";
+  const landingPriority = broadParallelPursuit ? "credible-role-quickly" : phase === "lane-narrowing" ? "best-fit-with-live-signal" : "best-fit-over-time";
   const selectionRule = broadParallelPursuit
     ? "Take any credible role that can land soon across UAE, Remote, or London; keep stronger-fit alternatives warm in parallel."
-    : "Prefer the strongest-fit lane unless live evidence says otherwise.";
+    : phase === "lane-narrowing"
+      ? "Keep plausible lanes alive in parallel until live evidence clearly separates them."
+      : "Prefer the strongest-fit lane unless live evidence says otherwise.";
 
   return {
     phase,

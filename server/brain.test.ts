@@ -300,6 +300,31 @@ test("brain prioritizes contacts tied to a live role over unrelated good contact
   assert.equal(result.pick?.source, "contact");
   assert.equal(result.pick?.sourceId, 23);
   assert.ok(result.trace?.some((line: string) => /live role|target org/i.test(line)));
+  assert.match(result.explanation.summary, /converting a live role/i);
+  assert.match(result.explanation.firstStep, /advances the live role/i);
+  assert.match(result.explanation.stopRule, /live-role message/i);
+});
+
+test("brain explains exploratory networking as market discovery when no live role exists", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const contacts = [
+    contact({
+      id: 24,
+      who: "SIPA alum in policy",
+      status: "to_contact",
+      relationshipStrength: "cold",
+      askType: "advice",
+      sourceNetwork: "SIPA",
+      why: "Can reality-check possible role families",
+      nextFollowUpDate: today,
+    }),
+  ];
+
+  const result = recommend([], [], [], [], "medium", contacts);
+  assert.equal(result.pick?.source, "contact");
+  assert.match(result.explanation.summary, /reducing role uncertainty/i);
+  assert.match(result.explanation.firstStep, /market reality-check/i);
+  assert.match(result.explanation.stopRule, /market signal/i);
 });
 
 test("planner can keep job pursuit and networking in parallel when both are live", () => {
@@ -332,6 +357,9 @@ test("planner can keep job pursuit and networking in parallel when both are live
   const result = planDay([], jobs, [], [], "medium", { remainingMinutes: 240 }, contacts);
   assert.ok(result.plan.some((item) => item.candidate.source === "job"), "live role stays in the plan");
   assert.ok(result.plan.some((item) => item.candidate.source === "contact"), "networking stays in parallel");
+  const contactItem = result.plan.find((item) => item.candidate.source === "contact");
+  assert.ok(contactItem, "contact move exists in the plan");
+  assert.match(contactItem!.explanation.summary, /Network is why this slot exists/i);
 });
 
 test("planner balances applications, networking, and learning when the day has room", () => {

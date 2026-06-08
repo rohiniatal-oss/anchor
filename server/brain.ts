@@ -95,6 +95,7 @@ export type RecommendationExplanation = {
 };
 
 type SourceKind = Candidate["source"] | "task";
+type NetworkingIntent = "conversion" | "interview" | "exploration" | "capability";
 
 function daysUntil(deadline: string): number | null {
   if (!deadline) return null;
@@ -457,6 +458,14 @@ function candidateStrategicLane(c: Candidate, context: StrategicContext): Canoni
   return order.find((lane) => candidateMatchesLane(c, lane)) || "Stability";
 }
 
+function contactIntent(c: Candidate, context: StrategicContext): NetworkingIntent {
+  const liveFit = liveRoleContactFit(c, context);
+  if (context.planningPosture === "interview") return "interview";
+  if (liveFit.score >= 26 || c.askType === "referral" || context.planningPosture === "conversion") return "conversion";
+  if (context.planningPosture === "capability") return "capability";
+  return "exploration";
+}
+
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
 export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = []): Candidate[] {
@@ -677,25 +686,43 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
   return `${lane} lane. ${top || context.laneUnlockMove || "Best available next move"}.`;
 }
 
-function firstStepForSource(source: SourceKind) {
+function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "job") return "Open the role, your CV, and the application materials for this step.";
-  if (source === "contact") return "Open the thread or a blank draft and write the message before editing it.";
+  if (source === "contact") {
+    const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
+    if (intent === "conversion") return "Open the thread and write the shortest message that advances the live role right now.";
+    if (intent === "interview") return "Open the thread and ask the one question that sharpens the interview or active process.";
+    if (intent === "capability") return "Open the thread and ask for one concrete steer on the skill or proof gap.";
+    return "Open the thread and write a short message asking for one concrete market reality-check.";
+  }
   if (source === "learn") return "Open the resource or a blank note and produce the smallest useful output.";
   if (source === "hustle") return "Open the proof asset and make the smallest publishable or reusable fragment.";
   return "Open the task and do the first visible action, not the whole project.";
 }
 
-function stopRuleForSource(source: SourceKind) {
+function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "job") return "Stop after one concrete application or materials step is complete.";
-  if (source === "contact") return "Stop after the message is drafted, sent, or clearly scheduled.";
+  if (source === "contact") {
+    const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
+    if (intent === "conversion") return "Stop after the live-role message is drafted, sent, or clearly scheduled.";
+    if (intent === "interview") return "Stop after the interview question or prep ask is sent or clearly scheduled.";
+    if (intent === "capability") return "Stop after the message asks for one concrete steer on the capability gap.";
+    return "Stop after the message asks for one concrete market signal and is drafted, sent, or scheduled.";
+  }
   if (source === "learn") return "Stop after one reusable learning output exists.";
   if (source === "hustle") return "Stop after one proof fragment or next asset step exists.";
   return "Stop after one concrete move changes the state of the work.";
 }
 
-function sourceFrame(source: SourceKind) {
+function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "job") return "This role is the strongest conversion move right now.";
-  if (source === "contact") return "This person is the highest-leverage networking move right now.";
+  if (source === "contact") {
+    const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
+    if (intent === "conversion") return "This person is the highest-leverage contact for converting a live role right now.";
+    if (intent === "interview") return "This person is the best networking move for sharpening an active interview or process right now.";
+    if (intent === "capability") return "This person can turn capability-building into better market signal right now.";
+    return "This person is the strongest contact for reducing role uncertainty right now.";
+  }
   if (source === "learn") return "This upskilling move compounds your profile without blocking applications.";
   if (source === "hustle") return "This proof move builds reusable credibility over time.";
   return "This is the best already-live move in the system right now.";
@@ -708,19 +735,20 @@ function explainRecommendation(
 ): RecommendationExplanation {
   const top = ranked[0];
   const second = ranked[1];
+  const lane = candidateStrategicLane(pick, context);
   const supportingReasons = top.trace.filter(Boolean).slice(0, 4);
   const whyNow = supportingReasons[0] || context.reason || "This is the strongest available move right now.";
   const whyThis = second
-    ? `It beats the next option because it has stronger immediate leverage on ${context.bottleneckLane.toLowerCase()} right now.`
-    : `It is the clearest available move on the ${context.bottleneckLane.toLowerCase()} lane right now.`;
+    ? `It beats the next option because it has stronger immediate leverage on ${lane.toLowerCase()} right now.`
+    : `It is the clearest available move on the ${lane.toLowerCase()} lane right now.`;
 
   return {
-    summary: `${sourceFrame(pick.source)} ${context.bottleneckLane} is the current bottleneck${context.activeTrackName ? ` for ${context.activeTrackName}` : ""}.`,
+    summary: `${sourceFrame(pick.source, pick, context)} ${lane} is the active lane for this move${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
     whyNow,
     whyThis,
     supportingReasons,
-    firstStep: firstStepForSource(pick.source),
-    stopRule: stopRuleForSource(pick.source),
+    firstStep: firstStepForSource(pick.source, pick, context),
+    stopRule: stopRuleForSource(pick.source, pick, context),
   };
 }
 
@@ -731,16 +759,17 @@ function explainRankedPlanItem(
 ): RecommendationExplanation {
   const current = ranked[index];
   const next = ranked[index + 1];
+  const lane = candidateStrategicLane(current.c, context);
   const supportingReasons = current.trace.filter(Boolean).slice(0, 4);
   return {
-    summary: `${sourceFrame(current.c.source)} ${context.bottleneckLane} is why this slot exists${context.activeTrackName ? ` for ${context.activeTrackName}` : ""}.`,
+    summary: `${sourceFrame(current.c.source, current.c, context)} ${lane} is why this slot exists${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
     whyNow: supportingReasons[0] || current.c.whyNow || context.reason,
     whyThis: next
-      ? `It outranks the next option because it has stronger immediate leverage on ${context.bottleneckLane.toLowerCase()} right now.`
-      : `It remains in the plan because it is still a useful move on the ${context.bottleneckLane.toLowerCase()} lane.`,
+      ? `It outranks the next option because it has stronger immediate leverage on ${lane.toLowerCase()} right now.`
+      : `It remains in the plan because it is still a useful move on the ${lane.toLowerCase()} lane.`,
     supportingReasons,
-    firstStep: firstStepForSource(current.c.source),
-    stopRule: stopRuleForSource(current.c.source),
+    firstStep: firstStepForSource(current.c.source, current.c, context),
+    stopRule: stopRuleForSource(current.c.source, current.c, context),
   };
 }
 

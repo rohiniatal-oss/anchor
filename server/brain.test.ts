@@ -223,7 +223,7 @@ test("brain can recommend a warm networking move as a first-class candidate", ()
   assert.equal(result.pick?.source, "contact");
   assert.equal(result.pick?.sourceId, 1);
   assert.ok(result.trace?.some((line: string) => /warm|referral|draft/i.test(line)));
-  assert.match(result.explanation.summary, /networking move/i);
+  assert.match(result.explanation.summary, /contact|network/i);
   assert.match(result.explanation.stopRule, /message/i);
 });
 
@@ -305,6 +305,50 @@ test("brain prioritizes contacts tied to a live role over unrelated good contact
   assert.match(result.explanation.stopRule, /live-role message/i);
 });
 
+test("conversion posture prefers a direct referral ask over advice for the same live role", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const jobs = [
+    job({
+      id: 25,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      location: "Remote",
+      fitScore: 76,
+      applicationReadiness: "questions",
+      deadlineConfidence: "high",
+    }),
+  ];
+  const contacts = [
+    contact({
+      id: 26,
+      who: "Advisor at GovAI",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "advice",
+      targetOrg: "GovAI",
+      targetRole: "AI Strategy Associate",
+      messageDraft: "Would love your view on positioning for the AI Strategy Associate role.",
+      nextFollowUpDate: today,
+    }),
+    contact({
+      id: 27,
+      who: "Operator at GovAI",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "referral",
+      targetOrg: "GovAI",
+      targetRole: "AI Strategy Associate",
+      messageDraft: "Following up on the AI Strategy Associate role at GovAI.",
+      nextFollowUpDate: today,
+    }),
+  ];
+
+  const result = recommend([], jobs, [], [], "medium", contacts);
+  assert.equal(result.pick?.source, "contact");
+  assert.equal(result.pick?.sourceId, 27);
+  assert.ok(result.trace?.some((line: string) => /directly advances a live role/i.test(line)));
+});
+
 test("brain explains exploratory networking as market discovery when no live role exists", () => {
   const today = new Date().toISOString().slice(0, 10);
   const contacts = [
@@ -325,6 +369,37 @@ test("brain explains exploratory networking as market discovery when no live rol
   assert.match(result.explanation.summary, /reducing role uncertainty/i);
   assert.match(result.explanation.firstStep, /market reality-check/i);
   assert.match(result.explanation.stopRule, /market signal/i);
+});
+
+test("exploration posture prefers advice over referral when the lane is still unclear", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const contacts = [
+    contact({
+      id: 28,
+      who: "SIPA alum in policy",
+      status: "to_contact",
+      relationshipStrength: "cold",
+      askType: "advice",
+      sourceNetwork: "SIPA",
+      why: "Can reality-check possible role families",
+      nextFollowUpDate: today,
+    }),
+    contact({
+      id: 29,
+      who: "Another SIPA alum in policy",
+      status: "to_contact",
+      relationshipStrength: "cold",
+      askType: "referral",
+      sourceNetwork: "SIPA",
+      why: "Could maybe help someday",
+      nextFollowUpDate: today,
+    }),
+  ];
+
+  const result = recommend([], [], [], [], "medium", contacts);
+  assert.equal(result.pick?.source, "contact");
+  assert.equal(result.pick?.sourceId, 28);
+  assert.ok(result.trace?.some((line: string) => /right ask while narrowing lanes/i.test(line)));
 });
 
 test("planner can keep job pursuit and networking in parallel when both are live", () => {

@@ -377,16 +377,9 @@ function contactMomentum(c: Candidate, context: StrategicContext) {
   s += archetype.score;
   trace.push(archetype.reason);
 
-  if (c.askType === "referral") {
-    s += 18;
-    trace.push("referral path could unlock applications");
-  } else if (c.askType === "follow_up") {
-    s += 10;
-    trace.push("follow-up ask is time-sensitive");
-  } else if (c.askType === "advice") {
-    s += 8;
-    trace.push("can generate market signal quickly");
-  }
+  const ask = askTypeAlignment(c, context);
+  s += ask.score;
+  if (ask.reason) trace.push(ask.reason);
 
   return { score: s, trace };
 }
@@ -460,10 +453,46 @@ function candidateStrategicLane(c: Candidate, context: StrategicContext): Canoni
 
 function contactIntent(c: Candidate, context: StrategicContext): NetworkingIntent {
   const liveFit = liveRoleContactFit(c, context);
-  if (context.planningPosture === "interview") return "interview";
-  if (liveFit.score >= 26 || c.askType === "referral" || context.planningPosture === "conversion") return "conversion";
+  const hasTargetSignal = !!(c.targetOrg && c.targetOrg.trim()) || !!(c.targetRole && c.targetRole.trim()) || liveFit.score >= 18;
+  const activeThread = c.sourceStatus === "messaged" || c.sourceStatus === "replied";
+  if (context.planningPosture === "interview" && (hasTargetSignal || activeThread || c.askType === "follow_up")) return "interview";
+  if (liveFit.score >= 26) return "conversion";
+  if (context.planningPosture === "conversion" && (hasTargetSignal || c.askType === "referral" || c.askType === "follow_up")) return "conversion";
   if (context.planningPosture === "capability") return "capability";
   return "exploration";
+}
+
+function askTypeAlignment(c: Candidate, context: StrategicContext) {
+  const ask = c.askType || "soft";
+  const intent = contactIntent(c, context);
+
+  if (intent === "conversion") {
+    if (ask === "referral") return { score: 18, reason: "referral ask directly advances a live role" };
+    if (ask === "follow_up") return { score: 15, reason: "follow-up keeps a live conversion path moving" };
+    if (ask === "reconnect") return { score: 8, reason: "reconnect can reopen a useful path into a live role" };
+    if (ask === "advice") return { score: 4, reason: "advice helps, but this stage wants a more direct role ask" };
+    return { score: 3, reason: "soft outreach is useful, but a sharper conversion ask would be stronger" };
+  }
+  if (intent === "interview") {
+    if (ask === "follow_up") return { score: 16, reason: "follow-up keeps the active process warm" };
+    if (ask === "advice") return { score: 12, reason: "advice can sharpen interview or process judgement" };
+    if (ask === "reconnect") return { score: 8, reason: "reconnect can unlock timely interview context" };
+    if (ask === "referral") return { score: 4, reason: "referral matters less once the process is already active" };
+    return { score: 4, reason: "soft outreach helps, but the process needs a clearer ask" };
+  }
+  if (intent === "capability") {
+    if (ask === "advice") return { score: 16, reason: "advice can target the current capability gap" };
+    if (ask === "follow_up") return { score: 10, reason: "follow-up can turn prior context into capability feedback" };
+    if (ask === "reconnect") return { score: 8, reason: "reconnect can reopen useful capability signal" };
+    if (ask === "referral") return { score: 2, reason: "referral is weaker than feedback while capability is the bottleneck" };
+    return { score: 6, reason: "soft outreach can surface capability signal with low friction" };
+  }
+  if (ask === "advice") return { score: 18, reason: "advice is the right ask while narrowing lanes" };
+  if (ask === "reconnect") return { score: 12, reason: "reconnect can reopen exploratory market signal" };
+  if (ask === "soft") return { score: 8, reason: "low-friction outreach is enough while exploring options" };
+  if (ask === "follow_up") return { score: 6, reason: "follow-up helps, but this phase needs fresh market signal" };
+  if (ask === "referral") return { score: 1, reason: "referral is premature before the target lane is clearer" };
+  return { score: 6, reason: "this ask still creates some useful exploratory signal" };
 }
 
 export type DayMode = "normal" | "low" | "deadline" | "strategy";

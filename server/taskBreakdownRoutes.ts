@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import OpenAI from "openai";
+import type { Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 
 type WorkObject = "Artifact" | "Decision" | "Knowledge" | "Capability" | "Pipeline" | "Problem";
@@ -17,11 +18,12 @@ type WorkflowState = {
   inheritedFrom?: string;
 };
 type BreakdownStep = { text: string; done: false; substeps?: string[]; workflowState?: WorkflowState };
+type SourceRecord = Job | Learn | Hustle | null;
 type SourceBundle = {
   sourceContext: string;
   playbook: string;
   sourceKind: "job" | "learn" | "hustle" | "task";
-  source: any;
+  source: SourceRecord;
   parentContext: string;
   parentWorkflow?: WorkflowState;
 };
@@ -46,6 +48,9 @@ function cleanText(value: unknown, max = 140) {
 }
 function keyword(text: string, re: RegExp) {
   return re.test(text.toLowerCase());
+}
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
 function workflowKindFor(workObject: WorkObject | string, sourceKind?: SourceBundle["sourceKind"]): WorkflowKind {
   if (workObject === "Pipeline") return "continuous";
@@ -103,37 +108,40 @@ function makeWorkflowState(input: {
   };
 }
 
-function normalizeStep(raw: any): BreakdownStep | null {
+function normalizeStep(raw: unknown): BreakdownStep | null {
   if (typeof raw === "string") {
     const text = cleanText(raw);
     return text ? { text, done: false } : null;
   }
-  if (!raw || typeof raw !== "object") return null;
-  const text = cleanText(raw.text || raw.step || raw.title || raw.name);
+  const record = asRecord(raw);
+  if (!record) return null;
+  const text = cleanText(record.text || record.step || record.title || record.name);
   if (!text) return null;
-  const substeps = normalizeList(Array.isArray(raw.substeps) ? raw.substeps : raw.subSteps, [], 4);
+  const substeps = normalizeList(Array.isArray(record.substeps) ? record.substeps : record.subSteps, [], 4);
   return substeps.length ? { text, done: false, substeps } : { text, done: false };
 }
 function parseBreakdown(raw: string, fallbackObject: WorkObject, inheritedWorkflow?: WorkflowState): { question?: string; steps: BreakdownStep[]; workflowState?: WorkflowState } {
   const text = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
   try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed?.question === "string") return { question: cleanText(parsed.question, 160), steps: [] };
-    const steps = (Array.isArray(parsed) ? parsed : Array.isArray(parsed?.steps) ? parsed.steps : []).map(normalizeStep).filter(Boolean).slice(0, 6) as BreakdownStep[];
-    const workObject = normalizeWorkObject(parsed?.workObject, fallbackObject);
-    const workflow = normalizeList(parsed?.workflow, inheritedWorkflow?.workflow || WORKFLOWS[workObject as WorkObject] || WORKFLOWS[fallbackObject], 8);
-    const currentStage = cleanText(parsed?.currentStage || inheritedWorkflow?.currentStage || "", 80);
-    const stageOutput = cleanText(parsed?.stageOutput || inheritedWorkflow?.stageOutput || "", 140);
-    const completionCriteria = normalizeList(parsed?.completionCriteria, inheritedWorkflow?.completionCriteria || [], 5);
-    const workflowKind = parsed?.workflowKind === "continuous" ? "continuous" : parsed?.workflowKind === "finite" ? "finite" : inheritedWorkflow?.workflowKind;
+    const parsed: unknown = JSON.parse(text);
+    const record = asRecord(parsed);
+    if (typeof record?.question === "string") return { question: cleanText(record.question, 160), steps: [] };
+    const rawSteps = Array.isArray(parsed) ? parsed : Array.isArray(record?.steps) ? record.steps : [];
+    const steps = rawSteps.map(normalizeStep).filter(Boolean).slice(0, 6) as BreakdownStep[];
+    const workObject = normalizeWorkObject(record?.workObject, fallbackObject);
+    const workflow = normalizeList(record?.workflow, inheritedWorkflow?.workflow || WORKFLOWS[workObject as WorkObject] || WORKFLOWS[fallbackObject], 8);
+    const currentStage = cleanText(record?.currentStage || inheritedWorkflow?.currentStage || "", 80);
+    const stageOutput = cleanText(record?.stageOutput || inheritedWorkflow?.stageOutput || "", 140);
+    const completionCriteria = normalizeList(record?.completionCriteria, inheritedWorkflow?.completionCriteria || [], 5);
+    const workflowKind = record?.workflowKind === "continuous" ? "continuous" : record?.workflowKind === "finite" ? "finite" : inheritedWorkflow?.workflowKind;
     const workflowState = currentStage || stageOutput ? makeWorkflowState({
       workObject,
       workflow,
       currentStage,
       stageOutput,
       completionCriteria,
-      advanceCondition: cleanText(parsed?.advanceCondition || inheritedWorkflow?.advanceCondition || "", 160),
-      confidence: cleanText(parsed?.confidence || inheritedWorkflow?.confidence || "medium", 20),
+      advanceCondition: cleanText(record?.advanceCondition || inheritedWorkflow?.advanceCondition || "", 160),
+      confidence: cleanText(record?.confidence || inheritedWorkflow?.confidence || "medium", 20),
       inheritedFrom: inheritedWorkflow?.inheritedFrom,
       sourceKind: workflowKind === "continuous" && workObject === "Capability" ? "learn" : undefined,
     }) : undefined;
@@ -144,7 +152,7 @@ function parseBreakdown(raw: string, fallbackObject: WorkObject, inheritedWorkfl
   return { steps };
 }
 
-function classifyWorkObject(task: any, bundle: SourceBundle): WorkObject {
+function classifyWorkObject(task: Task, bundle: SourceBundle): WorkObject {
   const text = `${task?.title || ""} ${task?.category || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${task?.sourceNote || ""} ${bundle.sourceContext}`.toLowerCase();
   if (keyword(text, /fix|blocked|bug|confus|stuck|messy|unblock|not working|error|broken/)) return "Problem";
   if (keyword(text, /decide|choose|prioriti|pick|whether|option|trade[ -]?off|select/)) return "Decision";
@@ -170,7 +178,7 @@ function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowSta
   return [{ ...first, workflowState }, ...rest];
 }
 
-export function parentWorkflowFor(task: any, bundle: SourceBundle): WorkflowState | undefined {
+export function parentWorkflowFor(task: Task, bundle: SourceBundle): WorkflowState | undefined {
   const text = `${task?.title || ""} ${task?.category || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
   if (bundle.sourceKind === "job") {
     const readiness = String(bundle.source?.applicationReadiness || "none");
@@ -204,7 +212,7 @@ export function parentWorkflowFor(task: any, bundle: SourceBundle): WorkflowStat
   return undefined;
 }
 
-function fallbackStagePlan(task: any, bundle: SourceBundle): { workflowState: WorkflowState; steps: BreakdownStep[] } {
+function fallbackStagePlan(task: Task, bundle: SourceBundle): { workflowState: WorkflowState; steps: BreakdownStep[] } {
   const inherited = bundle.parentWorkflow;
   const object = (inherited?.workObject as WorkObject) || classifyWorkObject(task, bundle);
   const workflow = inherited?.workflow || WORKFLOWS[object];
@@ -238,11 +246,11 @@ function fallbackStagePlan(task: any, bundle: SourceBundle): { workflowState: Wo
   return { workflowState, steps };
 }
 
-async function buildSourceContext(task: any): Promise<SourceBundle> {
+async function buildSourceContext(task: Task): Promise<SourceBundle> {
   let sourceContext = "";
   let playbook = "";
   let sourceKind: SourceBundle["sourceKind"] = "task";
-  let source: any = null;
+  let source: SourceRecord = null;
   if (task.sourceType === "job" && task.sourceId) {
     const j = (await storage.getJobs()).find((x) => x.id === task.sourceId);
     if (j) {
@@ -270,7 +278,7 @@ async function buildSourceContext(task: any): Promise<SourceBundle> {
   } else if (task.sourceUrl || task.sourceNote) {
     sourceContext = `${task.sourceNote ? "Context: " + task.sourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
   }
-  const tempBundle = { sourceContext, playbook, sourceKind, source, parentContext: "" } as SourceBundle;
+  const tempBundle: SourceBundle = { sourceContext, playbook, sourceKind, source, parentContext: "" };
   const parentWorkflow = parentWorkflowFor(task, tempBundle);
   const parentContext = parentWorkflow ? `Inherited workflow from parent ${parentWorkflow.inheritedFrom}: ${parentWorkflow.workflow.join(" → ")}. Kind: ${parentWorkflow.workflowKind}. Current stage: ${parentWorkflow.currentStage}. Stage output: ${parentWorkflow.stageOutput}. Completion criteria: ${parentWorkflow.completionCriteria.join("; ")}.` : "";
   return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow };

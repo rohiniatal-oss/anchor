@@ -247,6 +247,21 @@ function rankedHypotheses<T extends string>(scores: Map<string, number>, labels:
     .slice(0, 3);
 }
 
+function ensureRoleShapeCoverage(roleHypotheses: string[], topicHypotheses: string[], detectedShapes: string[]) {
+  const expanded = [...detectedShapes];
+  const hasOpsLane = roleHypotheses.includes(HYPOTHESIS_LABELS.operations_strategy);
+  const hasTopicLane = topicHypotheses.length > 0 || roleHypotheses.some((h) => h !== HYPOTHESIS_LABELS.operations_strategy);
+
+  if (hasTopicLane && !expanded.includes(ROLE_SHAPE_LABELS.strategy_advisory)) {
+    expanded.push(ROLE_SHAPE_LABELS.strategy_advisory);
+  }
+  if (hasOpsLane && !expanded.includes(ROLE_SHAPE_LABELS.ops_cos)) {
+    expanded.push(ROLE_SHAPE_LABELS.ops_cos);
+  }
+
+  return expanded.slice(0, 3);
+}
+
 function detectRoleHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[], tracks: CareerTrack[] = []) {
   const scores = new Map<string, number>();
   for (const j of jobs) {
@@ -283,7 +298,11 @@ function detectRoleShapeHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[
   for (const e of log) {
     if (e.eventType === "role_attribute_feedback") scoreRoleShapeHypothesesFromText(e.metadata || "", scores);
   }
-  return rankedHypotheses(scores, ROLE_SHAPE_LABELS);
+  return ensureRoleShapeCoverage(
+    detectRoleHypotheses(tasks, jobs, log, tracks),
+    detectTopicHypotheses(tasks, jobs, log, tracks),
+    rankedHypotheses(scores, ROLE_SHAPE_LABELS),
+  );
 }
 
 function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = [], tracks: CareerTrack[] = []): GoalSnapshot {
@@ -543,20 +562,26 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       name: "Direction",
       status: snapshot.directionReady ? "active" : "underdeveloped",
       progress: snapshot.directionReady ? "developing" : snapshot.directionStarted ? "early" : "not_started",
-      bottleneck: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
-        ? "you need to compare both topic and role shape before choosing a lane"
-        : snapshot.roleHypotheses.length >= 2
-          ? "you still need to choose which lane deserves focused testing"
+      bottleneck: hasBroadParallelLanes(snapshot)
+        ? "multiple plausible lanes need live roles and applications so the market can separate them for you"
+        : snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
+          ? "you need to compare both topic and role shape before choosing a lane"
+          : snapshot.roleHypotheses.length >= 2
+            ? "you still need to choose which lane deserves focused testing"
           : snapshot.directionReady ? "signals need narrowing into one role lane" : "not enough role-family signal",
       nextMoveType: "learning",
       evidence: directionEvidence,
-      nextMoves: snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
-        ? [`compare ${snapshot.topicHypotheses[0]} x ${snapshot.roleShapeHypotheses[0]} vs ${snapshot.topicHypotheses[1]} x ${snapshot.roleShapeHypotheses[0]}`, "define what matters most across topic and role shape", "save one concrete role example for each strong combination"]
-        : snapshot.roleHypotheses.length >= 2
-          ? [`compare ${snapshot.roleHypotheses[0]} vs ${snapshot.roleHypotheses[1]}`, "define what a good-fit role must include", "save one concrete example from each lane"]
-        : snapshot.directionReady
-          ? ["summarise patterns", "compare the strongest lanes", "inspect one adjacent role"]
-          : ["inspect one asset-backed role", "save one plausible role", "note one useful attribute"],
+      nextMoves: hasBroadParallelLanes(snapshot)
+        ? snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
+          ? ["add one real role in each live combination", "capture which combinations feel energising, credible, or gettable", "let concrete roles separate the lanes instead of forcing a winner early"]
+          : ["add one real role in each plausible lane", "capture what the work actually looks like in each lane", "let concrete roles separate the lanes instead of forcing a winner early"]
+        : snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
+          ? [`compare ${snapshot.topicHypotheses[0]} x ${snapshot.roleShapeHypotheses[0]} vs ${snapshot.topicHypotheses[1]} x ${snapshot.roleShapeHypotheses[0]}`, "define what matters most across topic and role shape", "save one concrete role example for each strong combination"]
+          : snapshot.roleHypotheses.length >= 2
+            ? [`compare ${snapshot.roleHypotheses[0]} vs ${snapshot.roleHypotheses[1]}`, "define what a good-fit role must include", "save one concrete example from each lane"]
+          : snapshot.directionReady
+            ? ["summarise patterns", "compare the strongest lanes", "inspect one adjacent role"]
+            : ["inspect one asset-backed role", "save one plausible role", "note one useful attribute"],
     },
     {
       name: "Market map",
@@ -690,7 +715,7 @@ function dayTypeFor(focus: WorkstreamState) {
 function phaseObjective(phase: GoalPhase) {
   if (phase === "fit-discovery") return "identify role families that genuinely fit your interests, goals, and energy";
   if (phase === "lane-narrowing") return "gather enough live signal to narrow promising lanes without forcing a premature choice";
-  if (phase === "role-targeting") return "convert the chosen lane into live roles, selective applications, and stronger positioning";
+  if (phase === "role-targeting") return "turn plausible lanes into live roles, selective applications, and stronger positioning";
   return "prepare to perform strongly in the interview and strengthen the capabilities the role will demand";
 }
 
@@ -736,7 +761,7 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
   const titles: Record<GoalTrajectoryStep["key"], Omit<GoalTrajectoryStep, "status">> = {
     "discover-fit": { key: "discover-fit", title: "Discover fit", description: "Figure out which kinds of roles genuinely fit your interests, strengths, and goals." },
     "narrow-lane": { key: "narrow-lane", title: "Narrow with evidence", description: "Keep plausible lanes alive long enough to gather signal, then narrow from real evidence instead of guesswork." },
-    "target-role": { key: "target-role", title: "Target live roles", description: "Turn the chosen lane into real roles, capability support, and selective applications." },
+    "target-role": { key: "target-role", title: "Target live roles", description: "Turn plausible lanes into real roles, capability support, and selective applications." },
     "prepare-interview": { key: "prepare-interview", title: "Prepare for interviews", description: "Build stories, examples, and role knowledge for live interview processes." },
     "capability-ramp": { key: "capability-ramp", title: "Build job-ready capability", description: "Upskill for the interview and the role so you can perform strongly once in seat." },
   };

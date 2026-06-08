@@ -60,6 +60,15 @@ test("career goal state reads active career tracks as real direction signal", ()
       whyItFits: "Strong geopolitical and advisory fit",
       description: "Parallel geopolitical advisory lane",
     },
+    {
+      id: 3,
+      name: "Strategy / chief of staff / operations",
+      slug: "strategy-chief-of-staff-operations",
+      status: "active",
+      targetRoleArchetype: "chief of staff / operations",
+      whyItFits: "Execution-heavy strategy and operating roles are also plausible",
+      description: "Parallel operating lane",
+    },
   ] as any;
 
   const state = buildCareerGoalState([], [], [], [], [], [], tracks);
@@ -67,10 +76,15 @@ test("career goal state reads active career tracks as real direction signal", ()
   assert.equal(state.phase, "role-targeting");
   assert.ok(state.roleHypotheses.includes("AI strategy"));
   assert.ok(state.roleHypotheses.includes("Geopolitics / geopolitical advisory"));
-  assert.ok(direction.evidence.some((e) => /2 active career tracks/i.test(e)));
+  assert.ok(direction.evidence.some((e) => /3 active career tracks/i.test(e)));
   assert.equal(state.decisionMode, "broad-parallel-pursuit");
+  assert.equal(state.comparisonAxes.mode, "two-axis");
+  assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Strategy / advisory"));
+  assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Ops / chief of staff"));
+  assert.equal(state.pursuitPortfolio.length, 4);
   assert.match(state.selectionRule, /keep stronger-fit alternatives warm in parallel/i);
   assert.match(state.todayPlan.mustDo, /Add or apply to one credible role/i);
+  assert.match(direction.bottleneck, /multiple plausible lanes need live roles and applications/i);
 });
 
 test("career goal state enters broad parallel pursuit when multiple plausible lanes already have live roles", () => {

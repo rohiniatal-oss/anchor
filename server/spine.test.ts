@@ -99,6 +99,26 @@ test("completing a started task flips its plan item to completed (id-link)", asy
 
 // MVD / done-enough — completing the day's minimum-viable item marks the plan
 // done_enough off the same completion link.
+// Skip sync â€” skipping a task must feed the persisted day-plan memory so
+// avoidance shows up in both plan-item state and activity evidence.
+test("skipping a started task marks its plan item skipped and logs the avoidance", async () => {
+  const { item } = await makePlanWithItem({ title: "Avoided thing" });
+  const started = await api(h.base, "POST", `/api/plan-items/${item.id}/start`, { day: DAY });
+  const taskId = started.json.task.id;
+
+  const skipped = await api(h.base, "POST", `/api/tasks/${taskId}/skip`, { day: DAY });
+  assert.equal(skipped.status, 200);
+
+  const pi = await h.storage.getPlanItem(item.id);
+  assert.equal(pi!.status, "skipped", "plan item marked skipped");
+  assert.ok(pi!.skippedAt, "skippedAt stamped");
+
+  const acts = await h.storage.getActivityLog();
+  assert.ok(acts.some((a) => a.eventType === "skipped" && a.planItemId === item.id), "skip activity carries planItemId");
+});
+
+// MVD / done-enough â€” completing the day's minimum-viable item marks the plan
+// done_enough off the same completion link.
 test("completing the MVD item marks the day done_enough", async () => {
   const { plan, item } = await makePlanWithItem({ title: "The one must-do", isMvd: true });
   const started = await api(h.base, "POST", `/api/plan-items/${item.id}/start`, { day: DAY });

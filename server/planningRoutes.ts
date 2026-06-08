@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { recommend, planDay } from "./brain";
 import { createNextTask } from "./nextTask";
 import { storage } from "./storage";
-import { insertEventSchema } from "@shared/schema";
+import { insertEventSchema, type InsertActivityLog, type InsertDayPlanItem } from "@shared/schema";
 
 type Energy = "low" | "medium" | "high";
 
@@ -75,7 +75,7 @@ async function refreshDoneEnough(day: string) {
   }
 }
 
-async function syncPlanItem(day: string, task: { id: number; planItemId?: number | null }, patch: any) {
+async function syncPlanItem(day: string, task: { id: number; planItemId?: number | null }, patch: Partial<InsertDayPlanItem>) {
   const plan = await storage.getPlanByDate(day);
   if (!plan) return;
   const items = await storage.getPlanItems(plan.id);
@@ -155,10 +155,12 @@ export function registerPlanningRoutes(app: Express) {
 
   app.post("/api/tasks/:id/skip", async (req, res) => {
     const id = Number(req.params.id);
+    const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
     const skipped = (task.skipped || 0) + 1;
     let steps = task.steps;
+    let autoShrunk = false;
     if (skipped >= 2 && (!steps || steps === "[]")) {
       try {
         const client = new OpenAI();
@@ -170,12 +172,25 @@ export function registerPlanningRoutes(app: Express) {
         let text = (out.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
         let arr: string[] = [];
         try { arr = JSON.parse(text); } catch { arr = []; }
-        if (arr.length) steps = JSON.stringify(arr.slice(0, 4).map((x) => ({ text: x, done: false })));
+        if (arr.length) {
+          steps = JSON.stringify(arr.slice(0, 4).map((x) => ({ text: x, done: false })));
+          autoShrunk = true;
+        }
       } catch {
         // Leave steps as-is if the helper call fails.
       }
     }
     const updated = await storage.updateTask(id, { skipped, steps });
+    await syncPlanItem(day, task, { status: "skipped", skippedAt: Date.now() });
+    const activity: InsertActivityLog = {
+      eventType: "skipped",
+      sourceType: task.sourceType || "task",
+      sourceId: task.sourceId ?? undefined,
+      taskId: id,
+      planItemId: task.planItemId ?? undefined,
+      metadata: JSON.stringify({ skipped, autoShrunk }),
+    };
+    await storage.logActivity(activity);
     res.json(updated);
   });
 

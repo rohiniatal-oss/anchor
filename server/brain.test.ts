@@ -165,6 +165,9 @@ test("brain prefers the more gettable role across flexible target locations", ()
   assert.equal(result.pick?.source, "job");
   assert.equal(result.pick?.sourceId, 2);
   assert.ok(result.trace?.some((line: string) => /location|warm path|submittable/i.test(line)));
+  assert.match(result.explanation.summary, /strongest conversion move|Applications|bottleneck/i);
+  assert.ok(Array.isArray(result.explanation.supportingReasons) && result.explanation.supportingReasons.length >= 2);
+  assert.match(result.explanation.firstStep, /Open the role|application materials/i);
 });
 
 test("planner keeps job pursuit and capability-building in parallel when time allows", () => {
@@ -219,6 +222,8 @@ test("brain can recommend a warm networking move as a first-class candidate", ()
   assert.equal(result.pick?.source, "contact");
   assert.equal(result.pick?.sourceId, 1);
   assert.ok(result.trace?.some((line: string) => /warm|referral|draft/i.test(line)));
+  assert.match(result.explanation.summary, /networking move/i);
+  assert.match(result.explanation.stopRule, /message/i);
 });
 
 test("brain prioritizes target-role insiders over broader alumni contacts", () => {

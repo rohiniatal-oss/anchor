@@ -324,6 +324,9 @@ test("brain recommends a deterministically-selected move", async () => {
   assert.ok(r.json.pick, "a pick is returned");
   assert.ok(typeof r.json.pick.title === "string" && r.json.pick.title.length > 0, "move has a brain-derived title");
   assert.equal(r.json.pick.source, "job", "move carries its brain source type");
+  assert.ok(r.json.explanation, "structured explanation is returned");
+  assert.ok(typeof r.json.explanation.summary === "string" && r.json.explanation.summary.length > 0, "explanation summary is present");
+  assert.ok(Array.isArray(r.json.explanation.supportingReasons), "explanation includes supporting reasons");
 });
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -102,11 +102,11 @@ export function isLearnActive(l: Pick<Learn, "learnStatus">): boolean {
 // The rule "every learn item requires an output" is INTENT-DRIVEN: the app never
 // assumes it. The DEFAULT for any item is "reference" — a fully valid, SILENT
 // state for pure consumption (no warning, no chip pressure). An item only enters
-// the proof-building lane when the USER opts in, by either (a) linking it to a
-// track as proof-building (relatedTrackId set), OR (b) setting a requiredOutput.
+// the proof-building lane when the USER opts in, by either setting a requiredOutput
+// or explicitly flagging proofIntent.
 // MECE 3-state:
-//   reference  : no requiredOutput AND not track-linked-as-proof. The default.
-//   producing  : opted in (requiredOutput set OR track-linked) AND no evidence yet.
+//   reference  : no requiredOutput AND no proofIntent. The default.
+//   producing  : opted in (requiredOutput set OR proofIntent) AND no evidence yet.
 //   evidenced  : outputEvidenceUrl present (or a proof_for entityLink — passed in).
 export const LEARN_OUTPUT_STATES = ["reference", "producing", "evidenced"] as const;
 export type LearnOutputState = (typeof LEARN_OUTPUT_STATES)[number];

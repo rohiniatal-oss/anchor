@@ -436,6 +436,26 @@ test("fit-discovery keeps exploratory networking ahead of pure capability drills
   assert.match(result.explanation.summary, /reducing role uncertainty/i);
 });
 
+test("track-linked reference learning does not surface as a strategic candidate by itself", () => {
+  const learn = [{
+    id: 35,
+    title: "Read background paper",
+    requiredOutput: "",
+    active: false,
+    proofIntent: false,
+    done: false,
+    learnStatus: "open",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: 7,
+    outputEvidenceUrl: "",
+  }] as any;
+
+  const result = recommend([], [], learn, [], "medium");
+  assert.equal(result.pick, null);
+});
+
 test("planner can keep job pursuit and networking in parallel when both are live", () => {
   const today = new Date().toISOString().slice(0, 10);
   const jobs = [

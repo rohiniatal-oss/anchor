@@ -1,5 +1,5 @@
 import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
-import { isOpportunityActionable } from "@shared/domainState";
+import { getLearnOutputState, isOpportunityActionable } from "@shared/domainState";
 import { buildTrackSpine } from "./trackSpine";
 import { deriveCareerGoalFrame } from "./goalState";
 import type { CanonicalLaneName } from "./lanes";
@@ -597,7 +597,8 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
   };
 
   for (const l of learn) {
-    if ((l.active || l.proofIntent || !!l.relatedTrackId) && !l.done && l.learnStatus !== "closed" && !isDuplicate(l.title)) {
+    const optedIntoOutput = getLearnOutputState(l) !== "reference";
+    if ((l.active || optedIntoOutput) && !l.done && l.learnStatus !== "closed" && !isDuplicate(l.title)) {
       const dl = l.applicationDeadline || "";
       out.push({
         source: "learn", sourceId: l.id, taskId: null,

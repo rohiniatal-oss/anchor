@@ -71,6 +71,7 @@ type StrategicContext = {
   laneUnlockMove: string;
   activeTrackName: string;
   liveJobTargets: Array<{ title: string; company: string; roleArchetype?: string }>;
+  planningPosture: "exploration" | "conversion" | "interview" | "capability";
 };
 
 type RankedCandidate = { c: Candidate; s: number; trace: string[] };
@@ -156,6 +157,34 @@ function candidateMatchesLane(c: Candidate, lane: CanonicalLaneName) {
   return false;
 }
 
+function derivePlanningPosture(
+  jobs: Job[],
+  learn: Learn[],
+  bottleneckLane: CanonicalLaneName,
+): StrategicContext["planningPosture"] {
+  const liveJobs = jobs.filter((j) => isOpportunityActionable(j));
+  if (liveJobs.some((j) => j.status === "interviewing")) return "interview";
+  if (liveJobs.length > 0) return "conversion";
+  if (bottleneckLane === "Direction" || bottleneckLane === "Network") return "exploration";
+  if (bottleneckLane === "Learning and development" || bottleneckLane === "Proof assets") return "capability";
+  if (learn.some((l) => !l.done && l.learnStatus !== "closed")) return "capability";
+  return "exploration";
+}
+
+function desiredLaneOrder(posture: StrategicContext["planningPosture"]): CanonicalLaneName[] {
+  if (posture === "interview") return ["Applications", "Network", "Learning and development", "Proof assets", "Direction", "Stability"];
+  if (posture === "conversion") return ["Applications", "Network", "Learning and development", "Proof assets", "Direction", "Stability"];
+  if (posture === "capability") return ["Learning and development", "Proof assets", "Network", "Applications", "Direction", "Stability"];
+  return ["Direction", "Network", "Learning and development", "Applications", "Proof assets", "Stability"];
+}
+
+function laneBalanceWindow(posture: StrategicContext["planningPosture"]) {
+  if (posture === "interview") return 18;
+  if (posture === "conversion") return 24;
+  if (posture === "capability") return 30;
+  return 34;
+}
+
 function buildStrategicContext(
   tasks: Task[],
   jobs: Job[],
@@ -166,6 +195,7 @@ function buildStrategicContext(
 ): StrategicContext {
   const spine = buildTrackSpine({ tasks, jobs, learn, hustles, contacts, tracks });
   const lane = spine.globalLanes.find((l) => l.name === spine.bestMove.lane) || spine.globalLanes[0];
+  const planningPosture = derivePlanningPosture(jobs, learn, spine.bestMove.lane);
   return {
     bottleneck: spine.bestMove.lane,
     reason: `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""}`,
@@ -177,6 +207,7 @@ function buildStrategicContext(
     laneUnlockMove: spine.bestMove.title,
     activeTrackName: spine.bestMove.trackName || spine.activeTrack?.name || "",
     liveJobTargets: jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" })),
+    planningPosture,
   };
 }
 
@@ -766,6 +797,8 @@ export function planDay(
   const picks: RankedCandidate[] = [];
   const usedFamily = new Set<string>();
   const usedLanes = new Set<CanonicalLaneName>();
+  const lanePreference = desiredLaneOrder(context.planningPosture);
+  const balanceWindow = laneBalanceWindow(context.planningPosture);
   for (const r of ranked) {
     if (picks.length >= maxItems) break;
     const fam = CATEGORY_FAMILY[r.c.category] ?? "care";
@@ -775,11 +808,21 @@ export function planDay(
         && !picks.includes(other) && (r.s - other.s) <= 25);
       if (betterDiff) continue;
     }
+    if (maxItems > 1 && mode !== "deadline") {
+      const preferredMissingLane = lanePreference.find((candidateLane) => !usedLanes.has(candidateLane));
+      if (preferredMissingLane && lane !== preferredMissingLane) {
+        const betterLane = ranked.find((other) => {
+          if (picks.includes(other)) return false;
+          return candidateStrategicLane(other.c, context) === preferredMissingLane && (r.s - other.s) <= balanceWindow;
+        });
+        if (betterLane) continue;
+      }
+    }
     if (maxItems > 1 && mode !== "deadline" && usedLanes.has(lane)) {
       const betterLane = ranked.find((other) => {
         if (picks.includes(other)) return false;
         const otherLane = candidateStrategicLane(other.c, context);
-        return !usedLanes.has(otherLane) && (r.s - other.s) <= 28;
+        return !usedLanes.has(otherLane) && (r.s - other.s) <= balanceWindow;
       });
       if (betterLane) continue;
     }

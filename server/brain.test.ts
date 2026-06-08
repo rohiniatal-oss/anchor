@@ -393,6 +393,97 @@ test("planner balances applications, networking, and learning when the day has r
   assert.equal(result.plan.length, 3);
 });
 
+test("conversion posture prefers applications and networking before extra learning on a two-slot day", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const jobs = [
+    job({
+      id: 41,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      fitScore: 79,
+      warmPathScore: 74,
+      applicationReadiness: "questions",
+      deadlineConfidence: "high",
+    }),
+  ];
+  const contacts = [
+    contact({
+      id: 42,
+      who: "Insider at Frontier Lab",
+      status: "messaged",
+      relationshipStrength: "warm",
+      askType: "referral",
+      targetOrg: "Frontier Lab",
+      targetRole: "AI Strategy Associate",
+      nextFollowUpDate: today,
+      messageDraft: "Following up on the AI Strategy Associate role.",
+    }),
+  ];
+  const learn = [{
+    id: 43,
+    title: "AI governance memo practice",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const result = planDay([], jobs, learn, [], "medium", { remainingMinutes: 120 }, contacts);
+  const sources = new Set(result.plan.map((item) => item.candidate.source));
+  assert.equal(result.plan.length, 2);
+  assert.ok(sources.has("job"), "applications lane stays primary in conversion posture");
+  assert.ok(sources.has("contact"), "network lane stays primary in conversion posture");
+  assert.ok(!sources.has("learn"), "learning is deferred when only two conversion slots fit");
+});
+
+test("exploration posture keeps direction-finding, networking, and learning ahead of proof", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const tasks = [
+    task({ id: 51, title: "Inspect one role family and note useful attributes", category: "learning", size: "quick" }),
+  ];
+  const contacts = [
+    contact({
+      id: 52,
+      who: "SIPA alum in policy",
+      status: "to_contact",
+      relationshipStrength: "cold",
+      askType: "advice",
+      sourceNetwork: "SIPA",
+      why: "Can reality-check possible role families",
+      nextFollowUpDate: today,
+    }),
+  ];
+  const learn = [{
+    id: 53,
+    title: "Policy memo drill",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+  const hustles = [
+    { id: 54, title: "Proof asset", nextStep: "Draft an outline", stage: "testing", note: "" },
+  ] as any;
+
+  const result = planDay(tasks, [], learn, hustles, "medium", { remainingMinutes: 240 }, contacts);
+  const sources = new Set(result.plan.map((item) => item.candidate.source));
+  assert.ok(sources.has("task"), "direction-finding task stays in the plan");
+  assert.ok(sources.has("contact"), "network signal stays in the plan");
+  assert.ok(sources.has("learn"), "learning stays in the plan");
+  assert.ok(!sources.has("hustle"), "proof is deferred behind exploration-supporting moves");
+});
+
 test("planner ignores contacts with no actionable networking move", () => {
   const contacts = [
     contact({

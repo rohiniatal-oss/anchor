@@ -144,6 +144,75 @@ test("career goal state reflects recruiting truth for follow-up-led application 
   assert.ok(applications.nextMoves.some((move) => /follow-up|warm nudge/i.test(move)));
 });
 
+test("prove-fit roles are surfaced as capability-building support, not direct application work", () => {
+  const jobs = [
+    {
+      id: 3,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      fitScore: 82,
+      strategicValue: 78,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+      warmPathScore: 35,
+      narrativeAngle: "",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, []);
+  const applications = state.workstreams.find((w) => w.name === "Applications")!;
+  const capability = state.workstreams.find((w) => w.name === "Capability ramp")!;
+  const proof = state.workstreams.find((w) => w.name === "Proof")!;
+  assert.equal(applications.nextMoveType, "wait");
+  assert.match(applications.bottleneck, /upskilling edge|capability-building/i);
+  assert.match(capability.bottleneck, /capability evidence|capability plan/i);
+  assert.ok(capability.evidence.some((e) => /benefit from stronger capability evidence/i.test(e)));
+  assert.equal(proof.nextMoveType, "wait");
+  assert.equal(proof.status, "sufficient_for_now");
+  assert.match(proof.bottleneck, /optional value-adds/i);
+});
+
+test("live proof assets strengthen upskilling without turning into an application gate", () => {
+  const jobs = [
+    {
+      id: 4,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      fitScore: 82,
+      strategicValue: 78,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+      warmPathScore: 35,
+      narrativeAngle: "",
+    },
+  ] as any;
+  const hustles = [
+    {
+      id: 1,
+      title: "AI strategy memo series",
+      stage: "testing",
+      nextStep: "publish memo one",
+      coreClaim: "I can turn frontier-AI ambiguity into decision-grade briefs",
+      firstPostIdea: "What boards should ask before adopting agentic tooling",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, [], [], [], hustles);
+  const applications = state.workstreams.find((w) => w.name === "Applications")!;
+  const proof = state.workstreams.find((w) => w.name === "Proof")!;
+  assert.equal(applications.nextMoveType, "wait");
+  assert.equal(proof.status, "active");
+  assert.equal(proof.progress, "developing");
+  assert.ok(proof.evidence.some((e) => /1 live proof asset/i.test(e)));
+  assert.ok(proof.nextMoves.some((move) => /produce the next concrete output/i.test(move)));
+});
+
 test("goal state API returns active goal with workstreams and today plan", async () => {
   const r = await api(h.base, "GET", "/api/goals/state");
   assert.equal(r.status, 200);

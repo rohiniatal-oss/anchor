@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import type { ActivityLog, Contact, Job, Learn, Task } from "@shared/schema";
+import type { ActivityLog, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse } from "./candidates";
 import { computeJobTruthStrip, type JobTruthAction, type JobTruthStrip } from "./jobTruth";
@@ -60,6 +60,9 @@ type GoalSnapshot = {
   applicationActionCounts: Record<JobTruthAction, number>;
   leadApplicationTruth: JobTruthStrip | null;
   hasProofTask: boolean;
+  proofSupportDemandCount: number;
+  liveProofAssetCount: number;
+  outlinedProofAssetCount: number;
   activeLearnCount: number;
   evidencedLearnCount: number;
   learningOutputGapCount: number;
@@ -69,8 +72,6 @@ type GoalSnapshot = {
   roleShapeHypotheses: string[];
   directionReady: boolean;
   directionStarted: boolean;
-  proofStarted: boolean;
-  applicationsReady: boolean;
 };
 
 const HYPOTHESIS_LABELS = {
@@ -271,7 +272,7 @@ function detectRoleShapeHypotheses(tasks: Task[], jobs: Job[], log: ActivityLog[
   return rankedHypotheses(scores, ROLE_SHAPE_LABELS);
 }
 
-function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = []): GoalSnapshot {
+function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = []): GoalSnapshot {
   const assets = careerAssetsFromActivity(log);
   const feedback = attributeFeedbackFromActivity(log);
   const feedbackSummary = attributeFeedbackSummary(feedback);
@@ -300,12 +301,15 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     follow_up: 0,
   };
   for (const truth of applicationTruth) applicationActionCounts[truth.action] += 1;
-  const leadApplicationTruth = [...viableApplicationTruth].sort((a, b) => {
+  const leadApplicationTruth = [...viableApplicationTruth.filter((t) => t.action !== "prove")].sort((a, b) => {
     const priorityDiff = APPLICATION_ACTION_PRIORITY[b.action] - APPLICATION_ACTION_PRIORITY[a.action];
     if (priorityDiff !== 0) return priorityDiff;
     return (b.fit.score ?? 0) - (a.fit.score ?? 0);
   })[0] || null;
+  const proofSupportDemandCount = applicationActionCounts.prove;
   const hasProofTask = careerTasks.some((t) => /proof|gap|bullet|story|portfolio|sample/i.test(t.title));
+  const liveProofAssets = hustles.filter((h) => h.stage === "testing" || h.stage === "earning");
+  const outlinedProofAssetCount = hustles.filter((h) => !!((h.nextStep && h.nextStep.trim()) || (h.coreClaim && h.coreClaim.trim()) || (h.firstPostIdea && h.firstPostIdea.trim()))).length;
   const activeLearn = learn.filter((l) => !l.done && l.learnStatus !== "closed");
   const evidencedLearnCount = learn.filter((l) => !!(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
   const learningOutputGapCount = activeLearn.filter((l) => !!(l.requiredOutput || l.proofIntent) && !(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
@@ -316,9 +320,6 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
 
   const directionReady = savedJobs.length >= 5 || roleFeedbackCount >= 3 || hasSignal(feedbackSummary, "energising") || hasSignal(feedbackSummary, "credible");
   const directionStarted = savedJobs.length > 0 || candidateCommits > 0 || roleFeedbackCount > 0;
-  const proofStarted = hasProofTask || deconstructionCommits > 0 || hasSignal(feedbackSummary, "gap");
-  const applicationsReady = directionReady && proofStarted;
-
   return {
     assets,
     feedback,
@@ -340,6 +341,9 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     applicationActionCounts,
     leadApplicationTruth,
     hasProofTask,
+    proofSupportDemandCount,
+    liveProofAssetCount: liveProofAssets.length,
+    outlinedProofAssetCount,
     activeLearnCount: activeLearn.length,
     evidencedLearnCount,
     learningOutputGapCount,
@@ -349,8 +353,6 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     roleShapeHypotheses,
     directionReady,
     directionStarted,
-    proofStarted,
-    applicationsReady,
   };
 }
 
@@ -414,10 +416,10 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
   const applicationLead = snapshot.leadApplicationTruth;
   const applicationStatus: WorkstreamStatus = snapshot.viableApplicationCount === 0
     ? (snapshot.directionReady ? "underdeveloped" : "premature")
-    : "active";
+    : applicationLead ? "active" : "underdeveloped";
   const applicationProgress: WorkstreamState["progress"] = applicationLead?.action === "prepare" || applicationLead?.action === "follow_up"
     ? "developing"
-    : snapshot.viableApplicationCount > 0
+    : applicationLead
       ? "early"
       : "not_started";
   const applicationBottleneck = applicationLead?.action === "prepare"
@@ -428,26 +430,82 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         ? `${snapshot.applicationActionCounts.apply} role${snapshot.applicationActionCounts.apply === 1 ? " is" : "s are"} ready for a concrete application step`
         : applicationLead?.action === "warm"
           ? `${snapshot.applicationActionCounts.warm} promising role${snapshot.applicationActionCounts.warm === 1 ? " should" : "s should"} use a warm path before going cold`
-          : applicationLead?.action === "prove"
-            ? `${snapshot.applicationActionCounts.prove} strong role${snapshot.applicationActionCounts.prove === 1 ? " needs" : "s need"} stronger proof or narrative`
-            : applicationLead?.action === "clarify"
-              ? `${snapshot.applicationActionCounts.clarify} role${snapshot.applicationActionCounts.clarify === 1 ? " still needs" : "s still need"} clarification before real conversion`
-              : snapshot.directionReady
-                ? "current roles are not yet strong enough to convert"
-                : "direction and proof are not ready enough for broad applications";
+          : applicationLead?.action === "clarify"
+            ? `${snapshot.applicationActionCounts.clarify} role${snapshot.applicationActionCounts.clarify === 1 ? " still needs" : "s still need"} clarification before real conversion`
+            : snapshot.proofSupportDemandCount > 0
+              ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger credibility, but that is an upskilling edge rather than an application blocker`
+            : snapshot.directionReady
+              ? "no role is ready for a concrete conversion move yet"
+              : "direction is not ready enough for broad applications";
   const applicationNextMoves = applicationLead?.action === "prepare"
-    ? [applicationLead.nextMove, "review the most likely interview themes", "tighten one role-specific story or proof point"]
+      ? [applicationLead.nextMove, "review the most likely interview themes", "tighten one role-specific story or proof point"]
     : applicationLead?.action === "follow_up"
       ? [applicationLead.nextMove, "identify the warmest internal nudge for that role", "log the next follow-up point so the role does not disappear"]
-      : applicationLead?.action === "apply"
-        ? [applicationLead.nextMove, "finish the strongest application material", "submit or clearly schedule the exact next application step"]
-        : applicationLead?.action === "warm"
-          ? [applicationLead.nextMove, "tie one contact to the live role before applying cold", "send one warm-path message that advances the role"]
-          : applicationLead?.action === "prove"
-            ? [applicationLead.nextMove, "add one proof bullet or narrative angle for the role", "map one requirement to concrete evidence you already have"]
-            : applicationLead?.action === "clarify"
-              ? [applicationLead.nextMove, "confirm the role facts before spending more effort", "decide whether the role is worth keeping in the portfolio"]
-              : ["do not mass apply yet"];
+    : applicationLead?.action === "apply"
+      ? [applicationLead.nextMove, "finish the strongest application material", "submit or clearly schedule the exact next application step"]
+    : applicationLead?.action === "warm"
+      ? [applicationLead.nextMove, "tie one contact to the live role before applying cold", "send one warm-path message that advances the role"]
+    : applicationLead?.action === "clarify"
+      ? [applicationLead.nextMove, "confirm the role facts before spending more effort", "decide whether the role is worth keeping in the portfolio"]
+      : ["wait until one role has a concrete conversion move", "keep the pipeline selective rather than forcing an application", "do not mass apply yet"];
+  const proofStatus: WorkstreamStatus = !snapshot.directionReady && snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
+    ? "premature"
+    : snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
+      ? "sufficient_for_now"
+      : "active";
+  const proofProgress: WorkstreamState["progress"] = snapshot.outlinedProofAssetCount > 0
+    ? "developing"
+    : snapshot.liveProofAssetCount > 0 || snapshot.hasProofTask
+      ? "early"
+      : "not_started";
+  const proofBottleneck = snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
+    ? "proof assets are optional value-adds for upskilling, not a blocker for applying"
+    : snapshot.liveProofAssetCount > 0 && snapshot.outlinedProofAssetCount === 0
+      ? "proof assets exist, but they are not yet concrete enough to convert into reusable evidence"
+      : snapshot.liveProofAssetCount > 0
+        ? "proof assets are live, but they need the next concrete output"
+        : "proof ideas exist, but they are not active yet";
+  const proofNextMoves = snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
+    ? ["keep proof as a secondary upskilling layer for now", "start one proof asset only when it will compound your learning", "define the smallest publishable or shippable proof output when you are ready"]
+    : snapshot.liveProofAssetCount > 0
+      ? ["produce the next concrete output on the live proof asset", "package one existing output into reusable evidence", "connect the proof asset to the strongest live role"]
+      : ["turn one proof idea into a real asset", "pick one output format you can sustain", "connect the asset to a learning goal, not just a role requirement"];
+  const capabilityStatus: WorkstreamStatus = snapshot.directionReady || snapshot.interviewingJobs > 0
+    ? (snapshot.activeLearnCount > 0 || snapshot.evidencedLearnCount > 0 ? "active" : "underdeveloped")
+    : "premature";
+  const capabilityProgress: WorkstreamState["progress"] = snapshot.evidencedLearnCount > 0
+    ? "developing"
+    : snapshot.activeLearnCount > 0
+      ? "early"
+      : "not_started";
+  const capabilityBottleneck = snapshot.interviewingJobs > 0
+    ? snapshot.learningOutputGapCount > 0
+      ? `${snapshot.learningOutputGapCount} capability-building item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} a reusable output before the interview`
+      : "interview and role preparation need capability-linked practice outputs"
+    : snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
+      ? snapshot.proofSupportDemandCount > 0
+        ? `no role-relevant capability plan is active yet, and ${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger capability evidence`
+        : "no role-relevant capability plan is active yet"
+      : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
+        ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger credibility, and ${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} reusable evidence`
+      : snapshot.proofSupportDemandCount > 0
+        ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger capability evidence`
+      : snapshot.learningOutputGapCount > 0
+        ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} a reusable output`
+        : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0
+          ? "learning is in motion, but nothing is evidenced yet"
+          : "turn learning into reusable job evidence and practice";
+  const capabilityNextMoves = snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
+    ? ["choose one role-relevant capability to strengthen", "start one learning item with a clear output in mind", "define what reusable evidence this learning should produce"]
+    : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
+      ? ["finish one reusable learning output for the strongest role", "turn that output into a proof bullet or interview artifact", "capture the evidence so Anchor can reuse it later"]
+    : snapshot.proofSupportDemandCount > 0
+      ? ["strengthen one credibility signal for the strongest role", "turn existing learning into a reusable proof point", "package one output as interview or application evidence"]
+    : snapshot.learningOutputGapCount > 0
+      ? ["finish one reusable learning output", "attach evidence to the learning item", "turn one learning output into interview or job-ready material"]
+        : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0
+          ? ["move one active learning item to a concrete output", "practice one scenario or framework", "capture one reusable takeaway in writing"]
+        : ["convert one learning item into a reusable interview/job artifact", "practice one scenario or framework", "choose the next capability to strengthen"];
 
   return [
     {
@@ -507,55 +565,60 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     },
     {
       name: "Proof",
-      status: snapshot.proofStarted ? "active" : snapshot.directionReady ? "underdeveloped" : "premature",
-      progress: snapshot.proofStarted ? "early" : "not_started",
-      bottleneck: snapshot.proofStarted ? "proof gaps need evidence or examples" : snapshot.directionReady ? "top proof gaps not yet identified" : "premature until direction has signal",
-      nextMoveType: snapshot.proofStarted || snapshot.directionReady ? "preparation" : "wait",
-      evidence: [snapshot.deconstructionCommits ? `${snapshot.deconstructionCommits} role deconstruction tasks committed` : "no role deconstruction commitments", hasSignal(snapshot.feedbackSummary, "gap") ? "gap feedback exists" : "no explicit proof-gap feedback"],
-      nextMoves: snapshot.proofStarted || snapshot.directionReady ? ["identify one proof gap", "rewrite one CV bullet", "find evidence for one requirement"] : ["wait until role signal exists"],
+      status: proofStatus,
+      progress: proofProgress,
+      bottleneck: proofBottleneck,
+      nextMoveType: snapshot.liveProofAssetCount > 0 || snapshot.hasProofTask ? "preparation" : "wait",
+      evidence: [
+        `${snapshot.liveProofAssetCount} live proof asset${snapshot.liveProofAssetCount === 1 ? "" : "s"}`,
+        `${snapshot.outlinedProofAssetCount} outlined proof asset${snapshot.outlinedProofAssetCount === 1 ? "" : "s"}`,
+        snapshot.deconstructionCommits ? `${snapshot.deconstructionCommits} role deconstruction tasks committed` : "no role deconstruction commitments",
+        hasSignal(snapshot.feedbackSummary, "gap") ? "gap feedback exists" : "no explicit proof-gap feedback",
+      ],
+      nextMoves: proofNextMoves,
     },
     {
       name: "Applications",
       status: applicationStatus,
       progress: applicationProgress,
       bottleneck: applicationBottleneck,
-      nextMoveType: applicationLead?.action === "prepare" ? "preparation" : snapshot.viableApplicationCount > 0 ? "execution" : "wait",
+      nextMoveType: applicationLead?.action === "prepare" ? "preparation" : applicationLead ? "execution" : "wait",
       evidence: [
         `${snapshot.savedJobs.length} open or saved role${snapshot.savedJobs.length === 1 ? "" : "s"}`,
         `${snapshot.viableApplicationCount} viable role${snapshot.viableApplicationCount === 1 ? "" : "s"}`,
         `${snapshot.applicationActionCounts.apply} ready-to-apply`,
         `${snapshot.applicationActionCounts.warm} warm-path-first`,
-        `${snapshot.applicationActionCounts.prove} proof-needed`,
+        `${snapshot.applicationActionCounts.prove} capability-support`,
         `${snapshot.applicationActionCounts.clarify} clarify-first`,
         `${snapshot.applicationActionCounts.follow_up} follow-up`,
         `${snapshot.applicationActionCounts.prepare} interview/process-prep`,
+        `${snapshot.proofSupportDemandCount} role${snapshot.proofSupportDemandCount === 1 ? "" : "s"} better served by capability-building than immediate applying`,
         snapshot.hasApplicationTask ? "application-related task exists" : "no active application task",
       ],
       nextMoves: applicationNextMoves,
     },
     {
       name: "Interview readiness",
-      status: snapshot.interviewingJobs > 0 ? "active" : snapshot.applicationsReady ? "underdeveloped" : "premature",
+      status: snapshot.interviewingJobs > 0 ? "active" : snapshot.savedJobs.length > 0 ? "underdeveloped" : "premature",
       progress: snapshot.interviewingJobs > 0 ? "early" : "not_started",
-      bottleneck: snapshot.interviewingJobs > 0 ? "interview stories and role-specific examples need tightening" : snapshot.applicationsReady ? "no live interview yet, but prep assets are still thin" : "premature until live roles exist",
+      bottleneck: snapshot.interviewingJobs > 0 ? "interview stories and role-specific examples need tightening" : snapshot.savedJobs.length > 0 ? "no live interview yet, but prep assets are still thin" : "premature until live roles exist",
       nextMoveType: snapshot.interviewingJobs > 0 ? "preparation" : "wait",
       evidence: [snapshot.interviewingJobs ? `${snapshot.interviewingJobs} interviewing role(s)` : "no interviewing roles yet"],
       nextMoves: snapshot.interviewingJobs > 0 ? ["prepare 3 evidence-backed stories", "simulate one interview answer", "review the company and role thesis"] : ["wait until a live interview exists"],
     },
     {
       name: "Capability ramp",
-      status: snapshot.directionReady || snapshot.interviewingJobs > 0 ? (snapshot.activeLearnCount > 0 || snapshot.evidencedLearnCount > 0 ? "active" : "underdeveloped") : "premature",
-      progress: snapshot.evidencedLearnCount > 0 ? "developing" : snapshot.activeLearnCount > 0 ? "early" : "not_started",
-      bottleneck: snapshot.interviewingJobs > 0 ? "interview and role preparation need capability-linked practice outputs" : snapshot.directionReady ? "target lane still needs a role-relevant capability plan" : "premature until the target lane is clearer",
+      status: capabilityStatus,
+      progress: capabilityProgress,
+      bottleneck: capabilityBottleneck,
       nextMoveType: snapshot.directionReady || snapshot.interviewingJobs > 0 ? "learning" : "wait",
       evidence: [
         snapshot.activeLearnCount ? `${snapshot.activeLearnCount} active learning item(s)` : "no active learning items",
         snapshot.evidencedLearnCount ? `${snapshot.evidencedLearnCount} evidenced learning output(s)` : "no evidenced learning outputs",
         snapshot.learningOutputGapCount ? `${snapshot.learningOutputGapCount} learning item(s) still need an output` : "learning outputs are in better shape",
+        `${snapshot.proofSupportDemandCount} role${snapshot.proofSupportDemandCount === 1 ? "" : "s"} that could benefit from stronger capability evidence`,
       ],
-      nextMoves: snapshot.directionReady || snapshot.interviewingJobs > 0
-        ? ["choose one role-relevant capability to strengthen", "convert one learning item into a reusable interview/job artifact", "practice one scenario or framework"]
-        : ["wait until the target lane is clearer"],
+      nextMoves: snapshot.directionReady || snapshot.interviewingJobs > 0 ? capabilityNextMoves : ["wait until the target lane is clearer"],
     },
     {
       name: "Energy and stability",
@@ -576,8 +639,8 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase) {
   const priorityByPhase: Record<GoalPhase, string[]> = {
     "fit-discovery": ["Direction", "Market map", "Network", "Energy and stability"],
     "lane-narrowing": ["Direction", "Positioning", "Market map", "Network", "Energy and stability"],
-    "role-targeting": ["Applications", "Network", "Proof", "Positioning", "Capability ramp", "Energy and stability"],
-    "interview-prep": ["Interview readiness", "Network", "Capability ramp", "Proof", "Applications", "Energy and stability"],
+    "role-targeting": ["Applications", "Network", "Positioning", "Capability ramp", "Proof", "Energy and stability"],
+    "interview-prep": ["Interview readiness", "Network", "Capability ramp", "Applications", "Proof", "Energy and stability"],
   };
   return priorityByPhase[phase]
     .map((name) => workstreams.find((w) => w.name === name))
@@ -595,7 +658,7 @@ function dayTypeFor(focus: WorkstreamState) {
 function phaseObjective(phase: GoalPhase) {
   if (phase === "fit-discovery") return "identify role families that genuinely fit your interests, goals, and energy";
   if (phase === "lane-narrowing") return "decide which promising lane deserves focused testing before over-investing in applications";
-  if (phase === "role-targeting") return "convert the chosen lane into live roles, selective applications, and stronger proof";
+  if (phase === "role-targeting") return "convert the chosen lane into live roles, selective applications, and stronger positioning";
   return "prepare to perform strongly in the interview and strengthen the capabilities the role will demand";
 }
 
@@ -761,8 +824,8 @@ function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamSta
   };
 }
 
-export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = [], contacts: Contact[] = []) {
-  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts);
+export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
 
@@ -777,8 +840,8 @@ export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityL
   };
 }
 
-export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = []) {
-  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts);
+export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
   const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback);
@@ -838,7 +901,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
 
 export function registerGoalStateRoutes(app: Express) {
   app.get("/api/goals/state", async (_req, res) => {
-    const [tasks, jobs, log, learn, contacts] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getLearn(), storage.getContacts()]);
-    res.json({ goals: [buildCareerGoalState(tasks, jobs, log, learn, contacts)] });
+    const [tasks, jobs, log, learn, contacts, hustles] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getActivityLog(), storage.getLearn(), storage.getContacts(), storage.getHustles()]);
+    res.json({ goals: [buildCareerGoalState(tasks, jobs, log, learn, contacts, hustles)] });
   });
 }

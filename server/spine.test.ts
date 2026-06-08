@@ -219,6 +219,62 @@ test("materializing a proof step marks it done and clears the proof stall signal
   assert.equal(diag.signals.proofGap, 0, "a fully materialized single-step proof rail is not scored as stalled");
 });
 
+test("task breakdown updates only the task and does not rewrite parent source fields", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (/api\.openai\.com/i.test(url)) {
+      throw new Error("OpenAI disabled in tests");
+    }
+    return originalFetch(input as any, init);
+  }) as typeof fetch;
+
+  try {
+    const job = await h.storage.createJob({
+      title: "Policy role",
+      company: "Org",
+      status: "wishlist",
+      nextStep: "User-curated job next step",
+      applicationReadiness: "cv",
+    } as any);
+    const learn = await h.storage.createLearn({
+      title: "AI governance course",
+      type: "course",
+      requiredOutput: "",
+      learnStatus: "open",
+    } as any);
+    const hustle = await h.storage.createHustle({
+      title: "Memo series",
+      nextStep: "User-curated hustle next step",
+      stage: "testing",
+    } as any);
+
+    const jobTask = await h.storage.createTask({ title: "Tailor CV", sourceType: "job", sourceId: job.id, category: "job" } as any);
+    const learnTask = await h.storage.createTask({ title: "Read module one", sourceType: "learn", sourceId: learn.id, category: "learning" } as any);
+    const hustleTask = await h.storage.createTask({ title: "Draft outline", sourceType: "hustle", sourceId: hustle.id, category: "hustle" } as any);
+
+    const jobRes = await api(h.base, "POST", `/api/tasks/${jobTask.id}/breakdown`, {});
+    const learnRes = await api(h.base, "POST", `/api/tasks/${learnTask.id}/breakdown`, {});
+    const hustleRes = await api(h.base, "POST", `/api/tasks/${hustleTask.id}/breakdown`, {});
+    assert.equal(jobRes.status, 200);
+    assert.equal(learnRes.status, 200);
+    assert.equal(hustleRes.status, 200);
+
+    const jobAfter = (await h.storage.getJobs()).find((x) => x.id === job.id)!;
+    const learnAfter = (await h.storage.getLearn()).find((x) => x.id === learn.id)!;
+    const hustleAfter = (await h.storage.getHustles()).find((x) => x.id === hustle.id)!;
+    assert.equal(jobAfter.nextStep, "User-curated job next step", "breakdown must not rewrite job.nextStep");
+    assert.equal(learnAfter.requiredOutput, "", "breakdown must not invent a required output on the learn item");
+    assert.equal(hustleAfter.nextStep, "User-curated hustle next step", "breakdown must not rewrite hustle.nextStep");
+
+    const updatedJobTask = (await h.storage.getTasks()).find((x) => x.id === jobTask.id)!;
+    assert.notEqual(updatedJobTask.steps, "[]", "breakdown still writes steps onto the task itself");
+    assert.ok(updatedJobTask.minimumOutcome, "breakdown still updates the task's stage outcome");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // P4.6a #5 — the unified front-door is the ONE strategy payload, and the legacy
 // /api/strategy delegates to the same engine (no parallel computation).
 test("strategy front-door returns the unified payload off one engine", async () => {

@@ -44,6 +44,7 @@ export async function makeHarness(): Promise<Harness> {
   const { registerJobTruthRoutes } = await import("./jobTruth");
   const { registerCandidateRoutes } = await import("./candidates");
   const { registerGoalStateRoutes } = await import("./goalState");
+  const { registerTaskBreakdownRoutes } = await import("./taskBreakdownRoutes");
   const { registerRoutes } = await import("./routes");
   const { storage, rawDb } = await import("./storage");
   // Reset/inspect through the SAME handle storage opened. If a route module pulled
@@ -60,6 +61,7 @@ export async function makeHarness(): Promise<Harness> {
   registerJobTruthRoutes(app);
   registerCandidateRoutes(app);
   registerGoalStateRoutes(app);
+  registerTaskBreakdownRoutes(app);
   await registerRoutes(httpServer, app);
 
   await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));

@@ -276,17 +276,6 @@ async function buildSourceContext(task: any): Promise<SourceBundle> {
   return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow };
 }
 
-async function syncParentHint(task: any, workflowState: WorkflowState, steps: BreakdownStep[], bundle: SourceBundle) {
-  const nextHint = `${workflowState.currentStage}: ${steps.find((s) => !/^Use the|^Locate|^Define|^Check/i.test(s.text))?.text || workflowState.stageOutput}`;
-  if (bundle.sourceKind === "job" && task.sourceId) {
-    await storage.updateJob(task.sourceId, { nextStep: nextHint });
-  } else if (bundle.sourceKind === "learn" && task.sourceId && !bundle.source?.requiredOutput) {
-    await storage.updateLearn(task.sourceId, { requiredOutput: workflowState.stageOutput });
-  } else if (bundle.sourceKind === "hustle" && task.sourceId) {
-    await storage.updateHustle(task.sourceId, { nextStep: nextHint });
-  }
-}
-
 export function registerTaskBreakdownRoutes(app: Express) {
   app.post("/api/tasks/:id/breakdown", async (req, res) => {
     const id = Number(req.params.id);
@@ -342,7 +331,6 @@ export function registerTaskBreakdownRoutes(app: Express) {
       steps: JSON.stringify(steps),
       minimumOutcome: workflowState.stageOutput || task.minimumOutcome,
     });
-    await syncParentHint(task, workflowState, steps, bundle);
     res.json(updated);
   });
 }

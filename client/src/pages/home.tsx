@@ -72,6 +72,8 @@ const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] =
   { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
 ];
 
+const GOAL_SPINE_QUERY_KEYS = ["/api/goals/state", "/api/strategy/front-door", "/api/strategy/diagnostics"] as const;
+
 export default function Home() {
   const { theme, toggle } = useTheme();
   const [tab, setTab] = useState<Tab>("today");
@@ -198,7 +200,7 @@ function LinkTrackControl({ entity, id, trackId, tracks }: { entity: TrackedEnti
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
   async function link(next: number | null) {
-    await mutateAndInvalidate("PATCH", `/api/${entity}/${id}/link-track`, { trackId: next }, [ENTITY_QUERY[entity], "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked"]);
+    await mutateAndInvalidate("PATCH", `/api/${entity}/${id}/link-track`, { trackId: next }, [ENTITY_QUERY[entity], "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", ...GOAL_SPINE_QUERY_KEYS]);
     setOpen(false);
     toast({ title: next ? "Linked to track." : "Unlinked.", description: next ? "It'll show up under this path in Strategy." : "Removed from its track." });
   }
@@ -235,7 +237,7 @@ function CardActions({ entity, id, trackId, tracks, onViewTasks }: { entity: Exc
   async function createNext() {
     setBusy(true);
     try {
-      const r = await mutateAndInvalidate("POST", `/api/${entity}/${id}/create-next-task`, {}, ["/api/tasks"]);
+      const r = await mutateAndInvalidate("POST", `/api/${entity}/${id}/create-next-task`, {}, ["/api/tasks", ...GOAL_SPINE_QUERY_KEYS]);
       toast({ title: r?.reused ? "Already on your list." : "Next task created.", description: r?.reused ? "There's already an open task for this." : "Find it in your inbox / brain dump." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
@@ -906,7 +908,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "learn", contacts: "network", hustles: "strategy" };
   const ENTITY_LABEL: Record<UnlinkedItem["entity"], string> = { jobs: "Job", learn: "Learn", contacts: "Contact", hustles: "Proof" };
   async function linkUnlinked(it: UnlinkedItem, trackId: number) {
-    await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", "/api/strategy/front-door"]);
+    await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]);
   }
 
   return (
@@ -1322,15 +1324,15 @@ function JobsView() {
   const [form, setForm] = useState({ title: "", company: "", location: "", url: "", note: "", nextStep: "", deadline: "" });
   async function add() {
     if (!form.title.trim()) return;
-    await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs"]);
+    await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
     setForm({ title: "", company: "", location: "", url: "", note: "", nextStep: "", deadline: "" }); setShowForm(false);
   }
   async function move(j: Job, dir: 1 | -1) {
     const idx = JOB_COLS.findIndex((c) => c.id === j.status);
     const next = JOB_COLS[idx + dir];
-    if (next) await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { status: next.id }, ["/api/jobs"]);
+    if (next) await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { status: next.id }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
   }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/jobs/${id}`, undefined, ["/api/jobs"]); }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/jobs/${id}`, undefined, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]); }
 
   // MECE lanes: fellowships are OPPORTUNITIES YOU APPLY TO, grouped in their own
   // lane (not paid roles). Everything else flows through the paid-role kanban.
@@ -1441,7 +1443,7 @@ function JobStepRail({ j }: { j: Job }) {
   async function seed() {
     setBusy(true);
     try {
-      await mutateAndInvalidate("POST", `/api/jobs/${j.id}/steps/seed`, {}, ["/api/strategy/diagnostics"]);
+      await mutateAndInvalidate("POST", `/api/jobs/${j.id}/steps/seed`, {}, ["/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       await reloadInto();
       toast({ title: "Steps generated.", description: "From the role's template — edit them to fit." });
     } catch { toast({ title: "Couldn't generate steps", description: "Try again in a moment." }); }
@@ -1451,18 +1453,18 @@ function JobStepRail({ j }: { j: Job }) {
   async function materialize(s: JobPipelineStep) {
     setBusy(true);
     try {
-      const r = await mutateAndInvalidate("POST", `/api/steps/${s.id}/materialize`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
+      const r = await mutateAndInvalidate("POST", `/api/steps/${s.id}/materialize`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       await reloadInto();
       toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this role." : "Find it in your inbox / today list." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
   async function setStatus(s: JobPipelineStep, status: string) {
-    await mutateAndInvalidate("PATCH", `/api/steps/${s.id}`, { status }, ["/api/strategy/diagnostics"]);
+    await mutateAndInvalidate("PATCH", `/api/steps/${s.id}`, { status }, ["/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     await reloadInto();
   }
   async function block(s: JobPipelineStep) {
-    await mutateAndInvalidate("POST", `/api/steps/${s.id}/block`, { reason: "Blocked from the rail" }, ["/api/tasks", "/api/strategy/diagnostics"]);
+    await mutateAndInvalidate("POST", `/api/steps/${s.id}/block`, { reason: "Blocked from the rail" }, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     await reloadInto();
     toast({ title: "Marked blocked.", description: "Noted on the step — unblock it when ready." });
   }
@@ -1472,12 +1474,12 @@ function JobStepRail({ j }: { j: Job }) {
     await reloadInto();
   }
   async function del(s: JobPipelineStep) {
-    await mutateAndInvalidate("DELETE", `/api/steps/${s.id}`, undefined, ["/api/strategy/diagnostics"]);
+    await mutateAndInvalidate("DELETE", `/api/steps/${s.id}`, undefined, ["/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     await reloadInto();
   }
   async function addStep() {
     if (!newLabel.trim()) return;
-    await mutateAndInvalidate("POST", `/api/jobs/${j.id}/steps`, { stepLabel: newLabel.trim() }, ["/api/strategy/diagnostics"]);
+    await mutateAndInvalidate("POST", `/api/jobs/${j.id}/steps`, { stepLabel: newLabel.trim() }, ["/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     setNewLabel("");
     await reloadInto();
   }
@@ -1487,7 +1489,7 @@ function JobStepRail({ j }: { j: Job }) {
     const ni = i + dir;
     if (ni < 0 || ni >= ids.length) return;
     [ids[i], ids[ni]] = [ids[ni], ids[i]];
-    await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}/steps/reorder`, { orderedStepIds: ids }, ["/api/strategy/diagnostics"]);
+    await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}/steps/reorder`, { orderedStepIds: ids }, ["/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     await reloadInto();
   }
 
@@ -1606,7 +1608,7 @@ function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tra
     if (gated || windowClosed) return null;
     if (j.status === "wishlist") return {
       label: "Mark applied", icon: CheckCircle2,
-      run: async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door"]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); },
+      run: async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); },
     };
     return {
       label: "Log progress", icon: Trophy,
@@ -1704,7 +1706,7 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
   async function outreach(c: Contact) {
     setBusyId(c.id);
     try {
-      const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
+      const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in your inbox / today list." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusyId(null); }
@@ -1781,15 +1783,15 @@ function NetworkView() {
   useEffect(() => { fetchSug([]); /* eslint-disable-next-line */ }, []);
   async function addSug() {
     if (!sug) return;
-    await mutateAndInvalidate("POST", "/api/networking/accept", sug, ["/api/contacts"]);
+    await mutateAndInvalidate("POST", "/api/networking/accept", sug, ["/api/contacts", ...GOAL_SPINE_QUERY_KEYS]);
     toast({ title: "Added to your warm list.", description: "Pop in a name when one comes to mind." });
     const next = [...seen, sug.who]; setSeen(next); fetchSug(next);
   }
   function another() { if (!sug) return; const next = [...seen, sug.who]; setSeen(next); fetchSug(next); }
   async function patch(c: Contact, body: Record<string, unknown>) {
-    await mutateAndInvalidate("PATCH", `/api/contacts/${c.id}`, body, ["/api/contacts", "/api/strategy/diagnostics"]);
+    await mutateAndInvalidate("PATCH", `/api/contacts/${c.id}`, body, ["/api/contacts", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
   }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/contacts/${id}`, undefined, ["/api/contacts", "/api/strategy/diagnostics"]); }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/contacts/${id}`, undefined, ["/api/contacts", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]); }
 
   // Group contacts into warm lanes via the tolerant normalizer; "Open" last.
   const byLane = new Map<string, Contact[]>(ALL_LANE_KEYS.map((k) => [k, []]));
@@ -1957,7 +1959,7 @@ function CreateNextContactTask({ c }: { c: Contact }) {
   async function go() {
     setBusy(true);
     try {
-      const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
+      const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in your inbox / today list." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
@@ -1998,12 +2000,12 @@ function LearnView() {
   const [form, setForm] = useState({ title: "", category: "", url: "", note: "" });
   async function add() {
     if (!form.title.trim()) return;
-    await mutateAndInvalidate("POST", "/api/learn", { ...form, done: false, active: false }, ["/api/learn"]);
+    await mutateAndInvalidate("POST", "/api/learn", { ...form, done: false, active: false }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]);
     setForm({ title: "", category: "", url: "", note: "" }); setShowForm(false);
   }
-  async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn"]); }
-  async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn"]); }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/learn/${id}`, undefined, ["/api/learn", "/api/strategy/diagnostics"]); }
+  async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
+  async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/learn/${id}`, undefined, ["/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]); }
 
   // MECE guard: a fellowship is an OPPORTUNITY YOU APPLY TO (it lives in the
   // Fellowships lane of Jobs, not here). The startup migration moves these out of
@@ -2098,21 +2100,21 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
 
   async function saveOutput() {
     const v = outputDraft.trim();
-    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { requiredOutput: v }, ["/api/learn", "/api/strategy/diagnostics"]);
+    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { requiredOutput: v }, ["/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     setEditingOutput(false);
     if (v) toast({ title: "Output set.", description: "This is now building toward proof. Produce it when you're ready — no rush." });
   }
   async function createOutputTask() {
     setBusy(true);
     try {
-      const r = await mutateAndInvalidate("POST", `/api/learn/${l.id}/create-output-task`, {}, ["/api/tasks"]);
+      const r = await mutateAndInvalidate("POST", `/api/learn/${l.id}/create-output-task`, {}, ["/api/tasks", ...GOAL_SPINE_QUERY_KEYS]);
       toast({ title: r?.reused ? "Already on your list." : "Output task created.", description: r?.reused ? "There's already an open task for this." : "Find it in your inbox / today list." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
   async function toggleProofIntent() {
     const next = !l.proofIntent;
-    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { proofIntent: next }, ["/api/learn", "/api/strategy/diagnostics", "/api/strategy/front-door", "/api/strategy/learning-gaps"]);
+    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { proofIntent: next }, ["/api/learn", "/api/strategy/diagnostics", "/api/strategy/front-door", "/api/strategy/learning-gaps", ...GOAL_SPINE_QUERY_KEYS]);
     if (next) toast({ title: "Flagged as proof-building.", description: "This now sits in the building lane. Give it an output when you're ready — no rush." });
   }
   async function markEvidenced() {
@@ -2120,7 +2122,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
     if (!v) return;
     setBusy(true);
     try {
-      await mutateAndInvalidate("POST", `/api/learn/${l.id}/mark-evidenced`, { outputEvidenceUrl: v }, ["/api/learn", "/api/strategy/diagnostics"]);
+      await mutateAndInvalidate("POST", `/api/learn/${l.id}/mark-evidenced`, { outputEvidenceUrl: v }, ["/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       setEvidencing(false); setEvidenceDraft("");
       toast({ title: "Marked as evidenced.", description: "The artifact is linked — this now counts as proof." });
     } catch { toast({ title: "Couldn't save the link", description: "Try again in a moment." }); }

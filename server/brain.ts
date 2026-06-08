@@ -45,6 +45,13 @@ export type Candidate = {
   blockerReason: string;
   eligibilityRisk: string;
   taskId: number | null;
+  location?: string;
+  warmPathScore?: number | null;
+  strategicValue?: number | null;
+  frictionScore?: number | null;
+  applicationReadiness?: string;
+  deadlineConfidence?: string;
+  narrativeAngle?: string;
 };
 
 type StrategicContext = {
@@ -75,6 +82,14 @@ function daysUntil(deadline: string): number | null {
   const d = new Date(deadline + "T23:59:59");
   if (isNaN(d.getTime())) return null;
   return Math.ceil((d.getTime() - Date.now()) / 86400000);
+}
+
+function locationTier(location: string) {
+  const lower = (location || "").toLowerCase();
+  if (/\b(uae|dubai|abu dhabi|emirates)\b/.test(lower)) return "UAE";
+  if (/\b(remote|distributed|anywhere|work from home|wfh)\b/.test(lower)) return "Remote";
+  if (/\b(london|uk|united kingdom|england)\b/.test(lower)) return "London";
+  return "Other";
 }
 
 function guessSize(title: string, fallback = "medium"): string {
@@ -160,6 +175,78 @@ function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; 
   }
 }
 
+function readinessMomentum(readiness: string) {
+  switch (readiness || "none") {
+    case "cv": return { score: 10, reason: "materials are partly underway" };
+    case "cover": return { score: 14, reason: "application materials are partly underway" };
+    case "questions": return { score: 18, reason: "application is close to submittable" };
+    case "sample": return { score: 18, reason: "sample requirement is identified" };
+    case "referral": return { score: 20, reason: "warm-path/referral path is live" };
+    case "submitted": return { score: 16, reason: "already submitted, so follow-through matters" };
+    case "follow_up": return { score: 16, reason: "already in follow-up mode" };
+    default: return { score: 0, reason: "" };
+  }
+}
+
+function locationMomentum(location: string) {
+  const tier = locationTier(location);
+  if (tier === "UAE") return { score: 24, reason: "matches your top flexible location tier" };
+  if (tier === "Remote") return { score: 18, reason: "fits your remote-flexible search" };
+  if (tier === "London") return { score: 12, reason: "fits your London fallback search" };
+  return { score: 0, reason: "" };
+}
+
+function jobMomentum(c: Candidate) {
+  let s = 0;
+  const trace: string[] = [];
+
+  if (c.sourceStatus === "interviewing") {
+    s += 35;
+    trace.push("already in interview process");
+  } else if (c.sourceStatus === "applied") {
+    s += 18;
+    trace.push("already in application pipeline");
+  }
+
+  const location = locationMomentum(c.location || "");
+  s += location.score;
+  if (location.reason) trace.push(location.reason);
+
+  if (c.warmPathScore != null) {
+    const warmBoost = Math.round((c.warmPathScore / 100) * 22);
+    s += warmBoost;
+    if (warmBoost >= 10) trace.push("warm path improves landing odds");
+  }
+
+  if (c.strategicValue != null) {
+    const strategicBoost = Math.round((c.strategicValue / 100) * 16);
+    s += strategicBoost;
+    if (strategicBoost >= 8) trace.push("strategically valuable role");
+  }
+
+  if (c.frictionScore != null) {
+    const frictionPenalty = Math.round((c.frictionScore / 100) * 18);
+    s -= frictionPenalty;
+    if (frictionPenalty >= 8) trace.push("application friction penalty");
+  }
+
+  const readiness = readinessMomentum(c.applicationReadiness || "none");
+  s += readiness.score;
+  if (readiness.reason) trace.push(readiness.reason);
+
+  if (c.narrativeAngle && c.narrativeAngle.trim()) {
+    s += 10;
+    trace.push("credible narrative angle already exists");
+  }
+
+  if (c.deadlineConfidence === "high") {
+    s += 6;
+    trace.push("facts and deadline are already confirmed");
+  }
+
+  return { score: s, trace };
+}
+
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
 export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[]): Candidate[] {
@@ -178,6 +265,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         doneWhen: t.doneWhen || t.minimumOutcome || "The smallest useful outcome is complete",
         whyNow: isLaneAlignedSystemMove ? "spine says this supports the active track or marketability plan" : "already on today's list",
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
+        location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
       });
     }
   }
@@ -192,6 +280,13 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         sourceUrl: j.url || j.sourceUrl || "", sourceNote: j.note || "", sourceStatus: j.status,
         doneWhen, whyNow: why, fitScore: j.fitScore ?? null,
         blocked: false, blockerReason: "", eligibilityRisk: j.eligibilityRisk || "",
+        location: j.location || "",
+        warmPathScore: j.warmPathScore ?? null,
+        strategicValue: j.strategicValue ?? null,
+        frictionScore: j.frictionScore ?? null,
+        applicationReadiness: j.applicationReadiness || "none",
+        deadlineConfidence: j.deadlineConfidence || "",
+        narrativeAngle: j.narrativeAngle || "",
       });
     }
   }
@@ -215,6 +310,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         sourceUrl: l.url || "", sourceNote: l.note || "", sourceStatus: l.learnStatus || "active",
         doneWhen: l.requiredOutput || "You've made real progress", whyNow: "builds a capability your tracks need",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
+        location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
       });
     }
   }
@@ -230,6 +326,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         sourceUrl: "", sourceNote: h.note || "", sourceStatus: h.stage,
         doneWhen: "That step is done", whyNow: "proof of your judgement — builds credibility over time",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
+        location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
       });
     }
   }
@@ -271,6 +368,12 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
     const fitBoost = Math.round((c.fitScore / 100) * 60);
     s += fitBoost;
     if (fitBoost >= 35) trace.push("strong fit score");
+  }
+
+  if (c.source === "job") {
+    const momentum = jobMomentum(c);
+    s += momentum.score;
+    trace.push(...momentum.trace);
   }
 
   s += (8 - (CATEGORY_RANK[c.category] ?? 7)) * 6;

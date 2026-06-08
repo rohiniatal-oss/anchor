@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planDay } from "./brain";
+import { planDay, recommend } from "./brain";
 
 function task(overrides: Record<string, any>) {
   return {
@@ -107,4 +107,69 @@ test("urgent real deadlines still lead", () => {
   const result = planDay(tasks, jobs, [], [], "medium", { remainingMinutes: 240 });
   assert.equal(result.plan[0].candidate.source, "job");
   assert.match(result.note, /deadline/i);
+});
+
+test("brain prefers the more gettable role across flexible target locations", () => {
+  const jobs = [
+    job({
+      id: 1,
+      title: "Strategy Associate",
+      company: "Cold Coast",
+      location: "New York",
+      fitScore: 86,
+      warmPathScore: 10,
+      frictionScore: 80,
+      applicationReadiness: "none",
+      deadlineConfidence: "",
+    }),
+    job({
+      id: 2,
+      title: "AI Strategy Manager",
+      company: "Dubai Lab",
+      location: "Dubai, UAE",
+      fitScore: 68,
+      warmPathScore: 82,
+      frictionScore: 15,
+      applicationReadiness: "questions",
+      deadlineConfidence: "high",
+      narrativeAngle: "Strong AI strategy and policy bridge",
+    }),
+  ];
+
+  const result = recommend([], jobs, [], [], "medium");
+  assert.equal(result.pick?.source, "job");
+  assert.equal(result.pick?.sourceId, 2);
+  assert.ok(result.trace?.some((line: string) => /location|warm path|submittable/i.test(line)));
+});
+
+test("planner keeps job pursuit and capability-building in parallel when time allows", () => {
+  const jobs = [
+    job({
+      id: 1,
+      title: "Geopolitical Risk Analyst",
+      company: "Advisory Group",
+      location: "Remote",
+      fitScore: 72,
+      warmPathScore: 60,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+    }),
+  ];
+  const learn = [{
+    id: 1,
+    title: "AI strategy memo drill",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const result = planDay([], jobs, learn, [], "medium", { remainingMinutes: 240 });
+  assert.ok(result.plan.some((item) => item.candidate.source === "job"), "live role stays in the plan");
+  assert.ok(result.plan.some((item) => item.candidate.source === "learn"), "capability-building stays in parallel");
 });

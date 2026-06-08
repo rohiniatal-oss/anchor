@@ -9,7 +9,7 @@ import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evid
 import { computeLearningGaps, topLearningGapSignal, type TrackLearningGap, type LearningGapSignal } from "./learningStrategy";
 
 // ─────────────────────────────────────────────────────────────────────────
-// STRATEGY DIAGNOSTICS — per-track health, the five bottleneck types, and a
+// STRATEGY DIAGNOSTICS — per-track health, the bottleneck types, and a
 // deterministic recommended move. No LLM, no fabrication. An "unlinked" bucket
 // (trackId null/0) collects orphaned source items so they stay fixable.
 // ─────────────────────────────────────────────────────────────────────────
@@ -27,16 +27,16 @@ export type TrackDiagnostic = {
   signals: {
     directionGap: number;
     readinessGap: number;
-    proofGap: number;
+    proofGap: number;      // count of active proof-support assets that are stalled; absence alone is not a gap
     warmthGap: number;
     executionGap: number;
-    learningGap: number;   // P5 — count of REQUIRED capability domains not yet evidenced; structural, ranks below readiness/proof/warmth and above the calm nudges
+    learningGap: number;   // P5 — count of REQUIRED capability domains not yet evidenced; structural, ranks below readiness/warmth/execution and above the calm nudges
     learnProofGap: number; // P4.4 — opt-in, lowest priority; never the sole bottleneck driver
     evidenceGap: number;   // P4.5 — soft "no evidence shipping" signal; lowest priority, never the loud primary
   };
   // P4.5 — compact, read-mostly evidence read for the per-track Strategy view.
   // Evidence is a HEALTH input + tiebreaker; it never becomes the loud primary
-  // bottleneck on its own (stays below readiness/proof/warmth).
+  // bottleneck on its own (stays below readiness/learning/warmth).
   evidence: {
     count: number;                 // wins in the rolling window attributed to the track
     topCategory: WinCategory | null;
@@ -46,7 +46,7 @@ export type TrackDiagnostic = {
   };
   // P5 — compact, read-mostly capability-gap read for the per-track Strategy view.
   // A STRUCTURAL signal (a track missing a required capability), but it ranks below
-  // readiness/proof/warmth and never inflates them. Null when the track has no
+  // readiness/learning/warmth and never inflates them. Null when the track has no
   // capability profile (no false alarms).
   learningGap: {
     requiredCount: number;
@@ -74,7 +74,7 @@ function isContactOverdue(c: Contact): boolean {
   return due.getTime() < now.getTime();
 }
 
-function diagnoseTrack(
+export function diagnoseTrack(
   track: CareerTrack,
   jobs: Job[], learn: Learn[], contacts: Contact[], hustles: Hustle[], tasks: Task[],
   stepsByJob: Map<number, JobPipelineStep[]>,
@@ -113,9 +113,9 @@ function diagnoseTrack(
   }, 0);
   const readinessGap = lowReadinessJobs + stuckTasks + stallSteps;
 
-  // proof gap: few active proof assets; AND (P4.3) proof assets with a production
-  // rail but little progress — few done or blocked steps signal a stalled proof
-  // asset. "blocked" counts as a stall; "skipped" is a separate resolved state.
+  // proof gap: ONLY active proof-support assets that are already in motion but
+  // stalled. Proof is an optional compounding lane; simply lacking a proof asset
+  // is not a frontline gap for this track.
   const liveProof = tHustles.filter(isProofLive).length;
   const proofStall = tHustles.reduce((acc, h) => {
     const steps = proofStepsByHustle.get(h.id) || [];
@@ -132,7 +132,7 @@ function diagnoseTrack(
   // health. This signal is reported separately and DELIBERATELY excluded from the
   // primary proofGap math so it can never become the bottleneck on its own.
   const learnNoOutput = tLearn.filter((l) => getLearnOutputState(l) === "producing").length;
-  const proofGap = (liveProof === 0 ? 1 : 0) + proofStall;
+  const proofGap = proofStall;
 
   // warmth gap: live jobs with low warmPathScore; cold / absent contacts; AND
   // contacts overdue for follow-up (P4.2) — a stale warm path is a warmth gap too.
@@ -148,7 +148,7 @@ function diagnoseTrack(
 
   // learnProofGap is reported alongside the others but is INTENTIONALLY the lowest
   // priority — it can only surface as the recommended move once every structural
-  // gap (direction/proof/warmth/readiness/execution) is clear. Opt-in only.
+  // gap (direction/warmth/readiness/execution/learning) is clear. Opt-in only.
   const learnProofGap = learnNoOutput;
 
   // P4.5 — evidence gap (SOFT, LOW PRIORITY): a track that has live work in
@@ -162,7 +162,7 @@ function diagnoseTrack(
 
   // P5 — learning gap: count of REQUIRED capability domains for this track not yet
   // evidenced. STRUCTURAL (a real capability hole), but it ranks BELOW
-  // readiness/proof/warmth and ABOVE the calm learn-proof / evidence nudges, so it
+  // readiness/warmth/execution and ABOVE the calm learn-proof / evidence nudges, so it
   // never overrides a more urgent structural blocker. Zero when the track has no
   // capability profile — no false alarms (Afterline: gaps are CAPABILITY coverage,
   // never a demand to put AI content on the geopolitics proof asset).
@@ -174,21 +174,10 @@ function diagnoseTrack(
   let bottleneckLabel = "Moving well — keep the drumbeat";
   let recommendedMove = "Advance the next live item on this track";
 
-  const credibilityTrack = /credib|thought|advisor|proof|substack|writ|policy/i.test(`${track.slug} ${track.name} ${track.targetRoleArchetype}`);
-
   if (directionGap > 0) {
     bottleneck = "direction";
     bottleneckLabel = "No live opportunities yet";
     recommendedMove = "Add or activate a role, learning item, or proof asset on this track";
-  } else if (proofGap > 0 && (credibilityTrack || liveProof === 0)) {
-    bottleneck = "proof";
-    if (liveProof === 0) {
-      bottleneckLabel = "No live proof asset";
-      recommendedMove = "Create a proof-asset task to move it past the idea stage";
-    } else {
-      bottleneckLabel = "Proof asset stalled";
-      recommendedMove = "Produce the next output on your proof asset's rail";
-    }
   } else if (warmthGap > 0 && tLiveJobs.length > 0) {
     const overdue = tContacts.filter(isContactOverdue).length;
     bottleneck = "warmth";
@@ -209,7 +198,7 @@ function diagnoseTrack(
     bottleneckLabel = `${executionGap} ready tasks, none done`;
     recommendedMove = "Pick the top ready task and finish one today";
   } else if (learningGap > 0 && lg) {
-    // P5 — STRUCTURAL capability gap, reached only when no readiness/proof/warmth/
+    // P5 — STRUCTURAL capability gap, reached only when no readiness/warmth/
     // execution blocker is louder. Names the top unmet domain and points at the
     // sequenced Learn item if one exists, else flags the unfilled-gap slot.
     const topGap = lg.rankedGaps[0];
@@ -221,6 +210,13 @@ function diagnoseTrack(
     recommendedMove = step
       ? `Build ${topGap.label}: do the next step on "${step.title}"`
       : `No resource yet for ${topGap.label} — find one`;
+  } else if (proofGap > 0 && liveProof > 0) {
+    // Optional, low-priority capability support: only surfaces once the main
+    // conversion blockers are quiet, and only for proof assets the user already
+    // chose to keep live.
+    bottleneck = "proof";
+    bottleneckLabel = "Active proof asset stalled";
+    recommendedMove = "Produce one reusable output from the active proof asset";
   } else if (learnProofGap > 0) {
     // LOWEST-PRIORITY, OPT-IN nudge: only reached when nothing structural is the
     // bottleneck. Stays "proof"-typed but is gentle — never the primary blocker.
@@ -228,7 +224,7 @@ function diagnoseTrack(
     bottleneckLabel = learnProofGap === 1
       ? "A proof-building learning item has no output yet"
       : `${learnProofGap} proof-building learning items have no output yet`;
-    recommendedMove = "When you're ready, give one an output to make it count as proof";
+    recommendedMove = "When you're ready, give one an output so it becomes reusable evidence";
   } else if (evidenceGap > 0) {
     // P4.5 — SOFTEST nudge, reached only when every structural gap is clear: the
     // track has live work but nothing has shipped as evidence lately. Stays
@@ -312,12 +308,12 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
   // existing priority order (track.priority, then bottleneck severity). It only
   // separates tracks that are otherwise tied: a track with live work and no
   // recent evidence sorts ahead of an equally-ranked one that's shipping. This
-  // nudges attention without overriding readiness/proof/warmth.
+  // nudges attention without overriding readiness/learning/warmth.
   // Severity is the cross-track tiebreaker (applied after track.priority). The
-  // learning gap is STRUCTURAL but ranks below the readiness/proof/warmth/execution
-  // blockers and above "none" — matching its place in the per-track move chain.
+  // learning gap is STRUCTURAL but ranks below the readiness/warmth/execution
+  // blockers. Proof support is lower still: useful, but not a frontline gate.
   const severity: Record<BottleneckType, number> = {
-    direction: 6, proof: 5, warmth: 4, readiness: 3, execution: 2, learning: 1, none: 0,
+    direction: 6, warmth: 5, readiness: 4, execution: 3, learning: 2, proof: 1, none: 0,
   };
   return diagnostics.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
@@ -383,7 +379,7 @@ function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
 
   const proofTrack = active.find((t) => t.bottleneck === "proof");
   if (proofTrack)
-    out.push({ kind: "proof", text: `${proofTrack.name}: ${proofTrack.bottleneckLabel.toLowerCase()}. One shipped output beats three half-read courses.` });
+    out.push({ kind: "proof", text: `${proofTrack.name}: ${proofTrack.bottleneckLabel.toLowerCase()}. Ship one reusable output if it will compound the lane.` });
 
   // P5 — structural capability gap, surfaced calmly and ranked below the above.
   const learningTrack = active.find((t) => t.bottleneck === "learning" && t.learningGap);

@@ -815,7 +815,7 @@ type FrontDoor = {
   learningGap?: LearningGapSignal | null;
 };
 const BOTTLENECK_LABEL: Record<string, string> = {
-  direction: "Direction", readiness: "Readiness", proof: "Proof", warmth: "Warmth", execution: "Execution", learning: "Capability", none: "Healthy",
+  direction: "Direction", readiness: "Readiness", proof: "Proof support", warmth: "Warmth", execution: "Execution", learning: "Capability", none: "Healthy",
 };
 // P4.5 — compact, in-palette evidence chips for the per-track Strategy view.
 // Read-mostly: count (rolling window), top winCategory, producing-vs-planning.

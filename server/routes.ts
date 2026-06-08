@@ -1,11 +1,10 @@
 import type { Express } from "express";
-import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { storage, type TrackEntity } from "./storage";
 import OpenAI from "openai";
 import { recommend, planDay } from "./brain";
 import { createNextTask, materializeJobStep, materializeProofStep, type NextTaskSourceType } from "./nextTask";
-import { getTrackDiagnostics, getUnlinkedItems, getEvidencePayload, getStrategyFrontDoor } from "./strategy";
+import { getTrackDiagnostics, getUnlinkedItems, getEvidencePayload } from "./strategy";
 import { computeLearningGaps } from "./learningStrategy";
 import { computeWinsSummary } from "./evidence";
 
@@ -16,6 +15,7 @@ import {
 } from "@shared/schema";
 import { isSubmitStep } from "@shared/jobTemplates";
 import { migrateFellowshipLearnRows } from "./fellowshipMigration";
+import { registerStrategyRoutes } from "./strategyRoutes";
 
 function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
   create: (d: any) => Promise<any>, update: (id: number, d: any) => Promise<any>, del: (id: number) => Promise<any>) {
@@ -487,17 +487,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // front-door returns everything the Strategy view needs in one payload; the
   // legacy /api/strategy now DELEGATES to it (mapping to its old { tracks,
   // insights } shape) so there is no parallel computation to drift.
-  app.get("/api/strategy/front-door", async (_req, res) => res.json(await getStrategyFrontDoor()));
-
-  app.get("/api/strategy", async (_req, res) => {
-    const fd = await getStrategyFrontDoor();
-    const tracks = fd.tracks.map((t) => ({
-      id: t.id, slug: t.slug, name: t.name, status: t.status, priority: t.priority, whyItFits: t.whyItFits,
-      roles: t.counts.jobs, learning: t.counts.learn, contacts: t.counts.contacts, proofAssets: t.counts.hustles,
-      bottleneck: t.bottleneckLabel, nextMove: t.recommendedMove,
-    }));
-    res.json({ tracks, insights: fd.insights.map((i) => i.text) });
-  });
+  registerStrategyRoutes(app);
 
   // ═══ P3.5: NEXT-TASK ENGINE — every source can spawn a provenance-carrying task ═══
   // Maps an entity route segment to the source type the engine understands.
@@ -549,19 +539,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Steps are SEEDED from an archetype template, then editable per job. Each step
   // does ONLY ONE of: materialize-as-task (reuses 3.5 createNextTask provenance +
   // dedupe), mark-done, or mark-blocked. Editing changes sequence/label only.
+
+  // Seed from template — no-op if steps already exist; always returns the steps.
   app.get("/api/jobs/:id/steps", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     res.json(await storage.getJobSteps(id));
   });
-
-  // Seed from template — no-op if steps already exist; always returns the steps.
   app.post("/api/jobs/:id/steps/seed", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     const steps = await storage.seedJobSteps(id);
     if (!steps.length) {
-      // distinguish "no such job" from "seeded zero" — only the former is an error
       const job = (await storage.getJobs()).find((j) => j.id === id);
       if (!job) return res.status(404).json({ error: "Job not found" });
     }

@@ -402,6 +402,14 @@ const DECISION_MODE_LABEL: Record<CareerGoalT["decisionMode"], string> = {
   "parallel-exploration": "Parallel exploration",
   "broad-parallel-pursuit": "Broad pursuit",
 };
+const DAY_TYPE_LABEL: Record<string, string> = {
+  "signal-building": "Signal building",
+  "network-building": "Network building",
+  "conversion": "Conversion",
+  "capability-building": "Capability building",
+  "interview-prep": "Interview prep",
+  "stabilising": "Stabilising",
+};
 
 function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: (t: Tab) => void }) {
   return (
@@ -547,7 +555,7 @@ function ViewSpineCallout({
           <p className="text-xs text-muted-foreground mt-1">{lead.bottleneck}</p>
         </div>
         <span className="inline-flex shrink-0 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">
-          {goal.dayType}
+          {DAY_TYPE_LABEL[goal.dayType] || goal.dayType}
         </span>
       </div>
       <div className="flex flex-wrap gap-1.5 mt-3">

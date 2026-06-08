@@ -176,6 +176,8 @@ function planningPostureFromGoalFrame(
   }
   if (goalFrame.decisionMode === "broad-parallel-pursuit") return "conversion";
   if (bottleneckLane === "Learning and development" || bottleneckLane === "Proof assets" || hasActiveLearning) return "capability";
+  if (goalFrame.dayType === "interview-prep") return "interview";
+  if (goalFrame.dayType === "capability-building") return "capability";
   if (goalFrame.dayType === "conversion") return "conversion";
   return "exploration";
 }
@@ -709,9 +711,29 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   }
   if (/direction/i.test(context.bottleneck) && isDirectionSignal(c)) { s += 35; trace.push("matches direction bottleneck"); }
   if (/application/i.test(context.bottleneck) && isApplicationLike(c)) { s += 30; trace.push("moves an application forward"); }
-  if (/proof|credibility|evidence/i.test(context.bottleneck) && isProofAsset(c)) { s += 25; trace.push("builds proof/credibility over time"); }
   if (/network/i.test(context.bottleneck) && isNetworkLike(c)) { s += 35; trace.push("moves a relationship lane forward"); }
   if (/learning|development/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("converts learning/development into track leverage"); }
+  if (context.planningPosture === "capability") {
+    if (isLearningLike(c)) {
+      s += 22;
+      trace.push("capability posture favors reusable learning output");
+    }
+    if (isProofAsset(c) && c.sourceStatus === "testing") {
+      s += 10;
+      trace.push("live proof asset can package capability into reusable evidence");
+    } else if (isProofAsset(c)) {
+      s -= 10;
+      trace.push("idea-stage proof stays secondary to learning output");
+    }
+  } else if (isProofAsset(c)) {
+    if (context.planningPosture === "conversion") {
+      s -= 14;
+      trace.push("proof stays secondary while live conversion moves exist");
+    } else if (context.planningPosture === "exploration") {
+      s -= 18;
+      trace.push("proof is deferred while lane uncertainty is still high");
+    }
+  }
   if (context.recommendedExploration && `${c.title} ${c.sourceNote}`.toLowerCase().includes(context.recommendedExploration.toLowerCase().slice(0, 20))) {
     s += 30;
     trace.push("matches active track from spine");
@@ -802,7 +824,7 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
     return "This person is the strongest contact for reducing role uncertainty right now.";
   }
   if (source === "learn") return "This upskilling move compounds your profile without blocking applications.";
-  if (source === "hustle") return "This proof move builds reusable credibility over time.";
+  if (source === "hustle") return "This proof move packages learning into reusable credibility over time.";
   return "This is the best already-live move in the system right now.";
 }
 

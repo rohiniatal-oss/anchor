@@ -1,5 +1,5 @@
 import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
-import { isOpportunityActionable } from "@shared/domainState";
+import { getLearnOutputState, getProofStage, isOpportunityActionable } from "@shared/domainState";
 
 export type LaneName = "Direction" | "Applications" | "Network" | "Proof assets" | "Learning" | "Stability";
 export type LaneStage =
@@ -152,32 +152,33 @@ function networkLane(tasks: Task[], contacts: Contact[]): LaneState {
 
 function proofLane(tasks: Task[], hustles: Hustle[], learn: Learn[]): LaneState {
   const proofTasks = activeTasks(tasks).filter((t) => /proof|substack|memo|essay|article|portfolio|forecast|case study|story bank|cv bullet/i.test(text(t.title, t.category, t.sourceNote)));
-  const proofAssets = hustles.filter((h) => h.stage !== "earning");
+  const proofAssets = hustles.filter((h) => getProofStage(h) !== "earning");
+  const liveProofAssets = proofAssets.filter((h) => getProofStage(h) === "testing");
   const outlined = proofAssets.filter((h) => h.coreClaim || h.firstPostIdea || h.nextStep).length;
-  const packagedLearning = learn.filter((l) => l.outputEvidenceUrl || (l.done && l.requiredOutput)).length;
+  const packagedLearning = learn.filter((l) => getLearnOutputState(l) === "evidenced").length;
 
   let stage: LaneStage = "empty";
-  if (packagedLearning > 0 || proofAssets.some((h) => h.stage === "testing" && (h.coreClaim || h.firstPostIdea))) stage = "packaged";
+  if (liveProofAssets.some((h) => h.coreClaim || h.firstPostIdea || h.nextStep)) stage = "packaged";
   else if (outlined > 0 || proofTasks.length > 0) stage = "outlined";
   else if (proofAssets.length > 0) stage = "idea";
 
   return {
     name: "Proof assets",
     stage,
-    // Proof is valuable but should not routinely outrank conversion work.
-    priority: stage === "empty" ? 48 : stage === "idea" ? 52 : stage === "outlined" ? 58 : stage === "packaged" ? 34 : 45,
+    // Proof is a compounding capability layer, not a routine bottleneck.
+    priority: stage === "empty" ? 16 : stage === "idea" ? 22 : stage === "outlined" ? 30 : stage === "packaged" ? 26 : 18,
     bottleneck:
-      stage === "empty" ? "no reusable evidence asset exists yet" :
-      stage === "idea" ? "proof asset exists only as an idea" :
-      stage === "outlined" ? "proof asset can be made more reusable over time" :
-      "proof exists and can be reused in applications/networking",
+      stage === "empty" ? "no proof asset exists yet, which is fine until upskilling needs one" :
+      stage === "idea" ? "proof asset exists only as an optional idea" :
+      stage === "outlined" ? "proof asset can be made more reusable when capacity allows" :
+      "proof exists and can be reused as a capability signal",
     unlockMove:
-      stage === "empty" ? "Define one lightweight proof idea when capacity allows" :
-      stage === "idea" ? "Turn one proof idea into a claim and outline" :
+      stage === "empty" ? "Only define a lightweight proof idea if it supports current upskilling" :
+      stage === "idea" ? "Turn one proof idea into a small claim and outline" :
       stage === "outlined" ? "Package one proof asset into a reusable paragraph, link, or bullet" :
-      "Reuse one packaged proof asset in an application or message",
+      "Reuse one live proof asset where it strengthens your profile",
     stopRule: "Stop after one asset becomes more reusable than it was before.",
-    evidence: [`${proofAssets.length} proof assets`, `${proofTasks.length} proof-like tasks`, `${packagedLearning} packaged learning outputs`],
+    evidence: [`${proofAssets.length} proof assets`, `${liveProofAssets.length} live proof assets`, `${packagedLearning} evidenced learning outputs`, `${proofTasks.length} proof-like tasks`],
   };
 }
 

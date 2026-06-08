@@ -213,6 +213,30 @@ test("live proof assets strengthen upskilling without turning into an applicatio
   assert.ok(proof.nextMoves.some((move) => /produce the next concrete output/i.test(move)));
 });
 
+test("interview-ready focus uses interview-prep day type instead of generic proof-building", () => {
+  const jobs = [
+    {
+      id: 5,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      status: "interviewing",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      fitScore: 84,
+      strategicValue: 80,
+      applicationReadiness: "follow_up",
+      deadlineConfidence: "high",
+      warmPathScore: 68,
+      narrativeAngle: "Strong bridge between AI strategy and policy work",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, []);
+  assert.equal(state.phase, "interview-prep");
+  assert.equal(state.recommendedFocus, "Interview readiness");
+  assert.equal(state.dayType, "interview-prep");
+});
+
 test("goal state API returns active goal with workstreams and today plan", async () => {
   const r = await api(h.base, "GET", "/api/goals/state");
   assert.equal(r.status, 200);

@@ -648,11 +648,12 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase) {
 }
 
 function dayTypeFor(focus: WorkstreamState) {
-  if (focus.nextMoveType === "learning") return "signal-building";
+  if (focus.name === "Interview readiness") return "interview-prep";
+  if (focus.name === "Capability ramp" || focus.name === "Proof") return "capability-building";
+  if (focus.name === "Energy and stability") return "stabilising";
   if (focus.nextMoveType === "relationship") return "network-building";
-  if (focus.nextMoveType === "preparation") return "proof-building";
   if (focus.nextMoveType === "execution") return "conversion";
-  return "stabilising";
+  return "signal-building";
 }
 
 function phaseObjective(phase: GoalPhase) {

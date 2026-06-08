@@ -579,6 +579,52 @@ test("conversion posture prefers applications and networking before extra learni
   assert.ok(!sources.has("learn"), "learning is deferred when only two conversion slots fit");
 });
 
+test("conversion posture keeps learning ahead of optional proof assets", () => {
+  const jobs = [
+    job({
+      id: 44,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      fitScore: 79,
+      warmPathScore: 74,
+      applicationReadiness: "questions",
+      deadlineConfidence: "high",
+    }),
+  ];
+  const learn = [{
+    id: 45,
+    title: "AI governance memo practice",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+  const hustles = [
+    {
+      id: 46,
+      title: "AI strategy memo series",
+      nextStep: "Draft an outline",
+      stage: "idea",
+      note: "",
+      coreClaim: "",
+      firstPostIdea: "",
+    },
+  ] as any;
+
+  const result = planDay([], jobs, learn, hustles, "medium", { remainingMinutes: 120 });
+  const sources = new Set(result.plan.map((item) => item.candidate.source));
+  assert.equal(result.plan.length, 2);
+  assert.ok(sources.has("job"), "conversion work stays primary");
+  assert.ok(sources.has("learn"), "learning remains the main capability move");
+  assert.ok(!sources.has("hustle"), "optional proof asset stays secondary on a tight conversion day");
+});
+
 test("exploration posture keeps direction-finding, networking, and learning ahead of proof", () => {
   const today = new Date().toISOString().slice(0, 10);
   const tasks = [

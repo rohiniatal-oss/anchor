@@ -334,6 +334,22 @@ test("brain recommends a deterministically-selected move", async () => {
 // gated/closed 2026 cycle reads as watch/closed — monitored, not actionable.
 // ─────────────────────────────────────────────────────────────────────────
 
+test("brain recommend carries active track context when the route passes tracks through", async () => {
+  const track = await h.storage.createCareerTrack({ slug: "ai-gov", name: "AI Governance", status: "active", priority: 5 } as any);
+  await h.storage.createJob({
+    title: "Policy lead",
+    company: "GovAI",
+    status: "wishlist",
+    roleArchetype: "policy",
+    relatedTrackId: track.id,
+  } as any);
+
+  const r = await api(h.base, "POST", "/api/brain/recommend", { energy: "medium" });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.activeTrack, "AI Governance", "route-level recommend should expose the active track from the spine");
+  assert.ok(typeof r.json.lane === "string" && r.json.lane.length > 0, "route-level recommend should expose the active lane too");
+});
+
 test("fellowship learn row migrates into jobs and disappears from Learn", async () => {
   await h.storage.createLearn({
     title: "Talos Fellowship", type: "fellowship", category: "Fellowship · WATCH",

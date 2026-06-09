@@ -1025,7 +1025,16 @@ function BroadPursuitParallelSupportKickoff({
   const body = mode === "network"
     ? "You do not need a saved role first. Start warming each live lane with advice, reconnect, or referral paths while the role pipeline is still forming."
     : "You do not need a saved role first. Build reusable capability and outputs in parallel so every live lane gets stronger while applications are forming.";
-  const buttonLabel = mode === "network" ? "Add contact in this lane" : "Add support item in this lane";
+  const missingSupport = mode === "network" ? coverage.missingNetworkSupport : coverage.missingCapabilitySupport;
+  const orderedPortfolio = [...portfolio].sort((a, b) => {
+    const left = combinationSupportState(goal, a.combination);
+    const right = combinationSupportState(goal, b.combination);
+    const leftMissing = mode === "network" ? !left.hasNetworkSupport : !left.hasCapabilitySupport;
+    const rightMissing = mode === "network" ? !right.hasNetworkSupport : !right.hasCapabilitySupport;
+    const leftPriority = left.hasRole && leftMissing ? 0 : leftMissing ? 1 : 2;
+    const rightPriority = right.hasRole && rightMissing ? 0 : rightMissing ? 1 : 2;
+    return leftPriority - rightPriority;
+  });
 
   return (
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid={`${mode}-broad-pursuit-kickoff`}>
@@ -1038,22 +1047,37 @@ function BroadPursuitParallelSupportKickoff({
             <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
               {coverage.covered.length} lanes with live roles
             </span>
+            <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+              {mode === "network"
+                ? `${coverage.networkSupported.length} with contact path`
+                : `${coverage.capabilitySupported.length} with capability support`}
+            </span>
             <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-              {coverage.missing.length} still filling out
+              {mode === "network"
+                ? `${missingSupport.length} still need a first contact path`
+                : `${missingSupport.length} still need capability support`}
             </span>
           </div>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 mt-4">
-        {portfolio.map((item) => {
+        {orderedPortfolio.map((item) => {
           const state = combinationCoverageState(goal, item.combination);
           const support = combinationSupportState(goal, item.combination);
+          const supportMissing = mode === "network" ? !support.hasNetworkSupport : !support.hasCapabilitySupport;
           const tone = state === "covered"
             ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/10"
             : state === "missing"
             ? "border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/10"
             : "border-card-border bg-card";
+          const buttonLabel = mode === "network"
+            ? supportMissing
+              ? (support.hasRole ? "Add first contact path" : "Add contact in this lane")
+              : "Add another contact in this lane"
+            : supportMissing
+              ? (support.hasRole ? "Add first support item" : "Add support item in this lane")
+              : "Add another support item";
           return (
             <div
               key={`${mode}-${item.combination}`}
@@ -1080,6 +1104,11 @@ function BroadPursuitParallelSupportKickoff({
                 <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${support.hasCapabilitySupport ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" : "bg-muted text-muted-foreground"}`}>
                   {support.hasCapabilitySupport ? "capability support live" : "capability support missing"}
                 </span>
+                {supportMissing && (
+                  <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    {mode === "network" ? "support next" : "build next"}
+                  </span>
+                )}
               </div>
               <div className="mt-3">
                 <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-${mode}-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>

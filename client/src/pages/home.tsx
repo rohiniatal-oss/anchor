@@ -2118,6 +2118,7 @@ function JobsView() {
   // from the watch/closed ones she's monitoring for the next cycle.
   const openFellowships = fellowships.filter((f) => f.applicationWindowStatus !== "closed" && f.status !== "closed");
   const watchFellowships = fellowships.filter((f) => f.applicationWindowStatus === "closed" || f.status === "closed");
+  const showRoleBoard = roles.length > 0;
 
   return (
     <div>
@@ -2226,6 +2227,8 @@ function JobsView() {
       )}
       {isLoading ? <Loading /> : (
         <>
+          {showRoleBoard && (
+            <>
           <div className="grid gap-4 sm:grid-cols-2">
             {active.map(({ col, items }) => (
               <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
@@ -2241,6 +2244,8 @@ function JobsView() {
             <p className="mt-3 text-xs text-muted-foreground">Empty: {empty.map((g) => g.col.label).join(" · ")} — cards appear here as you move them along.</p>
           )}
 
+            </>
+          )}
           {/* FELLOWSHIPS LANE — opportunities you apply to (eligibility + deadline +
               application steps), NOT resources you consume. Open ones render with
               the fellowship readiness rail; watch/closed ones read as monitored. */}

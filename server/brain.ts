@@ -251,7 +251,7 @@ function buildStrategicContext(
     bottleneckLane: broadPursuitNeedsRealRoles ? "Applications" : spine.bestMove.lane,
     laneStage: broadPursuitNeedsRealRoles ? "active" : lane?.stage || "active",
     laneUnlockMove: broadPursuitNeedsRealRoles
-      ? `Add or apply to one credible role in each still-empty combination: ${missingCombinationText}`
+      ? "Fill the still-empty lanes with one real role or application move each."
       : spine.bestMove.title,
     activeTrackName: spine.bestMove.trackName || spine.activeTrack?.name || "",
     liveJobTargets,
@@ -276,16 +276,16 @@ function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
     source: "goal",
     sourceId: 1,
     taskId: null,
-    title: `Add or apply to one credible role in each still-empty combination: ${missingText}`,
+    title: "Fill the still-empty lanes with one real role each",
     category: "job",
     size: "deep",
     deadline: "",
     status: "not_started",
     skipped: 0,
     sourceUrl: "",
-    sourceNote: `Broad pursuit is active. Missing combinations: ${missingText}. Create one real pipeline move in each missing combination instead of narrowing abstractly.`,
+    sourceNote: `Broad pursuit is active. Missing lanes: ${missingText}. Create one real pipeline move in each empty lane instead of narrowing abstractly.`,
     sourceStatus: "broad_parallel_pursuit",
-    doneWhen: "One concrete role or application move exists in each still-empty combination",
+    doneWhen: "One concrete role or application move exists in each still-empty lane",
     whyNow: "the strategy is to pursue all plausible lanes in parallel until the market gives clearer signal",
     fitScore: null,
     blocked: false,
@@ -903,7 +903,7 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
 function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (context?.broadPursuitMissingCombinations?.length) {
-      return `Open your job sources and add or apply to one credible role in each still-empty combination: ${context.broadPursuitMissingCombinations.join("; ")}.`;
+      return `Open your job sources and fill one real role in each still-empty lane: ${context.broadPursuitMissingCombinations.join("; ")}.`;
     }
     return "Open your job sources and add or apply to one credible role in each active lane before doing narrower comparison work.";
   }
@@ -930,7 +930,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (context?.broadPursuitMissingCombinations?.length) {
-      return "Stop after one concrete role or application move exists in each still-empty combination.";
+      return "Stop after one concrete role or application move exists in each still-empty lane.";
     }
     return "Stop after one concrete role or application move exists in each active lane.";
   }
@@ -957,7 +957,7 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (context?.broadPursuitMissingCombinations?.length) {
-      return `Broad parallel pursuit is the live strategy, so the best move is to turn these still-empty combinations into real role or application signal: ${context.broadPursuitMissingCombinations.join("; ")}.`;
+      return `Broad parallel pursuit is the live strategy, so the best move is to turn these still-empty lanes into real role or application signal: ${context.broadPursuitMissingCombinations.join("; ")}.`;
     }
     return "Broad parallel pursuit is the live strategy, so the best move is to turn each plausible lane into a real role or application signal.";
   }

@@ -267,8 +267,8 @@ test("planner surfaces the still-empty broad-pursuit combinations when some lane
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, [], tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /still-empty combination/i);
-  assert.match(result.plan[0].candidate.title, /Geopolitics \/ geopolitical advisory/i);
+  assert.match(result.plan[0].candidate.title, /still-empty lane/i);
+  assert.match(result.plan[0].candidate.sourceNote || "", /Geopolitics \/ geopolitical advisory/i);
   assert.match(result.note, /Broad pursuit is active/i);
   assert.match(result.plan[0].explanation.firstStep, /Open your job sources/i);
 });

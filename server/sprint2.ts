@@ -260,17 +260,17 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         if (item.candidate.source !== "goal") return item;
         return {
           ...item,
-          why: `Broad pursuit. Create one real role or application move in each still-empty combination: ${missingCombinationText}.`,
+          why: `Broad pursuit. Fill the still-empty lanes with one real role or application move each: ${missingCombinationText}.`,
           explanation: {
             ...item.explanation,
-            summary: `Broad pursuit is active, so this move turns these still-empty combinations into real pipeline signal: ${missingCombinationText}.`,
+            summary: "Broad pursuit is active, so this move turns the empty lanes into real pipeline signal.",
             whyNow: "You said to apply across all plausible lanes in parallel, not choose one abstract lane first, and some combinations still have no live role at all.",
             whyThis: index === 0
               ? "It beats narrower comparison work because the market can only separate the lanes once real roles are in the pipeline."
               : item.explanation.whyThis,
             supportingReasons: [
               "Broad pursuit is active across all plausible lanes.",
-              `These combinations are still empty: ${missingCombinationText}.`,
+              `These lanes are still empty: ${missingCombinationText}.`,
               "Real role and application moves are more valuable now than abstract narrowing.",
             ],
           },
@@ -287,7 +287,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   const trimmedForTime = corrected.trimmed || (correctedPlan.length < actionableToday && budget.remainingMinutes > 0 && budget.remainingMinutes < 120);
   const overloadNote = trimmedForTime ? "Today was cut down to what can realistically fit." : "";
   const plannerNote = broadPursuitNeedsRealRoles
-    ? `Broad pursuit is active. Turn each still-empty combination into one real role or application move before narrowing anything: ${missingCombinationText}.`
+    ? `Broad pursuit is active. Fill each still-empty lane with one real role or application move before narrowing anything: ${missingCombinationText}.`
     : result.note;
   const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, plannerNote].filter(Boolean).join(" ");
 
@@ -365,7 +365,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   return { plan, items, events, budget, memory: { yesterday: memory.yesterday, missedMvd: !!memory.missedMvdKey, skipped: memory.skippedKeys.size, parked: memory.parkedKeys.size }, restart: !!opts.restart };
 }
 
-async function shouldRefreshBroadPursuitPlan(items: Array<{ sourceType?: string | null }>) {
+async function shouldRefreshBroadPursuitPlan(items: Array<{ sourceType?: string | null; title?: string | null; whySelected?: string | null }>) {
   const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
     storage.getTasks(),
     storage.getJobs(),
@@ -378,7 +378,10 @@ async function shouldRefreshBroadPursuitPlan(items: Array<{ sourceType?: string 
   if (goalFrame.decisionMode !== "broad-parallel-pursuit") return false;
   const broadPursuitCoverage = deriveBroadPursuitCoverage(tasks, jobs, [], learn, contacts, hustles, tracks);
   if (broadPursuitCoverage.missing.length === 0) return false;
-  return !items.some((item) => item.sourceType === "goal");
+  const goalItem = items.find((item) => item.sourceType === "goal");
+  if (!goalItem) return true;
+  const oldCopy = `${goalItem.title || ""} ${goalItem.whySelected || ""}`;
+  return /plausible lane that still looks real|still-empty combination/i.test(oldCopy);
 }
 
 function readAvailableMinutes(raw: unknown) {

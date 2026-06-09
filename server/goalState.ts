@@ -848,12 +848,12 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
     if (coverage.missing.length > 0) {
       const missingText = coverage.missing.join("; ");
       return {
-        mustDo: `Add or apply to one credible role in each still-empty combination: ${missingText}`,
+        mustDo: "Fill the still-empty lanes with one real role or application move each.",
         next: coverage.covered.length > 0
           ? `Keep these already-live combinations warm while you fill the missing ones: ${coverage.covered.join("; ")}`
-          : "Capture what each role family actually demands so the market can start separating the lanes for you",
+          : `Start with these lanes: ${missingText}`,
         optional: "Send one warm message that supports the most gettable missing combination",
-        stopRule: "Stop after one concrete pipeline move in each still-empty combination; do not drift back into abstract comparison.",
+        stopRule: "Stop after one concrete pipeline move in each still-empty lane; do not drift back into abstract comparison.",
       };
     }
     if (coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0) {

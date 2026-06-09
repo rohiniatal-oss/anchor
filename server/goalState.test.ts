@@ -83,7 +83,7 @@ test("career goal state reads active career tracks as real direction signal", ()
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Ops / chief of staff"));
   assert.equal(state.pursuitPortfolio.length, 4);
   assert.match(state.selectionRule, /keep stronger-fit alternatives warm in parallel/i);
-  assert.match(state.todayPlan.mustDo, /Add or apply to one credible role/i);
+  assert.match(state.todayPlan.mustDo, /Fill the still-empty lanes/i);
   assert.match(direction.bottleneck, /multiple plausible lanes need live roles and applications/i);
 });
 
@@ -161,8 +161,8 @@ test("career goal state names still-empty combinations when broad pursuit covera
     "Geopolitics / geopolitical advisory x Ops / chief of staff",
     "Geopolitics / geopolitical advisory x Strategy / advisory",
   ].sort());
-  assert.match(state.todayPlan.mustDo, /still-empty combination/i);
-  assert.match(state.todayPlan.mustDo, /Geopolitics \/ geopolitical advisory x Strategy \/ advisory/i);
+  assert.match(state.todayPlan.mustDo, /still-empty lanes/i);
+  assert.match(state.decisionQuestion, /Geopolitics \/ geopolitical advisory x Strategy \/ advisory/i);
   assert.match(state.decisionQuestion, /still-empty combinations/i);
   const coveredLane = state.pursuitPortfolio.find((item) => item.combination === "AI / technology strategy x Strategy / advisory");
   const missingLane = state.pursuitPortfolio.find((item) => item.combination === "Geopolitics / geopolitical advisory x Strategy / advisory");

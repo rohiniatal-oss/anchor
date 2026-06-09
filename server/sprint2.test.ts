@@ -130,7 +130,7 @@ test("current plan refreshes stale single-lane carry-forward work when broad par
   const refreshed = await api(h.base, "GET", `/api/plan/current?day=${DAY}&energy=medium&availableMinutes=180`);
   assert.equal(refreshed.status, 200);
   assert.equal(refreshed.json.items[0]?.sourceType, "goal");
-  assert.match(refreshed.json.items[0]?.title || "", /Add or apply to one credible role/i);
+  assert.match(refreshed.json.items[0]?.title || "", /Fill the still-empty lanes/i);
 });
 
 test("avoidance review distinguishes repeated avoidance from normal tasks", async () => {

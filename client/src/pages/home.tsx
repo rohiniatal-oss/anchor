@@ -555,6 +555,18 @@ function firstStepPreview(item: PlanItemT, task?: Task | null) {
   return text || null;
 }
 
+function isBroadPursuitGoalItem(item: PlanItemT, goal?: CareerGoalT | null) {
+  return goal?.decisionMode === "broad-parallel-pursuit" && item.sourceType === "goal";
+}
+
+function broadPursuitPlanTitle(goal?: CareerGoalT | null) {
+  if (!goal) return null;
+  const coverage = getBroadPursuitCoverage(goal);
+  if (coverage.missing.length === 0) return "Keep the live lanes moving";
+  if (coverage.missing.length === 1) return "Fill the last empty lane";
+  return `Fill ${coverage.missing.length} still-empty lanes`;
+}
+
 function getBroadPursuitCoverage(goal: CareerGoalT): BroadPursuitCoverageT {
   const fallbackCombinations = goal.pursuitPortfolio?.map((item) => item.combination) || [];
   const raw = goal.broadPursuitCoverage;
@@ -656,10 +668,12 @@ function CareerCompassCard({
   goal,
   onOpenTab,
   variant = "full",
+  showOpenStrategy = true,
 }: {
   goal: CareerGoalT;
   onOpenTab: (t: Tab) => void;
   variant?: "full" | "compact";
+  showOpenStrategy?: boolean;
 }) {
   const coverage = getBroadPursuitCoverage(goal);
   const hasCoverage = goal.decisionMode === "broad-parallel-pursuit" && coverage.combinations.length > 0;
@@ -687,9 +701,11 @@ function CareerCompassCard({
           <h2 className="text-sm font-semibold leading-snug">Career compass</h2>
           <p className="text-xs text-muted-foreground mt-1">{compassSummary}</p>
         </div>
-        <button onClick={() => onOpenTab("strategy")} className="shrink-0 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1" data-testid="button-open-strategy-from-compass">
-          Open strategy <ArrowUpRight className="w-3.5 h-3.5" />
-        </button>
+        {showOpenStrategy && (
+          <button onClick={() => onOpenTab("strategy")} className="shrink-0 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1" data-testid="button-open-strategy-from-compass">
+            Open strategy <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       <div className={`mt-3 grid gap-3 ${isCompact ? "sm:grid-cols-1" : "sm:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]"}`}>
@@ -937,39 +953,28 @@ function ViewSpineCallout({
 
 function BroadPursuitJobsKickoff({
   goal,
-  onAddRole,
   onStartLane,
 }: {
   goal: CareerGoalT;
-  onAddRole: () => void;
   onStartLane: (item: GoalPortfolioItemT) => void;
   }) {
   const portfolio = goal.pursuitPortfolio || [];
   if (goal.decisionMode !== "broad-parallel-pursuit" || portfolio.length === 0) return null;
   const coverage = getBroadPursuitCoverage(goal);
   const visiblePortfolio = portfolio.filter((item) => combinationCoverageState(goal, item.combination) === "missing");
+  if (visiblePortfolio.length === 0) return null;
 
   return (
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid="jobs-broad-pursuit-kickoff">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Build the role pipeline</p>
-          <p className="text-sm font-medium mt-1">Fill the still-empty lanes with one real role each.</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Start with the uncovered lanes. You only need one credible role per lane before the market can start giving you signal.
-          </p>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-              {coverage.covered.length} covered
-            </span>
-            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-              {coverage.missing.length} still need one real role
-            </span>
-          </div>
-        </div>
-        <Button size="sm" onClick={onAddRole} className="shrink-0" data-testid="button-kickoff-add-role">
-          <Plus className="w-4 h-4 mr-1" /> Add role
-        </Button>
+      <div className="min-w-0">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">First roles</p>
+        <p className="text-sm font-medium mt-1">Save one credible role in each empty lane.</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          That is enough to start getting real market signal.
+        </p>
+        <p className="text-xs text-muted-foreground mt-2">
+          {coverage.missing.length} lane{coverage.missing.length === 1 ? "" : "s"} still need a first real role.
+        </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 mt-4">
@@ -985,7 +990,7 @@ function BroadPursuitJobsKickoff({
             : state === "missing"
             ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
             : "bg-muted text-muted-foreground";
-          const buttonLabel = state === "covered" ? "Add another role in this lane" : "Add role in this lane";
+          const buttonLabel = state === "covered" ? "Add another role" : "Add first role";
           return (
           <div
             key={item.combination}
@@ -1426,18 +1431,36 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                   const nextStepText = firstStepPreview(it, linkedTask);
                   const preShrunk = isPreShrunkPlanItem(it);
                   const showPreviewStep = !!nextStepText && (preShrunk || !linkedTask || !it.taskId || i === 0);
+                  const broadPursuitItem = isBroadPursuitGoalItem(it, activeGoal);
+                  const broadPursuitCoverage = broadPursuitItem && activeGoal ? getBroadPursuitCoverage(activeGoal) : null;
+                  const compactTitle = broadPursuitItem ? (broadPursuitPlanTitle(activeGoal) || it.title) : it.title;
+                  const compactSummary = broadPursuitItem
+                    ? "One credible role per lane is enough to start getting real market signal."
+                    : (it.explanation?.summary || it.whySelected);
                   return (
                   <button key={it.id} onClick={() => startItem(it)} data-testid={`plan-item-${i}`}
                     className={`group w-full text-left flex items-start gap-3 rounded-xl bg-card border p-3.5 hover-elevate transition-colors ${isMVD(it) ? "border-primary/40" : "border-card-border"}`}>
                     <span className={`shrink-0 mt-0.5 rounded-md text-[11px] font-semibold px-2 py-1 ${i === 0 ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>{SLOT_LABEL[it.slot] || it.slot}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-medium leading-snug">{it.title}</p>
+                        <p className="text-sm font-medium leading-snug">{compactTitle}</p>
                         {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
                         {preShrunk && <span className="shrink-0 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
                       </div>
-                      {(it.explanation?.summary || it.whySelected) && <p className="text-xs text-muted-foreground mt-0.5">{it.explanation?.summary || it.whySelected}</p>}
-                      {it.explanation?.whyNow && it.explanation.whyNow !== (it.explanation.summary || it.whySelected) && <p className="text-xs text-muted-foreground/80 mt-0.5">{it.explanation.whyNow}</p>}
+                      {compactSummary && <p className="text-xs text-muted-foreground mt-0.5">{compactSummary}</p>}
+                      {broadPursuitCoverage && broadPursuitCoverage.missing.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {broadPursuitCoverage.missing.map((combination) => (
+                            <span
+                              key={combination}
+                              className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                            >
+                              {combination}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {!broadPursuitItem && it.explanation?.whyNow && it.explanation.whyNow !== (it.explanation.summary || it.whySelected) && <p className="text-xs text-muted-foreground/80 mt-0.5">{it.explanation.whyNow}</p>}
                       {showPreviewStep && nextStepText && (
                         <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
@@ -1653,11 +1676,11 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   return (
     <div>
-      <h1 className="text-xl font-bold tracking-tight">Your paths</h1>
-      <p className="text-sm text-muted-foreground mt-1 mb-5">Where each path stands, and what's holding it back.</p>
+      <h1 className="text-xl font-bold tracking-tight">Strategy</h1>
+      <p className="text-sm text-muted-foreground mt-1 mb-5">Which lanes are live, and what each needs next.</p>
       {activeGoal && (
         <>
-          <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} />
+          <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} variant="compact" showOpenStrategy={false} />
           <PursuitPortfolioGrid goal={activeGoal} />
           <WorkstreamGrid goal={activeGoal} />
         </>
@@ -2128,8 +2151,8 @@ function JobsView() {
         <SectionHeading title="Jobs" sub="Roles and applications, soonest deadlines first." />
         <Button onClick={() => showForm ? setShowForm(false) : startBlankRole()} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
       </div>
-      {activeGoal && <ViewSpineCallout view="jobs" goal={activeGoal} />}
-      {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onAddRole={startBlankRole} onStartLane={startLaneRole} />}
+      {activeGoal && !(roles.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="jobs" goal={activeGoal} />}
+      {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onStartLane={startLaneRole} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
           {selectedLane && (

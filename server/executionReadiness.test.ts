@@ -137,8 +137,8 @@ test("broad-pursuit adaptive plan names still-empty combinations when some lanes
   assert.equal(recompute.status, 200);
   const current = await api(h.base, "GET", `/api/plan/current?day=${DAY}`);
   assert.equal(current.status, 200);
-  assert.match(current.json.plan.note, /still-empty combination/i);
+  assert.match(current.json.plan.note, /still-empty lane/i);
   assert.match(current.json.plan.note, /Geopolitics \/ geopolitical advisory/i);
-  assert.match(current.json.items[0].title, /still-empty combination/i);
-  assert.match(current.json.items[0].doneWhen, /still-empty combination/i);
+  assert.match(current.json.items[0].title, /still-empty lane/i);
+  assert.match(current.json.items[0].doneWhen, /still-empty lane/i);
 });

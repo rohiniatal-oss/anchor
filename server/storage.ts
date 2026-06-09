@@ -1,6 +1,7 @@
 import {
   tasks, events, jobs, learn, hustles, wins, contacts,
   dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps, proofAssetSteps, entityLinks,
+  userProfile,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
@@ -14,13 +15,14 @@ import {
   type DayPlanItem, type InsertDayPlanItem,
   type ActivityLog, type InsertActivityLog,
   type CareerTrack, type InsertCareerTrack,
+  type UserProfile,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, asc, desc } from "drizzle-orm";
 import { templateForArchetype } from "@shared/jobTemplates";
 import { templateForProofAsset } from "@shared/proofAssetTemplates";
-import { SPINE_DDL } from "./spine.schema.sql";
+import { SPINE_DDL, SPINE_MIGRATIONS } from "./spine.schema.sql";
 
 type DbClient = ReturnType<typeof drizzle>;
 type SqliteHandle = InstanceType<typeof Database>;
@@ -43,6 +45,11 @@ function openStorageRuntime(dbPath: string): StorageRuntime {
   // EXISTS) so it is a no-op on an already-pushed prod DB and gives throwaway test
   // DBs every table from shared/schema.ts regardless of import order.
   sqlite.exec(SPINE_DDL);
+  // Column additions on existing tables — run each individually so they are
+  // no-ops on DBs that already have the column.
+  for (const migration of SPINE_MIGRATIONS) {
+    try { sqlite.exec(migration); } catch { /* already applied */ }
+  }
   return {
     db: drizzle(sqlite),
     rawDb: sqlite,
@@ -151,6 +158,9 @@ export interface IStorage {
   // P4.4 — learn proof-building
   markLearnEvidenced(id: number, outputEvidenceUrl: string, proofToId?: number | null): Promise<Learn | undefined>;
   getLearnProofLinkIds(): Promise<Set<number>>;
+  // Profile
+  getProfile(): Promise<UserProfile | null>;
+  upsertProfile(patch: { cvText: string }): Promise<UserProfile>;
 }
 
 // Entities that carry a track link. Hustles store it in proofAssetForTrack;
@@ -323,6 +333,18 @@ export class DatabaseStorage implements IStorage {
       .where(eq(entityLinks.fromType, "learn")).all()
       .filter((r) => r.relationType === "proof_for");
     return new Set<number>(rows.map((r) => r.fromId));
+  }
+
+  async getProfile() {
+    return db.select().from(userProfile).get() ?? null;
+  }
+  async upsertProfile(patch: { cvText: string }) {
+    const existing = await this.getProfile();
+    if (existing) {
+      return db.update(userProfile).set({ cvText: patch.cvText, updatedAt: Date.now() })
+        .where(eq(userProfile.id, existing.id)).returning().get();
+    }
+    return db.insert(userProfile).values({ cvText: patch.cvText, updatedAt: Date.now() }).returning().get();
   }
 }
 

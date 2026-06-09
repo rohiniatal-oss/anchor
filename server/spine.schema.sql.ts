@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   source_checked_at INTEGER,
   deadline_confidence TEXT NOT NULL DEFAULT '',
   application_window_status TEXT NOT NULL DEFAULT 'open',
+  jd_text TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS job_pipeline_steps (
@@ -229,4 +230,15 @@ CREATE TABLE IF NOT EXISTS activity_log (
   metadata TEXT NOT NULL DEFAULT '{}',
   timestamp INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS user_profile (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  cv_text TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL
+);
 `;
+
+// Migrations for columns added to existing tables after initial release.
+// Each is run individually with try/catch so it is a no-op if already applied.
+export const SPINE_MIGRATIONS = [
+  `ALTER TABLE jobs ADD COLUMN jd_text TEXT NOT NULL DEFAULT ''`,
+];

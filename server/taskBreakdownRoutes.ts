@@ -27,6 +27,8 @@ type SourceBundle = {
   source: SourceRecord;
   parentContext: string;
   parentWorkflow?: WorkflowState;
+  cvText?: string;
+  jdText?: string;
 };
 
 function jobSource(bundle: SourceBundle): Job | null {
@@ -591,7 +593,18 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
   const tempBundle: SourceBundle = { sourceContext, playbook, sourceKind, source, parentContext: "" };
   const parentWorkflow = parentWorkflowFor(task, tempBundle);
   const parentContext = parentWorkflow ? `Inherited workflow from parent ${parentWorkflow.inheritedFrom}: ${parentWorkflow.workflow.join(" → ")}. Kind: ${parentWorkflow.workflowKind}. Current stage: ${parentWorkflow.currentStage}. Stage output: ${parentWorkflow.stageOutput}. Completion criteria: ${parentWorkflow.completionCriteria.join("; ")}.` : "";
-  return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow };
+
+  let cvText = "";
+  let jdText = "";
+  try {
+    const profile = await storage.getProfile();
+    cvText = profile?.cvText?.trim() || "";
+  } catch { /* non-fatal */ }
+  if (sourceKind === "job" && source) {
+    jdText = ((source as any).jdText as string | undefined)?.trim() || "";
+  }
+
+  return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow, cvText, jdText };
 }
 
 export async function buildDeterministicTaskBreakdown(task: Task) {
@@ -634,7 +647,15 @@ export function registerTaskBreakdownRoutes(app: Express) {
           `Default work object if uncertain: ${fallbackObject}\n` +
           `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
           `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
-          `${context ? `User context: ${context}\n` : ""}`,
+          `${context ? `User context: ${context}\n` : ""}` +
+          `${bundle.cvText && bundle.jdText ? (
+            `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
+            `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +
+            `IMPORTANT: For Build materials steps, quote the 2-3 most relevant existing CV bullets exactly, ` +
+            `then write a specific improved version using the job's language. ` +
+            `Step format: "Rewrite: \\"[exact existing bullet]\\" → \\"[improved version]\\"". ` +
+            `Steps must reference real content from the CV and JD above, not generic advice.\n`
+          ) : ""}`,
       });
       const parsed = parseBreakdown(r.output_text || "", fallbackObject, bundle.parentWorkflow);
       question = parsed.question || "";

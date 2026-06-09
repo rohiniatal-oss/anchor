@@ -61,7 +61,7 @@ function deadlineTone(d: string): string {
   return "bg-muted text-muted-foreground";
 }
 
-type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins";
+type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins" | "profile";
 // Tabs always visible in the header (icon-only on mobile, icon+label on sm+)
 const HEADER_TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
   { id: "jobs", label: "Jobs", icon: Briefcase },
@@ -73,6 +73,7 @@ const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] =
   { id: "strategy", label: "Strategy", icon: Compass, blurb: "Your paths, at a glance" },
   { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
   { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
+  { id: "profile", label: "Profile", icon: FileText, blurb: "Your CV for tailored suggestions" },
 ];
 
 const GOAL_SPINE_QUERY_KEYS = ["/api/goals/state", "/api/strategy/front-door", "/api/strategy/diagnostics"] as const;
@@ -233,6 +234,7 @@ export default function Home() {
         {tab === "learn" && <LearnView />}
 
         {tab === "wins" && <WinsView />}
+        {tab === "profile" && <ProfileView />}
       </main>
     </div>
   );
@@ -512,6 +514,7 @@ type JobFormT = {
   roleArchetype: string;
   narrativeAngle: string;
   sourceType: string;
+  jdText: string;
 };
 type JobTruthStripT = {
   jobId: number;
@@ -1156,6 +1159,7 @@ const EMPTY_JOB_FORM: JobFormT = {
   roleArchetype: "",
   narrativeAngle: "",
   sourceType: "posting",
+  jdText: "",
 };
 
 function roleArchetypeForLane(combination: string): string {
@@ -2254,6 +2258,16 @@ function JobsView() {
               <Input placeholder="Why you fit this role" value={form.narrativeAngle} onChange={(e) => setForm({ ...form, narrativeAngle: e.target.value })} className="sm:col-span-2" data-testid="input-job-narrative-angle" />
               <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-job-note" />
               <Input placeholder="First next step" value={form.nextStep} onChange={(e) => setForm({ ...form, nextStep: e.target.value })} className="sm:col-span-2" data-testid="input-job-nextstep" />
+              <div className="sm:col-span-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Job description</p>
+                <textarea
+                  placeholder="Paste the job posting here — used to suggest specific CV edits when you work on this application"
+                  value={form.jdText}
+                  onChange={(e) => setForm({ ...form, jdText: e.target.value })}
+                  data-testid="input-job-jd"
+                  className="w-full min-h-[120px] rounded-lg border border-input bg-background px-3 py-2 text-sm resize-y"
+                />
+              </div>
             </div>
           )}
           <div className="flex gap-2 justify-end">
@@ -4160,6 +4174,65 @@ function WinsView() {
           {earlier.length > 0 && (<div><GroupLabel count={earlier.length}>Earlier</GroupLabel><div className="space-y-2">{earlier.map((w) => <Row key={w.id} w={w} />)}</div></div>)}
         </div>
       )}
+    </div>
+  );
+}
+
+function ProfileView() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [cvText, setCvText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  const { data: profile } = useQuery<{ cvText: string }>({
+    queryKey: ["/api/profile"],
+    queryFn: () => apiRequest("GET", "/api/profile").then((r) => r.json()),
+  });
+
+  useEffect(() => {
+    if (profile?.cvText !== undefined && !dirty) setCvText(profile.cvText);
+  }, [profile, dirty]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await apiRequest("PATCH", "/api/profile", { cvText });
+      await queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
+      setDirty(false);
+      toast({ title: "CV saved." });
+    } catch {
+      toast({ title: "Couldn't save", description: "Try again in a moment." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold mb-0.5">Profile</h2>
+        <p className="text-sm text-muted-foreground">Your CV is used to suggest specific bullet rewrites when you work on job applications.</p>
+      </div>
+      <div className="rounded-xl border border-card-border bg-card p-4 space-y-3">
+        <div>
+          <p className="text-sm font-medium mb-1">Your CV</p>
+          <p className="text-xs text-muted-foreground mb-2">Paste plain text. The app uses this alongside the job description to suggest exact bullet rewrites — not generic advice.</p>
+          <textarea
+            value={cvText}
+            onChange={(e) => { setCvText(e.target.value); setDirty(true); }}
+            placeholder="Paste your CV here…"
+            className="w-full min-h-[360px] rounded-lg border border-input bg-background px-3 py-2 text-sm resize-y font-mono text-xs leading-relaxed"
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">{cvText.length > 0 ? `${cvText.length} characters` : "Nothing saved yet"}</p>
+          <Button onClick={save} disabled={saving || !dirty} size="sm">
+            {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
+            Save CV
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

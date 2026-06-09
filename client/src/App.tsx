@@ -140,6 +140,7 @@ function AppRouter() {
       <Route path="/network" component={Home} />
       <Route path="/learn" component={Home} />
       <Route path="/wins" component={Home} />
+      <Route path="/profile" component={Home} />
       <Route component={NotFound} />
     </Switch>
   );

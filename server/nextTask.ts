@@ -1,7 +1,7 @@
 import { db } from "./storage";
 import { tasks, jobs, learn, contacts, hustles, jobPipelineSteps, proofAssetSteps, type Task, type JobPipelineStep, type ProofAssetStep } from "@shared/schema";
 import { eq, and, ne } from "drizzle-orm";
-import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
+import { buildDeterministicTaskBreakdown, attachWorkflowState } from "./taskBreakdownRoutes";
 
 // ─────────────────────────────────────────────────────────────────────────
 // NEXT-TASK ENGINE — turn any source object (job/learn/contact/hustle) into a
@@ -123,7 +123,7 @@ export async function createNextTask(args: { sourceType: NextTaskSourceType; sou
   try {
     const breakdown = await buildDeterministicTaskBreakdown(values as Task);
     if (breakdown.steps.length) {
-      values.steps = JSON.stringify(breakdown.steps);
+      values.steps = JSON.stringify(attachWorkflowState(breakdown.steps, breakdown.workflowState));
       values.minimumOutcome = breakdown.workflowState.stageOutput || values.minimumOutcome;
     }
   } catch {

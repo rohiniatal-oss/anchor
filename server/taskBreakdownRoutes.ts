@@ -182,9 +182,6 @@ function classifyWorkObject(task: Task, bundle: SourceBundle): WorkObject {
   return "Artifact";
 }
 
-function makeSteps(defs: Array<[string, string[]?]>): BreakdownStep[] {
-  return defs.map(([text, substeps]) => ({ text, done: false as const, ...(substeps?.length ? { substeps } : {}) }));
-}
 
 function dedupeTexts(texts: string[]) {
   const seen = new Set<string>();
@@ -261,123 +258,168 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   const currentStage = workflowState.currentStage;
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
 
-  if (bundle.sourceKind === "goal" || (object === "Pipeline" && keyword(text, /lane|role|pipeline|application/))) {
-    const laneSpecific = laneSpecificSearchMove(text);
-    if (currentStage === "Define target") return [
-      "Open Jobs and look at the first still-empty lane",
-      "Name the lane you are filling first",
-      "Define what counts as a credible role for that lane",
-      "Save the lane and move to role search",
-    ];
-    if (currentStage === "Build list") return [
-      laneSpecific || "Open Jobs and save the first credible role for one still-empty lane",
-      "Record the company and role title",
-      "Mark whether it needs apply, warm path, or clarify",
-      "Repeat for the next still-empty lane only if there is still energy",
-    ];
-    return [
-      "Open the saved role and take the next concrete pipeline action",
-      "Draft the message, application, or clarification note",
-      "Save or send that move",
-      "Log what lane still needs a real role next",
-    ];
-  }
+  // ── Job application ────────────────────────────────────────────────────────
+  if (bundle.sourceKind === "job") {
+    const j = jobSource(bundle);
+    const roleLabel = j ? `${j.title}${j.company ? " @ " + j.company : ""}` : "the role";
+    const nextStepNote = j?.nextStep?.trim();
+    const hasNarrative = !!(j?.narrativeAngle?.trim());
 
-  if (bundle.sourceKind === "job" && object === "Artifact") {
     if (currentStage === "Understand role") return [
-      "Open the role posting and highlight the first must-have requirement",
-      "List the top 3 must-have requirements",
-      "List the top 2 nice-to-have signals",
-      "Write one sentence on what this role is really asking for",
+      `Read the ${roleLabel} posting and note what they are actually looking for`,
+      `List the top 3 must-have requirements and honestly rate your fit on each`,
+      `Note the biggest gap or risk and how you would handle it`,
+      `Write one sentence on your angle for this specific role${hasNarrative ? ` (your narrative: ${j!.narrativeAngle})` : ""}`,
     ];
     if (currentStage === "Map evidence") return [
-      "Open a blank note and list the top 3 role requirements",
-      "Match one concrete example to the first requirement",
-      "Match one concrete example to the second requirement",
-      "Mark the weakest proof gap",
+      `List the top 3 requirements for ${roleLabel}`,
+      `Write one concrete example from your background for each requirement`,
+      `Mark the weakest match and decide: explain, reframe, or offset`,
+      `Note any missing evidence you still need to pull together`,
     ];
     if (currentStage === "Handle gaps") return [
-      "Write down the single biggest gap in one sentence",
-      "Choose whether to explain, reframe, or offset it",
-      "Draft one mitigation line",
-      "Save that line in your role notes",
+      `Write the main eligibility or fit concern for ${roleLabel} in one sentence`,
+      `Draft one mitigation line: reframe, offset, or explain the gap`,
+      `Decide whether this concern blocks the application or you proceed`,
     ];
     if (currentStage === "Build materials") {
+      if (nextStepNote) return [
+        nextStepNote,
+        `Review that against the ${roleLabel} requirements`,
+        `Note what still needs work`,
+      ];
       return keyword(text, /cv|resume|tailor|rewrite/) ? [
-        "Open your CV and the role posting side by side",
-        "Highlight repeated role keywords",
-        "Rewrite the first matching bullet",
-        "Save the next bullet to update later",
+        `Open your CV and the ${roleLabel} posting side by side`,
+        `Rewrite the two bullets most relevant to this role`,
+        `Check the headline and summary line against the role requirements`,
+        `Note what is still missing`,
       ] : [
-        "Open the application material and draft the first useful line",
-        "Answer the first prompt in rough notes",
-        "Tighten one sentence so it sounds credible",
-        "Save the next missing section",
+        `Open the application for ${roleLabel} and draft your answer to the first prompt`,
+        `Write the key evidence you will use in the cover note or answer`,
+        `Check the required format and any word limits`,
+        `Note what still needs work`,
       ];
     }
+    if (currentStage === "Submit") return [
+      `Open the application form for ${roleLabel} and check all materials are complete`,
+      `Submit and note the confirmation or reference number`,
+      `Log the submission date and set a follow-up reminder`,
+    ];
+    // Follow up
     return [
-      "Open the application thread and find the next follow-up action",
-      "Write the shortest acceptable follow-up",
-      "Send it or save it ready to send",
-      "Log the follow-up date",
+      `Find the last contact point or submission thread for ${roleLabel}`,
+      `Draft a short follow-up and decide whether to send now or wait`,
+      `Send it or save it ready to send`,
+      `Log the next action on this role`,
     ];
   }
 
-  if (object === "Pipeline") {
-    return currentStage === "Define target" ? [
-      "Write down the exact target lane",
-      "List 3 live targets in that lane",
-      "Mark the best one to act on first",
-      "Save the first outreach or application move",
-    ] : [
-      "Open the live target list",
-      "Pick one real target",
-      "Draft the next message or application move",
-      "Send it or save it ready to send",
-    ];
-  }
+  // ── Learning / capability ──────────────────────────────────────────────────
+  if (bundle.sourceKind === "learn") {
+    const l = learnSource(bundle);
+    const resourceLabel = l?.title || "the resource";
+    const requiredOutput = l?.requiredOutput?.trim();
+    const capabilityBuilt = l?.capabilityBuilt?.trim();
 
-  if (object === "Knowledge") {
+    if (object === "Capability") return [
+      `Start a practice attempt: open a blank doc and work through one example of ${capabilityBuilt || resourceLabel}`,
+      `Note the weakest part of that attempt`,
+      `Write an improved version of just the weakest part`,
+      requiredOutput ? `Write the required output: ${requiredOutput}` : `Write one concrete output from this session that you can keep and reuse`,
+    ];
     return [
-      task.sourceUrl ? "Open the source and read only the first relevant section" : "Open the source note and read only the first relevant section",
-      "Write one useful takeaway in your own words",
-      "Write the one output or decision this should support",
-      "Stop once you have that one useful note",
+      l?.url ? `Open ${resourceLabel} and read the most relevant section` : `Read your notes on ${resourceLabel} and find the most relevant part`,
+      `Write the key insight in your own words`,
+      requiredOutput ? `Draft: ${requiredOutput}` : `Draft a short summary or note you can reuse`,
+      `Note what you still need or what to do with this next`,
     ];
   }
 
-  if (object === "Capability") {
+  // ── Proof asset / hustle ───────────────────────────────────────────────────
+  if (bundle.sourceKind === "hustle") {
+    const h = hustleSource(bundle);
+    const assetLabel = h?.title || "this proof asset";
+    const coreClaim = h?.coreClaim?.trim();
+    const nextStepNote = h?.nextStep?.trim();
+
+    if (nextStepNote) return [
+      nextStepNote,
+      `Open the draft for ${assetLabel} and see what it still needs`,
+      `Note what is missing or needs strengthening`,
+      `Record the next concrete step for the following session`,
+    ];
+    if (currentStage === "Define claim") return [
+      `Write the one claim ${assetLabel} should prove, in one sentence`,
+      `Name the specific audience this is for`,
+      `List 3 pieces of evidence that support the claim`,
+    ];
+    if (currentStage === "Gather evidence") return [
+      `List the 3 strongest proof points for: ${coreClaim || assetLabel}`,
+      `Note the source for each proof point`,
+      `Flag any gap in the evidence`,
+    ];
     return [
-      "Open a blank practice note and do one 5-minute attempt",
-      "Notice the weakest part of that attempt",
-      "Redo just that part once",
-      "Write one improvement note for next time",
+      `Open the draft for ${assetLabel}`,
+      `Write the next section or complete the current one`,
+      `Note what is still missing`,
+      `Record the next concrete step for the following session`,
     ];
   }
 
-  if (object === "Decision") {
+  // ── Goal / pipeline ────────────────────────────────────────────────────────
+  if (bundle.sourceKind === "goal") {
+    const laneSpecific = laneSpecificSearchMove(text);
+    if (currentStage === "Define target") return [
+      `Open Jobs and look at which lane is still empty`,
+      `Name the lane and write what a credible role looks like for it`,
+      `Save one candidate role to fill that lane`,
+    ];
+    if (currentStage === "Build list") return [
+      laneSpecific || `Find one credible role for the most important still-empty lane`,
+      `Save it and mark the next action: apply, warm path, or clarify`,
+      `Note if any other lanes still need a first role`,
+    ];
     return [
-      "Open a note and write the decision question in one line",
-      "List the real options",
-      "Choose the top 3 criteria",
-      "Mark the current default and why",
+      `Open the most promising saved role and take the next concrete action`,
+      `Draft the application move, outreach message, or clarification note`,
+      `Send it or save it ready to send`,
+      `Log which lane still needs movement next`,
     ];
   }
 
-  if (object === "Problem") {
-    return [
-      "Write one sentence describing what is not working",
-      "Write when or where it shows up",
-      "List 2 likely causes",
-      "Choose the first cause to test",
-    ];
-  }
+  // ── Generic work object fallbacks ─────────────────────────────────────────
+  if (object === "Decision") return [
+    `Write the decision question clearly in one sentence`,
+    `List the real options on the table`,
+    `Map the top 2-3 criteria that matter most`,
+    `Decide on a provisional choice and note what would change it`,
+  ];
+  if (object === "Problem") return [
+    `Write one sentence describing what is not working`,
+    `List the 2-3 most likely causes`,
+    `Choose the most likely cause and decide how to test it`,
+    `Write the fix or the next diagnostic action`,
+  ];
+  if (object === "Knowledge") return [
+    task.sourceUrl ? `Open the source and read the most relevant section` : `Read your notes or open the source`,
+    `Write the key insight in your own words`,
+    `Draft one concrete output or decision this learning supports`,
+    `Note what you still need or what to do with this next`,
+  ];
+  if (object === "Capability") return [
+    `Start a practice attempt and work through one example`,
+    `Note the weakest part`,
+    `Write an improved version of just that part`,
+    `Write one concrete improvement note for next time`,
+  ];
 
+  const taskTitle = task?.title || "this task";
+  const doneCondition = task?.doneWhen || task?.minimumOutcome || "smallest useful version exists";
   return [
-    "Open the task context",
-    "Write the intended audience or use",
-    "Name the smallest useful version",
-    "Start the first rough line or note",
+    `Open what you have so far on: ${taskTitle}`,
+    `Draft the main content`,
+    `Compare it against the done condition: ${doneCondition}`,
+    `Note what is still needed`,
   ];
 }
 
@@ -396,7 +438,7 @@ export function coerceTaskBreakdownSteps(task: Task, bundle: SourceBundle, workf
       ? [starter, ...baseActions]
       : baseActions,
   );
-  return ordered.slice(0, 4).map((text) => ({ text, done: false as const }));
+  return ordered.slice(0, 5).map((text) => ({ text, done: false as const }));
 }
 
 export async function normalizeExistingTaskBreakdown(task: Task) {
@@ -434,7 +476,7 @@ export async function normalizeExistingTaskBreakdown(task: Task) {
   };
 }
 
-function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowState): BreakdownStep[] {
+export function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowState): BreakdownStep[] {
   if (!workflowState || !steps.length) return steps;
   const [first, ...rest] = steps;
   return [{ ...first, workflowState }, ...rest];

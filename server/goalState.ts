@@ -37,6 +37,20 @@ type BroadPursuitCoverage = {
   combinations: string[];
   covered: string[];
   missing: string[];
+  networkSupported: string[];
+  capabilitySupported: string[];
+  missingNetworkSupport: string[];
+  missingCapabilitySupport: string[];
+  fullySupported: string[];
+  laneStates: Array<{
+    combination: string;
+    roleCount: number;
+    contactCount: number;
+    capabilityItemCount: number;
+    hasRole: boolean;
+    hasNetworkSupport: boolean;
+    hasCapabilitySupport: boolean;
+  }>;
 };
 
 type LocationPreference = {
@@ -56,6 +70,7 @@ type GoalSnapshot = {
   deconstructionCommits: number;
   roleFeedbackCount: number;
   hasNetworkTask: boolean;
+  openContacts: Contact[];
   networkContactsCount: number;
   activeConversationCount: number;
   warmContactCount: number;
@@ -70,6 +85,7 @@ type GoalSnapshot = {
   proofSupportDemandCount: number;
   liveProofAssetCount: number;
   outlinedProofAssetCount: number;
+  activeLearnItems: Learn[];
   activeLearnCount: number;
   evidencedLearnCount: number;
   learningOutputGapCount: number;
@@ -375,6 +391,7 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     deconstructionCommits,
     roleFeedbackCount,
     hasNetworkTask,
+    openContacts,
     networkContactsCount: openContacts.length,
     activeConversationCount,
     warmContactCount,
@@ -389,6 +406,7 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     proofSupportDemandCount,
     liveProofAssetCount: liveProofAssets.length,
     outlinedProofAssetCount,
+    activeLearnItems: activeLearn,
     activeLearnCount: activeLearn.length,
     evidencedLearnCount,
     learningOutputGapCount,
@@ -415,6 +433,9 @@ function inferGoalPhase(snapshot: GoalSnapshot): GoalPhase {
 }
 
 function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
+  const broadSupportCoverage = hasBroadParallelLanes(snapshot)
+    ? buildBroadPursuitCoverage(snapshot)
+    : null;
   const directionEvidence = [
     snapshot.assets.length ? `${snapshot.assets.length} career assets available` : "no career assets recorded",
     snapshot.activeTracks.length ? `${snapshot.activeTracks.length} active career track${snapshot.activeTracks.length === 1 ? "" : "s"}` : "no active career tracks",
@@ -428,10 +449,13 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
 
   const networkAssets = snapshot.assets.some((a) => a.kind === "network");
   const networkStarted = snapshot.hasNetworkTask || networkAssets || snapshot.networkContactsCount > 0;
+  const missingNetworkByLane = broadSupportCoverage?.missing.length === 0 ? (broadSupportCoverage?.missingNetworkSupport || []) : [];
   const networkStatus: WorkstreamStatus = !networkStarted
     ? "underdeveloped"
     : snapshot.dueFollowUpCount > 0
       ? "stale"
+      : missingNetworkByLane.length > 0
+        ? "underdeveloped"
       : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
         ? "underdeveloped"
         : "active";
@@ -444,6 +468,8 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     ? "few warm conversations created"
     : snapshot.dueFollowUpCount > 0
       ? `${snapshot.dueFollowUpCount} follow-up${snapshot.dueFollowUpCount > 1 ? "s are" : " is"} due or overdue`
+      : missingNetworkByLane.length > 0
+        ? `these live combinations still lack networking support: ${missingNetworkByLane.join("; ")}`
       : snapshot.networkContactsCount > 0 && snapshot.warmContactCount === 0
         ? "contacts exist, but none are warm enough to create easy momentum yet"
       : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
@@ -455,6 +481,8 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     ? ["find one warm-network person", "draft one reality-check message", "send or save one soft ask"]
     : snapshot.dueFollowUpCount > 0
       ? ["follow up with the warmest overdue contact", "send one concise nudge tied to the current role or ask", "schedule the next touch so the thread does not go cold again"]
+      : missingNetworkByLane.length > 0
+        ? [`add or link one contact to ${missingNetworkByLane[0]}`, "draft one lane-specific advice, reconnect, or referral ask", "make sure each live combination has at least one real contact path"]
       : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
         ? ["tie one contact to the strongest live role", "identify who can warm the best current application", "draft one role-linked outreach message"]
         : snapshot.activeConversationCount === 0
@@ -526,8 +554,11 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     : snapshot.liveProofAssetCount > 0
       ? ["produce the next concrete output on the live proof asset", "package one existing output into reusable evidence", "connect the proof asset back to the capability it is building"]
       : ["turn one proof idea into a real asset", "pick one output format you can sustain", "connect the asset to a learning goal, not a single role"];
+  const missingCapabilityByLane = broadSupportCoverage?.missing.length === 0 ? (broadSupportCoverage?.missingCapabilitySupport || []) : [];
   const capabilityStatus: WorkstreamStatus = snapshot.directionReady || snapshot.interviewingJobs > 0
-    ? (snapshot.activeLearnCount > 0 || snapshot.evidencedLearnCount > 0 ? "active" : "underdeveloped")
+    ? missingCapabilityByLane.length > 0
+      ? "underdeveloped"
+      : (snapshot.activeLearnCount > 0 || snapshot.evidencedLearnCount > 0 ? "active" : "underdeveloped")
     : "premature";
   const capabilityProgress: WorkstreamState["progress"] = snapshot.evidencedLearnCount > 0
     ? "developing"
@@ -538,6 +569,8 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     ? snapshot.learningOutputGapCount > 0
       ? `${snapshot.learningOutputGapCount} capability-building item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} a reusable output before the interview`
       : "interview and role preparation need capability-linked practice outputs"
+    : missingCapabilityByLane.length > 0
+      ? `these live combinations still lack capability support: ${missingCapabilityByLane.join("; ")}`
     : snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
       ? snapshot.proofSupportDemandCount > 0
         ? `no role-relevant capability plan is active yet, and ${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger capability evidence`
@@ -553,6 +586,8 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
           : "turn learning into reusable job evidence and practice";
   const capabilityNextMoves = snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
     ? ["choose one role-relevant capability to strengthen", "start one learning item with a clear output in mind", "define what reusable evidence this learning should produce"]
+    : missingCapabilityByLane.length > 0
+      ? [`add one capability-support item for ${missingCapabilityByLane[0]}`, "define one reusable output that strengthens the lane across multiple roles", "turn lane-level upskilling into reusable evidence, not role-specific proof"]
     : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
       ? ["finish one reusable learning output for the current lane", "turn that output into a reusable interview or credibility artifact", "capture the evidence so Anchor can reuse it later"]
     : snapshot.proofSupportDemandCount > 0
@@ -611,6 +646,9 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         `${snapshot.activeConversationCount} active conversation${snapshot.activeConversationCount === 1 ? "" : "s"}`,
         `${snapshot.roleLinkedContactCount} role-linked contact${snapshot.roleLinkedContactCount === 1 ? "" : "s"}`,
         `${snapshot.dueFollowUpCount} due follow-up${snapshot.dueFollowUpCount === 1 ? "" : "s"}`,
+        broadSupportCoverage && broadSupportCoverage.missing.length === 0
+          ? `${broadSupportCoverage.networkSupported.length} live combination${broadSupportCoverage.networkSupported.length === 1 ? "" : "s"} with networking support`
+          : "role coverage still comes before lane-support coverage",
         snapshot.hasNetworkTask ? "network task exists" : "no clear network task",
         networkAssets ? "network assets available" : "no explicit network assets",
       ],
@@ -678,6 +716,9 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         snapshot.activeLearnCount ? `${snapshot.activeLearnCount} active learning item(s)` : "no active learning items",
         snapshot.evidencedLearnCount ? `${snapshot.evidencedLearnCount} evidenced learning output(s)` : "no evidenced learning outputs",
         snapshot.learningOutputGapCount ? `${snapshot.learningOutputGapCount} learning item(s) still need an output` : "learning outputs are in better shape",
+        broadSupportCoverage && broadSupportCoverage.missing.length === 0
+          ? `${broadSupportCoverage.capabilitySupported.length} live combination${broadSupportCoverage.capabilitySupported.length === 1 ? "" : "s"} with capability support`
+          : "role coverage still comes before lane-support coverage",
         `${snapshot.proofSupportDemandCount} role${snapshot.proofSupportDemandCount === 1 ? "" : "s"} that could benefit from stronger capability evidence`,
       ],
       nextMoves: snapshot.directionReady || snapshot.interviewingJobs > 0 ? capabilityNextMoves : ["wait until the target lane is clearer"],
@@ -694,9 +735,17 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
   ];
 }
 
-function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase) {
+function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snapshot: GoalSnapshot): WorkstreamState {
   const network = workstreams.find((w) => w.name === "Network");
-  if ((phase === "role-targeting" || phase === "interview-prep") && network?.status === "stale") return network;
+  if ((phase === "role-targeting" || phase === "interview-prep") && network && network.status === "stale") return network;
+  if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
+    const coverage = buildBroadPursuitCoverage(snapshot);
+    if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length > 0 && network && network.nextMoveType !== "wait") return network;
+    const capability = workstreams.find((w) => w.name === "Capability ramp");
+    if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingCapabilitySupport.length > 0 && capability && capability.nextMoveType !== "wait") {
+      return capability;
+    }
+  }
 
   const priorityByPhase: Record<GoalPhase, string[]> = {
     "fit-discovery": ["Direction", "Market map", "Network", "Energy and stability"],
@@ -706,7 +755,8 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase) {
   };
   return priorityByPhase[phase]
     .map((name) => workstreams.find((w) => w.name === name))
-    .find((w) => w && ["underdeveloped", "active", "stale", "blocked"].includes(w.status) && w.nextMoveType !== "wait") || workstreams[0];
+    .find((w): w is WorkstreamState => !!w && ["underdeveloped", "active", "stale", "blocked"].includes(w.status) && w.nextMoveType !== "wait")
+    || workstreams[0]!;
 }
 
 function dayTypeFor(focus: WorkstreamState) {
@@ -730,6 +780,8 @@ function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSna
     const coverage = buildBroadPursuitCoverage(snapshot);
     const missingNote = coverage.missing.length
       ? ` Some combinations still need live roles: ${coverage.missing.join("; ")}.`
+      : coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0
+        ? ` Live roles exist across the combinations, but some still lack networking or capability support.`
       : "";
     return snapshot.savedJobs.length > 0
       ? `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.${missingNote}`
@@ -753,6 +805,11 @@ function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
     const coverage = buildBroadPursuitCoverage(snapshot);
     if (coverage.missing.length > 0) {
       return `Which still-empty combinations need one real role next: ${coverage.missing.join("; ")}?`;
+    }
+    if (coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0) {
+      const networkText = coverage.missingNetworkSupport.length > 0 ? `network support: ${coverage.missingNetworkSupport.join("; ")}` : "";
+      const capabilityText = coverage.missingCapabilitySupport.length > 0 ? `capability support: ${coverage.missingCapabilitySupport.join("; ")}` : "";
+      return `Which live combinations need support next: ${[networkText, capabilityText].filter(Boolean).join(" | ")}?`;
     }
     return snapshot.savedJobs.length > 0
       ? "Which live roles are most gettable, credible, and worth pushing right now while keeping the other lanes open?"
@@ -797,6 +854,20 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
           : "Capture what each role family actually demands so the market can start separating the lanes for you",
         optional: "Send one warm message that supports the most gettable missing combination",
         stopRule: "Stop after one concrete pipeline move in each still-empty combination; do not drift back into abstract comparison.",
+      };
+    }
+    if (coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0) {
+      const networkText = coverage.missingNetworkSupport.join("; ");
+      const capabilityText = coverage.missingCapabilitySupport.join("; ");
+      const supportMoves = [
+        networkText ? `warm these live combinations: ${networkText}` : "",
+        capabilityText ? `add capability support for: ${capabilityText}` : "",
+      ].filter(Boolean).join(" | ");
+      return {
+        mustDo: `Strengthen the weakest live combinations next: ${supportMoves}`,
+        next: "Keep live roles moving while you fill the lane-support gaps that make the search more resilient.",
+        optional: "Package one support move so it helps more than one role in the same lane.",
+        stopRule: "Stop after each live combination has either a real contact path, a capability-support move, or both.",
       };
     }
     return {
@@ -897,6 +968,10 @@ function detectCombinationRoleShape(text: string) {
 
 function jobCombination(job: Job, combinations: string[]) {
   const text = `${job.title || ""} ${job.company || ""} ${job.roleArchetype || ""} ${job.narrativeAngle || ""} ${job.note || ""}`;
+  return inferCombinationFromText(text, combinations);
+}
+
+function inferCombinationFromText(text: string, combinations: string[]) {
   const topic = detectCombinationTopic(text);
   const shape = detectCombinationRoleShape(text);
   if (!topic || !shape) return null;
@@ -904,16 +979,68 @@ function jobCombination(job: Job, combinations: string[]) {
   return combinations.includes(combination) ? combination : null;
 }
 
+function trackCombination(track: CareerTrack | null | undefined, combinations: string[]) {
+  if (!track) return null;
+  return inferCombinationFromText(
+    `${track.name || ""} ${track.description || ""} ${track.whyItFits || ""} ${track.targetRoleArchetype || ""}`,
+    combinations,
+  );
+}
+
+function linkedTrack(tracks: CareerTrack[], trackId: number | null | undefined) {
+  return trackId == null ? null : tracks.find((track) => track.id === trackId) || null;
+}
+
+function contactCombination(contact: Contact, tracks: CareerTrack[], combinations: string[]) {
+  const fromTrack = trackCombination(linkedTrack(tracks, contact.relatedTrackId), combinations);
+  if (fromTrack) return fromTrack;
+  return inferCombinationFromText(
+    `${contact.who || ""} ${contact.sector || ""} ${contact.why || ""} ${contact.targetOrg || ""} ${contact.targetRole || ""} ${contact.sourceNetwork || ""}`,
+    combinations,
+  );
+}
+
+function learnCombination(item: Learn, tracks: CareerTrack[], combinations: string[]) {
+  const fromTrack = trackCombination(linkedTrack(tracks, item.relatedTrackId), combinations);
+  if (fromTrack) return fromTrack;
+  return inferCombinationFromText(
+    `${item.title || ""} ${item.category || ""} ${item.capabilityBuilt || ""} ${item.requiredOutput || ""} ${item.note || ""}`,
+    combinations,
+  );
+}
+
 function buildBroadPursuitCoverage(snapshot: GoalSnapshot): BroadPursuitCoverage {
   const combinations = buildParallelExperiments(snapshot).map((item) => item.combination);
   const covered = [...new Set(snapshot.savedJobs.map((job) => jobCombination(job, combinations)).filter(Boolean) as string[])];
+  const networkSupported = [...new Set(
+    snapshot.openContacts
+      .map((contact) => contactCombination(contact, snapshot.activeTracks, combinations))
+      .filter(Boolean) as string[],
+  )];
+  const capabilitySupported = [...new Set(
+    snapshot.activeLearnItems
+      .map((item) => learnCombination(item, snapshot.activeTracks, combinations))
+      .filter(Boolean) as string[],
+  )];
   const missing = combinations.filter((combination) => !covered.includes(combination));
-  return { combinations, covered, missing };
+  const missingNetworkSupport = covered.filter((combination) => !networkSupported.includes(combination));
+  const missingCapabilitySupport = covered.filter((combination) => !capabilitySupported.includes(combination));
+  const fullySupported = covered.filter((combination) => networkSupported.includes(combination) && capabilitySupported.includes(combination));
+  const laneStates = combinations.map((combination) => ({
+    combination,
+    roleCount: snapshot.savedJobs.filter((job) => jobCombination(job, combinations) === combination).length,
+    contactCount: snapshot.openContacts.filter((contact) => contactCombination(contact, snapshot.activeTracks, combinations) === combination).length,
+    capabilityItemCount: snapshot.activeLearnItems.filter((item) => learnCombination(item, snapshot.activeTracks, combinations) === combination).length,
+    hasRole: covered.includes(combination),
+    hasNetworkSupport: networkSupported.includes(combination),
+    hasCapabilitySupport: capabilitySupported.includes(combination),
+  }));
+  return { combinations, covered, missing, networkSupported, capabilitySupported, missingNetworkSupport, missingCapabilitySupport, fullySupported, laneStates };
 }
 
 function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamState[]) {
   const phase = inferGoalPhase(snapshot);
-  const focus = recommendedFocus(workstreams, phase);
+  const focus = recommendedFocus(workstreams, phase, snapshot);
   const parallelExperiments = phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
     ? buildParallelExperiments(snapshot)
     : [];
@@ -968,7 +1095,17 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
   const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback, snapshot.activeTracks);
-  const broadPursuitCoverage = frame.broadParallelPursuit ? buildBroadPursuitCoverage(snapshot) : { combinations: [], covered: [], missing: [] };
+  const broadPursuitCoverage = frame.broadParallelPursuit ? buildBroadPursuitCoverage(snapshot) : {
+    combinations: [],
+    covered: [],
+    missing: [],
+    networkSupported: [],
+    capabilitySupported: [],
+    missingNetworkSupport: [],
+    missingCapabilitySupport: [],
+    fullySupported: [],
+    laneStates: [],
+  };
 
   return {
     goal: "Find the right role, then become interview- and job-ready",

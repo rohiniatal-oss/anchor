@@ -170,6 +170,48 @@ test("career goal state names still-empty combinations when broad pursuit covera
   assert.match(missingLane?.nextMove || "", /Pursue one/i);
 });
 
+test("broad parallel pursuit tracks missing network and capability support after live roles exist", () => {
+  const jobs = [
+    { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "strategy / advisory" },
+    { id: 2, title: "AI Chief of Staff", company: "Model Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "chief of staff / operations" },
+    { id: 3, title: "Geopolitical Advisory Associate", company: "Risk Group", status: "wishlist", applicationWindowStatus: "open", location: "UAE", roleArchetype: "strategy / advisory" },
+    { id: 4, title: "Geopolitical Chief of Staff", company: "Policy Org", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "chief of staff / operations" },
+  ] as any;
+  const contacts = [
+    { id: 1, who: "AI strategy advisor", status: "to_contact", relationshipStrength: "warm", sector: "AI / technology strategy x Strategy / advisory", targetRole: "AI Strategy Associate" },
+    { id: 2, who: "Geo ops operator", status: "messaged", relationshipStrength: "warm", sector: "Geopolitics / geopolitical advisory x Ops / chief of staff", targetRole: "Geopolitical Chief of Staff" },
+  ] as any;
+  const learn = [
+    { id: 1, title: "AI strategy memo drill", category: "AI / technology strategy", capabilityBuilt: "AI / technology strategy", requiredOutput: "one memo", proofIntent: true, done: false, learnStatus: "active", note: "Strategy / advisory lane support" },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, [], learn, contacts);
+  assert.equal(state.decisionMode, "broad-parallel-pursuit");
+  assert.deepEqual(state.broadPursuitCoverage.missing, []);
+  assert.ok(state.broadPursuitCoverage.networkSupported.includes("AI / technology strategy x Strategy / advisory"));
+  assert.ok(state.broadPursuitCoverage.networkSupported.includes("Geopolitics / geopolitical advisory x Ops / chief of staff"));
+  assert.ok(state.broadPursuitCoverage.missingNetworkSupport.includes("AI / technology strategy x Ops / chief of staff"));
+  assert.ok(state.broadPursuitCoverage.missingCapabilitySupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
+  assert.match(state.decisionQuestion, /need support next/i);
+  assert.match(state.todayPlan.mustDo, /Strengthen the weakest live combinations next/i);
+});
+
+test("broad parallel pursuit can shift focus to Network once role coverage is complete but lane support is missing", () => {
+  const jobs = [
+    { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "strategy / advisory" },
+    { id: 2, title: "AI Chief of Staff", company: "Model Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "chief of staff / operations" },
+    { id: 3, title: "Geopolitical Advisory Associate", company: "Risk Group", status: "wishlist", applicationWindowStatus: "open", location: "UAE", roleArchetype: "strategy / advisory" },
+    { id: 4, title: "Geopolitical Chief of Staff", company: "Policy Org", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "chief of staff / operations" },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, []);
+  const network = state.workstreams.find((w) => w.name === "Network")!;
+  assert.equal(state.recommendedFocus, "Network");
+  assert.equal(network.status, "underdeveloped");
+  assert.match(network.bottleneck, /lack networking support/i);
+  assert.ok(network.nextMoves.some((move) => /add or link one contact/i.test(move)));
+});
+
 test("career goal frame stays in fit-discovery when learning exists but role signal does not", () => {
   const learn = [{
     id: 1,

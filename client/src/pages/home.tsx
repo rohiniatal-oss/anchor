@@ -455,7 +455,16 @@ type DayPlanT = { id: number; mode: string; note: string; status: string; minimu
 type GoalTrajectoryT = { key: string; title: string; status: "complete" | "current" | "pending"; description: string };
 type GoalTodayPlanT = { mustDo: string; next: string; optional: string; stopRule: string };
 type GoalPortfolioItemT = { combination: string; whyPlausible: string; nextMove: string };
-type BroadPursuitCoverageT = { combinations: string[]; covered: string[]; missing: string[] };
+type BroadPursuitCoverageT = {
+  combinations: string[];
+  covered: string[];
+  missing: string[];
+  networkSupported: string[];
+  capabilitySupported: string[];
+  missingNetworkSupport: string[];
+  missingCapabilitySupport: string[];
+  fullySupported: string[];
+};
 type GoalWorkstreamT = {
   name: string;
   status: "active" | "underdeveloped" | "premature" | "blocked" | "stale" | "sufficient_for_now";
@@ -554,6 +563,11 @@ function getBroadPursuitCoverage(goal: CareerGoalT): BroadPursuitCoverageT {
       combinations: fallbackCombinations,
       covered: [],
       missing: fallbackCombinations,
+      networkSupported: [],
+      capabilitySupported: [],
+      missingNetworkSupport: [],
+      missingCapabilitySupport: [],
+      fullySupported: [],
     };
   }
   const combinations = raw.combinations?.length ? raw.combinations : fallbackCombinations;
@@ -561,7 +575,27 @@ function getBroadPursuitCoverage(goal: CareerGoalT): BroadPursuitCoverageT {
   const missing = raw.missing?.length
     ? raw.missing
     : combinations.filter((combination) => !covered.includes(combination));
-  return { combinations, covered, missing };
+  const networkSupported = raw.networkSupported || [];
+  const capabilitySupported = raw.capabilitySupported || [];
+  const missingNetworkSupport = raw.missingNetworkSupport?.length
+    ? raw.missingNetworkSupport
+    : covered.filter((combination) => !networkSupported.includes(combination));
+  const missingCapabilitySupport = raw.missingCapabilitySupport?.length
+    ? raw.missingCapabilitySupport
+    : covered.filter((combination) => !capabilitySupported.includes(combination));
+  const fullySupported = raw.fullySupported?.length
+    ? raw.fullySupported
+    : covered.filter((combination) => networkSupported.includes(combination) && capabilitySupported.includes(combination));
+  return {
+    combinations,
+    covered,
+    missing,
+    networkSupported,
+    capabilitySupported,
+    missingNetworkSupport,
+    missingCapabilitySupport,
+    fullySupported,
+  };
 }
 
 function combinationCoverageState(goal: CareerGoalT, combination: string): "covered" | "missing" | "unknown" {
@@ -569,6 +603,16 @@ function combinationCoverageState(goal: CareerGoalT, combination: string): "cove
   if (coverage.covered.includes(combination)) return "covered";
   if (coverage.missing.includes(combination)) return "missing";
   return "unknown";
+}
+
+function combinationSupportState(goal: CareerGoalT, combination: string) {
+  const coverage = getBroadPursuitCoverage(goal);
+  return {
+    hasRole: coverage.covered.includes(combination),
+    hasNetworkSupport: coverage.networkSupported.includes(combination),
+    hasCapabilitySupport: coverage.capabilitySupported.includes(combination),
+    fullySupported: coverage.fullySupported.includes(combination),
+  };
 }
 
 function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: (t: Tab) => void }) {
@@ -616,16 +660,22 @@ function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: 
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="broad-pursuit-coverage-summary">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lane coverage</p>
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
               <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
                 {coverage.covered.length} covered
+              </span>
+              <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+                {coverage.networkSupported.length} with contact path
+              </span>
+              <span className="inline-flex rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/30 dark:text-violet-300">
+                {coverage.capabilitySupported.length} with capability support
               </span>
               <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
                 {coverage.missing.length} still empty
               </span>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div>
               <p className="text-[11px] font-medium text-foreground mb-1.5">Already live</p>
               <div className="flex flex-wrap gap-1.5">
@@ -644,6 +694,26 @@ function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: 
                     {combination}
                   </span>
                 )) : <span className="text-xs text-muted-foreground">All active combinations have live role coverage.</span>}
+              </div>
+            </div>
+            <div>
+              <p className="text-[11px] font-medium text-foreground mb-1.5">Still needs contact support</p>
+              <div className="flex flex-wrap gap-1.5">
+                {coverage.missingNetworkSupport.length > 0 ? coverage.missingNetworkSupport.map((combination) => (
+                  <span key={combination} className="inline-flex rounded-full bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+                    {combination}
+                  </span>
+                )) : <span className="text-xs text-muted-foreground">Every live combination has at least one contact path.</span>}
+              </div>
+            </div>
+            <div>
+              <p className="text-[11px] font-medium text-foreground mb-1.5">Still needs capability support</p>
+              <div className="flex flex-wrap gap-1.5">
+                {coverage.missingCapabilitySupport.length > 0 ? coverage.missingCapabilitySupport.map((combination) => (
+                  <span key={combination} className="inline-flex rounded-full bg-violet-50 px-2 py-1 text-[11px] font-medium text-violet-700 dark:bg-violet-950/30 dark:text-violet-300">
+                    {combination}
+                  </span>
+                )) : <span className="text-xs text-muted-foreground">Every live combination has at least one capability-support move.</span>}
               </div>
             </div>
           </div>
@@ -746,6 +816,7 @@ function PursuitPortfolioGrid({ goal }: { goal: CareerGoalT }) {
         {portfolio.map((item) => (
           (() => {
             const state = combinationCoverageState(goal, item.combination);
+            const support = combinationSupportState(goal, item.combination);
             const tone = state === "covered"
               ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/10"
               : state === "missing"
@@ -773,6 +844,17 @@ function PursuitPortfolioGrid({ goal }: { goal: CareerGoalT }) {
             <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
               <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
             </p>
+            <div className="mt-3 flex flex-wrap gap-1.5 text-[10px]">
+              <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${support.hasRole ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
+                {support.hasRole ? "role live" : "role missing"}
+              </span>
+              <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${support.hasNetworkSupport ? "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300" : "bg-muted text-muted-foreground"}`}>
+                {support.hasNetworkSupport ? "contact path live" : "contact path missing"}
+              </span>
+              <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${support.hasCapabilitySupport ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" : "bg-muted text-muted-foreground"}`}>
+                {support.hasCapabilitySupport ? "capability support live" : "capability support missing"}
+              </span>
+            </div>
           </div>
             );
           })()
@@ -966,6 +1048,7 @@ function BroadPursuitParallelSupportKickoff({
       <div className="grid gap-3 sm:grid-cols-2 mt-4">
         {portfolio.map((item) => {
           const state = combinationCoverageState(goal, item.combination);
+          const support = combinationSupportState(goal, item.combination);
           const tone = state === "covered"
             ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/10"
             : state === "missing"
@@ -987,6 +1070,17 @@ function BroadPursuitParallelSupportKickoff({
               <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
                 <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
               </p>
+              <div className="mt-3 flex flex-wrap gap-1.5 text-[10px]">
+                <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${support.hasRole ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-muted text-muted-foreground"}`}>
+                  {support.hasRole ? "role live" : "role missing"}
+                </span>
+                <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${support.hasNetworkSupport ? "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300" : "bg-muted text-muted-foreground"}`}>
+                  {support.hasNetworkSupport ? "contact path live" : "contact path missing"}
+                </span>
+                <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold uppercase tracking-wide ${support.hasCapabilitySupport ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300" : "bg-muted text-muted-foreground"}`}>
+                  {support.hasCapabilitySupport ? "capability support live" : "capability support missing"}
+                </span>
+              </div>
               <div className="mt-3">
                 <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-${mode}-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
                   <Plus className="w-4 h-4 mr-1" /> {buttonLabel}

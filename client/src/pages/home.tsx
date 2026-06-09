@@ -652,9 +652,18 @@ function compactLanePreview(items: string[], fallback: string, limit = 2) {
   return `${shown.join("; ")}${remainder > 0 ? ` +${remainder} more` : ""}`;
 }
 
-function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: (t: Tab) => void }) {
+function CareerCompassCard({
+  goal,
+  onOpenTab,
+  variant = "full",
+}: {
+  goal: CareerGoalT;
+  onOpenTab: (t: Tab) => void;
+  variant?: "full" | "compact";
+}) {
   const coverage = getBroadPursuitCoverage(goal);
   const hasCoverage = goal.decisionMode === "broad-parallel-pursuit" && coverage.combinations.length > 0;
+  const isCompact = variant === "compact";
   const compassSummary = hasCoverage
     ? "Keep multiple plausible lanes live and turn them into real roles before narrowing anything."
     : goal.reason;
@@ -683,13 +692,13 @@ function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: 
         </button>
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
+      <div className={`mt-3 grid gap-3 ${isCompact ? "sm:grid-cols-1" : "sm:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]"}`}>
         <div className="rounded-xl border border-card-border bg-card p-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">What matters now</p>
           <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
           <p className="text-xs text-muted-foreground mt-1">{goal.selectionRule}</p>
         </div>
-        <div className="rounded-xl border border-card-border bg-card p-3">
+        {!isCompact && <div className="rounded-xl border border-card-border bg-card p-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{hasCoverage ? "Missing next" : "Decision note"}</p>
           {hasCoverage ? (
             <>
@@ -721,10 +730,10 @@ function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: 
           ) : (
             <p className="text-sm font-medium mt-1">{goal.decisionQuestion}</p>
           )}
-        </div>
+        </div>}
       </div>
 
-      {hasCoverage && (
+      {hasCoverage && !isCompact && (
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="broad-pursuit-coverage-summary">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Still empty</p>
           {coverage.missing.length > 0 ? (
@@ -738,6 +747,24 @@ function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: 
           ) : (
             <p className="text-xs text-muted-foreground">Every active combination already has a real role.</p>
           )}
+        </div>
+      )}
+
+      {hasCoverage && isCompact && (
+        <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="broad-pursuit-coverage-summary">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+              {coverage.covered.length} covered
+            </span>
+            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              {coverage.missing.length} empty
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            {coverage.missing.length > 0
+              ? `Still empty: ${compactLanePreview(coverage.missing, "Every live lane has a real role.")}`
+              : "Every live lane has a real role."}
+          </p>
         </div>
       )}
 
@@ -887,16 +914,18 @@ function ViewSpineCallout({
     <div className="mb-5 rounded-xl border border-card-border bg-card p-4" data-testid={`${view}-spine-callout`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">How this view fits the plan</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this page matters now</p>
           <p className="text-sm font-medium mt-1">{lead.nextMoves[0] || goal.todayPlan.mustDo}</p>
           <p className="text-xs text-muted-foreground mt-1">{lead.bottleneck}</p>
         </div>
-        <span className="inline-flex shrink-0 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">
-          {DAY_TYPE_LABEL[goal.dayType] || goal.dayType}
-        </span>
+        {goal.recommendedFocus === lead.name && (
+          <span className="inline-flex shrink-0 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">
+            focus
+          </span>
+        )}
       </div>
       <div className="flex flex-wrap gap-1.5 mt-3">
-        {relevant.map((w) => (
+        {relevant.slice(0, 3).map((w) => (
           <span key={w.name} className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${workstreamTone(w.name, goal)}`}>
             {w.name}
           </span>
@@ -1334,7 +1363,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       <p className="text-sm text-muted-foreground mt-1 mb-3">Here's your day. Start at the top — you don't have to decide.</p>
 
       {/* Quick-capture — always here so a stray thought never needs another tab. */}
-      {activeGoal && <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} />}
+      {activeGoal && <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} variant="compact" />}
       <div className="mb-5 flex gap-2">
         <Input value={quickText} onChange={(e) => setQuickText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") quickCapture(); }}
           placeholder="Add anything on your mind…" className="h-10" data-testid="input-quick-capture" />

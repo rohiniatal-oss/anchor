@@ -645,9 +645,19 @@ function nextLaneGap(goal: CareerGoalT, combination: string) {
   };
 }
 
+function compactLanePreview(items: string[], fallback: string, limit = 2) {
+  if (items.length === 0) return fallback;
+  const shown = items.slice(0, limit);
+  const remainder = items.length - shown.length;
+  return `${shown.join("; ")}${remainder > 0 ? ` +${remainder} more` : ""}`;
+}
+
 function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: (t: Tab) => void }) {
   const coverage = getBroadPursuitCoverage(goal);
   const hasCoverage = goal.decisionMode === "broad-parallel-pursuit" && coverage.combinations.length > 0;
+  const compassSummary = hasCoverage
+    ? "Keep multiple plausible lanes live and turn them into real roles before narrowing anything."
+    : goal.reason;
   return (
     <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5" data-testid="career-compass">
       <div className="flex items-start justify-between gap-3">
@@ -666,110 +676,74 @@ function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: 
             )}
           </div>
           <h2 className="text-sm font-semibold leading-snug">Career compass</h2>
-          <p className="text-xs text-muted-foreground mt-1">{goal.reason}</p>
+          <p className="text-xs text-muted-foreground mt-1">{compassSummary}</p>
         </div>
         <button onClick={() => onOpenTab("strategy")} className="shrink-0 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1" data-testid="button-open-strategy-from-compass">
           Open strategy <ArrowUpRight className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]">
         <div className="rounded-xl border border-card-border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Today&apos;s strategic aim</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">What matters now</p>
           <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
-          <p className="text-xs text-muted-foreground mt-1">{goal.todayPlan.stopRule}</p>
+          <p className="text-xs text-muted-foreground mt-1">{goal.selectionRule}</p>
         </div>
         <div className="rounded-xl border border-card-border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Decision rule</p>
-          <p className="text-sm font-medium mt-1">{goal.selectionRule}</p>
-          <p className="text-xs text-muted-foreground mt-1">{goal.decisionQuestion}</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{hasCoverage ? "Missing next" : "Decision note"}</p>
+          {hasCoverage ? (
+            <>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                  {coverage.covered.length} covered
+                </span>
+                <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                  {coverage.missing.length} empty
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {coverage.missing.length > 0
+                  ? `Role gaps: ${compactLanePreview(coverage.missing, "Every live lane has a real role.")}`
+                  : "Every live lane has a real role."}
+              </p>
+              {(coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0) && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {coverage.missingNetworkSupport.length > 0
+                    ? `${coverage.missingNetworkSupport.length} contact gap${coverage.missingNetworkSupport.length > 1 ? "s" : ""}`
+                    : "No contact gaps"}
+                  {" · "}
+                  {coverage.missingCapabilitySupport.length > 0
+                    ? `${coverage.missingCapabilitySupport.length} capability gap${coverage.missingCapabilitySupport.length > 1 ? "s" : ""}`
+                    : "No capability gaps"}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm font-medium mt-1">{goal.decisionQuestion}</p>
+          )}
         </div>
       </div>
 
       {hasCoverage && (
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="broad-pursuit-coverage-summary">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lane coverage</p>
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-              <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-                {coverage.covered.length} covered
-              </span>
-              <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
-                {coverage.networkSupported.length} with contact path
-              </span>
-              <span className="inline-flex rounded-full bg-violet-50 px-2 py-0.5 font-medium text-violet-700 dark:bg-violet-950/30 dark:text-violet-300">
-                {coverage.capabilitySupported.length} with capability support
-              </span>
-              <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-                {coverage.missing.length} still empty
-              </span>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Still empty</p>
+          {coverage.missing.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {coverage.missing.map((combination) => (
+                <span key={combination} className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+                  {combination}
+                </span>
+              ))}
             </div>
-          </div>
-          <div className="space-y-2 text-xs">
-            <div>
-              <p className="text-[11px] font-medium text-foreground">Role gaps</p>
-              <p className="mt-1 text-muted-foreground">
-                {coverage.missing.length > 0
-                  ? coverage.missing.join("; ")
-                  : "Every active combination has at least one real role."}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] font-medium text-foreground">Contact path gaps</p>
-              <p className="mt-1 text-muted-foreground">
-                {coverage.missingNetworkSupport.length > 0
-                  ? coverage.missingNetworkSupport.join("; ")
-                  : "Every live combination has at least one contact path."}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] font-medium text-foreground">Capability gaps</p>
-              <p className="mt-1 text-muted-foreground">
-                {coverage.missingCapabilitySupport.length > 0
-                  ? coverage.missingCapabilitySupport.join("; ")
-                  : "Every live combination has at least one capability-support move."}
-              </p>
-            </div>
-          </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Every active combination already has a real role.</p>
+          )}
         </div>
       )}
 
-      {goal.pursuitPortfolio && goal.pursuitPortfolio.length > 0 && (
-        <div className="mt-3 rounded-xl border border-card-border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Parallel pursuit lanes</p>
-          <div className="flex flex-wrap gap-1.5">
-            {goal.pursuitPortfolio.slice(0, 4).map((item) => (
-              <span
-                key={item.combination}
-                className={`inline-flex rounded-full px-2 py-1 text-[11px] font-medium ${
-                  combinationCoverageState(goal, item.combination) === "covered"
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"
-                    : combinationCoverageState(goal, item.combination) === "missing"
-                    ? "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
-                    : "bg-muted text-foreground"
-                }`}
-              >
-                {item.combination}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="mt-3">
-        <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Trajectory</p>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {goal.trajectory.map((step) => (
-            <div key={step.key} className={`rounded-xl border p-2.5 ${step.status === "current" ? "border-primary/30 bg-card" : "border-card-border bg-card/70"}`}>
-              <div className="flex items-center gap-1.5 mb-1">
-                {step.status === "complete" ? <CheckCircle2 className="w-3.5 h-3.5 text-primary" /> : step.status === "current" ? <Target className="w-3.5 h-3.5 text-primary" /> : <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />}
-                <p className="text-xs font-medium">{step.title}</p>
-              </div>
-              <p className="text-[11px] text-muted-foreground">{step.description}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      <p className="mt-3 text-[11px] text-muted-foreground">
+        {goal.todayPlan.stopRule}
+      </p>
     </div>
   );
 }
@@ -852,18 +826,10 @@ function PursuitPortfolioGrid({ goal }: { goal: CareerGoalT }) {
               <p className="text-sm font-medium leading-snug">{item.combination}</p>
               <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge}`}>{badgeLabel}</span>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              <span className="font-medium text-foreground">Why this lane stays live:</span> {item.whyPlausible}
-            </p>
-            <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
-              <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
-            </p>
-            <div className="mt-3 rounded-md border border-card-border bg-card/70 px-3 py-2">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Next gap</p>
-              <div className="mt-1 flex items-center gap-2">
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${gap.tone}`}>{gap.label}</span>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{gap.detail}</p>
+            <p className="text-xs text-muted-foreground mt-2">{item.whyPlausible}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${gap.tone}`}>{gap.label}</span>
+              <p className="text-xs text-muted-foreground">{gap.detail}</p>
             </div>
           </div>
             );
@@ -948,19 +914,20 @@ function BroadPursuitJobsKickoff({
   goal: CareerGoalT;
   onAddRole: () => void;
   onStartLane: (item: GoalPortfolioItemT) => void;
-}) {
+  }) {
   const portfolio = goal.pursuitPortfolio || [];
   if (goal.decisionMode !== "broad-parallel-pursuit" || portfolio.length === 0) return null;
   const coverage = getBroadPursuitCoverage(goal);
+  const visiblePortfolio = portfolio.filter((item) => combinationCoverageState(goal, item.combination) === "missing");
 
   return (
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid="jobs-broad-pursuit-kickoff">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Build the role pipeline</p>
-          <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
+          <p className="text-sm font-medium mt-1">Fill the still-empty lanes with one real role each.</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Start by turning each live lane into one real posting or role lead. Do not choose a winner until the market gives you evidence.
+            Start with the uncovered lanes. You only need one credible role per lane before the market can start giving you signal.
           </p>
           <div className="flex flex-wrap gap-1.5 mt-2">
             <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
@@ -977,7 +944,7 @@ function BroadPursuitJobsKickoff({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 mt-4">
-        {portfolio.map((item) => {
+        {visiblePortfolio.map((item) => {
           const state = combinationCoverageState(goal, item.combination);
           const tone = state === "covered"
             ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/10"
@@ -1002,10 +969,7 @@ function BroadPursuitJobsKickoff({
                 {state === "covered" ? "covered" : state === "missing" ? "still empty" : "watch"}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground mt-2">{item.whyPlausible}</p>
-            <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
-              <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
-            </p>
+            <p className="text-xs text-muted-foreground mt-2">{laneGuideForCombination(item.combination).fitHint}</p>
             <div className="mt-3">
               <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
                 <Plus className="w-4 h-4 mr-1" /> {buttonLabel}
@@ -1045,13 +1009,19 @@ function BroadPursuitParallelSupportKickoff({
     const rightPriority = right.hasRole && rightMissing ? 0 : rightMissing ? 1 : 2;
     return leftPriority - rightPriority;
   });
+  const visiblePortfolio = orderedPortfolio.filter((item) => {
+    const support = combinationSupportState(goal, item.combination);
+    return mode === "network" ? !support.hasNetworkSupport : !support.hasCapabilitySupport;
+  });
 
   return (
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid={`${mode}-broad-pursuit-kickoff`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{title}</p>
-          <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
+          <p className="text-sm font-medium mt-1">
+            {mode === "network" ? "Add one real contact path in the weakest lanes." : "Add one reusable support move in the weakest lanes."}
+          </p>
           <p className="text-xs text-muted-foreground mt-1">{body}</p>
           <div className="flex flex-wrap gap-1.5 mt-2">
             <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
@@ -1072,10 +1042,23 @@ function BroadPursuitParallelSupportKickoff({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 mt-4">
-        {orderedPortfolio.map((item) => {
+        {visiblePortfolio.map((item) => {
           const state = combinationCoverageState(goal, item.combination);
           const support = combinationSupportState(goal, item.combination);
           const gap = nextLaneGap(goal, item.combination);
+          const supportGap = !support.hasRole
+            ? mode === "network"
+              ? {
+                  label: "Can warm now",
+                  detail: "Add a first contact path even before a role is saved.",
+                  tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+                }
+              : {
+                  label: "Can support now",
+                  detail: "Add one reusable capability move even before a role is saved.",
+                  tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
+                }
+            : gap;
           const supportMissing = mode === "network" ? !support.hasNetworkSupport : !support.hasCapabilitySupport;
           const tone = state === "covered"
             ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/10"
@@ -1101,17 +1084,15 @@ function BroadPursuitParallelSupportKickoff({
                   {state === "covered" ? "live role exists" : state === "missing" ? "no live role yet" : "watch"}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground mt-2">{item.whyPlausible}</p>
-              <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
-                <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
-              </p>
-              <div className="mt-3 rounded-md border border-card-border bg-card/70 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Next gap</p>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${gap.tone}`}>{gap.label}</span>
-                </div>
-                <p className="mt-1 text-xs text-muted-foreground">{gap.detail}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${supportGap.tone}`}>{supportGap.label}</span>
+                <p className="text-xs text-muted-foreground">{supportGap.detail}</p>
               </div>
+              {!support.hasRole && (
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  This can still start before a role is saved.
+                </p>
+              )}
               <div className="mt-3">
                 <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-${mode}-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
                   <Plus className="w-4 h-4 mr-1" /> {buttonLabel}
@@ -3454,7 +3435,7 @@ function LearnView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Learn" sub="What you're building. Give an item an output to make it count as proof." />
+        <SectionHeading title="Learn" sub="What you're building so future roles and interviews feel easier." />
         <Button onClick={() => showForm ? setShowForm(false) : setShowForm(true)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
       </div>
       {activeGoal && <ViewSpineCallout view="learn" goal={activeGoal} />}

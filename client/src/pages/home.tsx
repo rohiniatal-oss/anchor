@@ -792,34 +792,30 @@ function CareerCompassCard({
 }
 
 function WorkstreamGrid({ goal }: { goal: CareerGoalT }) {
-  const top = goal.workstreams.filter((w) => w.nextMoveType !== "wait").slice(0, 6);
-  const toneFor = (status: GoalWorkstreamT["status"]) => {
-    if (status === "active") return "border-primary/30 bg-primary/5";
-    if (status === "underdeveloped" || status === "blocked" || status === "stale") return "border-card-border bg-card";
-    if (status === "premature") return "border-card-border bg-muted/40";
-    return "border-card-border bg-card/70";
-  };
+  const top = goal.workstreams.filter((w) => w.nextMoveType !== "wait").slice(0, 4);
 
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between gap-3 mb-2">
-        <GroupLabel>Workstreams</GroupLabel>
-        <span className="text-xs text-muted-foreground">{goal.recommendedFocus} is the current focus</span>
+        <GroupLabel>What needs attention</GroupLabel>
+        <span className="text-xs text-muted-foreground">Focus: {goal.recommendedFocus}</span>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-2">
         {top.map((w) => (
-          <div key={w.name} className={`rounded-xl border p-3 ${toneFor(w.status)}`} data-testid={`workstream-${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div>
+          <div
+            key={w.name}
+            className={`rounded-xl border p-3 ${goal.recommendedFocus === w.name ? "border-primary/25 bg-primary/5" : "border-card-border bg-card"}`}
+            data-testid={`workstream-${w.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
                 <p className="text-sm font-medium">{w.name}</p>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wide">{w.progress.replace("_", " ")}</p>
+                <p className="text-xs text-muted-foreground mt-1">{w.nextMoves[0] || w.bottleneck}</p>
               </div>
               {goal.recommendedFocus === w.name && (
                 <span className="inline-flex rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">focus</span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">{w.bottleneck}</p>
-            {w.nextMoves[0] && <p className="text-xs text-primary mt-2 inline-flex items-start gap-1"><ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {w.nextMoves[0]}</p>}
             {w.evidence.length > 0 && <p className="text-[11px] text-muted-foreground/80 mt-2">{w.evidence[0]}</p>}
           </div>
         ))}
@@ -836,22 +832,22 @@ function PursuitPortfolioGrid({ goal }: { goal: CareerGoalT }) {
   return (
     <div className="mb-6" data-testid="pursuit-portfolio">
       <div className="flex items-center justify-between gap-3 mb-2">
-        <GroupLabel>Parallel pursuit portfolio</GroupLabel>
+        <GroupLabel>Live lanes</GroupLabel>
         <span className="text-xs text-muted-foreground">
           {coverage.missing.length > 0
-            ? `${coverage.missing.length} combinations still need a real role`
-            : "All active combinations have at least one live role"}
+            ? `${coverage.missing.length} still empty`
+            : "Every active lane has a real role"}
         </span>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-2">
         {portfolio.map((item) => (
           (() => {
             const state = combinationCoverageState(goal, item.combination);
             const gap = nextLaneGap(goal, item.combination);
             const tone = state === "covered"
-              ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/10"
+              ? "border-emerald-200 bg-emerald-50/40 dark:border-emerald-900 dark:bg-emerald-950/10"
               : state === "missing"
-              ? "border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/10"
+              ? "border-amber-200 bg-amber-50/40 dark:border-amber-900 dark:bg-amber-950/10"
               : "border-card-border bg-card";
             const badge = state === "covered"
               ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
@@ -860,21 +856,19 @@ function PursuitPortfolioGrid({ goal }: { goal: CareerGoalT }) {
               : "bg-muted text-muted-foreground";
             const badgeLabel = state === "covered" ? "covered" : state === "missing" ? "still empty" : "watch";
             return (
-          <div
-            key={item.combination}
-            className={`rounded-xl border p-3 ${tone}`}
-            data-testid={`pursuit-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-medium leading-snug">{item.combination}</p>
-              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge}`}>{badgeLabel}</span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">{item.whyPlausible}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${gap.tone}`}>{gap.label}</span>
-              <p className="text-xs text-muted-foreground">{gap.detail}</p>
-            </div>
-          </div>
+              <div
+                key={item.combination}
+                className={`rounded-xl border p-3 ${tone}`}
+                data-testid={`pursuit-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-snug">{item.combination}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{gap.detail}</p>
+                  </div>
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge}`}>{badgeLabel}</span>
+                </div>
+              </div>
             );
           })()
         ))}

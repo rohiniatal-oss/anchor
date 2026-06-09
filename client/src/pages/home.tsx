@@ -428,6 +428,19 @@ type CareerGoalT = {
   workstreams: GoalWorkstreamT[];
   todayPlan: GoalTodayPlanT;
 };
+type JobFormT = {
+  title: string;
+  company: string;
+  location: string;
+  url: string;
+  note: string;
+  nextStep: string;
+  deadline: string;
+  relatedTrackId: number | null;
+  roleArchetype: string;
+  narrativeAngle: string;
+  sourceType: string;
+};
 type GoalsStateResponseT = { goals: CareerGoalT[] };
 const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "Later", bonus: "Bonus" };
 const PHASE_LABEL: Record<CareerGoalT["phase"], string> = {
@@ -658,9 +671,11 @@ function ViewSpineCallout({
 function BroadPursuitJobsKickoff({
   goal,
   onAddRole,
+  onStartLane,
 }: {
   goal: CareerGoalT;
   onAddRole: () => void;
+  onStartLane: (item: GoalPortfolioItemT) => void;
 }) {
   const portfolio = goal.pursuitPortfolio || [];
   if (goal.decisionMode !== "broad-parallel-pursuit" || portfolio.length === 0) return null;
@@ -692,11 +707,53 @@ function BroadPursuitJobsKickoff({
             <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
               <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
             </p>
+            <div className="mt-3">
+              <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+                <Plus className="w-4 h-4 mr-1" /> Add role in this lane
+              </Button>
+            </div>
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+const JOB_ARCHETYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "advisory", label: "Advisory" },
+  { value: "chief_of_staff", label: "Chief of staff" },
+  { value: "ops", label: "Operations" },
+  { value: "policy", label: "Policy" },
+  { value: "research", label: "Research" },
+];
+
+const EMPTY_JOB_FORM: JobFormT = {
+  title: "",
+  company: "",
+  location: "",
+  url: "",
+  note: "",
+  nextStep: "",
+  deadline: "",
+  relatedTrackId: null,
+  roleArchetype: "",
+  narrativeAngle: "",
+  sourceType: "posting",
+};
+
+function roleArchetypeForLane(combination: string): string {
+  if (/ops \/ chief of staff/i.test(combination)) return "chief_of_staff";
+  return "advisory";
+}
+
+function lanePresetForJob(item: GoalPortfolioItemT): Partial<JobFormT> {
+  return {
+    roleArchetype: roleArchetypeForLane(item.combination),
+    narrativeAngle: item.combination,
+    note: `Lane focus: ${item.combination}. ${item.whyPlausible}`,
+    nextStep: "Save the posting and decide whether this is a credible near-term role.",
+    sourceType: "posting",
+  };
 }
 
 function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
@@ -1460,11 +1517,27 @@ function JobsView() {
   const { data: contacts = [] } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
   const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", company: "", location: "", url: "", note: "", nextStep: "", deadline: "" });
+  const [form, setForm] = useState<JobFormT>(EMPTY_JOB_FORM);
+  const [selectedLane, setSelectedLane] = useState<string>("");
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
-    setForm({ title: "", company: "", location: "", url: "", note: "", nextStep: "", deadline: "" }); setShowForm(false);
+    setForm(EMPTY_JOB_FORM); setSelectedLane(""); setShowForm(false);
+  }
+  function startBlankRole() {
+    setSelectedLane("");
+    setForm(EMPTY_JOB_FORM);
+    setShowForm(true);
+  }
+  function startLaneRole(item: GoalPortfolioItemT) {
+    const preset = lanePresetForJob(item);
+    setForm((current) => ({
+      ...EMPTY_JOB_FORM,
+      ...preset,
+      relatedTrackId: current.relatedTrackId,
+    }));
+    setSelectedLane(item.combination);
+    setShowForm(true);
   }
   async function move(j: Job, dir: 1 | -1) {
     const idx = JOB_COLS.findIndex((c) => c.id === j.status);
@@ -1492,19 +1565,83 @@ function JobsView() {
     <div>
       <div className="flex items-start justify-between gap-4">
         <SectionHeading title="Jobs" sub="Roles and applications, soonest deadlines first." />
-        <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
+        <Button onClick={() => showForm ? setShowForm(false) : startBlankRole()} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
       </div>
       {activeGoal && <ViewSpineCallout view="jobs" goal={activeGoal} />}
-      {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onAddRole={() => setShowForm(true)} />}
+      {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onAddRole={startBlankRole} onStartLane={startLaneRole} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
+          {selectedLane && (
+            <div className="sm:col-span-2 flex items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2" data-testid="job-form-lane-banner">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Selected lane</p>
+                <p className="text-sm font-medium">{selectedLane}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedLane("");
+                  setForm((current) => ({ ...current, roleArchetype: "", narrativeAngle: "", note: "", nextStep: "" }));
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground"
+                data-testid="button-clear-job-lane"
+              >
+                Clear lane
+              </button>
+            </div>
+          )}
+          <div className="sm:col-span-2">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Readiness template</p>
+            <div className="flex flex-wrap gap-1.5">
+              {JOB_ARCHETYPE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, roleArchetype: option.value })}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.roleArchetype === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                  data-testid={`button-job-archetype-${option.value}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">This shapes the seeded readiness rail once you expand the role.</p>
+          </div>
+          {tracks.length > 0 && (
+            <div className="sm:col-span-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Track link</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, relatedTrackId: null })}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId == null ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                  data-testid="button-job-track-none"
+                >
+                  Leave unlinked
+                </button>
+                {tracks.map((track) => (
+                  <button
+                    key={track.id}
+                    type="button"
+                    onClick={() => setForm({ ...form, relatedTrackId: track.id })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                    data-testid={`button-job-track-${track.id}`}
+                  >
+                    {track.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <Input placeholder="Role title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-job-title" />
           <Input placeholder="Company / org" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} data-testid="input-job-company" />
           <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} data-testid="input-job-location" />
           <Input placeholder="Deadline (YYYY-MM-DD)" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} data-testid="input-job-deadline" />
           <Input placeholder="Link to posting" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" data-testid="input-job-url" />
+          <Input placeholder="Why you fit this role / lane" value={form.narrativeAngle} onChange={(e) => setForm({ ...form, narrativeAngle: e.target.value })} className="sm:col-span-2" data-testid="input-job-narrative-angle" />
+          <Input placeholder="Lane or sourcing note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-job-note" />
           <Input placeholder="Next step (e.g. tailor CV)" value={form.nextStep} onChange={(e) => setForm({ ...form, nextStep: e.target.value })} className="sm:col-span-2" data-testid="input-job-nextstep" />
-          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button><Button onClick={add} data-testid="button-save-job">Save role</Button></div>
+          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_JOB_FORM); }}>Cancel</Button><Button onClick={add} data-testid="button-save-job">Save role</Button></div>
         </div>
       )}
       {isLoading ? <Loading /> : (

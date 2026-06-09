@@ -19,6 +19,7 @@ import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { mutateAndInvalidate } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
+import { todayKey } from "@/lib/utils";
 import type { Task, Job, Learn, Win, Event, Hustle, Contact, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 import { type TrackedEntity, getTrackId, getRelationshipStrength, WIN_CATEGORIES, type WinCategory, getLearnOutputState, learnNeedsOutputNudge, type LearnOutputState, getLearnStatus, type LearnStatus, isFellowship } from "@shared/domainState";
 import { isFellowshipLearnRow } from "@shared/fellowshipLane";
@@ -30,10 +31,6 @@ import { useToast } from "@/hooks/use-toast";
 type Step = { text: string; done: boolean };
 function parseSteps(raw: string): Step[] {
   try { const s = JSON.parse(raw || "[]"); return Array.isArray(s) ? s : []; } catch { return []; }
-}
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 const SIZE_LABEL: Record<string, string> = { quick: "quick", medium: "~45m", deep: "deep" };
 function sizeChipLabel(s: string) { return s === "medium" ? "~45m" : s; }
@@ -64,13 +61,16 @@ function deadlineTone(d: string): string {
 }
 
 type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins";
+// Tabs always visible in the header (icon-only on mobile, icon+label on sm+)
+const HEADER_TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
+  { id: "jobs", label: "Jobs", icon: Briefcase },
+  { id: "network", label: "Network", icon: Users },
+  { id: "braindump", label: "Capture", icon: Sparkles },
+];
+// Remaining tabs in the More dropdown
 const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] = [
   { id: "strategy", label: "Strategy", icon: Compass, blurb: "Your paths, at a glance" },
-  { id: "braindump", label: "Brain dump", icon: Sparkles, blurb: "Empty your head" },
-  { id: "jobs", label: "Jobs", icon: Briefcase, blurb: "Your applications" },
-  { id: "network", label: "Network", icon: Users, blurb: "People to reach" },
   { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
-
   { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
 ];
 
@@ -178,11 +178,19 @@ export default function Home() {
               <div className="font-bold text-lg tracking-tight" data-testid="text-appname">Anchor</div>
             </div>
           </button>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5">
+            {HEADER_TABS.map(({ id, label, icon: Icon }) => (
+              <button key={id} onClick={() => go(id)} data-testid={`tab-${id}`}
+                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-md text-sm font-medium hover-elevate transition-colors ${tab === id ? "text-foreground bg-muted/60" : "text-muted-foreground"}`}>
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
             <div className="relative">
               <button onClick={() => setMoreOpen((o) => !o)} data-testid="button-more"
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium hover-elevate ${tab !== "today" ? "text-foreground" : "text-muted-foreground"}`}>
-                More <ChevronDown className={`w-4 h-4 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
+                className={`flex items-center gap-1 px-2.5 py-2 rounded-md text-sm font-medium hover-elevate transition-colors ${MORE_TABS.some((t) => t.id === tab) ? "text-foreground bg-muted/60" : "text-muted-foreground"}`}>
+                <span className="hidden sm:inline">More</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
               </button>
               {moreOpen && (
                 <>
@@ -1306,7 +1314,6 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     if (created?.id) mutateAndInvalidate("POST", `/api/tasks/${created.id}/enrich`, {}, ["/api/tasks"]).catch(() => {});
     toast({ title: "Captured.", description: "It's in your brain dump — sort it whenever." });
   }
-  const [showCapacity, setShowCapacity] = useState(false);
   const [energy, setEnergy] = useState("medium");
   const taskById = new Map(tasks.map((task) => [task.id, task] as const));
 
@@ -1317,14 +1324,14 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, tracksLoading, pinned, tracks.length]);
 
-  async function getPlan(e: string) {
+  async function getPlan(e: string, recompute = false) {
     setLoadingPlan(true);
     try {
       // Recompute when energy is explicitly chosen; otherwise just read current.
-      const r = e !== "medium" || showCapacity
+      const r = recompute || e !== "medium"
         ? await mutateAndInvalidate("POST", "/api/plan/recompute", { energy: e, day }, [])
         : await mutateAndInvalidate("GET", `/api/plan/current?day=${day}&energy=${e}`, undefined, []);
-      setPlan(r?.plan || null); setPlanItems(Array.isArray(r?.items) ? r.items : []); setShowCapacity(false);
+      setPlan(r?.plan || null); setPlanItems(Array.isArray(r?.items) ? r.items : []);
     } catch { toast({ title: "Couldn't shape the day", description: "Try again in a moment." }); }
     finally { setLoadingPlan(false); }
   }
@@ -1397,21 +1404,13 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
                   <Target className="w-4 h-4" /> Today, in order
                 </div>
-                <button onClick={() => setShowCapacity((s) => !s)} data-testid="button-replan" className="text-xs text-muted-foreground hover:text-foreground">
-                  different kind of day?
-                </button>
-              </div>
-              {showCapacity && (
-                <div className="mb-3 rounded-lg bg-card border border-card-border p-3">
-                  <p className="text-xs text-muted-foreground mb-2">How's your energy? I'll reshape around it.</p>
-                  <div className="flex gap-1.5">
-                    {[["low", "Low"], ["medium", "Medium"], ["high", "High"]].map(([v, l]) => (
-                      <button key={v} onClick={() => { setEnergy(v); getPlan(v); }} data-testid={`energy-${v}`}
-                        className={`px-3 py-1.5 rounded-full text-sm border ${energy === v ? "border-primary bg-primary/10 text-primary font-medium" : "border-border text-muted-foreground hover:text-foreground"}`}>{l}</button>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1" aria-label="Energy level">
+                  {([["low", "Low"], ["medium", "Medium"], ["high", "High"]] as const).map(([v, l]) => (
+                    <button key={v} onClick={() => { setEnergy(v); getPlan(v, true); }} data-testid={`energy-${v}`}
+                      className={`px-2 py-1 rounded-full text-xs font-medium border transition-colors ${energy === v ? "border-primary bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{l}</button>
+                  ))}
                 </div>
-              )}
+              </div>
               <div className="space-y-2">
                 {activeItems.map((it, i) => {
                   const linkedTask = it.taskId ? taskById.get(it.taskId) : undefined;
@@ -1425,7 +1424,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                     ? "One credible role per lane is enough to start getting real market signal."
                     : (it.explanation?.summary || it.whySelected);
                   return (
-                  <button key={it.id} onClick={() => startItem(it)} data-testid={`plan-item-${i}`}
+                  <button key={it.id} onClick={() => startItem(it)} data-testid={`plan-item-${i}`} data-plan-rank={String(i)}
                     className={`group w-full text-left flex items-start gap-3 rounded-xl bg-card border p-3.5 hover-elevate transition-colors ${isMVD(it) ? "border-primary/40" : "border-card-border"}`}>
                     <span className={`shrink-0 mt-0.5 rounded-md text-[11px] font-semibold px-2 py-1 ${i === 0 ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>{SLOT_LABEL[it.slot] || it.slot}</span>
                     <div className="flex-1 min-w-0">
@@ -1469,7 +1468,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               <p className="text-sm text-muted-foreground mb-3">Nothing queued to plan yet. Add a thought, a job, or something to learn — then I'll shape a day.</p>
               <div className="flex flex-wrap justify-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => onOpenTab("braindump")}>Brain dump</Button>
-                <Button size="sm" variant="outline" onClick={() => getPlan(energy)}>Try again</Button>
+                <Button size="sm" variant="outline" onClick={() => getPlan(energy, true)}>Try again</Button>
               </div>
             </div>
           )}
@@ -1876,32 +1875,60 @@ function RightNow({ pinned }: { pinned: Task }) {
       )}
       {current && (
         <div className="mt-3">
-          <p className="text-xs text-muted-foreground mb-1.5">Your one next step ({steps.filter((s) => s.done).length}/{steps.length} done):</p>
-          <div className="flex items-start gap-3 rounded-lg bg-card border border-card-border p-3">
-            <button onClick={checkStep} aria-label="Mark step done" data-testid="button-check-step"
-              className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center hover-elevate" />
-            <span className="flex-1 font-medium leading-snug">{current.text}</span>
-          </div>
+          {/* Step progress bar — shows at a glance where you are without overwhelming */}
           {steps.length > 1 && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              You do not need to hold the whole task in your head. Finish this step and I&apos;ll surface the next one.
-            </p>
+            <div className="flex items-center gap-1.5 mb-2.5">
+              {steps.map((s, idx) => (
+                <span key={idx} className={`h-1.5 rounded-full transition-all ${
+                  s.done ? "flex-1 bg-primary" : idx === currentIdx ? "flex-1 bg-primary/40" : "w-3 bg-muted"
+                }`} />
+              ))}
+              <span className="ml-1 text-[11px] text-muted-foreground tabular-nums shrink-0">
+                {steps.filter((s) => s.done).length}/{steps.length}
+              </span>
+            </div>
           )}
+          <div
+            className="group/step flex items-start gap-3 rounded-xl bg-card border-2 border-primary/25 p-3.5 cursor-pointer"
+            onClick={checkStep}
+            role="button"
+            aria-label="Mark step done"
+          >
+            <button
+              onClick={(e) => { e.stopPropagation(); checkStep(); }}
+              data-testid="button-check-step"
+              aria-label="Mark step done"
+              className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center transition-colors group-hover/step:bg-primary group-hover/step:border-primary"
+            >
+              <Check className="w-3 h-3 text-primary opacity-0 group-hover/step:opacity-100 group-hover/step:text-primary-foreground transition-opacity" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <span className="font-medium leading-snug">{current.text}</span>
+              {steps.length > 1 && (
+                <p className="text-[11px] text-muted-foreground mt-1">Tap to mark done — next step will appear</p>
+              )}
+            </div>
+          </div>
           {hint ? (
-            <p className="mt-2 text-sm rounded-lg bg-accent text-accent-foreground px-3 py-2" data-testid="text-unstick-hint">✨ {hint}</p>
+            <p className="mt-2 text-sm rounded-lg bg-accent text-accent-foreground px-3 py-2" data-testid="text-unstick-hint">{hint}</p>
           ) : (
             <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
               className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary disabled:opacity-60">
               {unsticking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-              {unsticking ? "Thinking…" : "Stuck? help me start"}
+              {unsticking ? "Thinking…" : "Stuck? Get a nudge"}
             </button>
           )}
         </div>
       )}
       {allStepsDone && (
-        <div className="mt-3 flex items-center gap-3">
-          <p className="text-sm text-muted-foreground flex-1">All steps done — finish it off.</p>
-          <Button size="sm" onClick={finishTask} data-testid="button-finish-task"><Check className="w-4 h-4 mr-1" /> Mark done</Button>
+        <div className="mt-3 rounded-xl bg-primary/10 border border-primary/20 p-3.5 flex items-center gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-primary">All steps done</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Finish it off and log the win.</p>
+          </div>
+          <Button size="sm" onClick={finishTask} data-testid="button-finish-task" className="shrink-0">
+            <Check className="w-4 h-4 mr-1" /> Done
+          </Button>
         </div>
       )}
       {steps.length === 0 && (
@@ -2088,13 +2115,14 @@ function JobsView() {
   const truthById = new Map(truthStrips.map((truth) => [truth.jobId, truth]));
   const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
+  const [showMoreJobFields, setShowMoreJobFields] = useState(false);
   const [form, setForm] = useState<JobFormT>(EMPTY_JOB_FORM);
   const [selectedLane, setSelectedLane] = useState<string>("");
   const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
-    setForm(EMPTY_JOB_FORM); setSelectedLane(""); setShowForm(false);
+    setForm(EMPTY_JOB_FORM); setSelectedLane(""); setShowForm(false); setShowMoreJobFields(false);
   }
   function startBlankRole() {
     setSelectedLane("");
@@ -2142,122 +2170,95 @@ function JobsView() {
       {activeGoal && !(roles.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="jobs" goal={activeGoal} />}
       {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onStartLane={startLaneRole} />}
       {showForm && (
-        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
+        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3">
           {selectedLane && (
-            <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" data-testid="job-form-lane-banner">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Selected lane</p>
-                  <p className="text-sm font-medium">{selectedLane}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedLane("");
-                    setForm((current) => ({ ...current, roleArchetype: "", narrativeAngle: "", note: "", nextStep: "", relatedTrackId: null }));
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  data-testid="button-clear-job-lane"
-                >
-                  Clear lane
-                </button>
+            <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="job-form-lane-banner">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lane</p>
+                <p className="text-sm font-medium">{selectedLane}</p>
+                {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
               </div>
-              {selectedLaneGuide && (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">What counts here</p>
-                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.fitHint}</p>
-                  </div>
-                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Try searches like</p>
-                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.searchHint}</p>
-                  </div>
-                </div>
-              )}
+              <button type="button" onClick={() => { setSelectedLane(""); setForm((c) => ({ ...c, roleArchetype: "", narrativeAngle: "", note: "", nextStep: "", relatedTrackId: null })); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0" data-testid="button-clear-job-lane">Clear</button>
             </div>
           )}
-          <div className="sm:col-span-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Readiness template</p>
-            <div className="flex flex-wrap gap-1.5">
-              {JOB_ARCHETYPE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setForm({ ...form, roleArchetype: option.value })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.roleArchetype === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid={`button-job-archetype-${option.value}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-1">This shapes the seeded readiness rail once you expand the role.</p>
+          {/* Minimum fields — just enough to save it fast */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input
+              placeholder={selectedLaneGuide?.titlePlaceholder || "Role title *"}
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              data-testid="input-job-title"
+              autoFocus
+            />
+            <Input placeholder="Company / org" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} data-testid="input-job-company" />
+            <Input placeholder="Link to posting" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" data-testid="input-job-url" />
           </div>
           {tracks.length > 0 && (
-            <div className="sm:col-span-2">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Track link</p>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to a path (optional)</p>
               <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, relatedTrackId: null })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId == null ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid="button-job-track-none"
-                >
-                  Leave unlinked
-                </button>
                 {tracks.map((track) => (
-                  <button
-                    key={track.id}
-                    type="button"
-                    onClick={() => setForm({ ...form, relatedTrackId: track.id })}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                    data-testid={`button-job-track-${track.id}`}
-                  >
-                    {track.name}
-                  </button>
+                  <button key={track.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === track.id ? null : track.id })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground hover:text-foreground"}`}
+                    data-testid={`button-job-track-${track.id}`}>{track.name}</button>
                 ))}
               </div>
-              {selectedLaneGuide && form.relatedTrackId != null && (
-                <p className="mt-1 text-[11px] text-muted-foreground">Anchor linked the nearest matching track, but you can change it.</p>
-              )}
             </div>
           )}
-          <Input
-            placeholder={selectedLaneGuide?.titlePlaceholder || "Role title *"}
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            data-testid="input-job-title"
-          />
-          <Input placeholder="Company / org" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} data-testid="input-job-company" />
-          <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} data-testid="input-job-location" />
-          <Input placeholder="Deadline (YYYY-MM-DD)" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} data-testid="input-job-deadline" />
-          <Input placeholder="Link to posting" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" data-testid="input-job-url" />
-          <Input placeholder="Why you fit this role / lane" value={form.narrativeAngle} onChange={(e) => setForm({ ...form, narrativeAngle: e.target.value })} className="sm:col-span-2" data-testid="input-job-narrative-angle" />
-          <Input placeholder="Lane or sourcing note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-job-note" />
-          <Input placeholder="Next step (e.g. tailor CV)" value={form.nextStep} onChange={(e) => setForm({ ...form, nextStep: e.target.value })} className="sm:col-span-2" data-testid="input-job-nextstep" />
-          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_JOB_FORM); }}>Cancel</Button><Button onClick={add} data-testid="button-save-job">Save role</Button></div>
+          {/* Progressive disclosure — extra fields only when needed */}
+          <button type="button" onClick={() => setShowMoreJobFields((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMoreJobFields ? "rotate-180" : ""}`} />
+            {showMoreJobFields ? "Fewer options" : "More options (deadline, role type, notes)"}
+          </button>
+          {showMoreJobFields && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input placeholder="Deadline (YYYY-MM-DD)" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} data-testid="input-job-deadline" />
+              <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} data-testid="input-job-location" />
+              <div className="sm:col-span-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Role type (shapes the readiness checklist)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {JOB_ARCHETYPE_OPTIONS.map((option) => (
+                    <button key={option.value} type="button" onClick={() => setForm({ ...form, roleArchetype: option.value })}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.roleArchetype === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                      data-testid={`button-job-archetype-${option.value}`}>{option.label}</button>
+                  ))}
+                </div>
+              </div>
+              <Input placeholder="Why you fit this role" value={form.narrativeAngle} onChange={(e) => setForm({ ...form, narrativeAngle: e.target.value })} className="sm:col-span-2" data-testid="input-job-narrative-angle" />
+              <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-job-note" />
+              <Input placeholder="First next step" value={form.nextStep} onChange={(e) => setForm({ ...form, nextStep: e.target.value })} className="sm:col-span-2" data-testid="input-job-nextstep" />
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_JOB_FORM); setShowMoreJobFields(false); }}>Cancel</Button>
+            <Button onClick={add} data-testid="button-save-job">Save role</Button>
+          </div>
         </div>
       )}
       {isLoading ? <Loading /> : (
         <>
           {showRoleBoard && (
-            <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {active.map(({ col, items }) => (
-              <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
-                <div className="flex items-center justify-between mb-2.5 px-1"><h2 className="font-semibold text-sm">{col.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div>
-                <div className="space-y-2">
-                  {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
-                  {items.length === 0 && <p className="text-xs text-muted-foreground px-1 py-3">Add roles you want to apply for.</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-          {empty.length > 0 && (
-            <p className="mt-3 text-xs text-muted-foreground">Empty: {empty.map((g) => g.col.label).join(" · ")} — cards appear here as you move them along.</p>
-          )}
-
-            </>
+            <div className="space-y-6">
+              {active.map(({ col, items }) => (
+                items.length > 0 || col.id === "wishlist" ? (
+                  <div key={col.id}>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{col.label}</span>
+                      {items.length > 0 && <span className="text-xs text-muted-foreground tabular-nums">({items.length})</span>}
+                    </div>
+                    <div className="space-y-2">
+                      {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                      {items.length === 0 && col.id === "wishlist" && (
+                        <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
+                          <p className="text-sm text-muted-foreground">No roles yet — add one above or use a lane shortcut.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null
+              ))}
+            </div>
           )}
           {/* FELLOWSHIPS LANE — opportunities you apply to (eligibility + deadline +
               application steps), NOT resources you consume. Open ones render with
@@ -2655,8 +2656,16 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
             </button>
           </div>
 
-          {truth && (
-            <div className="mt-2 rounded-md border border-card-border bg-muted/35 px-2.5 py-2" data-testid={`job-truth-${j.id}`}>
+          {truth && !open && (
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap" data-testid={`job-truth-${j.id}`}>
+              <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary shrink-0">
+                {truth.actionLabel}
+              </span>
+              <p className="text-xs text-muted-foreground leading-snug line-clamp-1">{truth.headline}</p>
+            </div>
+          )}
+          {truth && open && (
+            <div className="mt-2 rounded-md border border-card-border bg-muted/35 px-2.5 py-2">
               <div className="flex flex-wrap items-center gap-1.5 mb-1">
                 <span className="inline-flex rounded-full bg-card px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                   {truth.actionLabel}
@@ -3010,10 +3019,12 @@ function NetworkView() {
     finally { setSugLoading(false); }
   }
   useEffect(() => { fetchSug([]); /* eslint-disable-next-line */ }, []);
+  const [showMoreContactFields, setShowMoreContactFields] = useState(false);
   function resetForm() {
     setForm(EMPTY_CONTACT_FORM);
     setSelectedLane("");
     setShowForm(false);
+    setShowMoreContactFields(false);
   }
   function startBlankContact() {
     setForm(EMPTY_CONTACT_FORM);
@@ -3074,115 +3085,73 @@ function NetworkView() {
       {activeGoal && contacts.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="network" onStartLane={startLaneContact} />}
 
       {showForm && (
-        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2" data-testid="contact-intake-form">
+        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3" data-testid="contact-intake-form">
           {selectedLane && (
-            <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" data-testid="contact-form-lane-banner">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Supporting lane</p>
-                  <p className="text-sm font-medium">{selectedLane}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedLane("");
-                    setForm((current) => ({ ...current, sector: "", why: "", targetRole: "", relatedTrackId: null }));
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  data-testid="button-clear-contact-lane"
-                >
-                  Clear lane
-                </button>
+            <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="contact-form-lane-banner">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lane</p>
+                <p className="text-sm font-medium">{selectedLane}</p>
+                {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
               </div>
-              {selectedLaneGuide && (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this contact helps</p>
-                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.fitHint}</p>
-                  </div>
-                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Best first ask</p>
-                    <p className="mt-1 text-xs text-foreground">Start with advice or a reconnect unless you already have enough warmth for a referral ask.</p>
-                  </div>
-                </div>
-              )}
+              <button type="button" onClick={() => { setSelectedLane(""); setForm((c) => ({ ...c, sector: "", why: "", targetRole: "", relatedTrackId: null })); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0" data-testid="button-clear-contact-lane">Clear</button>
             </div>
           )}
-          <Input placeholder="Who they are *" value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value })} data-testid="input-contact-who" />
-          <Input placeholder="Name (optional)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-contact-name-new" />
-          <Input placeholder="Sector / lane" value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} data-testid="input-contact-sector" />
-          <Input placeholder="Target org" value={form.targetOrg} onChange={(e) => setForm({ ...form, targetOrg: e.target.value })} data-testid="input-contact-target-org" />
-          <Input placeholder="Target role" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} data-testid="input-contact-target-role" />
-          <Input placeholder="Follow up date (YYYY-MM-DD)" value={form.nextFollowUpDate} onChange={(e) => setForm({ ...form, nextFollowUpDate: e.target.value })} data-testid="input-contact-follow-up" />
-          <Input placeholder="Why this person matters" value={form.why} onChange={(e) => setForm({ ...form, why: e.target.value })} className="sm:col-span-2" data-testid="input-contact-why" />
-          <Input placeholder="Warm lane / network source" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" data-testid="input-contact-source-network" />
-
-          <div className="sm:col-span-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Ask type</p>
-            <div className="flex flex-wrap gap-1.5">
-              {ASK_TYPE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setForm({ ...form, askType: option.value })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.askType === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid={`button-contact-ask-${option.value}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
+          {/* Minimal fields — capture quickly */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input placeholder="Who they are (role / title) *" value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value })} data-testid="input-contact-who" autoFocus className="sm:col-span-2" />
+            <Input placeholder="Name (optional)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-contact-name-new" />
+            <Input placeholder="Org / company" value={form.targetOrg} onChange={(e) => setForm({ ...form, targetOrg: e.target.value })} data-testid="input-contact-target-org" />
           </div>
-
-          <div className="sm:col-span-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Relationship strength</p>
-            <div className="flex flex-wrap gap-1.5">
-              {RELATIONSHIP_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setForm({ ...form, relationshipStrength: option.value })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relationshipStrength === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid={`button-contact-strength-${option.value}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {tracks.length > 0 && (
-            <div className="sm:col-span-2">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Track link</p>
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Ask</p>
               <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, relatedTrackId: null })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId == null ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid="button-contact-track-none"
-                >
-                  Leave unlinked
-                </button>
-                {tracks.map((track) => (
-                  <button
-                    key={track.id}
-                    type="button"
-                    onClick={() => setForm({ ...form, relatedTrackId: track.id })}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                    data-testid={`button-contact-track-${track.id}`}
-                  >
-                    {track.name}
-                  </button>
+                {ASK_TYPE_OPTIONS.map((option) => (
+                  <button key={option.value} type="button" onClick={() => setForm({ ...form, askType: option.value })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.askType === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                    data-testid={`button-contact-ask-${option.value}`}>{option.label}</button>
                 ))}
               </div>
-              {selectedLaneGuide && form.relatedTrackId != null && (
-                <p className="mt-1 text-[11px] text-muted-foreground">Anchor linked the nearest matching track, but you can change it.</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Warmth</p>
+              <div className="flex flex-wrap gap-1.5">
+                {RELATIONSHIP_OPTIONS.map((option) => (
+                  <button key={option.value} type="button" onClick={() => setForm({ ...form, relationshipStrength: option.value })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relationshipStrength === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                    data-testid={`button-contact-strength-${option.value}`}>{option.label}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+          {/* Progressive disclosure */}
+          <button type="button" onClick={() => setShowMoreContactFields((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMoreContactFields ? "rotate-180" : ""}`} />
+            {showMoreContactFields ? "Fewer options" : "More options (track, follow-up, notes)"}
+          </button>
+          {showMoreContactFields && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input placeholder="Target role" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} data-testid="input-contact-target-role" />
+              <Input placeholder="Follow up date (YYYY-MM-DD)" value={form.nextFollowUpDate} onChange={(e) => setForm({ ...form, nextFollowUpDate: e.target.value })} data-testid="input-contact-follow-up" />
+              <Input placeholder="Why this person matters" value={form.why} onChange={(e) => setForm({ ...form, why: e.target.value })} className="sm:col-span-2" data-testid="input-contact-why" />
+              <Input placeholder="Network source / sector" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" data-testid="input-contact-source-network" />
+              {tracks.length > 0 && (
+                <div className="sm:col-span-2">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to path</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tracks.map((track) => (
+                      <button key={track.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === track.id ? null : track.id })}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground hover:text-foreground"}`}
+                        data-testid={`button-contact-track-${track.id}`}>{track.name}</button>
+                    ))}
+                  </div>
+                </div>
               )}
+              <Input placeholder="Message draft" value={form.messageDraft} onChange={(e) => setForm({ ...form, messageDraft: e.target.value })} className="sm:col-span-2" data-testid="input-contact-message-draft" />
             </div>
           )}
-
-          <Input placeholder="Message draft (optional)" value={form.messageDraft} onChange={(e) => setForm({ ...form, messageDraft: e.target.value })} className="sm:col-span-2" data-testid="input-contact-message-draft" />
-          <div className="sm:col-span-2 flex gap-2 justify-end">
+          <div className="flex gap-2 justify-end">
             <Button variant="ghost" onClick={resetForm}>Cancel</Button>
             <Button onClick={addContact} data-testid="button-save-contact">Save contact</Button>
           </div>
@@ -3213,41 +3182,42 @@ function NetworkView() {
       {isLoading ? <Loading /> : contacts.length === 0 ? (
         <Empty icon={Users} text="No contacts yet. Add one real contact path now." />
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-6">
+          {/* Overdue follow-ups — surface these first so nothing slips */}
+          {(() => {
+            const overdueContacts = contacts.filter(isFollowUpOverdue);
+            if (overdueContacts.length === 0) return null;
+            return (
+              <div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">Overdue follow-ups</span>
+                  <span className="rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px] font-medium px-1.5 py-0.5">{overdueContacts.length}</span>
+                </div>
+                <div className="space-y-2">
+                  {overdueContacts.map((c) => <ContactCard key={c.id} c={c} tracks={tracks} tasks={tasks} onPatch={patch} onRemove={() => remove(c.id)} />)}
+                </div>
+              </div>
+            );
+          })()}
           {populatedLaneKeys.map((key) => {
             const items = byLane.get(key)!;
-            const overdue = items.filter(isFollowUpOverdue).length;
+            const nonOverdue = items.filter((c) => !isFollowUpOverdue(c));
+            if (nonOverdue.length === 0) return null;
             return (
-              <div key={key} className="rounded-xl border border-border bg-muted/30 p-3" data-testid={`lane-${key}`}>
-                <div className="flex items-center justify-between mb-2.5 px-1">
-                  <h2 className="font-semibold text-sm flex items-center gap-1.5">
-                    <Flame className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400" /> {laneLabel(key)}
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    {overdue > 0 && <span className="text-[10px] font-medium rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400 px-1.5 py-0.5">{overdue} overdue</span>}
-                    <span className="text-xs text-muted-foreground tabular-nums">{items.length}</span>
-                  </div>
+              <div key={key} data-testid={`lane-${key}`}>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{laneLabel(key)}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">({nonOverdue.length})</span>
                 </div>
-                {items.length === 0 ? (
-                  <p className="text-xs text-muted-foreground px-1 py-1">No one in this lane yet.</p>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {items.map((c) => <ContactCard key={c.id} c={c} tracks={tracks} tasks={tasks} onPatch={patch} onRemove={() => remove(c.id)} />)}
-                  </div>
-                )}
+                <div className="space-y-2">
+                  {nonOverdue.map((c) => <ContactCard key={c.id} c={c} tracks={tracks} tasks={tasks} onPatch={patch} onRemove={() => remove(c.id)} />)}
+                </div>
               </div>
             );
           })}
-
           {quietLaneKeys.length > 0 && (
-            <div className="rounded-xl border border-dashed border-border bg-card/60 p-4" data-testid="quiet-network-lanes">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="font-semibold text-sm">Later</h2>
-                <span className="text-xs text-muted-foreground">{quietLaneKeys.length} empty</span>
-              </div>
-              <p className="text-sm text-muted-foreground mb-3">
-                Optional routes to warm later. They do not need attention before your live contacts.
-              </p>
+            <div className="rounded-xl border border-dashed border-border p-4" data-testid="quiet-network-lanes">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Routes to warm later</p>
               <div className="flex flex-wrap gap-2">
                 {quietLaneKeys.map((key) => (
                   <span key={key} className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
@@ -3429,6 +3399,7 @@ function LearnView() {
   const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
+  const [showMoreLearnFields, setShowMoreLearnFields] = useState(false);
   const [form, setForm] = useState<LearnFormT>(EMPTY_LEARN_FORM);
   const [selectedLane, setSelectedLane] = useState("");
   const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
@@ -3451,7 +3422,7 @@ function LearnView() {
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/learn", { ...form, done: false, active: false }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]);
-    setForm(EMPTY_LEARN_FORM); setSelectedLane(""); setShowForm(false);
+    setForm(EMPTY_LEARN_FORM); setSelectedLane(""); setShowForm(false); setShowMoreLearnFields(false);
   }
   async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
   async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
@@ -3478,8 +3449,10 @@ function LearnView() {
   const activeDomainKeys = CAPABILITY_DOMAIN_KEYS.filter((k) => byDomain.get(k)!.length > 0);
 
   function CardList({ list }: { list: Learn[] }) {
-    return <div className="grid gap-2.5 sm:grid-cols-2">{list.map((l) => <LearnCard key={l.id} l={l} tracks={tracks} tasks={tasks} onToggle={() => toggle(l)} onToggleActive={() => toggleActive(l)} onRemove={() => remove(l.id)} />)}</div>;
+    return <div className="space-y-2">{list.map((l) => <LearnCard key={l.id} l={l} tracks={tracks} tasks={tasks} onToggle={() => toggle(l)} onToggleActive={() => toggleActive(l)} onRemove={() => remove(l.id)} />)}</div>;
   }
+
+  const activeNow = live.filter((l) => l.active);
 
   return (
     <div>
@@ -3490,151 +3463,113 @@ function LearnView() {
       {activeGoal && !(live.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="learn" goal={activeGoal} />}
       {activeGoal && live.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="learn" onStartLane={startLaneLearn} />}
       {showForm && (
-        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
+        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3">
           {selectedLane && (
-            <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" data-testid="learn-form-lane-banner">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Supporting lane</p>
-                  <p className="text-sm font-medium">{selectedLane}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedLane("");
-                    setForm((current) => ({ ...current, title: "", category: "", capabilityBuilt: "", requiredOutput: "", note: "", relatedTrackId: null, proofIntent: false }));
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  data-testid="button-clear-learn-lane"
-                >
-                  Clear lane
-                </button>
+            <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="learn-form-lane-banner">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lane</p>
+                <p className="text-sm font-medium">{selectedLane}</p>
+                {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
               </div>
-              {selectedLaneGuide && (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this capability helps</p>
-                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.fitHint}</p>
-                  </div>
-                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Use this output for</p>
-                    <p className="mt-1 text-xs text-foreground">A reusable memo, note, artifact, or evidence signal that strengthens this lane across multiple roles.</p>
-                  </div>
-                </div>
-              )}
+              <button type="button" onClick={() => { setSelectedLane(""); setForm((c) => ({ ...c, title: "", category: "", capabilityBuilt: "", requiredOutput: "", note: "", relatedTrackId: null, proofIntent: false })); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0" data-testid="button-clear-learn-lane">Clear</button>
             </div>
           )}
+          {/* Minimal: title + URL + optional domain tag */}
+          <Input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-learn-title" autoFocus />
+          <Input placeholder="Link (optional)" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} data-testid="input-learn-url" />
           {suggestedDomainKeys.length > 0 && (
-            <div className="sm:col-span-2">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Suggested capability domains</p>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Capability domain (optional)</p>
               <div className="flex flex-wrap gap-1.5">
                 {suggestedDomainKeys.map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setForm({ ...form, category: domainLabel(key), capabilityBuilt: domainLabel(key) })}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.category === domainLabel(key) || form.capabilityBuilt === domainLabel(key) ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                    data-testid={`button-learn-domain-${key}`}
-                  >
-                    {domainLabel(key)}
-                  </button>
+                  <button key={key} type="button" onClick={() => setForm({ ...form, category: domainLabel(key), capabilityBuilt: domainLabel(key) })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.category === domainLabel(key) ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground hover:text-foreground"}`}
+                    data-testid={`button-learn-domain-${key}`}>{domainLabel(key)}</button>
                 ))}
               </div>
             </div>
           )}
-          <Input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-learn-title" />
-          <Input placeholder="Capability / category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} data-testid="input-learn-category" />
-          <Input placeholder="Capability this builds" value={form.capabilityBuilt} onChange={(e) => setForm({ ...form, capabilityBuilt: e.target.value })} data-testid="input-learn-capability-built" />
-          <Input placeholder="Intended output (optional)" value={form.requiredOutput} onChange={(e) => setForm({ ...form, requiredOutput: e.target.value })} data-testid="input-learn-required-output" />
-          <Input placeholder="Link" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" data-testid="input-learn-url" />
-          <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-learn-note" />
-
-          <div className="sm:col-span-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Mode</p>
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, proofIntent: false })}
-                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${!form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                data-testid="button-learn-mode-reference"
-              >
-                Reference only
-              </button>
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, proofIntent: true })}
-                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                data-testid="button-learn-mode-output"
-              >
-                Build toward output
-              </button>
-            </div>
-          </div>
-
-          <div className="sm:col-span-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Learn status</p>
-            <div className="flex flex-wrap gap-1.5">
-              {(["open", "watch", "active"] as LearnStatus[]).map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setForm({ ...form, learnStatus: status })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.learnStatus === status ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid={`button-learn-status-${status}`}
-                >
-                  {LEARN_STATUS_LABEL[status]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {tracks.length > 0 && (
-            <div className="sm:col-span-2">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Track link</p>
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, relatedTrackId: null })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId == null ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid="button-learn-track-none"
-                >
-                  Leave unlinked
-                </button>
-                {tracks.map((track) => (
-                  <button
-                    key={track.id}
-                    type="button"
-                    onClick={() => setForm({ ...form, relatedTrackId: track.id })}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                    data-testid={`button-learn-track-${track.id}`}
-                  >
-                    {track.name}
-                  </button>
-                ))}
+          {/* Progressive disclosure */}
+          <button type="button" onClick={() => setShowMoreLearnFields((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMoreLearnFields ? "rotate-180" : ""}`} />
+            {showMoreLearnFields ? "Fewer options" : "More options (output, mode, track)"}
+          </button>
+          {showMoreLearnFields && (
+            <div className="space-y-2">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input placeholder="Capability this builds" value={form.capabilityBuilt} onChange={(e) => setForm({ ...form, capabilityBuilt: e.target.value })} data-testid="input-learn-capability-built" />
+                <Input placeholder="Intended output" value={form.requiredOutput} onChange={(e) => setForm({ ...form, requiredOutput: e.target.value })} data-testid="input-learn-required-output" />
+                <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-learn-note" />
               </div>
-              {selectedLaneGuide && form.relatedTrackId != null && (
-                <p className="mt-1 text-[11px] text-muted-foreground">Anchor linked the nearest matching track, but you can change it.</p>
+              <div className="flex flex-wrap gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Mode</p>
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => setForm({ ...form, proofIntent: false })} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${!form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`} data-testid="button-learn-mode-reference">Reference only</button>
+                    <button type="button" onClick={() => setForm({ ...form, proofIntent: true })} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`} data-testid="button-learn-mode-output">Build output</button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Status</p>
+                  <div className="flex gap-1.5">
+                    {(["open", "watch", "active"] as LearnStatus[]).map((status) => (
+                      <button key={status} type="button" onClick={() => setForm({ ...form, learnStatus: status })}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.learnStatus === status ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                        data-testid={`button-learn-status-${status}`}>{LEARN_STATUS_LABEL[status]}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {tracks.length > 0 && (
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to path</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tracks.map((track) => (
+                      <button key={track.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === track.id ? null : track.id })}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground hover:text-foreground"}`}
+                        data-testid={`button-learn-track-${track.id}`}>{track.name}</button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
-          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_LEARN_FORM); }}>Cancel</Button><Button onClick={add} data-testid="button-save-learn">Save</Button></div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_LEARN_FORM); setShowMoreLearnFields(false); }}>Cancel</Button>
+            <Button onClick={add} data-testid="button-save-learn">Save</Button>
+          </div>
         </div>
       )}
       {isLoading ? <Loading /> : items.length === 0 ? (
         <Empty icon={GraduationCap} text="No support items yet. Add one reusable capability move now." />
       ) : (
         <div className="space-y-6">
-          {activeDomainKeys.map((key) => (
-            <div key={key} data-testid={`domain-${key}`}>
-              <GroupLabel count={byDomain.get(key)!.length}><Layers className="w-4 h-4 text-slate-600 dark:text-slate-400" /> {domainLabel(key)}</GroupLabel>
-              <CardList list={byDomain.get(key)!} />
+          {/* Active items always first */}
+          {activeNow.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-xs font-semibold uppercase tracking-wide text-primary">Active now</span>
+                <span className="text-xs text-muted-foreground tabular-nums">({activeNow.length})</span>
+              </div>
+              <CardList list={activeNow} />
             </div>
-          ))}
+          )}
+          {activeDomainKeys.map((key) => {
+            const domainItems = byDomain.get(key)!.filter((l) => !l.active);
+            if (domainItems.length === 0) return null;
+            return (
+              <div key={key} data-testid={`domain-${key}`}>
+                <GroupLabel count={domainItems.length}><Layers className="w-4 h-4 text-slate-600 dark:text-slate-400" /> {domainLabel(key)}</GroupLabel>
+                <CardList list={domainItems} />
+              </div>
+            );
+          })}
 
-          {flat.length > 0 && (
+          {flat.filter((l) => !l.active).length > 0 && (
             <div data-testid="domain-flat">
-              <GroupLabel count={flat.length}><GraduationCap className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Everything else</GroupLabel>
-              <CardList list={flat} />
+              <GroupLabel count={flat.filter((l) => !l.active).length}><GraduationCap className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Everything else</GroupLabel>
+              <CardList list={flat.filter((l) => !l.active)} />
             </div>
           )}
 

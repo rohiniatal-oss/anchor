@@ -3297,9 +3297,14 @@ function ContactCard({ c, tracks, tasks, onPatch, onRemove }: { c: Contact; trac
       {c.why && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{c.why}</p>}
 
       {/* Name — user-filled, visually SECONDARY (muted, below the type). Never auto-invented. */}
-      <input value={name} onChange={(e) => setNameLocal(e.target.value)} onBlur={() => name !== c.name && onPatch(c, { name })}
-        placeholder="Add a name…" data-testid={`input-contact-name-${c.id}`}
-        className="mt-2 w-full text-xs text-muted-foreground bg-transparent border-b border-input pb-1 focus:outline-none focus:border-primary" />
+      <input
+        value={name}
+        onChange={(e) => setNameLocal(e.target.value)}
+        onBlur={() => name !== c.name && onPatch(c, { name })}
+        placeholder="Name (optional)"
+        data-testid={`input-contact-name-${c.id}`}
+        className="mt-1 w-full text-[11px] text-muted-foreground bg-transparent border-b border-input/60 pb-1 focus:outline-none focus:border-primary"
+      />
 
       {/* Draft message inline editor — persists to messageDraft. */}
       {draftOpen && (
@@ -3326,11 +3331,11 @@ function ContactCard({ c, tracks, tasks, onPatch, onRemove }: { c: Contact; trac
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5 pt-2 border-t border-card-border">
         <CreateNextContactTask c={c} />
         <button onClick={() => setDraftOpen((o) => !o)} data-testid={`button-draft-message-${c.id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-          <MessageSquare className="w-3.5 h-3.5" /> {c.messageDraft ? "Edit message" : "Draft message"}
+          <MessageSquare className="w-3.5 h-3.5" /> Message
         </button>
         <LinkTrackControl entity="contacts" id={c.id} trackId={trackId} tracks={tracks} />
         <button data-testid={`button-view-tasks-contacts-${c.id}`} onClick={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-          <ListChecks className="w-3.5 h-3.5" /> View linked tasks
+          <ListChecks className="w-3.5 h-3.5" /> Tasks
         </button>
       </div>
     </div>
@@ -4179,3 +4184,4 @@ function WinsView() {
     </div>
   );
 }
+

@@ -9,6 +9,15 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import Home from "@/pages/home";
 import NotFound from "@/pages/not-found";
 
+function normalizeRoutePath(path: string) {
+  return path.split("?")[0] || path;
+}
+
+function useNormalizedHashLocation() {
+  const [location, navigate] = useHashLocation();
+  return [normalizeRoutePath(location), navigate] as [string, typeof navigate];
+}
+
 function todayKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -149,7 +158,7 @@ function App() {
         <TooltipProvider>
           <TodayPlanHierarchyStyles />
           <Toaster />
-          <Router hook={useHashLocation}>
+          <Router hook={useNormalizedHashLocation}>
             <AppRouter />
             <RestartFromHereButton />
           </Router>

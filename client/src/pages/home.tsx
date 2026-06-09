@@ -75,9 +75,60 @@ const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] =
 ];
 
 const GOAL_SPINE_QUERY_KEYS = ["/api/goals/state", "/api/strategy/front-door", "/api/strategy/diagnostics"] as const;
+const PENDING_CONTACT_DRAFT_KEY = "anchor.pending-contact-draft";
+const PENDING_LEARN_DRAFT_KEY = "anchor.pending-learn-draft";
+
+function queueIntakeDraft(key: string, draft: Record<string, unknown>) {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // Best-effort only. If session storage is unavailable, fall back to plain navigation.
+  }
+}
+
+function takeIntakeDraft<T extends object>(key: string): Partial<T> | null {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return null;
+    window.sessionStorage.removeItem(key);
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Partial<T>) : null;
+  } catch {
+    try { window.sessionStorage.removeItem(key); } catch {}
+    return null;
+  }
+}
+
+function routeBase(path: string) {
+  return path.split("?")[0] || path;
+}
+
+function buildPrefillHash(path: string, draftParam: string, draft: Record<string, unknown>) {
+  const params = new URLSearchParams();
+  params.set(draftParam, JSON.stringify(draft));
+  return `${path}?${params.toString()}`;
+}
+
+function takeHashDraft<T extends object>(draftParam: string): Partial<T> | null {
+  try {
+    const rawHash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+    const [path, search = ""] = rawHash.split("?");
+    if (!search) return null;
+    const params = new URLSearchParams(search);
+    const raw = params.get(draftParam);
+    if (!raw) return null;
+    params.delete(draftParam);
+    const nextHash = params.toString() ? `${path}?${params.toString()}` : path;
+    window.history.replaceState(null, "", `#${nextHash}`);
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Partial<T>) : null;
+  } catch {
+    return null;
+  }
+}
 
 function tabFromPath(path: string): Tab {
-  switch (path) {
+  switch (routeBase(path)) {
     case "/strategy":
       return "strategy";
     case "/braindump":
@@ -1992,13 +2043,38 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
     finally { setBusyId(null); }
   }
 
+  function openNetworkIntake() {
+    const draft = {
+      sector: j.company || "",
+      targetOrg: j.company || "",
+      targetRole: j.title || "",
+      why: `Could help warm a path into ${j.title}${j.company ? ` at ${j.company}` : ""}.`,
+      relatedTrackId: trackId,
+      askType: "advice",
+      relationshipStrength: "cold",
+      status: "to_contact",
+    };
+    queueIntakeDraft(PENDING_CONTACT_DRAFT_KEY, draft);
+    window.location.hash = buildPrefillHash("/network", "contactDraft", draft);
+  }
+
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-amber-50/40 dark:bg-amber-950/10 -mx-1 px-2 pb-2" data-testid={`warmpath-${j.id}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1.5">
         <Flame className="w-3.5 h-3.5" /> No warm path
       </div>
       {candidates.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No contacts in this lane yet — add someone in Network to warm this role.</p>
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">No contacts in this lane yet — add someone in Network to warm this role.</p>
+          <button
+            type="button"
+            onClick={openNetworkIntake}
+            className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
+            data-testid={`button-open-network-from-job-${j.id}`}
+          >
+            <Users className="w-3.5 h-3.5" /> Add contact for this role
+          </button>
+        </div>
       ) : (
         <div className="space-y-1">
           <p className="text-[11px] text-muted-foreground">{trackContacts.length > 0 ? "Reach someone on this track:" : "Reach a warm contact to open a path:"}</p>
@@ -2065,6 +2141,22 @@ function JobCapabilitySupport({
     }
   }
 
+  function openLearnIntake() {
+    const primaryDomain = requiredDomains.length > 0 ? domainLabel(requiredDomains[0]) : "";
+    const draft = {
+      title: primaryDomain ? `${primaryDomain} capability support` : `${track?.name || j.title} capability support`,
+      category: primaryDomain,
+      capabilityBuilt: primaryDomain,
+      requiredOutput: track ? `One reusable output that strengthens ${track.name}.` : "",
+      note: `Support ${track?.name || "this lane"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
+      relatedTrackId: trackId,
+      proofIntent: true,
+      learnStatus: "open",
+    };
+    queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
+    window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
+  }
+
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-slate-50/70 dark:bg-slate-900/20 -mx-1 px-2 pb-2" data-testid={`capability-support-${j.id}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-1.5">
@@ -2086,11 +2178,11 @@ function JobCapabilitySupport({
           )}
           <button
             type="button"
-            onClick={() => { window.location.hash = "/learn"; }}
+            onClick={openLearnIntake}
             className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
             data-testid={`button-open-learn-from-job-${j.id}`}
           >
-            <GraduationCap className="w-3.5 h-3.5" /> Open Learn
+            <GraduationCap className="w-3.5 h-3.5" /> Add capability support
           </button>
         </div>
       ) : (
@@ -2216,6 +2308,14 @@ function NetworkView() {
   const [seen, setSeen] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ContactFormT>(EMPTY_CONTACT_FORM);
+
+  useEffect(() => {
+    const pending = takeHashDraft<ContactFormT>("contactDraft") || takeIntakeDraft<ContactFormT>(PENDING_CONTACT_DRAFT_KEY);
+    if (pending) {
+      setForm({ ...EMPTY_CONTACT_FORM, ...pending });
+      setShowForm(true);
+    }
+  }, []);
 
   async function fetchSug(exclude: string[]) {
     setSugLoading(true);
@@ -2594,6 +2694,13 @@ function LearnView() {
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [form, setForm] = useState<LearnFormT>(EMPTY_LEARN_FORM);
+  useEffect(() => {
+    const pending = takeHashDraft<LearnFormT>("learnDraft") || takeIntakeDraft<LearnFormT>(PENDING_LEARN_DRAFT_KEY);
+    if (pending) {
+      setForm({ ...EMPTY_LEARN_FORM, ...pending });
+      setShowForm(true);
+    }
+  }, []);
   const suggestedDomainKeys = Array.from(
     new Set(tracks.flatMap((track) => requiredDomainsForTrack(track)).filter((key) => !!key)),
   ) as string[];

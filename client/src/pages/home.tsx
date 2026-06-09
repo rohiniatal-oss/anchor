@@ -1023,10 +1023,6 @@ function BroadPursuitParallelSupportKickoff({
   const portfolio = goal.pursuitPortfolio || [];
   if (goal.decisionMode !== "broad-parallel-pursuit" || portfolio.length === 0) return null;
   const coverage = getBroadPursuitCoverage(goal);
-  const title = mode === "network" ? "Warm the lanes in parallel" : "Build capability in parallel";
-  const body = mode === "network"
-    ? "You do not need a saved role first. Start warming each live lane with advice, reconnect, or referral paths while the role pipeline is still forming."
-    : "You do not need a saved role first. Build reusable capability and outputs in parallel so every live lane gets stronger while applications are forming.";
   const missingSupport = mode === "network" ? coverage.missingNetworkSupport : coverage.missingCapabilitySupport;
   const orderedPortfolio = [...portfolio].sort((a, b) => {
     const left = combinationSupportState(goal, a.combination);
@@ -1044,29 +1040,18 @@ function BroadPursuitParallelSupportKickoff({
 
   return (
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid={`${mode}-broad-pursuit-kickoff`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{title}</p>
+      <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {mode === "network" ? "Contact paths" : "Capability support"}
+          </p>
           <p className="text-sm font-medium mt-1">
             {mode === "network" ? "Add one real contact path in the weakest lanes." : "Add one reusable support move in the weakest lanes."}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">{body}</p>
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-              {coverage.covered.length} lanes with live roles
-            </span>
-            <span className="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
-              {mode === "network"
-                ? `${coverage.networkSupported.length} with contact path`
-                : `${coverage.capabilitySupported.length} with capability support`}
-            </span>
-            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
-              {mode === "network"
-                ? `${missingSupport.length} still need a first contact path`
-                : `${missingSupport.length} still need capability support`}
-            </span>
-          </div>
-        </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {mode === "network"
+              ? `${missingSupport.length} lane${missingSupport.length === 1 ? "" : "s"} still need a first contact path.`
+              : `${missingSupport.length} lane${missingSupport.length === 1 ? "" : "s"} still need capability support.`}
+          </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 mt-4">
@@ -1078,12 +1063,12 @@ function BroadPursuitParallelSupportKickoff({
             ? mode === "network"
               ? {
                   label: "Can warm now",
-                  detail: "Add a first contact path even before a role is saved.",
+                  detail: "This can start before a role exists.",
                   tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
                 }
               : {
                   label: "Can support now",
-                  detail: "Add one reusable capability move even before a role is saved.",
+                  detail: "This can start before a role exists.",
                   tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
                 }
             : gap;
@@ -1116,11 +1101,6 @@ function BroadPursuitParallelSupportKickoff({
                 <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${supportGap.tone}`}>{supportGap.label}</span>
                 <p className="text-xs text-muted-foreground">{supportGap.detail}</p>
               </div>
-              {!support.hasRole && (
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  This can still start before a role is saved.
-                </p>
-              )}
               <div className="mt-3">
                 <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-${mode}-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
                   <Plus className="w-4 h-4 mr-1" /> {buttonLabel}
@@ -3072,7 +3052,7 @@ function NetworkView() {
         <SectionHeading title="Network" sub="People to reach, by warmth. Each card leads with the ask." />
         <Button onClick={() => showForm ? setShowForm(false) : startBlankContact()} className="shrink-0" data-testid="button-toggle-contact-form"><Plus className="w-4 h-4 mr-1" /> Add contact</Button>
       </div>
-      {activeGoal && <ViewSpineCallout view="network" goal={activeGoal} />}
+      {activeGoal && !(contacts.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="network" goal={activeGoal} />}
       {activeGoal && contacts.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="network" onStartLane={startLaneContact} />}
 
       {showForm && (
@@ -3213,7 +3193,7 @@ function NetworkView() {
       )}
 
       {isLoading ? <Loading /> : contacts.length === 0 ? (
-        <Empty icon={Users} text="No contacts yet. Start warming one of your live lanes now — this can happen in parallel with saving roles." />
+        <Empty icon={Users} text="No contacts yet. Add one real contact path now." />
       ) : (
         <div className="space-y-5">
           {populatedLaneKeys.map((key) => {
@@ -3244,11 +3224,11 @@ function NetworkView() {
           {quietLaneKeys.length > 0 && (
             <div className="rounded-xl border border-dashed border-border bg-card/60 p-4" data-testid="quiet-network-lanes">
               <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="font-semibold text-sm">Other warm lanes</h2>
+                <h2 className="font-semibold text-sm">Later</h2>
                 <span className="text-xs text-muted-foreground">{quietLaneKeys.length} empty</span>
               </div>
               <p className="text-sm text-muted-foreground mb-3">
-                Keep these in mind as optional routes to warm later. They do not need attention before your live contacts.
+                Optional routes to warm later. They do not need attention before your live contacts.
               </p>
               <div className="flex flex-wrap gap-2">
                 {quietLaneKeys.map((key) => (
@@ -3484,7 +3464,7 @@ function LearnView() {
         <SectionHeading title="Learn" sub="What you're building so future roles and interviews feel easier." />
         <Button onClick={() => showForm ? setShowForm(false) : setShowForm(true)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
       </div>
-      {activeGoal && <ViewSpineCallout view="learn" goal={activeGoal} />}
+      {activeGoal && !(live.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="learn" goal={activeGoal} />}
       {activeGoal && live.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="learn" onStartLane={startLaneLearn} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
@@ -3618,7 +3598,7 @@ function LearnView() {
         </div>
       )}
       {isLoading ? <Loading /> : items.length === 0 ? (
-        <Empty icon={GraduationCap} text="No learning items yet. Start one capability-support move now — it can run in parallel with role search." />
+        <Empty icon={GraduationCap} text="No support items yet. Add one reusable capability move now." />
       ) : (
         <div className="space-y-6">
           {activeDomainKeys.map((key) => (

@@ -235,6 +235,12 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
     if (workflowState?.currentStage === "Map evidence") return "Open a blank note and list the top 3 role requirements";
     if (workflowState?.currentStage === "Handle gaps") return "Write down the single biggest gap in one sentence";
     if (workflowState?.currentStage === "Build materials") {
+      const j = jobSource(bundle);
+      const readiness = j?.applicationReadiness || "none";
+      if (readiness === "cv") return `Open the ${j?.title || "role"} cover note and write the opening line`;
+      if (readiness === "cover") return `Open the application questions and paste the first one into a blank doc`;
+      if (readiness === "questions") return `Check the ${j?.title || "role"} application for any remaining required materials`;
+      if (readiness === "sample") return `Open the ${j?.title || "role"} submission checklist and confirm everything is complete`;
       return keyword(text, /cv|resume|tailor|rewrite/) ? "Open your CV and the role posting side by side" : "Open the application material and draft the first useful line";
     }
     if (workflowState?.currentStage === "Follow up") return "Open the application thread and find the next follow-up action";
@@ -285,11 +291,39 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       `Decide whether this concern blocks the application or you proceed`,
     ];
     if (currentStage === "Build materials") {
+      const readiness = j?.applicationReadiness || "none";
+      // nextStep note on the job card overrides everything when set.
       if (nextStepNote) return [
         nextStepNote,
         `Review that against the ${roleLabel} requirements`,
         `Note what still needs work`,
       ];
+      // Branch on what's already done — never repeat completed material.
+      if (readiness === "cv") return [
+        `Write the cover note for ${roleLabel} — lead with your specific angle, not a generic summary`,
+        `Mirror 2-3 key phrases from the job posting in the cover note`,
+        `Keep to the required format or one tight page if unspecified`,
+        `Check: does it say something only you could say for this role?`,
+      ];
+      if (readiness === "cover") return [
+        `Open the ${roleLabel} application and paste the first question`,
+        `Draft your answer — lead with the concrete example, not the context`,
+        `Match the word limit exactly, then cut 10%`,
+        `Note which remaining questions still need answers`,
+      ];
+      if (readiness === "questions") return [
+        `Check whether ${roleLabel} asks for a work sample or portfolio piece`,
+        `If yes: identify the strongest existing piece and confirm it fits their format`,
+        `If no: review all materials for completeness before submitting`,
+        `Confirm everything required is ready`,
+      ];
+      if (readiness === "sample") return [
+        `Review all materials for ${roleLabel} one final time`,
+        `Check submission requirements — format, attachments, word limits`,
+        `Consider whether a referral would strengthen this application`,
+        `Note the submission steps so you can move quickly`,
+      ];
+      // CV not yet started — use keyword or default.
       return keyword(text, /cv|resume|tailor|rewrite/) ? [
         `Open your CV and the ${roleLabel} posting side by side`,
         `Rewrite the two bullets most relevant to this role`,
@@ -490,17 +524,30 @@ export function parentWorkflowFor(task: Task, bundle: SourceBundle): WorkflowSta
     const source = jobSource(bundle);
     const readiness = String(source?.applicationReadiness || "none");
     const status = String(source?.status || "wishlist");
-    const currentStage = status === "applied" ? "Follow up"
+    // Map applicationReadiness → APPLICATION_WORKFLOW stage.
+    // submitted/follow_up = already past the gate → Follow up.
+    // referral = all materials ready, just needs submitting → Submit.
+    // cv/cover/questions/sample = materials in progress → Build materials.
+    // none + text hints → earlier stages.
+    const currentStage =
+      status === "applied" || readiness === "submitted" || readiness === "follow_up" ? "Follow up"
       : status === "interviewing" ? "Build materials"
-      : readiness === "submitted" ? "Submit"
-      : keyword(text, /cv|cover|answer|question|material|sample|draft|tailor|submit/) || readiness !== "none" ? "Build materials"
+      : readiness === "referral" ? "Submit"
+      : readiness === "cv" || readiness === "cover" || readiness === "questions" || readiness === "sample"
+        ? "Build materials"
+      : keyword(text, /cv|cover|answer|question|material|sample|draft|tailor|submit/) ? "Build materials"
       : keyword(text, /gap|eligibility|visa|constraint/) ? "Handle gaps"
       : keyword(text, /evidence|story|experience|proof/) ? "Map evidence"
       : "Understand role";
+    // Stage output is specific to what materials still need doing.
     const stageOutput = currentStage === "Understand role" ? "Role requirements and hidden asks are captured"
       : currentStage === "Map evidence" ? "Requirements are matched to credible evidence"
       : currentStage === "Handle gaps" ? "Gaps and constraints have mitigation lines"
-      : currentStage === "Build materials" ? "The next application material is drafted or improved"
+      : currentStage === "Build materials"
+        ? (readiness === "cv" ? "Cover letter is drafted and matches the role's language"
+          : readiness === "cover" ? "Application questions are answered with concrete evidence"
+          : readiness === "questions" ? "Work sample or remaining materials are ready"
+          : "The next application material is drafted or improved")
       : currentStage === "Submit" ? "Application is submitted with required materials"
       : "Follow-up action is sent or logged";
     return makeWorkflowState({ workObject: "Artifact", workflow: APPLICATION_WORKFLOW, currentStage, stageOutput, inheritedFrom: `job:${source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "job" });

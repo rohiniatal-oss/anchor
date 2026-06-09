@@ -23,7 +23,7 @@ type SourceRecord = Job | Learn | Hustle | null;
 type SourceBundle = {
   sourceContext: string;
   playbook: string;
-  sourceKind: "job" | "learn" | "hustle" | "task";
+  sourceKind: "job" | "learn" | "hustle" | "goal" | "task";
   source: SourceRecord;
   parentContext: string;
   parentWorkflow?: WorkflowState;
@@ -208,6 +208,12 @@ function looksActionable(text: string) {
 
 function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: WorkflowState) {
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
+  if (bundle.sourceKind === "goal") {
+    if (workflowState?.currentStage === "Define target") return "Open Jobs and look at the first still-empty lane";
+    if (workflowState?.currentStage === "Build list") return "Open Jobs and save the first credible role for one still-empty lane";
+    if (workflowState?.currentStage === "Execute next batch") return "Open the saved role and take the next concrete pipeline action";
+    return "Open Jobs and save the first credible role for one still-empty lane";
+  }
   if (bundle.sourceKind === "job") {
     if (workflowState?.currentStage === "Understand role") return "Open the role posting and highlight the first must-have requirement";
     if (workflowState?.currentStage === "Map evidence") return "Open a blank note and list the top 3 role requirements";
@@ -237,6 +243,27 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   const object = workflowState.workObject;
   const currentStage = workflowState.currentStage;
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
+
+  if (bundle.sourceKind === "goal" || (object === "Pipeline" && keyword(text, /lane|role|pipeline|application/))) {
+    if (currentStage === "Define target") return [
+      "Open Jobs and look at the first still-empty lane",
+      "Name the lane you are filling first",
+      "Define what counts as a credible role for that lane",
+      "Save the lane and move to role search",
+    ];
+    if (currentStage === "Build list") return [
+      "Open Jobs and save the first credible role for one still-empty lane",
+      "Record the company and role title",
+      "Mark whether it needs apply, warm path, or clarify",
+      "Repeat for the next still-empty lane only if there is still energy",
+    ];
+    return [
+      "Open the saved role and take the next concrete pipeline action",
+      "Draft the message, application, or clarification note",
+      "Save or send that move",
+      "Log what lane still needs a real role next",
+    ];
+  }
 
   if (bundle.sourceKind === "job" && object === "Artifact") {
     if (currentStage === "Understand role") return [
@@ -394,6 +421,25 @@ export function parentWorkflowFor(task: Task, bundle: SourceBundle): WorkflowSta
     const stageOutput = currentStage === "Define claim" ? "One clear proof claim exists" : "Evidence for the proof claim is selected";
     return makeWorkflowState({ workObject: "Artifact", workflow: PROOF_WORKFLOW, currentStage, stageOutput, inheritedFrom: `hustle:${source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "hustle" });
   }
+  if (bundle.sourceKind === "goal") {
+    const currentStage = keyword(text, /saved role|application move|live role|pipeline action/) ? "Execute next batch"
+      : keyword(text, /lane|credible role|plausible lane|pipeline/) ? "Build list"
+      : "Define target";
+    const stageOutput = currentStage === "Define target"
+      ? "The next still-empty lane is chosen"
+      : currentStage === "Build list"
+        ? "One credible role exists for at least one active lane"
+        : "One concrete pipeline action has been taken on a saved role";
+    return makeWorkflowState({
+      workObject: "Pipeline",
+      workflow: WORKFLOWS.Pipeline,
+      currentStage,
+      stageOutput,
+      inheritedFrom: `goal:${task.sourceId || "parallel-pursuit"}`,
+      confidence: "parent",
+      sourceKind: "goal",
+    });
+  }
   return undefined;
 }
 
@@ -413,7 +459,13 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
   let playbook = "";
   let sourceKind: SourceBundle["sourceKind"] = "task";
   let source: SourceRecord = null;
-  if (task.sourceType === "job" && task.sourceId) {
+  if (task.sourceType === "goal") {
+    sourceKind = "goal";
+    const tracks = await storage.getCareerTracks();
+    const activeTrackNames = tracks.filter((track) => track.status !== "archived").map((track) => track.name).slice(0, 6);
+    sourceContext = `This is a STRATEGIC GOAL / broad-pursuit item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one real lane-opening move exists"}. ${task.sourceNote ? "Goal note: " + task.sourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
+    playbook = "Use the parent pipeline workflow first. The goal is not abstract comparison; it is to turn each plausible lane into one real role or application move. Prefer lane-filling and concrete pipeline actions over reflection.";
+  } else if (task.sourceType === "job" && task.sourceId) {
     const j = (await storage.getJobs()).find((x) => x.id === task.sourceId);
     if (j) {
       source = j;

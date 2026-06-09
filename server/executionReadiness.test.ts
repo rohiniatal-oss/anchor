@@ -71,3 +71,21 @@ test("brain accept uses source-aware task creation so job candidates start with 
   assert.ok(steps.length >= 1, "source-backed accepted tasks should start with steps");
   assert.match(String(steps[0]?.text || ""), /open|write|draft|list|highlight|match|rewrite|read|note/i);
 });
+
+test("plan-item start turns a broad-pursuit goal item into a concrete role-pipeline task", async () => {
+  const { item } = await makePlanWithItem({
+    sourceType: "goal",
+    sourceId: 1,
+    taskId: null,
+    title: "Add or apply to one credible role in each plausible lane that still looks real",
+    doneWhen: "One concrete role or application move exists in each active lane",
+    slot: "now",
+  });
+
+  const started = await api(h.base, "POST", `/api/plan-items/${item.id}/start`, { day: DAY });
+  assert.equal(started.status, 200);
+  assert.equal(started.json.task.category, "job");
+  const steps = JSON.parse(started.json.task.steps || "[]");
+  assert.ok(steps.length >= 1, "goal-derived strategic tasks should get concrete steps");
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action/i);
+});

@@ -41,3 +41,26 @@ test("coerceTaskBreakdownSteps turns workflow/meta steps into tiny actionable ta
   assert.equal(steps.length <= 4, true);
   assert.ok(steps.every((step) => !/use the|locate the|define this stage output|check completion criteria|break this stage into actions/i.test(step.text)));
 });
+
+test("goal-source breakdown turns broad pursuit into concrete lane-filling steps", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Add or apply to one credible role in each plausible lane that still looks real",
+    category: "job",
+    sourceType: "goal",
+    sourceId: 1,
+    sourceNote: "Broad pursuit is active across all plausible lanes.",
+    doneWhen: "One concrete role or application move exists in each active lane",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+
+  const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
+
+  assert.equal(workflowState.workObject, "Pipeline");
+  assert.match(workflowState.currentStage, /Define target|Build list|Execute next batch/);
+  assert.ok(steps.length >= 1);
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action/i);
+});

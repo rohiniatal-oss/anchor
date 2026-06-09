@@ -364,7 +364,7 @@ export function registerPlanningRoutes(app: Express) {
         pinned: true,
         steps: "[]",
         sort: 0,
-        category: item.sourceType === "job" ? "job" : item.sourceType === "learn" ? "learning" : item.sourceType === "hustle" ? "hustle" : "admin",
+        category: item.sourceType === "job" || item.sourceType === "goal" ? "job" : item.sourceType === "learn" ? "learning" : item.sourceType === "hustle" ? "hustle" : "admin",
         deadline: "",
         status: "in_progress",
         skipped: 0,

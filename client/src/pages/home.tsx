@@ -558,6 +558,37 @@ function WorkstreamGrid({ goal }: { goal: CareerGoalT }) {
   );
 }
 
+function PursuitPortfolioGrid({ goal }: { goal: CareerGoalT }) {
+  const portfolio = goal.pursuitPortfolio || [];
+  if (goal.decisionMode !== "broad-parallel-pursuit" || portfolio.length === 0) return null;
+
+  return (
+    <div className="mb-6" data-testid="pursuit-portfolio">
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <GroupLabel>Parallel pursuit portfolio</GroupLabel>
+        <span className="text-xs text-muted-foreground">Keep all plausible lanes warm until live evidence separates them</span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {portfolio.map((item) => (
+          <div
+            key={item.combination}
+            className="rounded-xl border border-card-border bg-card p-3"
+            data-testid={`pursuit-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+          >
+            <p className="text-sm font-medium leading-snug">{item.combination}</p>
+            <p className="text-xs text-muted-foreground mt-2">
+              <span className="font-medium text-foreground">Why this lane stays live:</span> {item.whyPlausible}
+            </p>
+            <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
+              <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function workstreamTone(name: string, goal: CareerGoalT) {
   return goal.recommendedFocus === name
     ? "bg-primary/10 text-primary border-primary/20"
@@ -966,6 +997,7 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       {activeGoal && (
         <>
           <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} />
+          <PursuitPortfolioGrid goal={activeGoal} />
           <WorkstreamGrid goal={activeGoal} />
         </>
       )}

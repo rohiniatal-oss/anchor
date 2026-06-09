@@ -596,6 +596,11 @@ function workstreamTone(name: string, goal: CareerGoalT) {
 }
 
 function viewRelevantWorkstreams(view: "jobs" | "network" | "learn", goal: CareerGoalT) {
+  if (view === "jobs" && goal.decisionMode === "broad-parallel-pursuit") {
+    return ["Direction", "Market map", "Applications", "Positioning"]
+      .map((name) => goal.workstreams.find((w) => w.name === name))
+      .filter(Boolean) as GoalWorkstreamT[];
+  }
   const map: Record<typeof view, string[]> = {
     jobs: ["Applications", "Positioning", "Interview readiness", "Proof"],
     network: ["Network", "Applications", "Interview readiness", "Direction"],
@@ -604,6 +609,16 @@ function viewRelevantWorkstreams(view: "jobs" | "network" | "learn", goal: Caree
   return map[view]
     .map((name) => goal.workstreams.find((w) => w.name === name))
     .filter(Boolean) as GoalWorkstreamT[];
+}
+
+function leadWorkstreamForView(view: "jobs" | "network" | "learn", goal: CareerGoalT, relevant: GoalWorkstreamT[]) {
+  if (view === "jobs" && goal.decisionMode === "broad-parallel-pursuit") {
+    const direction = goal.workstreams.find((w) => w.name === "Direction");
+    const marketMap = goal.workstreams.find((w) => w.name === "Market map");
+    const applications = goal.workstreams.find((w) => w.name === "Applications");
+    return direction || marketMap || applications || relevant[0];
+  }
+  return relevant[0];
 }
 
 function ViewSpineCallout({
@@ -615,7 +630,7 @@ function ViewSpineCallout({
 }) {
   const relevant = viewRelevantWorkstreams(view, goal);
   if (relevant.length === 0) return null;
-  const lead = relevant[0];
+  const lead = leadWorkstreamForView(view, goal, relevant);
 
   return (
     <div className="mb-5 rounded-xl border border-card-border bg-card p-4" data-testid={`${view}-spine-callout`}>
@@ -634,6 +649,50 @@ function ViewSpineCallout({
           <span key={w.name} className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-medium ${workstreamTone(w.name, goal)}`}>
             {w.name}
           </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BroadPursuitJobsKickoff({
+  goal,
+  onAddRole,
+}: {
+  goal: CareerGoalT;
+  onAddRole: () => void;
+}) {
+  const portfolio = goal.pursuitPortfolio || [];
+  if (goal.decisionMode !== "broad-parallel-pursuit" || portfolio.length === 0) return null;
+
+  return (
+    <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid="jobs-broad-pursuit-kickoff">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Build the role pipeline</p>
+          <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Start by turning each live lane into one real posting or role lead. Do not choose a winner until the market gives you evidence.
+          </p>
+        </div>
+        <Button size="sm" onClick={onAddRole} className="shrink-0" data-testid="button-kickoff-add-role">
+          <Plus className="w-4 h-4 mr-1" /> Add role
+        </Button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 mt-4">
+        {portfolio.map((item) => (
+          <div
+            key={item.combination}
+            className="rounded-xl border border-card-border bg-card p-3"
+            data-testid={`jobs-kickoff-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+          >
+            <p className="text-sm font-medium leading-snug">{item.combination}</p>
+            <p className="text-xs text-muted-foreground mt-2">{item.whyPlausible}</p>
+            <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
+              <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
+            </p>
+          </div>
         ))}
       </div>
     </div>
@@ -1436,6 +1495,7 @@ function JobsView() {
         <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
       </div>
       {activeGoal && <ViewSpineCallout view="jobs" goal={activeGoal} />}
+      {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onAddRole={() => setShowForm(true)} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
           <Input placeholder="Role title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-job-title" />

@@ -2029,10 +2029,52 @@ const ASK_LABEL: Record<string, string> = {
   soft: "soft intro", referral: "referral", advice: "advice",
   reconnect: "reconnect", follow_up: "follow-up",
 };
+const ASK_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "soft", label: "Soft intro" },
+  { value: "advice", label: "Advice" },
+  { value: "referral", label: "Referral" },
+  { value: "reconnect", label: "Reconnect" },
+  { value: "follow_up", label: "Follow-up" },
+];
+const RELATIONSHIP_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "cold", label: "Cold" },
+  { value: "warm", label: "Warm" },
+  { value: "strong", label: "Strong" },
+];
 const STRENGTH_TONE: Record<string, string> = {
   strong: "bg-primary/15 text-primary",
   warm: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200",
   cold: "bg-muted text-muted-foreground",
+};
+type ContactFormT = {
+  name: string;
+  who: string;
+  sector: string;
+  why: string;
+  sourceNetwork: string;
+  targetOrg: string;
+  targetRole: string;
+  askType: string;
+  relationshipStrength: string;
+  nextFollowUpDate: string;
+  relatedTrackId: number | null;
+  status: string;
+  messageDraft: string;
+};
+const EMPTY_CONTACT_FORM: ContactFormT = {
+  name: "",
+  who: "",
+  sector: "",
+  why: "",
+  sourceNetwork: "",
+  targetOrg: "",
+  targetRole: "",
+  askType: "soft",
+  relationshipStrength: "cold",
+  nextFollowUpDate: "",
+  relatedTrackId: null,
+  status: "to_contact",
+  messageDraft: "",
 };
 // Overdue when a follow-up date is set and in the past.
 function isFollowUpOverdue(c: Contact): boolean {
@@ -2050,6 +2092,8 @@ function NetworkView() {
   const [sug, setSug] = useState<{ who: string; sector: string; why: string } | null>(null);
   const [sugLoading, setSugLoading] = useState(false);
   const [seen, setSeen] = useState<string[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<ContactFormT>(EMPTY_CONTACT_FORM);
 
   async function fetchSug(exclude: string[]) {
     setSugLoading(true);
@@ -2058,13 +2102,39 @@ function NetworkView() {
     finally { setSugLoading(false); }
   }
   useEffect(() => { fetchSug([]); /* eslint-disable-next-line */ }, []);
-  async function addSug() {
+  function resetForm() {
+    setForm(EMPTY_CONTACT_FORM);
+    setShowForm(false);
+  }
+  function startBlankContact() {
+    setForm(EMPTY_CONTACT_FORM);
+    setShowForm(true);
+  }
+  function startSuggestedContact() {
     if (!sug) return;
-    await mutateAndInvalidate("POST", "/api/networking/accept", sug, ["/api/contacts", ...GOAL_SPINE_QUERY_KEYS]);
-    toast({ title: "Added to your warm list.", description: "Pop in a name when one comes to mind." });
-    const next = [...seen, sug.who]; setSeen(next); fetchSug(next);
+    setForm({
+      ...EMPTY_CONTACT_FORM,
+      who: sug.who,
+      sector: sug.sector,
+      why: sug.why,
+      askType: "advice",
+      relationshipStrength: "cold",
+      status: "to_contact",
+    });
+    setShowForm(true);
   }
   function another() { if (!sug) return; const next = [...seen, sug.who]; setSeen(next); fetchSug(next); }
+  async function addContact() {
+    if (!form.who.trim()) return;
+    await mutateAndInvalidate("POST", "/api/contacts", form, ["/api/contacts", ...GOAL_SPINE_QUERY_KEYS]);
+    toast({ title: "Added to your network.", description: "This contact now carries a real ask and lane context." });
+    if (sug && form.who === sug.who) {
+      const next = [...seen, sug.who];
+      setSeen(next);
+      fetchSug(next);
+    }
+    resetForm();
+  }
   async function patch(c: Contact, body: Record<string, unknown>) {
     await mutateAndInvalidate("PATCH", `/api/contacts/${c.id}`, body, ["/api/contacts", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
   }
@@ -2080,8 +2150,91 @@ function NetworkView() {
 
   return (
     <div>
-      <SectionHeading title="Network" sub="People to reach, by warmth. Each card leads with the ask." />
+      <div className="flex items-start justify-between gap-4">
+        <SectionHeading title="Network" sub="People to reach, by warmth. Each card leads with the ask." />
+        <Button onClick={() => showForm ? setShowForm(false) : startBlankContact()} className="shrink-0" data-testid="button-toggle-contact-form"><Plus className="w-4 h-4 mr-1" /> Add contact</Button>
+      </div>
       {activeGoal && <ViewSpineCallout view="network" goal={activeGoal} />}
+
+      {showForm && (
+        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2" data-testid="contact-intake-form">
+          <Input placeholder="Who they are *" value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value })} data-testid="input-contact-who" />
+          <Input placeholder="Name (optional)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-contact-name-new" />
+          <Input placeholder="Sector / lane" value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} data-testid="input-contact-sector" />
+          <Input placeholder="Target org" value={form.targetOrg} onChange={(e) => setForm({ ...form, targetOrg: e.target.value })} data-testid="input-contact-target-org" />
+          <Input placeholder="Target role" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} data-testid="input-contact-target-role" />
+          <Input placeholder="Follow up date (YYYY-MM-DD)" value={form.nextFollowUpDate} onChange={(e) => setForm({ ...form, nextFollowUpDate: e.target.value })} data-testid="input-contact-follow-up" />
+          <Input placeholder="Why this person matters" value={form.why} onChange={(e) => setForm({ ...form, why: e.target.value })} className="sm:col-span-2" data-testid="input-contact-why" />
+          <Input placeholder="Warm lane / network source" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" data-testid="input-contact-source-network" />
+
+          <div className="sm:col-span-2">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Ask type</p>
+            <div className="flex flex-wrap gap-1.5">
+              {ASK_TYPE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, askType: option.value })}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.askType === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                  data-testid={`button-contact-ask-${option.value}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="sm:col-span-2">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Relationship strength</p>
+            <div className="flex flex-wrap gap-1.5">
+              {RELATIONSHIP_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, relationshipStrength: option.value })}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relationshipStrength === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                  data-testid={`button-contact-strength-${option.value}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {tracks.length > 0 && (
+            <div className="sm:col-span-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Track link</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, relatedTrackId: null })}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId == null ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                  data-testid="button-contact-track-none"
+                >
+                  Leave unlinked
+                </button>
+                {tracks.map((track) => (
+                  <button
+                    key={track.id}
+                    type="button"
+                    onClick={() => setForm({ ...form, relatedTrackId: track.id })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                    data-testid={`button-contact-track-${track.id}`}
+                  >
+                    {track.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <Input placeholder="Message draft (optional)" value={form.messageDraft} onChange={(e) => setForm({ ...form, messageDraft: e.target.value })} className="sm:col-span-2" data-testid="input-contact-message-draft" />
+          <div className="sm:col-span-2 flex gap-2 justify-end">
+            <Button variant="ghost" onClick={resetForm}>Cancel</Button>
+            <Button onClick={addContact} data-testid="button-save-contact">Save contact</Button>
+          </div>
+        </div>
+      )}
 
       {/* One networking suggestion: who to reach next */}
       {(sugLoading || sug) && (
@@ -2096,7 +2249,7 @@ function NetworkView() {
               <p className="text-sm font-medium leading-snug">{sug.who}{sug.sector && <span className="ml-2 inline-flex items-center rounded-full bg-card px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{sug.sector}</span>}</p>
               {sug.why && <p className="text-xs text-muted-foreground mt-0.5">{sug.why}</p>}
               <div className="flex items-center gap-2 mt-3">
-                <Button size="sm" onClick={addSug} data-testid="button-network-add"><Plus className="w-4 h-4 mr-1" /> Add to list</Button>
+                <Button size="sm" onClick={startSuggestedContact} data-testid="button-network-add"><Plus className="w-4 h-4 mr-1" /> Shape contact</Button>
                 <button onClick={another} data-testid="button-network-another" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"><RefreshCw className="w-3.5 h-3.5" /> someone else</button>
               </div>
             </div>

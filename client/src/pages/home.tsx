@@ -1037,6 +1037,8 @@ function BroadPursuitParallelSupportKickoff({
     const support = combinationSupportState(goal, item.combination);
     return mode === "network" ? !support.hasNetworkSupport : !support.hasCapabilitySupport;
   });
+  const allVisibleWithoutRoles = visiblePortfolio.length > 0 && visiblePortfolio.every((item) => !combinationSupportState(goal, item.combination).hasRole);
+  const canStartWithoutRole = allVisibleWithoutRoles;
 
   return (
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid={`${mode}-broad-pursuit-kickoff`}>
@@ -1052,9 +1054,14 @@ function BroadPursuitParallelSupportKickoff({
               ? `${missingSupport.length} lane${missingSupport.length === 1 ? "" : "s"} still need a first contact path.`
               : `${missingSupport.length} lane${missingSupport.length === 1 ? "" : "s"} still need capability support.`}
           </p>
+          {canStartWithoutRole && (
+            <p className="text-xs text-muted-foreground mt-1">
+              These can start before a saved role exists.
+            </p>
+          )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 mt-4">
+      <div className={`mt-4 ${canStartWithoutRole ? "space-y-2" : "grid gap-3 sm:grid-cols-2"}`}>
         {visiblePortfolio.map((item) => {
           const state = combinationCoverageState(goal, item.combination);
           const support = combinationSupportState(goal, item.combination);
@@ -1085,23 +1092,29 @@ function BroadPursuitParallelSupportKickoff({
             : supportMissing
               ? (support.hasRole ? "Add first support item" : "Add support item in this lane")
               : "Add another support item";
+          const showRoleStateBadge = !canStartWithoutRole;
+          const showSupportDetail = !canStartWithoutRole;
           return (
             <div
               key={`${mode}-${item.combination}`}
-              className={`rounded-xl border p-3 ${tone}`}
+              className={`rounded-xl border p-3 ${tone} ${canStartWithoutRole ? "flex items-center justify-between gap-3" : ""}`}
               data-testid={`${mode}-kickoff-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium leading-snug">{item.combination}</p>
-                <span className="inline-flex rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {state === "covered" ? "live role exists" : state === "missing" ? "no live role yet" : "watch"}
-                </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium leading-snug">{item.combination}</p>
+                  {showRoleStateBadge && (
+                    <span className="inline-flex rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {state === "covered" ? "live role exists" : state === "missing" ? "no live role yet" : "watch"}
+                    </span>
+                  )}
+                </div>
+                <div className={`flex flex-wrap items-center gap-2 ${showSupportDetail ? "mt-3" : "mt-2"}`}>
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${supportGap.tone}`}>{supportGap.label}</span>
+                  {showSupportDetail && <p className="text-xs text-muted-foreground">{supportGap.detail}</p>}
+                </div>
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${supportGap.tone}`}>{supportGap.label}</span>
-                <p className="text-xs text-muted-foreground">{supportGap.detail}</p>
-              </div>
-              <div className="mt-3">
+              <div className={canStartWithoutRole ? "shrink-0" : "mt-3"}>
                 <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-${mode}-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
                   <Plus className="w-4 h-4 mr-1" /> {buttonLabel}
                 </Button>

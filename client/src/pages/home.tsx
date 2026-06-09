@@ -28,7 +28,8 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 
-type Step = { text: string; done: boolean };
+type WorkflowStateCtx = { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string };
+type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx };
 function parseSteps(raw: string): Step[] {
   try { const s = JSON.parse(raw || "[]"); return Array.isArray(s) ? s : []; } catch { return []; }
 }
@@ -1416,7 +1417,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                   const linkedTask = it.taskId ? taskById.get(it.taskId) : undefined;
                   const nextStepText = firstStepPreview(it, linkedTask);
                   const preShrunk = isPreShrunkPlanItem(it);
-                  const showPreviewStep = !!nextStepText && (preShrunk || !linkedTask || !it.taskId || i === 0);
+                  const showPreviewStep = !!nextStepText;
                   const broadPursuitItem = isBroadPursuitGoalItem(it, activeGoal);
                   const broadPursuitCoverage = broadPursuitItem && activeGoal ? getBroadPursuitCoverage(activeGoal) : null;
                   const compactTitle = broadPursuitItem ? (broadPursuitPlanTitle(activeGoal) || it.title) : it.title;
@@ -1754,6 +1755,7 @@ function RightNow({ pinned }: { pinned: Task }) {
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const steps = parseSteps(pinned.steps);
+  const workflowCtx = steps[0]?.workflowState || null;
   const currentIdx = steps.findIndex((s) => !s.done);
   const current = currentIdx >= 0 ? steps[currentIdx] : null;
   const allStepsDone = steps.length > 0 && currentIdx === -1;
@@ -1800,7 +1802,13 @@ function RightNow({ pinned }: { pinned: Task }) {
   async function unstick() {
     if (!current) return;
     setUnsticking(true);
-    try { const res = await mutateAndInvalidate("POST", "/api/unstick", { step: current.text }, []); setHint(res.hint || null); }
+    try {
+      const payload: Record<string, string> = { step: current.text };
+      if (workflowCtx?.currentStage) payload.currentStage = workflowCtx.currentStage;
+      if (workflowCtx?.stageOutput) payload.stageOutput = workflowCtx.stageOutput;
+      const res = await mutateAndInvalidate("POST", "/api/unstick", payload, []);
+      setHint(res.hint || null);
+    }
     catch { toast({ title: "Couldn't think of one", description: "Try again in a moment." }); }
     finally { setUnsticking(false); }
   }
@@ -1873,6 +1881,14 @@ function RightNow({ pinned }: { pinned: Task }) {
           </Button>
         </div>
       )}
+      {workflowCtx?.currentStage && (
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+          <span className="font-semibold text-primary/80">{workflowCtx.currentStage}</span>
+          {workflowCtx.stageOutput && workflowCtx.stageOutput !== pinned.doneWhen && (
+            <><span aria-hidden>·</span><span>{workflowCtx.stageOutput}</span></>
+          )}
+        </div>
+      )}
       {current && (
         <div className="mt-3">
           {/* Step progress bar — shows at a glance where you are without overwhelming */}
@@ -1904,8 +1920,18 @@ function RightNow({ pinned }: { pinned: Task }) {
             </button>
             <div className="flex-1 min-w-0">
               <span className="font-medium leading-snug">{current.text}</span>
+              {current.substeps && current.substeps.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {current.substeps.map((sub, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <span className="shrink-0 mt-0.5 text-primary/40" aria-hidden>›</span>
+                      {sub}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {steps.length > 1 && (
-                <p className="text-[11px] text-muted-foreground mt-1">Tap to mark done — next step will appear</p>
+                <p className="text-[11px] text-muted-foreground mt-1.5">Tap to mark done — next step will appear</p>
               )}
             </div>
           </div>

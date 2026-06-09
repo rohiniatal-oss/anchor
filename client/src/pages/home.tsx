@@ -927,6 +927,79 @@ function BroadPursuitJobsKickoff({
   );
 }
 
+function BroadPursuitParallelSupportKickoff({
+  goal,
+  mode,
+  onStartLane,
+}: {
+  goal: CareerGoalT;
+  mode: "network" | "learn";
+  onStartLane: (item: GoalPortfolioItemT) => void;
+}) {
+  const portfolio = goal.pursuitPortfolio || [];
+  if (goal.decisionMode !== "broad-parallel-pursuit" || portfolio.length === 0) return null;
+  const coverage = getBroadPursuitCoverage(goal);
+  const title = mode === "network" ? "Warm the lanes in parallel" : "Build capability in parallel";
+  const body = mode === "network"
+    ? "You do not need a saved role first. Start warming each live lane with advice, reconnect, or referral paths while the role pipeline is still forming."
+    : "You do not need a saved role first. Build reusable capability and outputs in parallel so every live lane gets stronger while applications are forming.";
+  const buttonLabel = mode === "network" ? "Add contact in this lane" : "Add support item in this lane";
+
+  return (
+    <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid={`${mode}-broad-pursuit-kickoff`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{title}</p>
+          <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
+          <p className="text-xs text-muted-foreground mt-1">{body}</p>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+              {coverage.covered.length} lanes with live roles
+            </span>
+            <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              {coverage.missing.length} still filling out
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 mt-4">
+        {portfolio.map((item) => {
+          const state = combinationCoverageState(goal, item.combination);
+          const tone = state === "covered"
+            ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/10"
+            : state === "missing"
+            ? "border-amber-200 bg-amber-50/70 dark:border-amber-900 dark:bg-amber-950/10"
+            : "border-card-border bg-card";
+          return (
+            <div
+              key={`${mode}-${item.combination}`}
+              className={`rounded-xl border p-3 ${tone}`}
+              data-testid={`${mode}-kickoff-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-medium leading-snug">{item.combination}</p>
+                <span className="inline-flex rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {state === "covered" ? "live role exists" : state === "missing" ? "no live role yet" : "watch"}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">{item.whyPlausible}</p>
+              <p className="text-xs text-primary mt-2 inline-flex items-start gap-1">
+                <ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {item.nextMove}
+              </p>
+              <div className="mt-3">
+                <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-${mode}-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+                  <Plus className="w-4 h-4 mr-1" /> {buttonLabel}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const JOB_ARCHETYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "advisory", label: "Advisory" },
   { value: "chief_of_staff", label: "Chief of staff" },
@@ -954,13 +1027,127 @@ function roleArchetypeForLane(combination: string): string {
   return "advisory";
 }
 
-function lanePresetForJob(item: GoalPortfolioItemT): Partial<JobFormT> {
+type LaneGuideT = {
+  roleArchetype: string;
+  fitHint: string;
+  searchHint: string;
+  nextStep: string;
+  titlePlaceholder: string;
+  notePrefix: string;
+  trackKeywords: string[];
+};
+
+function laneGuideForCombination(combination: string): LaneGuideT {
+  if (/ai \/ technology strategy x ops \/ chief of staff/i.test(combination)) {
+    return {
+      roleArchetype: "chief_of_staff",
+      fitHint: "Look for execution-heavy roles translating AI or technology priorities into cross-functional delivery, founder support, or operating cadence.",
+      searchHint: "Try terms like chief of staff, strategy and operations, special projects, or business operations in AI, frontier tech, or policy-adjacent orgs.",
+      nextStep: "Save one AI or technology role where you would help turn priorities into execution, then decide if it is credible soon.",
+      titlePlaceholder: "Chief of Staff, Strategy & Ops, Special Projects...",
+      notePrefix: "Lane focus: AI / technology strategy x Ops / chief of staff.",
+      trackKeywords: ["ai", "technology", "ops", "operations", "chief of staff", "special projects", "execution"],
+    };
+  }
+  if (/ai \/ technology strategy x strategy \/ advisory/i.test(combination)) {
+    return {
+      roleArchetype: "advisory",
+      fitHint: "Look for roles shaping AI, technology, risk, governance, policy, or strategic direction rather than owning pure implementation.",
+      searchHint: "Try terms like strategy, advisory, policy, governance, public affairs, or market intelligence in AI or frontier technology orgs.",
+      nextStep: "Save one AI or technology strategy role with clear strategic scope, then decide if it is a credible near-term target.",
+      titlePlaceholder: "Strategy Associate, AI Policy Advisor, Tech Strategy...",
+      notePrefix: "Lane focus: AI / technology strategy x Strategy / advisory.",
+      trackKeywords: ["ai", "technology", "strategy", "advisory", "governance", "policy", "risk"],
+    };
+  }
+  if (/geopolitics \/ geopolitical advisory x ops \/ chief of staff/i.test(combination)) {
+    return {
+      roleArchetype: "chief_of_staff",
+      fitHint: "Look for execution and coordination roles inside policy, geopolitical, advisory, or international-facing teams.",
+      searchHint: "Try terms like chief of staff, strategy and operations, programme operations, special projects, or executive office in geopolitical or policy orgs.",
+      nextStep: "Save one geopolitics-adjacent operations role where you would coordinate priorities or delivery, then decide if it is credible soon.",
+      titlePlaceholder: "Chief of Staff, Programme Operations, Strategy & Ops...",
+      notePrefix: "Lane focus: Geopolitics / geopolitical advisory x Ops / chief of staff.",
+      trackKeywords: ["geopolitics", "geopolitical", "policy", "international", "ops", "operations", "chief of staff"],
+    };
+  }
   return {
-    roleArchetype: roleArchetypeForLane(item.combination),
+    roleArchetype: "advisory",
+    fitHint: "Look for roles with substantive regional, geopolitical, public policy, or advisory scope rather than generic admin support.",
+    searchHint: "Try terms like geopolitical advisory, policy advisor, research and strategy, public affairs, or international policy in think tanks, consultancies, multilaterals, and governments.",
+    nextStep: "Save one geopolitical advisory role with substantive regional or policy scope, then decide if it is a credible near-term target.",
+    titlePlaceholder: "Policy Advisor, Geopolitical Analyst, Strategy Associate...",
+    notePrefix: "Lane focus: Geopolitics / geopolitical advisory x Strategy / advisory.",
+    trackKeywords: ["geopolitics", "geopolitical", "policy", "advisory", "international", "research", "public affairs"],
+  };
+}
+
+function normalizeLaneText(text: string) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+}
+
+function bestTrackForLane(combination: string, tracks: CareerTrack[]): number | null {
+  const guide = laneGuideForCombination(combination);
+  const scored = tracks
+    .filter((track) => track.status !== "paused")
+    .map((track) => {
+      const haystack = normalizeLaneText(`${track.name} ${track.description} ${track.whyItFits} ${track.targetRoleArchetype}`);
+      let score = 0;
+      for (const keyword of guide.trackKeywords) {
+        if (haystack.includes(normalizeLaneText(keyword).trim())) score += 2;
+      }
+      if (guide.roleArchetype && haystack.includes(normalizeLaneText(guide.roleArchetype).trim())) score += 1;
+      score += track.priority || 0;
+      return { id: track.id, score };
+    })
+    .sort((a, b) => b.score - a.score || a.id - b.id);
+  return scored[0]?.score > 0 ? scored[0].id : null;
+}
+
+function lanePresetForJob(item: GoalPortfolioItemT, tracks: CareerTrack[]): Partial<JobFormT> {
+  const guide = laneGuideForCombination(item.combination);
+  return {
+    roleArchetype: guide.roleArchetype || roleArchetypeForLane(item.combination),
     narrativeAngle: item.combination,
-    note: `Lane focus: ${item.combination}. ${item.whyPlausible}`,
-    nextStep: "Save the posting and decide whether this is a credible near-term role.",
+    note: `${guide.notePrefix} ${item.whyPlausible}`,
+    nextStep: guide.nextStep,
+    relatedTrackId: bestTrackForLane(item.combination, tracks),
     sourceType: "posting",
+  };
+}
+
+function contactPresetForLane(item: GoalPortfolioItemT, tracks: CareerTrack[]): Partial<ContactFormT> {
+  const guide = laneGuideForCombination(item.combination);
+  return {
+    sector: item.combination,
+    why: `Use this contact to warm ${item.combination} in parallel while the role pipeline is still filling out. ${item.whyPlausible}`,
+    targetRole: guide.titlePlaceholder,
+    askType: "advice",
+    relationshipStrength: "cold",
+    relatedTrackId: bestTrackForLane(item.combination, tracks),
+    status: "to_contact",
+  };
+}
+
+function learnPresetForLane(item: GoalPortfolioItemT, tracks: CareerTrack[]): Partial<LearnFormT> {
+  const guide = laneGuideForCombination(item.combination);
+  const capabilityBuilt = /ai \/ technology/i.test(item.combination)
+    ? "AI / technology strategy judgment"
+    : /ops \/ chief of staff/i.test(item.combination)
+    ? "Operating cadence, decision support, and execution follow-through"
+    : "Geopolitical or policy judgment";
+  const requiredOutput = /ops \/ chief of staff/i.test(item.combination)
+    ? "One reusable operating artifact or memo you could show in future conversations."
+    : "One reusable note, memo, or brief that makes this lane more credible.";
+  return {
+    title: `${item.combination} capability support`,
+    category: capabilityBuilt,
+    capabilityBuilt,
+    requiredOutput,
+    note: `Support ${item.combination} in parallel while roles are still being added. ${guide.fitHint}`,
+    relatedTrackId: bestTrackForLane(item.combination, tracks),
+    proofIntent: true,
+    learnStatus: "open",
   };
 }
 
@@ -1758,6 +1945,7 @@ function JobsView() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<JobFormT>(EMPTY_JOB_FORM);
   const [selectedLane, setSelectedLane] = useState<string>("");
+  const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
@@ -1769,11 +1957,10 @@ function JobsView() {
     setShowForm(true);
   }
   function startLaneRole(item: GoalPortfolioItemT) {
-    const preset = lanePresetForJob(item);
-    setForm((current) => ({
+    const preset = lanePresetForJob(item, tracks);
+    setForm(() => ({
       ...EMPTY_JOB_FORM,
       ...preset,
-      relatedTrackId: current.relatedTrackId,
     }));
     setSelectedLane(item.combination);
     setShowForm(true);
@@ -1811,22 +1998,36 @@ function JobsView() {
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
           {selectedLane && (
-            <div className="sm:col-span-2 flex items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2" data-testid="job-form-lane-banner">
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Selected lane</p>
-                <p className="text-sm font-medium">{selectedLane}</p>
+            <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" data-testid="job-form-lane-banner">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Selected lane</p>
+                  <p className="text-sm font-medium">{selectedLane}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedLane("");
+                    setForm((current) => ({ ...current, roleArchetype: "", narrativeAngle: "", note: "", nextStep: "", relatedTrackId: null }));
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  data-testid="button-clear-job-lane"
+                >
+                  Clear lane
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedLane("");
-                  setForm((current) => ({ ...current, roleArchetype: "", narrativeAngle: "", note: "", nextStep: "" }));
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground"
-                data-testid="button-clear-job-lane"
-              >
-                Clear lane
-              </button>
+              {selectedLaneGuide && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">What counts here</p>
+                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.fitHint}</p>
+                  </div>
+                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Try searches like</p>
+                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.searchHint}</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <div className="sm:col-span-2">
@@ -1870,9 +2071,17 @@ function JobsView() {
                   </button>
                 ))}
               </div>
+              {selectedLaneGuide && form.relatedTrackId != null && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Anchor linked the nearest matching track, but you can change it.</p>
+              )}
             </div>
           )}
-          <Input placeholder="Role title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-job-title" />
+          <Input
+            placeholder={selectedLaneGuide?.titlePlaceholder || "Role title *"}
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            data-testid="input-job-title"
+          />
           <Input placeholder="Company / org" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} data-testid="input-job-company" />
           <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} data-testid="input-job-location" />
           <Input placeholder="Deadline (YYYY-MM-DD)" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} data-testid="input-job-deadline" />
@@ -2657,6 +2866,11 @@ function NetworkView() {
     setForm(EMPTY_CONTACT_FORM);
     setShowForm(true);
   }
+  function startLaneContact(item: GoalPortfolioItemT) {
+    const preset = contactPresetForLane(item, tracks);
+    setForm({ ...EMPTY_CONTACT_FORM, ...preset });
+    setShowForm(true);
+  }
   function startSuggestedContact() {
     if (!sug) return;
     setForm({
@@ -2702,6 +2916,7 @@ function NetworkView() {
         <Button onClick={() => showForm ? setShowForm(false) : startBlankContact()} className="shrink-0" data-testid="button-toggle-contact-form"><Plus className="w-4 h-4 mr-1" /> Add contact</Button>
       </div>
       {activeGoal && <ViewSpineCallout view="network" goal={activeGoal} />}
+      {activeGoal && contacts.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="network" onStartLane={startLaneContact} />}
 
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2" data-testid="contact-intake-form">
@@ -2805,7 +3020,7 @@ function NetworkView() {
       )}
 
       {isLoading ? <Loading /> : contacts.length === 0 ? (
-        <Empty icon={Users} text="No one on your warm list yet. Add the suggestion above to start warming a path." />
+        <Empty icon={Users} text="No contacts yet. Start warming one of your live lanes now — this can happen in parallel with saving roles." />
       ) : (
         <div className="space-y-5">
           {populatedLaneKeys.map((key) => {
@@ -3029,6 +3244,11 @@ function LearnView() {
   const suggestedDomainKeys = Array.from(
     new Set(tracks.flatMap((track) => requiredDomainsForTrack(track)).filter((key) => !!key)),
   ) as string[];
+  function startLaneLearn(item: GoalPortfolioItemT) {
+    const preset = learnPresetForLane(item, tracks);
+    setForm({ ...EMPTY_LEARN_FORM, ...preset });
+    setShowForm(true);
+  }
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/learn", { ...form, done: false, active: false }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]);
@@ -3069,6 +3289,7 @@ function LearnView() {
         <Button onClick={() => showForm ? setShowForm(false) : setShowForm(true)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
       </div>
       {activeGoal && <ViewSpineCallout view="learn" goal={activeGoal} />}
+      {activeGoal && live.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="learn" onStartLane={startLaneLearn} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
           {suggestedDomainKeys.length > 0 && (
@@ -3165,7 +3386,7 @@ function LearnView() {
         </div>
       )}
       {isLoading ? <Loading /> : items.length === 0 ? (
-        <Empty icon={GraduationCap} text="No resources yet. Add a course, fellowship, or book above." />
+        <Empty icon={GraduationCap} text="No learning items yet. Start one capability-support move now — it can run in parallel with role search." />
       ) : (
         <div className="space-y-6">
           {activeDomainKeys.map((key) => (

@@ -1512,6 +1512,7 @@ function sortJobs(a: Job, b: Job): number {
 }
 function JobsView() {
   const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
+  const { data: learns = [] } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
@@ -1652,7 +1653,7 @@ function JobsView() {
               <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
                 <div className="flex items-center justify-between mb-2.5 px-1"><h2 className="font-semibold text-sm">{col.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div>
                 <div className="space-y-2">
-                  {items.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} onMove={move} onRemove={() => remove(j.id)} />)}
+                  {items.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
                   {items.length === 0 && <p className="text-xs text-muted-foreground px-1 py-3">Add roles you want to apply for.</p>}
                 </div>
               </div>
@@ -1672,7 +1673,7 @@ function JobsView() {
                 <div className="mb-4">
                   <GroupLabel count={openFellowships.length}><Compass className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Open / apply now</GroupLabel>
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {openFellowships.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} onMove={move} onRemove={() => remove(j.id)} />)}
+                    {openFellowships.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
                   </div>
                 </div>
               )}
@@ -1680,7 +1681,7 @@ function JobsView() {
                 <div>
                   <GroupLabel count={watchFellowships.length}><CalendarDays className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Watch / closed for 2026</GroupLabel>
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} onMove={move} onRemove={() => remove(j.id)} />)}
+                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
                   </div>
                 </div>
               )}
@@ -1869,7 +1870,7 @@ function JobStepRail({ j }: { j: Job }) {
   );
 }
 
-function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
+function JobCard({ j, tracks, tasks, contacts, learns, onMove, onRemove }: { j: Job; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
   const trackId = getTrackId("jobs", j);
@@ -1946,6 +1947,7 @@ function JobCard({ j, tracks, tasks, contacts, onMove, onRemove }: { j: Job; tra
               </div>
               <JobStepRail j={j} />
               <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
+              <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} />
               <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
                 onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} />
             </div>
@@ -2008,6 +2010,125 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
               </button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JobCapabilitySupport({
+  j,
+  trackId,
+  tracks,
+  learns,
+}: {
+  j: Job;
+  trackId: number | null;
+  tracks: CareerTrack[];
+  learns: Learn[];
+}) {
+  const { toast } = useToast();
+  const [busyId, setBusyId] = useState<number | null>(null);
+  if (j.status === "closed" || trackId == null) return null;
+
+  const track = tracks.find((t) => t.id === trackId) || null;
+  const requiredDomains = track ? requiredDomainsForTrack(track) : [];
+  const supportItems = learns
+    .filter((l) => !l.done && getTrackId("learn", l) === trackId)
+    .sort((a, b) => {
+      const score = (l: Learn) => {
+        let total = 0;
+        if (l.active) total += 4;
+        const outputState = getLearnOutputState(l);
+        if (outputState === "producing") total += 3;
+        if (outputState === "evidenced") total += 2;
+        if (getLearnStatus(l) === "active" || getLearnStatus(l) === "enrolled") total += 2;
+        return total;
+      };
+      return score(b) - score(a) || b.id - a.id;
+    })
+    .slice(0, 3);
+
+  async function createSupportTask(l: Learn) {
+    setBusyId(l.id);
+    try {
+      const endpoint = getLearnOutputState(l) === "reference" ? `/api/learn/${l.id}/create-next-task` : `/api/learn/${l.id}/create-output-task`;
+      const r = await mutateAndInvalidate("POST", endpoint, {}, ["/api/tasks", "/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
+      toast({
+        title: r?.reused ? "Already on your list." : "Support task created.",
+        description: r?.reused ? "There's already an open task for this learning item." : "Find it in Brain dump, or in Today if it gets planned.",
+      });
+    } catch {
+      toast({ title: "Couldn't create the support task", description: "Try again in a moment." });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-slate-50/70 dark:bg-slate-900/20 -mx-1 px-2 pb-2" data-testid={`capability-support-${j.id}`}>
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-1.5">
+        <Hammer className="w-3.5 h-3.5" /> Capability support
+      </div>
+      {supportItems.length === 0 ? (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">
+            No learning support is linked to this track yet. Add one in Learn so this role has a capability ramp, not just an application task list.
+          </p>
+          {requiredDomains.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {requiredDomains.map((key) => (
+                <span key={key} className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                  {domainLabel(key)}
+                </span>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => { window.location.hash = "/learn"; }}
+            className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
+            data-testid={`button-open-learn-from-job-${j.id}`}
+          >
+            <GraduationCap className="w-3.5 h-3.5" /> Open Learn
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {supportItems.map((l) => {
+            const outputState = getLearnOutputState(l);
+            const meta = LEARN_OUTPUT_META[outputState];
+            const status = getLearnStatus(l);
+            return (
+              <div key={l.id} className="rounded-lg border border-card-border bg-card px-3 py-2" data-testid={`job-support-learn-${j.id}-${l.id}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium leading-snug">{l.title}</p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                      {l.capabilityBuilt && <span className="text-[10px] rounded-md bg-accent text-accent-foreground px-1.5 py-0.5">{l.capabilityBuilt}</span>}
+                      <span className="text-[10px] rounded-md bg-muted text-muted-foreground px-1.5 py-0.5">{LEARN_STATUS_LABEL[status]}</span>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${meta.cls}`}>
+                        <meta.icon className="w-2.5 h-2.5" /> {meta.label}
+                      </span>
+                    </div>
+                    {l.requiredOutput && <p className="text-[11px] text-muted-foreground mt-1">Output: {l.requiredOutput}</p>}
+                  </div>
+                  {outputState !== "evidenced" && (
+                    <button
+                      type="button"
+                      onClick={() => createSupportTask(l)}
+                      disabled={busyId === l.id}
+                      className="shrink-0 text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60"
+                      data-testid={`button-job-support-task-${j.id}-${l.id}`}
+                    >
+                      {busyId === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                      {outputState === "reference" ? "Create next task" : "Create output task"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

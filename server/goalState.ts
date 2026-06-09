@@ -565,10 +565,10 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       bottleneck: hasBroadParallelLanes(snapshot)
         ? "multiple plausible lanes need live roles and applications so the market can separate them for you"
         : snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
-          ? "you need to compare both topic and role shape before choosing a lane"
+          ? "you need one real role or application signal in each strong combination before narrowing"
           : snapshot.roleHypotheses.length >= 2
-            ? "you still need to choose which lane deserves focused testing"
-          : snapshot.directionReady ? "signals need narrowing into one role lane" : "not enough role-family signal",
+            ? "you still need live role and application signal across the plausible lanes"
+            : snapshot.directionReady ? "signals need narrowing into one role lane" : "not enough role-family signal",
       nextMoveType: "learning",
       evidence: directionEvidence,
       nextMoves: hasBroadParallelLanes(snapshot)
@@ -576,9 +576,9 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
           ? ["add one real role in each live combination", "capture which combinations feel energising, credible, or gettable", "let concrete roles separate the lanes instead of forcing a winner early"]
           : ["add one real role in each plausible lane", "capture what the work actually looks like in each lane", "let concrete roles separate the lanes instead of forcing a winner early"]
         : snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
-          ? [`compare ${snapshot.topicHypotheses[0]} x ${snapshot.roleShapeHypotheses[0]} vs ${snapshot.topicHypotheses[1]} x ${snapshot.roleShapeHypotheses[0]}`, "define what matters most across topic and role shape", "save one concrete role example for each strong combination"]
+          ? ["save one concrete role example for each strong combination", "capture what feels energising, credible, or gettable in each", "let live roles and applications narrow the field"]
           : snapshot.roleHypotheses.length >= 2
-            ? [`compare ${snapshot.roleHypotheses[0]} vs ${snapshot.roleHypotheses[1]}`, "define what a good-fit role must include", "save one concrete example from each lane"]
+            ? ["save one concrete example from each plausible lane", "define what a credible near-term role must include", "let live roles and applications narrow the field"]
           : snapshot.directionReady
             ? ["summarise patterns", "compare the strongest lanes", "inspect one adjacent role"]
             : ["inspect one asset-backed role", "save one plausible role", "note one useful attribute"],
@@ -878,7 +878,7 @@ function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamSta
     ? "Take any credible role that can land soon across UAE, Remote, or London; keep stronger-fit alternatives warm in parallel."
     : phase === "lane-narrowing"
       ? "Keep plausible lanes alive in parallel until live evidence clearly separates them."
-      : "Prefer the strongest-fit lane unless live evidence says otherwise.";
+      : "Prefer the strongest live role while keeping adjacent plausible options open until evidence is decisive.";
 
   return {
     phase,

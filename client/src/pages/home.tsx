@@ -1611,7 +1611,6 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
   );
 }
 function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
-  // P4.6a #5 — ONE unified payload from the single diagnostics engine.
   const { data, isLoading } = useQuery<FrontDoor>({ queryKey: ["/api/strategy/front-door"] });
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: careerTracks = [] } = useCareerTracks();
@@ -1623,38 +1622,25 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const active = tracks.filter((t) => t.status === "active");
   const watching = tracks.filter((t) => t.status !== "active");
 
-  const Stat = ({ label, value, dim }: { label: string; value: string | number; dim?: boolean }) => (
-    <div className="flex flex-col">
-      <span className={`text-sm font-semibold tabular-nums ${dim ? "text-muted-foreground" : "text-foreground"}`}>{value}</span>
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
-    </div>
-  );
-
-  const Card = ({ t }: { t: TrackDiagnostic }) => {
-    const health = t.bottleneck ?? "none";
+  const TrackCard = ({ t }: { t: TrackDiagnostic }) => {
+    const stalled = t.bottleneck !== "none";
     return (
       <div className="rounded-xl border border-card-border bg-card p-4" data-testid={`track-${t.slug}`}>
-        <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="font-semibold text-sm leading-snug">{t.name}</h3>
             {t.whyItFits && <p className="text-xs text-muted-foreground mt-0.5">{t.whyItFits}</p>}
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <span className={`rounded-full text-[11px] font-semibold px-2 py-0.5 ${health === "none" ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"}`} data-testid={`track-health-${t.slug}`}>{BOTTLENECK_LABEL[health] || health}</span>
+          <span className="text-xs text-muted-foreground shrink-0 mt-0.5">{t.counts.jobs} role{t.counts.jobs !== 1 ? "s" : ""}</span>
+        </div>
+        {stalled ? (
+          <div className="rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/50 dark:border-amber-800/30 px-3 py-2 mt-2.5" data-testid={`track-health-${t.slug}`}>
+            <p className="text-xs text-amber-800 dark:text-amber-300 leading-snug">{t.bottleneckLabel}</p>
+            <p className="text-xs text-primary mt-1.5 flex items-start gap-1"><ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-px" />{t.recommendedMove}</p>
           </div>
-        </div>
-        <div className="grid grid-cols-4 gap-2 mb-3">
-          <Stat label="Roles" value={t.counts.jobs} dim={t.counts.jobs === 0} />
-          <Stat label="Learning" value={t.counts.learn} dim={t.counts.learn === 0} />
-          <Stat label="Contacts" value={t.counts.contacts} dim={t.counts.contacts === 0} />
-          <Stat label="Proof" value={t.counts.hustles} dim={t.counts.hustles === 0} />
-        </div>
-        <div className="rounded-lg bg-muted/60 px-3 py-2">
-          <p className="text-xs text-muted-foreground"><span className="font-medium text-foreground">Bottleneck:</span> {t.bottleneckLabel}</p>
-          <p className="text-xs text-primary mt-1 inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> {t.recommendedMove}</p>
-        </div>
-        {t.evidence && <EvidenceChips ev={t.evidence} />}
-        {t.learningGap && <CapabilityChips lg={t.learningGap} />}
+        ) : (
+          <p className="text-xs text-primary mt-2.5 flex items-start gap-1" data-testid={`track-health-${t.slug}`}><ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-px" />{t.recommendedMove}</p>
+        )}
       </div>
     );
   };
@@ -1668,13 +1654,9 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   return (
     <div>
       <h1 className="text-xl font-bold tracking-tight">Strategy</h1>
-      <p className="text-sm text-muted-foreground mt-1 mb-5">Which lanes are live, and what each needs next.</p>
+      <p className="text-sm text-muted-foreground mt-1 mb-5">Active role types and what each needs.</p>
       {activeGoal && (
-        <>
-          <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} variant="compact" showOpenStrategy={false} />
-          <PursuitPortfolioGrid goal={activeGoal} />
-          <WorkstreamGrid goal={activeGoal} />
-        </>
+        <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} variant="compact" showOpenStrategy={false} />
       )}
 
       {insights.length > 0 && (
@@ -1688,25 +1670,30 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
 
-      <GroupLabel>Active paths</GroupLabel>
-      <div className="grid gap-3 sm:grid-cols-2 mt-2 mb-6">
-        {active.map((t) => <Card key={t.id} t={t} />)}
-      </div>
+      {active.length > 0 ? (
+        <>
+          <GroupLabel>Active role types</GroupLabel>
+          <div className="grid gap-3 sm:grid-cols-2 mt-2 mb-6">
+            {active.map((t) => <TrackCard key={t.id} t={t} />)}
+          </div>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground mb-6">No active role types yet — add roles in the Jobs tab to get started.</p>
+      )}
 
       {watching.length > 0 && (
         <>
           <GroupLabel>Watching</GroupLabel>
           <div className="grid gap-3 sm:grid-cols-2 mt-2 mb-6">
-            {watching.map((t) => <Card key={t.id} t={t} />)}
+            {watching.map((t) => <TrackCard key={t.id} t={t} />)}
           </div>
         </>
       )}
 
-      {/* Unlinked bucket — orphaned source items, fixable in place */}
       {unlinkedItems.length > 0 && (
         <div className="mb-6">
-          <GroupLabel count={unlinkedItems.length}><AlertTriangle className="w-4 h-4 text-destructive" /> Unlinked — no track yet</GroupLabel>
-          <p className="text-xs text-muted-foreground mb-2">These live items aren't tied to a path, so they don't count toward any track's health. Link each one.</p>
+          <GroupLabel count={unlinkedItems.length}><AlertTriangle className="w-4 h-4 text-destructive" /> Not linked to a role type</GroupLabel>
+          <p className="text-xs text-muted-foreground mb-2">These items aren't tied to any role type yet — link them so they count toward the right target.</p>
           <div className="space-y-2">
             {unlinkedItems.map((it) => (
               <div key={`${it.entity}-${it.id}`} className="flex items-center gap-2 rounded-lg border border-card-border bg-card px-3 py-2" data-testid={`unlinked-${it.entity}-${it.id}`}>
@@ -1717,12 +1704,12 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                     <button className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0" data-testid={`button-link-unlinked-${it.entity}-${it.id}`}><Link2 className="w-3.5 h-3.5" /> Link</button>
                   </PopoverTrigger>
                   <PopoverContent className="w-56 p-1.5" align="end">
-                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a track</p>
+                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a role type</p>
                     <div className="space-y-0.5">
                       {careerTracks.map((t) => (
                         <button key={t.id} onClick={() => linkUnlinked(it, t.id)} className="w-full text-left text-sm px-2 py-1.5 rounded-md hover-elevate">{t.name}</button>
                       ))}
-                      {careerTracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No tracks yet.</p>}
+                      {careerTracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No role types yet.</p>}
                     </div>
                   </PopoverContent>
                 </Popover>
@@ -1733,8 +1720,6 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
 
-      {/* Proof assets live HERE — they exist to make her credible for these tracks,
-          so they belong inside the big-picture view, not as a separate tab. */}
       <div className="mt-8 pt-6 border-t border-card-border">
         <ProofAssetsView />
       </div>

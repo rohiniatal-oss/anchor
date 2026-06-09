@@ -2534,6 +2534,70 @@ function getJobWarmSupport(trackId: number | null, contacts: Contact[]) {
   return { trackContacts, warmTrackContacts, weak, candidates };
 }
 
+const READINESS_STAGES = [
+  { key: "cv", label: "CV tailored" },
+  { key: "cover", label: "Cover letter" },
+  { key: "questions", label: "Application questions" },
+  { key: "sample", label: "Work sample" },
+  { key: "referral", label: "Referral secured" },
+  { key: "submitted", label: "Submitted" },
+  { key: "follow_up", label: "Followed up" },
+] as const;
+const READINESS_ORDER = ["none", "cv", "cover", "questions", "sample", "referral", "submitted", "follow_up"];
+
+function ApplicationReadinessBar({ j, expanded }: { j: Job; expanded: boolean }) {
+  const { toast } = useToast();
+  const currentIdx = READINESS_ORDER.indexOf(j.applicationReadiness || "none");
+
+  async function setReadiness(stageKey: string) {
+    const clickedIdx = READINESS_ORDER.indexOf(stageKey);
+    const newKey = clickedIdx === currentIdx ? (READINESS_ORDER[clickedIdx - 1] ?? "none") : stageKey;
+    await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { applicationReadiness: newKey }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    const label = READINESS_STAGES.find((s) => s.key === newKey)?.label;
+    toast({ title: newKey === "none" ? "Checklist cleared." : `Marked: ${label}` });
+  }
+
+  if (!expanded) {
+    if (currentIdx === 0) return null;
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <div className="flex items-center gap-0.5">
+          {READINESS_STAGES.map((s, i) => (
+            <div key={s.key} className={`w-1.5 h-1.5 rounded-full ${i + 1 <= currentIdx ? "bg-primary" : "bg-muted-foreground/25"}`} />
+          ))}
+        </div>
+        <span className="text-[10px] text-muted-foreground">{READINESS_STAGES[currentIdx - 1]?.label}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Application checklist</p>
+      <div className="space-y-0.5">
+        {READINESS_STAGES.map((s, i) => {
+          const done = i + 1 <= currentIdx;
+          const nextUp = i === currentIdx;
+          return (
+            <button
+              key={s.key}
+              onClick={() => setReadiness(s.key)}
+              className={`w-full flex items-center gap-2 text-left px-1.5 py-1 rounded text-xs transition-colors hover:bg-muted/50 ${done ? "text-foreground" : nextUp ? "text-foreground font-medium" : "text-muted-foreground"}`}
+              data-testid={`readiness-${j.id}-${s.key}`}
+            >
+              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${done ? "border-primary bg-primary/15" : nextUp ? "border-foreground/40" : "border-muted-foreground/25"}`}>
+                {done && <Check className="w-2 h-2 text-primary" />}
+              </span>
+              <span>{s.label}</span>
+              {nextUp && <span className="ml-auto text-[10px] text-muted-foreground/60">up next</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }: { j: Job; truth: JobTruthStripT | null; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
@@ -2704,6 +2768,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
               <p className="text-xs text-muted-foreground leading-snug line-clamp-1">{truth.headline}</p>
             </div>
           )}
+          {!open && <ApplicationReadinessBar j={j} expanded={false} />}
           {truth && open && (
             <div className="mt-2 rounded-md border border-card-border bg-muted/35 px-2.5 py-2">
               <div className="flex flex-wrap items-center gap-1.5 mb-1">
@@ -2724,6 +2789,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
           {/* ── EXPANDED: the work surface (steps, warm path, stage move, tasks) ── */}
           {open && (
             <div className="mt-3 pt-3 border-t border-card-border space-y-3">
+              <ApplicationReadinessBar j={j} expanded={true} />
               {j.note && <p className="text-xs text-muted-foreground leading-snug">{j.note}</p>}
               <div className="flex items-center gap-1">
                 {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">← back</button>}

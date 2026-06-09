@@ -64,3 +64,24 @@ test("goal-source breakdown turns broad pursuit into concrete lane-filling steps
   assert.ok(steps.length >= 1);
   assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action/i);
 });
+
+test("goal-source breakdown sharpens the first role-search move for a specific missing combination", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Add or apply to one credible role in each still-empty combination: Geopolitics / geopolitical advisory x Strategy / advisory",
+    category: "job",
+    sourceType: "goal",
+    sourceId: 1,
+    sourceNote: "Broad pursuit is active. Missing combinations: Geopolitics / geopolitical advisory x Strategy / advisory.",
+    doneWhen: "One concrete role or application move exists in each still-empty combination",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+
+  const { steps } = await buildDeterministicTaskBreakdown(task);
+
+  assert.ok(steps.length >= 1);
+  assert.match(steps.map((step) => String(step.text || "")).join(" | "), /geopolitical advisory|regional or policy scope/i);
+});

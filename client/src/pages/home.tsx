@@ -1720,13 +1720,10 @@ function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
 
-      <div className="mt-8 pt-6 border-t border-card-border">
-        <ProofAssetsView />
-      </div>
-
       <div className="flex flex-wrap gap-2 mt-8">
         <Button size="sm" variant="outline" onClick={() => onOpenTab("jobs")}><Briefcase className="w-4 h-4 mr-1" /> Jobs</Button>
         <Button size="sm" variant="outline" onClick={() => onOpenTab("network")}><Users className="w-4 h-4 mr-1" /> Network</Button>
+        <Button size="sm" variant="outline" onClick={() => onOpenTab("learn")}><GraduationCap className="w-4 h-4 mr-1" /> Learn</Button>
         <Button size="sm" variant="outline" onClick={() => onOpenTab("today")}><Target className="w-4 h-4 mr-1" /> Back to Today</Button>
       </div>
     </div>
@@ -3674,6 +3671,10 @@ function LearnView() {
           )}
         </div>
       )}
+
+      <div className="mt-8 pt-6 border-t border-card-border">
+        <ProofAssetsView />
+      </div>
     </div>
   );
 }
@@ -3691,6 +3692,8 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
   const [busy, setBusy] = useState(false);
   const [editingOutput, setEditingOutput] = useState(false);
   const [outputDraft, setOutputDraft] = useState(l.requiredOutput || "");
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(l.outputTitle || "");
   const [evidencing, setEvidencing] = useState(false);
   const [evidenceDraft, setEvidenceDraft] = useState("");
 
@@ -3701,7 +3704,14 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
     const v = outputDraft.trim();
     await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { requiredOutput: v }, ["/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     setEditingOutput(false);
-    if (v) toast({ title: "Output set.", description: "This is now building toward proof. Produce it when you're ready — no rush." });
+  }
+  async function saveOutputTitle() {
+    const v = titleDraft.trim();
+    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { outputTitle: v }, ["/api/learn"]);
+    setEditingTitle(false);
+  }
+  async function setOutputStatus(status: string) {
+    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { outputStatus: status }, ["/api/learn"]);
   }
   async function createOutputTask() {
     setBusy(true);
@@ -3761,37 +3771,23 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
             </div>
           )}
 
-          {/* SOFT, NON-AMBER reminder — ONLY for opted-in (track-linked) items with no output. Never on reference/consumption. */}
           {needsNudge && (
             <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-2 inline-flex items-center gap-1" data-testid={`learn-nudge-${l.id}`}>
-              <Hammer className="w-3 h-3" /> Add an output to make this count as proof.
+              <Hammer className="w-3 h-3" /> Building something from this? Track it below.
             </p>
           )}
 
-          {/* CALM opt-in affordance for reference items: a quiet optional link only — NO warning. */}
           {outputState === "reference" && !l.done && (
-            editingOutput ? (
-              <div className="flex items-center gap-2 mt-2">
-                <Input value={outputDraft} onChange={(e) => setOutputDraft(e.target.value)} placeholder="e.g. a published memo, a forecast, a sample" className="h-7 text-xs" data-testid={`input-output-${l.id}`} />
-                <button onClick={saveOutput} data-testid={`button-save-output-${l.id}`} className="text-xs text-primary font-medium hover:underline">Save</button>
-                <button onClick={() => { setEditingOutput(false); setOutputDraft(l.requiredOutput || ""); }} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
-                <button onClick={() => setEditingOutput(true)} data-testid={`button-set-output-${l.id}`} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-                  <Plus className="w-3 h-3" /> Set a required output
-                </button>
-                <button onClick={toggleProofIntent} data-testid={`button-proof-intent-${l.id}`} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-                  <Hammer className="w-3 h-3" /> Mark as proof-building
-                </button>
-              </div>
-            )
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
+              <button onClick={toggleProofIntent} data-testid={`button-proof-intent-${l.id}`} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                <Hammer className="w-3 h-3" /> Track an output
+              </button>
+            </div>
           )}
 
-          {/* Evidenced: show the produced artifact link. */}
           {outputState === "evidenced" && l.outputEvidenceUrl && (
             <a href={l.outputEvidenceUrl} target="_blank" rel="noopener noreferrer" data-testid={`link-evidence-${l.id}`} className="text-xs text-emerald-700 dark:text-emerald-300 mt-2 inline-flex items-center gap-1 hover:underline">
-              <BadgeCheck className="w-3 h-3" /> View the proof artifact <ExternalLink className="w-3 h-3" />
+              <BadgeCheck className="w-3 h-3" /> {l.outputTitle || "View published piece"} <ExternalLink className="w-3 h-3" />
             </a>
           )}
 
@@ -3800,30 +3796,51 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
             <button onClick={onRemove} data-testid={`button-delete-learn-${l.id}`} className="opacity-0 group-hover:opacity-100 text-xs text-muted-foreground hover:text-destructive inline-flex items-center gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
           </div>
 
-          {/* Producing lane (opted in, not yet evidenced): invite to create the output task + mark evidenced inline. */}
           {outputState === "producing" && !l.done && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5">
-              <button onClick={createOutputTask} disabled={busy} data-testid={`button-create-output-task-${l.id}`} className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
-                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create output task
-              </button>
-              {evidencing ? (
-                <span className="inline-flex items-center gap-2">
-                  <Input value={evidenceDraft} onChange={(e) => setEvidenceDraft(e.target.value)} placeholder="link to the artifact" className="h-7 text-xs w-48" data-testid={`input-evidence-${l.id}`} />
-                  <button onClick={markEvidenced} disabled={busy || !evidenceDraft.trim()} data-testid={`button-confirm-evidence-${l.id}`} className="text-xs text-primary font-medium hover:underline disabled:opacity-60">Save</button>
-                  <button onClick={() => { setEvidencing(false); setEvidenceDraft(""); }} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
-                </span>
+            <div className="mt-2.5 rounded-lg bg-muted/40 px-3 py-2.5 space-y-2">
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">What you're building</p>
+              {editingTitle ? (
+                <div className="flex items-center gap-2">
+                  <Input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} placeholder="e.g. AI governance article, policy memo…" className="h-7 text-xs" data-testid={`input-output-title-${l.id}`} />
+                  <button onClick={saveOutputTitle} className="text-xs text-primary font-medium hover:underline shrink-0">Save</button>
+                  <button onClick={() => { setEditingTitle(false); setTitleDraft(l.outputTitle || ""); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0">Cancel</button>
+                </div>
               ) : (
-                <button onClick={() => setEvidencing(true)} data-testid={`button-mark-evidenced-${l.id}`} className="text-xs text-slate-600 dark:text-slate-300 hover:text-foreground inline-flex items-center gap-1">
-                  <BadgeCheck className="w-3.5 h-3.5" /> Mark evidenced
+                <button onClick={() => setEditingTitle(true)} data-testid={`button-edit-output-title-${l.id}`} className="text-xs text-left w-full hover:text-primary transition-colors">
+                  {l.outputTitle ? <span className="font-medium">{l.outputTitle}</span> : <span className="text-muted-foreground">Add a title…</span>}
                 </button>
               )}
-              {/* Un-mark is offered ONLY when the producing lane was entered via proofIntent
-                  (no requiredOutput) — un-marking then returns the item to the silent reference state. */}
-              {l.proofIntent && !(l.requiredOutput && l.requiredOutput.trim()) && (
-                <button onClick={toggleProofIntent} data-testid={`button-unmark-proof-intent-${l.id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-                  Back to reference
-                </button>
+              <div className="flex items-center gap-1.5">
+                {(["idea", "drafting", "published"] as const).map((s) => (
+                  <button key={s} onClick={() => setOutputStatus(s === l.outputStatus ? "" : s)}
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors capitalize ${l.outputStatus === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted-foreground/20"}`}
+                    data-testid={`button-output-status-${l.id}-${s}`}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+              {l.outputStatus === "published" && (
+                <div>
+                  {l.outputEvidenceUrl ? (
+                    <a href={l.outputEvidenceUrl} target="_blank" rel="noopener noreferrer" data-testid={`link-evidence-${l.id}`} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+                      <ExternalLink className="w-3 h-3" /> View {l.outputTitle || "piece"}
+                    </a>
+                  ) : evidencing ? (
+                    <span className="inline-flex items-center gap-2">
+                      <Input value={evidenceDraft} onChange={(e) => setEvidenceDraft(e.target.value)} placeholder="Link to the published piece" className="h-7 text-xs w-48" data-testid={`input-evidence-${l.id}`} />
+                      <button onClick={markEvidenced} disabled={busy || !evidenceDraft.trim()} data-testid={`button-confirm-evidence-${l.id}`} className="text-xs text-primary font-medium hover:underline disabled:opacity-60">Save</button>
+                      <button onClick={() => { setEvidencing(false); setEvidenceDraft(""); }} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                    </span>
+                  ) : (
+                    <button onClick={() => setEvidencing(true)} data-testid={`button-mark-evidenced-${l.id}`} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+                      <Link2 className="w-3 h-3" /> Add link
+                    </button>
+                  )}
+                </div>
               )}
+              <button onClick={createOutputTask} disabled={busy} data-testid={`button-create-output-task-${l.id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 disabled:opacity-60">
+                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create task to work on this
+              </button>
             </div>
           )}
 

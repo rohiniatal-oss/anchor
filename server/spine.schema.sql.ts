@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS learn (
   time_required TEXT NOT NULL DEFAULT '',
   capability_built TEXT NOT NULL DEFAULT '',
   required_output TEXT NOT NULL DEFAULT '',
+  output_title TEXT NOT NULL DEFAULT '',
+  output_status TEXT NOT NULL DEFAULT '',
   output_evidence_url TEXT NOT NULL DEFAULT '',
   prerequisites TEXT NOT NULL DEFAULT '[]',
   unlocks TEXT NOT NULL DEFAULT '[]',
@@ -241,4 +243,6 @@ CREATE TABLE IF NOT EXISTS user_profile (
 // Each is run individually with try/catch so it is a no-op if already applied.
 export const SPINE_MIGRATIONS = [
   `ALTER TABLE jobs ADD COLUMN jd_text TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE learn ADD COLUMN output_title TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE learn ADD COLUMN output_status TEXT NOT NULL DEFAULT ''`,
 ];

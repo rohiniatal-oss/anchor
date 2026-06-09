@@ -307,11 +307,11 @@ function LinkTrackControl({ entity, id, trackId, tracks }: { entity: TrackedEnti
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button data-testid={`button-link-track-${entity}-${id}`} className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1">
-          <Link2 className="w-3.5 h-3.5" /> {trackId ? "Track" : "Link track"}
+          <Link2 className="w-3.5 h-3.5" /> {trackId ? "Role type" : "Link role type"}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-56 p-1.5" align="start">
-        <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a track</p>
+        <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a role type</p>
         <div className="space-y-0.5">
           {tracks.map((t) => (
             <button key={t.id} onClick={() => link(t.id)} data-testid={`option-track-${t.id}`}
@@ -322,7 +322,7 @@ function LinkTrackControl({ entity, id, trackId, tracks }: { entity: TrackedEnti
           {trackId && (
             <button onClick={() => link(null)} className="w-full text-left text-sm px-2 py-1.5 rounded-md text-muted-foreground hover-elevate">Unlink</button>
           )}
-          {tracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No tracks yet.</p>}
+          {tracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No role types yet.</p>}
         </div>
       </PopoverContent>
     </Popover>
@@ -406,7 +406,7 @@ function OnboardingView() {
     <div>
       <h1 className="text-xl font-bold tracking-tight">Let's set up your strategy</h1>
       <p className="text-sm text-muted-foreground mt-1 mb-6">
-        Add the lanes you want to pursue first. Anchor can shape your plan around several plausible tracks in parallel and then narrow from live evidence.
+        Add the role types you want to pursue. Anchor builds your plan around several directions at once and narrows based on what's actually moving.
       </p>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -438,7 +438,7 @@ function OnboardingView() {
                       isAccepted ? "bg-primary/10 text-primary" : "bg-primary text-primary-foreground hover:bg-primary/90"
                     }`}>
                     {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isAccepted ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-                    {isAccepted ? "Added" : "Add track"}
+                    {isAccepted ? "Added" : "Add role type"}
                   </button>
                 </div>
               </div>
@@ -450,7 +450,7 @@ function OnboardingView() {
         <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center gap-3">
           <Loader2 className="w-4 h-4 shrink-0 animate-spin text-primary" />
           <div>
-            <p className="text-sm font-medium">{accepted.size === 1 ? "1 track added" : `${accepted.size} tracks added`} — building your plan…</p>
+            <p className="text-sm font-medium">{accepted.size === 1 ? "1 role type added" : `${accepted.size} role types added`} — building your plan…</p>
             <p className="text-xs text-muted-foreground mt-0.5">Anchor is shaping today around {accepted.size === 1 ? "it" : "them"} while keeping the wider search coherent. Your first moves will appear in a moment.</p>
           </div>
         </div>
@@ -529,15 +529,15 @@ type GoalsStateResponseT = { goals: CareerGoalT[] };
 const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "Later", bonus: "Bonus" };
 const PHASE_LABEL: Record<CareerGoalT["phase"], string> = {
   "fit-discovery": "Discover fit",
-  "lane-narrowing": "Narrow lanes",
+  "lane-narrowing": "Narrow focus",
   "role-targeting": "Target roles",
   "interview-prep": "Interview prep",
 };
 const DECISION_MODE_LABEL: Record<CareerGoalT["decisionMode"], string> = {
-  "single-track": "Single track",
-  "forced-comparison": "Forced comparison",
-  "parallel-exploration": "Parallel exploration",
-  "broad-parallel-pursuit": "Broad pursuit",
+  "single-track": "One path",
+  "forced-comparison": "Comparing options",
+  "parallel-exploration": "Exploring options",
+  "broad-parallel-pursuit": "Multiple targets",
 };
 const DAY_TYPE_LABEL: Record<string, string> = {
   "signal-building": "Signal building",
@@ -574,9 +574,9 @@ function isBroadPursuitGoalItem(item: PlanItemT, goal?: CareerGoalT | null) {
 function broadPursuitPlanTitle(goal?: CareerGoalT | null) {
   if (!goal) return null;
   const coverage = getBroadPursuitCoverage(goal);
-  if (coverage.missing.length === 0) return "Keep the live lanes moving";
-  if (coverage.missing.length === 1) return "Fill the last empty lane";
-  return `Fill ${coverage.missing.length} still-empty lanes`;
+  if (coverage.missing.length === 0) return "Keep your active targets moving";
+  if (coverage.missing.length === 1) return "Add a role for the last target";
+  return `Add roles for ${coverage.missing.length} targets`;
 }
 
 function getBroadPursuitCoverage(goal: CareerGoalT): BroadPursuitCoverageT {
@@ -644,27 +644,27 @@ function nextLaneGap(goal: CareerGoalT, combination: string) {
   if (!support.hasRole) {
     return {
       label: "Needs first real role",
-      detail: "Save one credible role so this lane becomes real.",
+      detail: "Save one real role for this target.",
       tone: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
     };
   }
   if (!support.hasNetworkSupport) {
     return {
-      label: "Needs first contact path",
-      detail: "Add one real person or warm route into this lane.",
+      label: "Needs first contact",
+      detail: "Add one contact who could help here.",
       tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
     };
   }
   if (!support.hasCapabilitySupport) {
     return {
-      label: "Needs first support item",
-      detail: "Add one reusable learning or capability move for this lane.",
+      label: "Needs learning support",
+      detail: "Add one learning item for this target.",
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
     };
   }
   return {
-    label: "Supported enough for now",
-    detail: "This lane has a role, a contact path, and capability support.",
+    label: "Well supported",
+    detail: "This target has a role, a contact, and learning support.",
     tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   };
 }
@@ -740,8 +740,8 @@ function CareerCompassCard({
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {coverage.missing.length > 0
-                  ? `Role gaps: ${compactLanePreview(coverage.missing, "Every live lane has a real role.")}`
-                  : "Every live lane has a real role."}
+                  ? `Role gaps: ${compactLanePreview(coverage.missing, "Every target has a real role.")}`
+                  : "Every target has a real role."}
               </p>
               {(coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0) && (
                 <p className="text-xs text-muted-foreground mt-1">
@@ -790,8 +790,8 @@ function CareerCompassCard({
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             {coverage.missing.length > 0
-              ? `Still empty: ${compactLanePreview(coverage.missing, "Every live lane has a real role.")}`
-              : "Every live lane has a real role."}
+              ? `Still empty: ${compactLanePreview(coverage.missing, "Every target has a real role.")}`
+              : "Every target has a real role."}
           </p>
         </div>
       )}
@@ -848,7 +848,7 @@ function PursuitPortfolioGrid({ goal }: { goal: CareerGoalT }) {
         <span className="text-xs text-muted-foreground">
           {coverage.missing.length > 0
             ? `${coverage.missing.length} still empty`
-            : "Every active lane has a real role"}
+            : "Every target has a real role"}
         </span>
       </div>
       <div className="space-y-2">
@@ -1059,12 +1059,12 @@ function BroadPursuitParallelSupportKickoff({
             {mode === "network" ? "Contact paths" : "Capability support"}
           </p>
           <p className="text-sm font-medium mt-1">
-            {mode === "network" ? "Add one real contact path in the weakest lanes." : "Add one reusable support move in the weakest lanes."}
+            {mode === "network" ? "Add one contact for your weakest role targets." : "Add one learning item for your weakest role targets."}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
             {mode === "network"
-              ? `${missingSupport.length} lane${missingSupport.length === 1 ? "" : "s"} still need a first contact path.`
-              : `${missingSupport.length} lane${missingSupport.length === 1 ? "" : "s"} still need capability support.`}
+              ? `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a contact.`
+              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need learning support.`}
           </p>
           {canStartWithoutRole && (
             <p className="text-xs text-muted-foreground mt-1">
@@ -1099,11 +1099,11 @@ function BroadPursuitParallelSupportKickoff({
             : "border-card-border bg-card";
           const buttonLabel = mode === "network"
             ? supportMissing
-              ? (support.hasRole ? "Add first contact path" : "Add contact in this lane")
-              : "Add another contact in this lane"
+              ? (support.hasRole ? "Add first contact" : "Add contact for this target")
+              : "Add another contact"
             : supportMissing
-              ? (support.hasRole ? "Add first support item" : "Add support item in this lane")
-              : "Add another support item";
+              ? (support.hasRole ? "Add first learning item" : "Add learning item for this target")
+              : "Add another learning item";
           const showRoleStateBadge = !canStartWithoutRole;
           const showSupportDetail = !canStartWithoutRole;
           return (
@@ -1278,7 +1278,7 @@ function learnPresetForLane(item: GoalPortfolioItemT, tracks: CareerTrack[]): Pa
     : "Geopolitical or policy judgment";
   const requiredOutput = /ops \/ chief of staff/i.test(item.combination)
     ? "One reusable operating artifact or memo you could show in future conversations."
-    : "One reusable note, memo, or brief that makes this lane more credible.";
+    : "One reusable note, memo, or brief that strengthens this role type.";
   return {
     title: `${item.combination} capability support`,
     category: capabilityBuilt,
@@ -1426,7 +1426,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                   const broadPursuitCoverage = broadPursuitItem && activeGoal ? getBroadPursuitCoverage(activeGoal) : null;
                   const compactTitle = broadPursuitItem ? (broadPursuitPlanTitle(activeGoal) || it.title) : it.title;
                   const compactSummary = broadPursuitItem
-                    ? "One credible role per lane is enough to start getting real market signal."
+                    ? "One real role per target type is enough to start getting market signal."
                     : (it.explanation?.summary || it.whySelected);
                   return (
                   <button key={it.id} onClick={() => startItem(it)} data-testid={`plan-item-${i}`} data-plan-rank={String(i)}
@@ -2012,7 +2012,7 @@ function DoneTaskRow({ t }: { t: Task }) {
 type CaptureSug = { id: number; route: string; label: string; reason: string; confidence: string; question?: string };
 const ROUTE_ACTION_LABEL: Record<string, string> = {
   today: "Do today", task: "Keep as task", job: "File under Jobs", learn: "File under Learn",
-  network: "File under Network", proof: "File as Proof asset", decision: "Needs a decision", keep: "Keep here",
+  network: "File under Network", proof: "File as Work sample", decision: "Needs a decision", keep: "Keep here",
 };
 function BrainDumpView() {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
@@ -2189,7 +2189,7 @@ function JobsView() {
           {selectedLane && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="job-form-lane-banner">
               <div>
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lane</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Role type</p>
                 <p className="text-sm font-medium">{selectedLane}</p>
                 {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
               </div>
@@ -2210,7 +2210,7 @@ function JobsView() {
           </div>
           {tracks.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to a path (optional)</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to a role type (optional)</p>
               <div className="flex flex-wrap gap-1.5">
                 {tracks.map((track) => (
                   <button key={track.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === track.id ? null : track.id })}
@@ -2845,11 +2845,11 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-amber-50/40 dark:bg-amber-950/10 -mx-1 px-2 pb-2" data-testid={`warmpath-${j.id}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1.5">
-        <Flame className="w-3.5 h-3.5" /> No warm path
+        <Flame className="w-3.5 h-3.5" /> No contacts linked
       </div>
       {candidates.length === 0 ? (
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">No contacts in this lane yet — add someone in Network to warm this role.</p>
+          <p className="text-xs text-muted-foreground">No contacts linked to this role yet — add someone in Network.</p>
           <button
             type="button"
             onClick={openNetworkIntake}
@@ -2861,7 +2861,7 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
         </div>
       ) : (
         <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">{trackContacts.length > 0 ? "Reach someone on this track:" : "Reach a warm contact to open a path:"}</p>
+          <p className="text-[11px] text-muted-foreground">{trackContacts.length > 0 ? "Someone who could help here:" : "Someone who could open a path:"}</p>
           {candidates.map((c) => (
             <div key={c.id} className="flex items-center justify-between gap-2" data-testid={`warmpath-candidate-${j.id}-${c.id}`}>
               <span className="text-xs min-w-0 truncate">{c.who || c.name || "contact"}</span>
@@ -3169,7 +3169,7 @@ function NetworkView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Network" sub="People to reach, by warmth. Each card leads with the ask." />
+        <SectionHeading title="Network" sub="People who could help. Each card leads with the ask." />
         <Button onClick={() => showForm ? setShowForm(false) : startBlankContact()} className="shrink-0" data-testid="button-toggle-contact-form"><Plus className="w-4 h-4 mr-1" /> Add contact</Button>
       </div>
       {activeGoal && !(contacts.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="network" goal={activeGoal} />}
@@ -3180,7 +3180,7 @@ function NetworkView() {
           {selectedLane && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="contact-form-lane-banner">
               <div>
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lane</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Role type</p>
                 <p className="text-sm font-medium">{selectedLane}</p>
                 {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
               </div>
@@ -3256,7 +3256,7 @@ function NetworkView() {
             <Lightbulb className="w-4 h-4" /> Who to reach next
           </div>
           {sugLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Thinking about your warm routes…</div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Finding who could help…</div>
           ) : sug ? (
             <div>
               <p className="text-sm font-medium leading-snug">{sug.who}{sug.sector && <span className="ml-2 inline-flex items-center rounded-full bg-card px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{sug.sector}</span>}</p>
@@ -4032,12 +4032,12 @@ function ProofAssetsView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Proof assets" sub="Proof you're producing — what makes you credible for these paths." />
-        <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-hustle-form"><Plus className="w-4 h-4 mr-1" /> Add asset</Button>
+        <SectionHeading title="Work samples" sub="What you're building — work that shows your thinking and capabilities." />
+        <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-hustle-form"><Plus className="w-4 h-4 mr-1" /> Add work sample</Button>
       </div>
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2">
-          <Input placeholder="Asset name? *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-hustle-title" />
+          <Input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-hustle-title" />
           <Input placeholder="Core claim / what it proves" value={form.coreClaim} onChange={(e) => setForm({ ...form, coreClaim: e.target.value })} data-testid="input-hustle-claim" />
           <Input placeholder="Content pillar (e.g. geopolitics)" value={form.contentPillar} onChange={(e) => setForm({ ...form, contentPillar: e.target.value })} data-testid="input-hustle-pillar" />
           <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} data-testid="input-hustle-note" />
@@ -4045,7 +4045,7 @@ function ProofAssetsView() {
         </div>
       )}
       {isLoading ? <Loading /> : hustles.length === 0 ? (
-        <Empty icon={Rocket} text="No proof assets yet. Add your Substack, Afterline, or a memo above." />
+        <Empty icon={Rocket} text="No work samples yet. Add a memo, article, or anything that shows your thinking." />
       ) : (
         <>
           <div className={`grid gap-4 ${active.length > 1 ? "sm:grid-cols-2" : ""}`}>
@@ -4124,7 +4124,7 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
 /* ---------------- WINS ---------------- */
 const WIN_CATEGORY_LABEL: Record<WinCategory, string> = {
   job_progress: "Job progress", learning: "Learning", network: "Network",
-  proof_asset: "Proof asset", mindset: "Mindset", admin: "Admin",
+  proof_asset: "Work sample", mindset: "Mindset", admin: "Admin",
 };
 // P4.5 — in-palette (slate-blue) category swatch classes for the compact
 // evidence summary. NO coral; each stays a calm tint of the slate/primary range.

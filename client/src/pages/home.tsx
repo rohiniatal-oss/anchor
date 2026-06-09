@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { NETWORK_LANES, OPEN_LANE, ALL_LANE_KEYS, laneForSourceNetwork, laneLabel } from "@shared/networkLanes";
 import { CAPABILITY_DOMAIN_KEYS, domainForLearn, domainLabel } from "@shared/capabilityDomains";
+import { requiredDomainsForTrack } from "@shared/capabilityTargets";
 import { classifyProofAsset, PROOF_ASSET_KIND_LABEL, type ProofAssetKind } from "@shared/proofAssetTemplates";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
@@ -2440,6 +2441,28 @@ function parseIdList(raw: string): number[] {
 const LEARN_STATUS_LABEL: Record<LearnStatus, string> = {
   open: "open", watch: "watch", active: "active", applied: "applied", enrolled: "enrolled", done: "done", closed: "closed",
 };
+type LearnFormT = {
+  title: string;
+  category: string;
+  capabilityBuilt: string;
+  requiredOutput: string;
+  url: string;
+  note: string;
+  relatedTrackId: number | null;
+  proofIntent: boolean;
+  learnStatus: LearnStatus;
+};
+const EMPTY_LEARN_FORM: LearnFormT = {
+  title: "",
+  category: "",
+  capabilityBuilt: "",
+  requiredOutput: "",
+  url: "",
+  note: "",
+  relatedTrackId: null,
+  proofIntent: false,
+  learnStatus: "open",
+};
 
 function LearnView() {
   const { data: items = [], isLoading } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
@@ -2449,11 +2472,14 @@ function LearnView() {
   const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
-  const [form, setForm] = useState({ title: "", category: "", url: "", note: "" });
+  const [form, setForm] = useState<LearnFormT>(EMPTY_LEARN_FORM);
+  const suggestedDomainKeys = Array.from(
+    new Set(tracks.flatMap((track) => requiredDomainsForTrack(track)).filter((key) => !!key)),
+  ) as string[];
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/learn", { ...form, done: false, active: false }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]);
-    setForm({ title: "", category: "", url: "", note: "" }); setShowForm(false);
+    setForm(EMPTY_LEARN_FORM); setShowForm(false);
   }
   async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
   async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
@@ -2487,16 +2513,102 @@ function LearnView() {
     <div>
       <div className="flex items-start justify-between gap-4">
         <SectionHeading title="Learn" sub="What you're building. Give an item an output to make it count as proof." />
-        <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
+        <Button onClick={() => showForm ? setShowForm(false) : setShowForm(true)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
       </div>
       {activeGoal && <ViewSpineCallout view="learn" goal={activeGoal} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
+          {suggestedDomainKeys.length > 0 && (
+            <div className="sm:col-span-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Suggested capability domains</p>
+              <div className="flex flex-wrap gap-1.5">
+                {suggestedDomainKeys.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setForm({ ...form, category: domainLabel(key), capabilityBuilt: domainLabel(key) })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.category === domainLabel(key) || form.capabilityBuilt === domainLabel(key) ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                    data-testid={`button-learn-domain-${key}`}
+                  >
+                    {domainLabel(key)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <Input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-learn-title" />
           <Input placeholder="Capability / category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} data-testid="input-learn-category" />
+          <Input placeholder="Capability this builds" value={form.capabilityBuilt} onChange={(e) => setForm({ ...form, capabilityBuilt: e.target.value })} data-testid="input-learn-capability-built" />
+          <Input placeholder="Intended output (optional)" value={form.requiredOutput} onChange={(e) => setForm({ ...form, requiredOutput: e.target.value })} data-testid="input-learn-required-output" />
           <Input placeholder="Link" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" data-testid="input-learn-url" />
           <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-learn-note" />
-          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button><Button onClick={add} data-testid="button-save-learn">Save</Button></div>
+
+          <div className="sm:col-span-2">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Mode</p>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, proofIntent: false })}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${!form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                data-testid="button-learn-mode-reference"
+              >
+                Reference only
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, proofIntent: true })}
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                data-testid="button-learn-mode-output"
+              >
+                Build toward output
+              </button>
+            </div>
+          </div>
+
+          <div className="sm:col-span-2">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Learn status</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(["open", "watch", "active"] as LearnStatus[]).map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setForm({ ...form, learnStatus: status })}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.learnStatus === status ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                  data-testid={`button-learn-status-${status}`}
+                >
+                  {LEARN_STATUS_LABEL[status]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {tracks.length > 0 && (
+            <div className="sm:col-span-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Track link</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, relatedTrackId: null })}
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId == null ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                  data-testid="button-learn-track-none"
+                >
+                  Leave unlinked
+                </button>
+                {tracks.map((track) => (
+                  <button
+                    key={track.id}
+                    type="button"
+                    onClick={() => setForm({ ...form, relatedTrackId: track.id })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                    data-testid={`button-learn-track-${track.id}`}
+                  >
+                    {track.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => { setShowForm(false); setForm(EMPTY_LEARN_FORM); }}>Cancel</Button><Button onClick={add} data-testid="button-save-learn">Save</Button></div>
         </div>
       )}
       {isLoading ? <Loading /> : items.length === 0 ? (

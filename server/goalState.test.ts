@@ -109,8 +109,65 @@ test("career goal state enters broad parallel pursuit when multiple plausible la
   assert.equal(state.locationPreference.flexible, true);
   assert.deepEqual(state.locationPreference.ordered, ["UAE", "Remote", "London"]);
   assert.equal(state.locationPreference.counts.acceptable, 3);
-  assert.match(state.decisionQuestion, /Which live roles are most gettable/i);
+  assert.match(state.decisionQuestion, /still-empty combinations need one real role next/i);
+  assert.deepEqual(state.broadPursuitCoverage.missing, [
+    "Geopolitics / geopolitical advisory x Ops / chief of staff",
+  ]);
   assert.match(state.explorationStrategy, /broad pursuit portfolio/i);
+});
+
+test("career goal state names still-empty combinations when broad pursuit coverage is partial", () => {
+  const tracks = [
+    {
+      id: 1,
+      name: "AI strategy",
+      slug: "ai-strategy",
+      status: "active",
+      targetRoleArchetype: "AI strategy / advisory",
+      whyItFits: "Technology strategy and advisory fit",
+      description: "Explore AI strategy roles in parallel with geopolitical lanes",
+    },
+    {
+      id: 2,
+      name: "Geopolitical advisory",
+      slug: "geopolitical-advisory",
+      status: "active",
+      targetRoleArchetype: "geopolitical advisory",
+      whyItFits: "Strong geopolitical and advisory fit",
+      description: "Parallel geopolitical advisory lane",
+    },
+    {
+      id: 3,
+      name: "Strategy / chief of staff / operations",
+      slug: "strategy-chief-of-staff-operations",
+      status: "active",
+      targetRoleArchetype: "chief of staff / operations",
+      whyItFits: "Execution-heavy strategy and operating roles are also plausible",
+      description: "Parallel operating lane",
+    },
+  ] as any;
+  const jobs = [
+    { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "strategy / advisory" },
+    { id: 2, title: "AI Chief of Staff", company: "Model Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "chief of staff / operations" },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, [], [], [], [], tracks);
+  assert.equal(state.decisionMode, "broad-parallel-pursuit");
+  assert.deepEqual(state.broadPursuitCoverage.covered.sort(), [
+    "AI / technology strategy x Ops / chief of staff",
+    "AI / technology strategy x Strategy / advisory",
+  ].sort());
+  assert.deepEqual(state.broadPursuitCoverage.missing.sort(), [
+    "Geopolitics / geopolitical advisory x Ops / chief of staff",
+    "Geopolitics / geopolitical advisory x Strategy / advisory",
+  ].sort());
+  assert.match(state.todayPlan.mustDo, /still-empty combination/i);
+  assert.match(state.todayPlan.mustDo, /Geopolitics \/ geopolitical advisory x Strategy \/ advisory/i);
+  assert.match(state.decisionQuestion, /still-empty combinations/i);
+  const coveredLane = state.pursuitPortfolio.find((item) => item.combination === "AI / technology strategy x Strategy / advisory");
+  const missingLane = state.pursuitPortfolio.find((item) => item.combination === "Geopolitics / geopolitical advisory x Strategy / advisory");
+  assert.match(coveredLane?.nextMove || "", /Keep one live role warm/i);
+  assert.match(missingLane?.nextMove || "", /Pursue one/i);
 });
 
 test("career goal frame stays in fit-discovery when learning exists but role signal does not", () => {

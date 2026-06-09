@@ -218,6 +218,61 @@ test("job recommendations use recruiting truth for prove-fit roles", () => {
   assert.match(result.explanation.firstStep, /learning or proof asset|capability signal/i);
 });
 
+test("planner surfaces the still-empty broad-pursuit combinations when some lanes already have live roles", () => {
+  const jobs = [
+    job({
+      id: 80,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+    }),
+    job({
+      id: 81,
+      title: "AI Chief of Staff",
+      company: "Model Lab",
+      location: "Remote",
+      roleArchetype: "chief of staff / operations",
+    }),
+  ];
+  const tracks = [
+    {
+      id: 1,
+      name: "AI strategy",
+      slug: "ai-strategy",
+      status: "active",
+      targetRoleArchetype: "AI strategy / advisory",
+      whyItFits: "Technology strategy and advisory fit",
+      description: "Explore AI strategy roles in parallel with geopolitical lanes",
+    },
+    {
+      id: 2,
+      name: "Geopolitical advisory",
+      slug: "geopolitical-advisory",
+      status: "active",
+      targetRoleArchetype: "geopolitical advisory",
+      whyItFits: "Strong geopolitical and advisory fit",
+      description: "Parallel geopolitical advisory lane",
+    },
+    {
+      id: 3,
+      name: "Strategy / chief of staff / operations",
+      slug: "strategy-chief-of-staff-operations",
+      status: "active",
+      targetRoleArchetype: "chief of staff / operations",
+      whyItFits: "Execution-heavy strategy and operating roles are also plausible",
+      description: "Parallel operating lane",
+    },
+  ] as any;
+
+  const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, [], tracks);
+  assert.equal(result.plan[0].candidate.source, "goal");
+  assert.match(result.plan[0].candidate.title, /still-empty combination/i);
+  assert.match(result.plan[0].candidate.title, /Geopolitics \/ geopolitical advisory/i);
+  assert.match(result.note, /Broad pursuit is active/i);
+  assert.match(result.plan[0].explanation.firstStep, /Open your job sources/i);
+});
+
 test("planner keeps job pursuit and capability-building in parallel when time allows", () => {
   const jobs = [
     job({

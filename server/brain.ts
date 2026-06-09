@@ -1,7 +1,7 @@
 import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { getLearnOutputState, isOpportunityActionable } from "@shared/domainState";
 import { buildTrackSpine } from "./trackSpine";
-import { deriveCareerGoalFrame } from "./goalState";
+import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import type { CanonicalLaneName } from "./lanes";
 import { computeJobTruthStrip, type JobTruthAction } from "./jobTruth";
 
@@ -75,6 +75,8 @@ type StrategicContext = {
   laneUnlockMove: string;
   activeTrackName: string;
   liveJobTargets: Array<{ title: string; company: string; roleArchetype?: string }>;
+  broadPursuitMissingCombinations: string[];
+  broadPursuitCoveredCombinations: string[];
   goalPhase: ReturnType<typeof deriveCareerGoalFrame>["phase"];
   goalDayType: ReturnType<typeof deriveCareerGoalFrame>["dayType"];
   decisionMode: ReturnType<typeof deriveCareerGoalFrame>["decisionMode"];
@@ -92,6 +94,8 @@ const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
   laneUnlockMove: "",
   activeTrackName: "",
   liveJobTargets: [],
+  broadPursuitMissingCombinations: [],
+  broadPursuitCoveredCombinations: [],
   goalPhase: "fit-discovery",
   goalDayType: "exploration",
   decisionMode: "parallel-exploration",
@@ -227,26 +231,32 @@ function buildStrategicContext(
   const spine = buildTrackSpine({ tasks, jobs, learn, hustles, contacts, tracks });
   const lane = spine.globalLanes.find((l) => l.name === spine.bestMove.lane) || spine.globalLanes[0];
   const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts, hustles, tracks);
+  const broadPursuitCoverage = deriveBroadPursuitCoverage(tasks, jobs, [], learn, contacts, hustles, tracks);
   const planningPosture = planningPostureFromGoalFrame(
     goalFrame,
     spine.bestMove.lane,
     learn.some((l) => !l.done && l.learnStatus !== "closed"),
   );
   const liveJobTargets = jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" }));
-  const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && liveJobTargets.length === 0;
+  const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
+  const missingCombinationText = broadPursuitCoverage.missing.slice(0, 4).join("; ");
   return {
     bottleneck: broadPursuitNeedsRealRoles ? "Applications" : spine.bestMove.lane,
     reason: broadPursuitNeedsRealRoles
-      ? `Broad pursuit is active across plausible lanes, but there are no live actionable roles yet. Turn each lane into one real pipeline move before doing narrower comparison work.${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase} (${goalFrame.decisionMode}).`
+      ? `Broad pursuit is active across plausible lanes, but some combinations still need live actionable roles: ${missingCombinationText}. Turn each missing combination into one real pipeline move before doing narrower comparison work.${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase} (${goalFrame.decisionMode}).`
       : `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase}${goalFrame.decisionMode === "single-track" ? "" : ` (${goalFrame.decisionMode})`}.`,
     applicationsPremature: false,
     recommendedExploration: spine.bestMove.trackName || spine.activeTrack?.name || "",
     laneModel: { trace: spine.trace },
     bottleneckLane: broadPursuitNeedsRealRoles ? "Applications" : spine.bestMove.lane,
     laneStage: broadPursuitNeedsRealRoles ? "active" : lane?.stage || "active",
-    laneUnlockMove: broadPursuitNeedsRealRoles ? "Add or apply to one credible role in each plausible lane that still looks real" : spine.bestMove.title,
+    laneUnlockMove: broadPursuitNeedsRealRoles
+      ? `Add or apply to one credible role in each still-empty combination: ${missingCombinationText}`
+      : spine.bestMove.title,
     activeTrackName: spine.bestMove.trackName || spine.activeTrack?.name || "",
     liveJobTargets,
+    broadPursuitMissingCombinations: broadPursuitCoverage.missing,
+    broadPursuitCoveredCombinations: broadPursuitCoverage.covered,
     goalPhase: goalFrame.phase,
     goalDayType: goalFrame.dayType,
     decisionMode: goalFrame.decisionMode,
@@ -255,24 +265,27 @@ function buildStrategicContext(
 }
 
 function needsBroadPursuitGoalCandidate(context: StrategicContext) {
-  return context.decisionMode === "broad-parallel-pursuit" && context.liveJobTargets.length === 0;
+  return context.decisionMode === "broad-parallel-pursuit" && context.broadPursuitMissingCombinations.length > 0;
 }
 
-function buildBroadPursuitGoalCandidate(): Candidate {
+function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
+  const missingText = context?.broadPursuitMissingCombinations?.length
+    ? context.broadPursuitMissingCombinations.join("; ")
+    : "each plausible lane that still looks real";
   return {
     source: "goal",
     sourceId: 1,
     taskId: null,
-    title: "Add or apply to one credible role in each plausible lane that still looks real",
+    title: `Add or apply to one credible role in each still-empty combination: ${missingText}`,
     category: "job",
     size: "deep",
     deadline: "",
     status: "not_started",
     skipped: 0,
     sourceUrl: "",
-    sourceNote: "Broad pursuit is active across all plausible lanes. Create one real pipeline move in each lane instead of narrowing abstractly.",
+    sourceNote: `Broad pursuit is active. Missing combinations: ${missingText}. Create one real pipeline move in each missing combination instead of narrowing abstractly.`,
     sourceStatus: "broad_parallel_pursuit",
-    doneWhen: "One concrete role or application move exists in each active lane",
+    doneWhen: "One concrete role or application move exists in each still-empty combination",
     whyNow: "the strategy is to pursue all plausible lanes in parallel until the market gives clearer signal",
     fitScore: null,
     blocked: false,
@@ -1029,7 +1042,7 @@ export function planDay(
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const all = gatherCandidates(tasks, jobs, learn, hustles, contacts);
   if (needsBroadPursuitGoalCandidate(context)) {
-    all.unshift(buildBroadPursuitGoalCandidate());
+    all.unshift(buildBroadPursuitGoalCandidate(context));
   }
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))

@@ -33,6 +33,12 @@ type CombinationTest = {
   nextTest: string;
 };
 
+type BroadPursuitCoverage = {
+  combinations: string[];
+  covered: string[];
+  missing: string[];
+};
+
 type LocationPreference = {
   flexible: boolean;
   ordered: string[];
@@ -721,9 +727,13 @@ function phaseObjective(phase: GoalPhase) {
 
 function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot) {
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
+    const coverage = buildBroadPursuitCoverage(snapshot);
+    const missingNote = coverage.missing.length
+      ? ` Some combinations still need live roles: ${coverage.missing.join("; ")}.`
+      : "";
     return snapshot.savedJobs.length > 0
-      ? `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.`
-      : `You need a job, so Anchor should open multiple plausible lanes in parallel and turn them into live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.`;
+      ? `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.${missingNote}`
+      : `You need a job, so Anchor should open multiple plausible lanes in parallel and turn them into live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.${missingNote}`;
   }
   if (phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
     return `You have multiple plausible topics (${snapshot.topicHypotheses.join(" vs ")}) and multiple plausible role shapes (${snapshot.roleShapeHypotheses.join(" vs ")}). Anchor should keep the combinations alive in parallel until live evidence starts separating them.`;
@@ -740,6 +750,10 @@ function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSna
 function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
   if (phase === "fit-discovery") return "What kinds of work actually fit your interests, goals, and energy well enough to test in the market?";
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
+    const coverage = buildBroadPursuitCoverage(snapshot);
+    if (coverage.missing.length > 0) {
+      return `Which still-empty combinations need one real role next: ${coverage.missing.join("; ")}?`;
+    }
     return snapshot.savedJobs.length > 0
       ? "Which live roles are most gettable, credible, and worth pushing right now while keeping the other lanes open?"
       : "Which plausible lanes need one real role or application move next so the market can start separating them for you?";
@@ -773,12 +787,16 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
 
 function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot, candidateUniverse: ReturnType<typeof generateCandidateUniverse>) {
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
-    if (snapshot.savedJobs.length === 0) {
+    const coverage = buildBroadPursuitCoverage(snapshot);
+    if (coverage.missing.length > 0) {
+      const missingText = coverage.missing.join("; ");
       return {
-        mustDo: "Add or apply to one credible role in each plausible lane that still looks real",
-        next: "Capture what each role family actually demands so the market can start separating the lanes for you",
-        optional: "Send one warm message that supports the lane with the strongest near-term odds",
-        stopRule: "Stop after one concrete pipeline move in each active lane; do not drift back into abstract comparison.",
+        mustDo: `Add or apply to one credible role in each still-empty combination: ${missingText}`,
+        next: coverage.covered.length > 0
+          ? `Keep these already-live combinations warm while you fill the missing ones: ${coverage.covered.join("; ")}`
+          : "Capture what each role family actually demands so the market can start separating the lanes for you",
+        optional: "Send one warm message that supports the most gettable missing combination",
+        stopRule: "Stop after one concrete pipeline move in each still-empty combination; do not drift back into abstract comparison.",
       };
     }
     return {
@@ -861,6 +879,38 @@ function buildParallelExperiments(snapshot: GoalSnapshot): CombinationTest[] {
   })));
 }
 
+function detectCombinationTopic(text: string) {
+  const lower = text.toLowerCase();
+  if (/\b(ai|artificial intelligence|technology|tech|frontier model|safety|machine learning)\b/.test(lower)) return TOPIC_LABELS.ai;
+  if (/\b(geopolitic\w*|foreign policy|geostrateg\w*|geopolitical risk|international|middle east|security)\b/.test(lower)) return TOPIC_LABELS.geopolitics;
+  if (/\b(policy|public sector|government|regulation|public affairs)\b/.test(lower)) return TOPIC_LABELS.policy;
+  return null;
+}
+
+function detectCombinationRoleShape(text: string) {
+  const lower = text.toLowerCase();
+  if (/\b(chief of staff|operations| ops\b|program management|delivery|execution|partnerships)\b/.test(lower)) return ROLE_SHAPE_LABELS.ops_cos;
+  if (/\b(strategy|advisory|advisor|consult|strategic)\b/.test(lower)) return ROLE_SHAPE_LABELS.strategy_advisory;
+  if (/\b(research|analysis|analyst|researcher|insights)\b/.test(lower)) return ROLE_SHAPE_LABELS.research_analysis;
+  return null;
+}
+
+function jobCombination(job: Job, combinations: string[]) {
+  const text = `${job.title || ""} ${job.company || ""} ${job.roleArchetype || ""} ${job.narrativeAngle || ""} ${job.note || ""}`;
+  const topic = detectCombinationTopic(text);
+  const shape = detectCombinationRoleShape(text);
+  if (!topic || !shape) return null;
+  const combination = `${topic} x ${shape}`;
+  return combinations.includes(combination) ? combination : null;
+}
+
+function buildBroadPursuitCoverage(snapshot: GoalSnapshot): BroadPursuitCoverage {
+  const combinations = buildParallelExperiments(snapshot).map((item) => item.combination);
+  const covered = [...new Set(snapshot.savedJobs.map((job) => jobCombination(job, combinations)).filter(Boolean) as string[])];
+  const missing = combinations.filter((combination) => !covered.includes(combination));
+  return { combinations, covered, missing };
+}
+
 function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamState[]) {
   const phase = inferGoalPhase(snapshot);
   const focus = recommendedFocus(workstreams, phase);
@@ -908,11 +958,17 @@ export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityL
   };
 }
 
+export function deriveBroadPursuitCoverage(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = [], tracks: CareerTrack[] = []) {
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles, tracks);
+  return buildBroadPursuitCoverage(snapshot);
+}
+
 export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLog[], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = [], tracks: CareerTrack[] = []) {
   const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles, tracks);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
   const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback, snapshot.activeTracks);
+  const broadPursuitCoverage = frame.broadParallelPursuit ? buildBroadPursuitCoverage(snapshot) : { combinations: [], covered: [], missing: [] };
 
   return {
     goal: "Find the right role, then become interview- and job-ready",
@@ -952,11 +1008,14 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     pursuitPortfolio: frame.broadParallelPursuit ? buildParallelExperiments(snapshot).map((x) => ({
       combination: x.combination,
       whyPlausible: x.whyPlausible,
-      nextMove: x.nextTest.replace(/^Find one /, "Pursue one "),
+      nextMove: broadPursuitCoverage.covered.includes(x.combination)
+        ? `Keep one live role warm in this combination and only add a new one if the current pipeline goes stale.`
+        : x.nextTest.replace(/^Find one /, "Pursue one "),
     })) : [],
     trajectory: trajectoryFor(frame.phase),
     workstreams,
     todayPlan: buildTodayPlan(frame.phase, frame.focus, snapshot, candidateUniverse),
+    broadPursuitCoverage,
     trace: [
       "Read career assets, saved jobs, learning items, tasks, role feedback, and activity history.",
       `Current phase is ${frame.phase}.`,

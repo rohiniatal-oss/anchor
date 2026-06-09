@@ -89,3 +89,56 @@ test("plan-item start turns a broad-pursuit goal item into a concrete role-pipel
   assert.ok(steps.length >= 1, "goal-derived strategic tasks should get concrete steps");
   assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action/i);
 });
+
+test("broad-pursuit adaptive plan names still-empty combinations when some lanes already have live roles", async () => {
+  await h.storage.createCareerTrack({
+    name: "AI strategy",
+    slug: "ai-strategy",
+    status: "active",
+    targetRoleArchetype: "AI strategy / advisory",
+    whyItFits: "Technology strategy and advisory fit",
+    description: "Explore AI strategy roles in parallel with geopolitical lanes",
+  } as any);
+  await h.storage.createCareerTrack({
+    name: "Geopolitical advisory",
+    slug: "geopolitical-advisory",
+    status: "active",
+    targetRoleArchetype: "geopolitical advisory",
+    whyItFits: "Strong geopolitical and advisory fit",
+    description: "Parallel geopolitical advisory lane",
+  } as any);
+  await h.storage.createCareerTrack({
+    name: "Strategy / chief of staff / operations",
+    slug: "strategy-chief-of-staff-operations",
+    status: "active",
+    targetRoleArchetype: "chief of staff / operations",
+    whyItFits: "Execution-heavy strategy and operating roles are also plausible",
+    description: "Parallel operating lane",
+  } as any);
+
+  await h.storage.createJob({
+    title: "AI Strategy Associate",
+    company: "Frontier Lab",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    location: "Remote",
+    roleArchetype: "strategy / advisory",
+  } as any);
+  await h.storage.createJob({
+    title: "AI Chief of Staff",
+    company: "Model Lab",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    location: "Remote",
+    roleArchetype: "chief of staff / operations",
+  } as any);
+
+  const recompute = await api(h.base, "POST", "/api/plan/recompute", { day: DAY, energy: "medium" });
+  assert.equal(recompute.status, 200);
+  const current = await api(h.base, "GET", `/api/plan/current?day=${DAY}`);
+  assert.equal(current.status, 200);
+  assert.match(current.json.plan.note, /still-empty combination/i);
+  assert.match(current.json.plan.note, /Geopolitics \/ geopolitical advisory/i);
+  assert.match(current.json.items[0].title, /still-empty combination/i);
+  assert.match(current.json.items[0].doneWhen, /still-empty combination/i);
+});

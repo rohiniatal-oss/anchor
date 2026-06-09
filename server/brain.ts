@@ -902,6 +902,9 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
 
 function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
+    if (context?.broadPursuitMissingCombinations?.length) {
+      return `Open your job sources and add or apply to one credible role in each still-empty combination: ${context.broadPursuitMissingCombinations.join("; ")}.`;
+    }
     return "Open your job sources and add or apply to one credible role in each active lane before doing narrower comparison work.";
   }
   if (source === "job") {
@@ -926,6 +929,9 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
 
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
+    if (context?.broadPursuitMissingCombinations?.length) {
+      return "Stop after one concrete role or application move exists in each still-empty combination.";
+    }
     return "Stop after one concrete role or application move exists in each active lane.";
   }
   if (source === "job") {
@@ -950,6 +956,9 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
+    if (context?.broadPursuitMissingCombinations?.length) {
+      return `Broad parallel pursuit is the live strategy, so the best move is to turn these still-empty combinations into real role or application signal: ${context.broadPursuitMissingCombinations.join("; ")}.`;
+    }
     return "Broad parallel pursuit is the live strategy, so the best move is to turn each plausible lane into a real role or application signal.";
   }
   if (source === "job") {

@@ -524,6 +524,25 @@ const DAY_TYPE_LABEL: Record<string, string> = {
   "interview-prep": "Interview prep",
   "stabilising": "Stabilising",
 };
+const PRE_SHRUNK_RE = /pre-shrunk|made smaller|pre-split|easier execution steps|easier start/i;
+
+function isPreShrunkPlanItem(item: PlanItemT) {
+  const text = `${item.explanation?.summary || ""} ${item.explanation?.whyNow || ""}`;
+  return PRE_SHRUNK_RE.test(text);
+}
+
+function nextVisibleStep(task?: Task | null) {
+  if (!task) return null;
+  const steps = parseSteps(task.steps || "[]");
+  return steps.find((step) => !step.done) || steps[0] || null;
+}
+
+function firstStepPreview(item: PlanItemT, task?: Task | null) {
+  const taskStep = nextVisibleStep(task);
+  if (taskStep?.text) return taskStep.text;
+  const text = item.explanation?.firstStep?.trim();
+  return text || null;
+}
 
 function CareerCompassCard({ goal, onOpenTab }: { goal: CareerGoalT; onOpenTab: (t: Tab) => void }) {
   return (
@@ -847,6 +866,7 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   }
   const [showCapacity, setShowCapacity] = useState(false);
   const [energy, setEnergy] = useState("medium");
+  const taskById = new Map(tasks.map((task) => [task.id, task] as const));
 
   // Load the PERSISTED plan (it lives in the DB now — survives reloads).
   useEffect(() => {
@@ -951,7 +971,12 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                 </div>
               )}
               <div className="space-y-2">
-                {activeItems.map((it, i) => (
+                {activeItems.map((it, i) => {
+                  const linkedTask = it.taskId ? taskById.get(it.taskId) : undefined;
+                  const nextStepText = firstStepPreview(it, linkedTask);
+                  const preShrunk = isPreShrunkPlanItem(it);
+                  const showPreviewStep = !!nextStepText && (preShrunk || !linkedTask || !it.taskId || i === 0);
+                  return (
                   <button key={it.id} onClick={() => startItem(it)} data-testid={`plan-item-${i}`}
                     className={`group w-full text-left flex items-start gap-3 rounded-xl bg-card border p-3.5 hover-elevate transition-colors ${isMVD(it) ? "border-primary/40" : "border-card-border"}`}>
                     <span className={`shrink-0 mt-0.5 rounded-md text-[11px] font-semibold px-2 py-1 ${i === 0 ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>{SLOT_LABEL[it.slot] || it.slot}</span>
@@ -959,14 +984,23 @@ function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium leading-snug">{it.title}</p>
                         {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
+                        {preShrunk && <span className="shrink-0 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
                       </div>
                       {(it.explanation?.summary || it.whySelected) && <p className="text-xs text-muted-foreground mt-0.5">{it.explanation?.summary || it.whySelected}</p>}
                       {it.explanation?.whyNow && it.explanation.whyNow !== (it.explanation.summary || it.whySelected) && <p className="text-xs text-muted-foreground/80 mt-0.5">{it.explanation.whyNow}</p>}
+                      {showPreviewStep && nextStepText && (
+                        <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                            {preShrunk ? "First tiny step" : "Smallest useful move"}
+                          </p>
+                          <p className="text-xs text-foreground mt-1">{nextStepText}</p>
+                        </div>
+                      )}
                       {it.doneWhen && <p className="text-xs text-muted-foreground/80 mt-0.5 inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {it.doneWhen}</p>}
                     </div>
                     <span className="shrink-0 self-center text-muted-foreground group-hover:text-primary inline-flex items-center gap-1 text-xs font-medium">Start <ChevronRight className="w-4 h-4" /></span>
                   </button>
-                ))}
+                )})}
               </div>
               {plan.note && <p className="text-xs text-muted-foreground mt-3 italic">{plan.note}</p>}
             </div>
@@ -1265,6 +1299,9 @@ function RightNow({ pinned }: { pinned: Task }) {
   const current = currentIdx >= 0 ? steps[currentIdx] : null;
   const allStepsDone = steps.length > 0 && currentIdx === -1;
   const avoided = (pinned.skipped || 0) >= 2;
+  const clearlyPreShrunk =
+    steps.length > 0 &&
+    (avoided || pinned.size === "deep" || ["job", "learn", "contact", "hustle"].includes(String(pinned.sourceType || "")));
 
   async function breakdown(context?: string) {
     setBreaking(true);
@@ -1345,6 +1382,11 @@ function RightNow({ pinned }: { pinned: Task }) {
           This one's been slipping a few days — totally normal. Want it smaller, or park it kindly? No pressure.
         </p>
       )}
+      {clearlyPreShrunk && (
+        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-[11px] font-semibold text-accent-foreground" data-testid="badge-made-smaller">
+          <Sparkles className="w-3.5 h-3.5" /> Made smaller so starting is easier
+        </div>
+      )}
       {steps.length === 0 && question && (
         <div className="mt-2" data-testid="breakdown-question">
           <p className="text-sm text-muted-foreground mb-1">One quick question before I break this down…</p>
@@ -1380,6 +1422,11 @@ function RightNow({ pinned }: { pinned: Task }) {
               className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center hover-elevate" />
             <span className="flex-1 font-medium leading-snug">{current.text}</span>
           </div>
+          {steps.length > 1 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              You do not need to hold the whole task in your head. Finish this step and I&apos;ll surface the next one.
+            </p>
+          )}
           {hint ? (
             <p className="mt-2 text-sm rounded-lg bg-accent text-accent-foreground px-3 py-2" data-testid="text-unstick-hint">✨ {hint}</p>
           ) : (

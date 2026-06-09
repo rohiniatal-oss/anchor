@@ -119,6 +119,39 @@ test("skipping a started task marks its plan item skipped and logs the avoidance
   assert.ok(acts.some((a) => a.eventType === "skipped" && a.planItemId === item.id), "skip activity carries planItemId");
 });
 
+test("repeated skip still shrinks a task deterministically when OpenAI is unavailable", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (/api\.openai\.com/i.test(url)) throw new Error("OpenAI disabled in tests");
+    return originalFetch(input as any, init);
+  }) as typeof fetch;
+
+  try {
+    const job = await h.storage.createJob({ title: "Policy role", company: "Org", status: "wishlist", applicationReadiness: "cv" } as any);
+    const task = await h.storage.createTask({
+      title: "Tailor CV",
+      list: "today",
+      done: false,
+      status: "in_progress",
+      category: "job",
+      size: "deep",
+      skipped: 1,
+      steps: "[]",
+      sourceType: "job",
+      sourceId: job.id,
+    } as any);
+
+    const skipped = await api(h.base, "POST", `/api/tasks/${task.id}/skip`, { day: DAY });
+    assert.equal(skipped.status, 200);
+    const steps = JSON.parse(skipped.json.steps);
+    assert.ok(steps.length >= 1, "a repeatedly skipped task should still be shrunk");
+    assert.match(String(steps[0]?.text || ""), /open|write|draft|list|highlight|match|rewrite|read|note/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 // MVD / done-enough â€” completing the day's minimum-viable item marks the plan
 // done_enough off the same completion link.
 test("completing the MVD item marks the day done_enough", async () => {
@@ -193,6 +226,9 @@ test("create-next-task dedupe keeps a single open task per source", async () => 
   await api(h.base, "POST", `/api/steps/${b.json.id}/materialize`, {});
   const jobTasks = (await h.storage.getTasks()).filter((t) => t.sourceType === "job" && t.sourceId === job.id && !t.done);
   assert.equal(jobTasks.length, 1, "two materializations reuse one open task");
+  const steps = JSON.parse(jobTasks[0].steps || "[]");
+  assert.ok(steps.length >= 1, "source-linked tasks should start with a usable first step");
+  assert.match(String(steps[0]?.text || ""), /open|write|draft|list|highlight|match|rewrite|read|note/i);
 });
 
 test("materializing a job step marks it done and clears the rail stall signal", async () => {
@@ -292,6 +328,17 @@ test("task breakdown updates only the task and does not rewrite parent source fi
     const updatedJobTask = (await h.storage.getTasks()).find((x) => x.id === jobTask.id)!;
     assert.notEqual(updatedJobTask.steps, "[]", "breakdown still writes steps onto the task itself");
     assert.ok(updatedJobTask.minimumOutcome, "breakdown still updates the task's stage outcome");
+    const breakdownSteps = JSON.parse(updatedJobTask.steps);
+    assert.match(
+      String(breakdownSteps[0]?.text || ""),
+      /open|write|draft|list|highlight|match|rewrite|read|note/i,
+      "breakdown should start with a direct action, not a workflow meta-step",
+    );
+    assert.doesNotMatch(
+      String(breakdownSteps[0]?.text || ""),
+      /use the|locate the|define this stage output|check completion criteria|break this stage into actions/i,
+      "breakdown should not lead with a workflow meta-step",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

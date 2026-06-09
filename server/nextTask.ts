@@ -1,6 +1,7 @@
 import { db } from "./storage";
 import { tasks, jobs, learn, contacts, hustles, jobPipelineSteps, proofAssetSteps, type Task, type JobPipelineStep, type ProofAssetStep } from "@shared/schema";
 import { eq, and, ne } from "drizzle-orm";
+import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 
 // ─────────────────────────────────────────────────────────────────────────
 // NEXT-TASK ENGINE — turn any source object (job/learn/contact/hustle) into a
@@ -119,6 +120,15 @@ export async function createNextTask(args: { sourceType: NextTaskSourceType; sou
   }
 
   if (!values) return null;
+  try {
+    const breakdown = await buildDeterministicTaskBreakdown(values as Task);
+    if (breakdown.steps.length) {
+      values.steps = JSON.stringify(breakdown.steps);
+      values.minimumOutcome = breakdown.workflowState.stageOutput || values.minimumOutcome;
+    }
+  } catch {
+    // Keep task creation reliable even if deterministic breakdown cannot be derived.
+  }
   const task = db.insert(tasks).values(values).returning().get();
   return { task, reused: false };
 }

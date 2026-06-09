@@ -2,6 +2,7 @@ import type { Express } from "express";
 import OpenAI from "openai";
 import type { Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
+import { deterministicUnstickStep } from "./planningFeedback";
 
 type WorkObject = "Artifact" | "Decision" | "Knowledge" | "Capability" | "Pipeline" | "Problem";
 type WorkflowKind = "finite" | "continuous";
@@ -184,6 +185,175 @@ function classifyWorkObject(task: Task, bundle: SourceBundle): WorkObject {
 function makeSteps(defs: Array<[string, string[]?]>): BreakdownStep[] {
   return defs.map(([text, substeps]) => ({ text, done: false as const, ...(substeps?.length ? { substeps } : {}) }));
 }
+
+function dedupeTexts(texts: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const text of texts.map((x) => cleanText(x, 140)).filter(Boolean)) {
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+}
+
+function looksMetaStep(text: string) {
+  return /^(use the|locate the|define this stage output|check completion criteria|break this stage into actions|execute until|identify the stage|review the workflow)/i.test(text.trim());
+}
+
+function looksActionable(text: string) {
+  return /^(open|write|draft|list|choose|mark|highlight|copy|paste|find|send|ask|save|start|set|create|name|pick|read|scan|skim|note|pull|collect|gather|match|rewrite|outline|reply|message|email|book|review|map|flag|compare|decide|record|log|paste|extract|inspect)\b/i.test(text.trim());
+}
+
+function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: WorkflowState) {
+  const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
+  if (bundle.sourceKind === "job") {
+    if (workflowState?.currentStage === "Understand role") return "Open the role posting and highlight the first must-have requirement";
+    if (workflowState?.currentStage === "Map evidence") return "Open a blank note and list the top 3 role requirements";
+    if (workflowState?.currentStage === "Handle gaps") return "Write down the single biggest gap in one sentence";
+    if (workflowState?.currentStage === "Build materials") {
+      return keyword(text, /cv|resume|tailor|rewrite/) ? "Open your CV and the role posting side by side" : "Open the application material and draft the first useful line";
+    }
+    if (workflowState?.currentStage === "Follow up") return "Open the application thread and find the next follow-up action";
+  }
+  if (bundle.sourceKind === "learn") {
+    if (workflowState?.workObject === "Capability" || keyword(text, /practice|drill|mock/)) return "Open a blank practice note and do one 5-minute attempt";
+    if (task.sourceUrl) return "Open the resource and read only the first heading";
+    return "Open the resource note and write one useful takeaway";
+  }
+  if (bundle.sourceKind === "hustle") {
+    if (workflowState?.currentStage === "Gather evidence") return "Open a note and paste the 3 strongest proof points";
+    return "Open a blank draft and write the one claim this piece should make";
+  }
+  if (workflowState?.workObject === "Decision") return "Open a note and write the decision question in one line";
+  if (workflowState?.workObject === "Problem") return "Write one sentence describing what is not working";
+  if (workflowState?.workObject === "Knowledge") return task.sourceUrl ? "Open the source and read only the first relevant section" : "Open a note and list the first thing you need to understand";
+  if (workflowState?.workObject === "Capability") return "Open a blank note and do one small practice attempt";
+  return deterministicUnstickStep(task);
+}
+
+function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowState): string[] {
+  const object = workflowState.workObject;
+  const currentStage = workflowState.currentStage;
+  const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
+
+  if (bundle.sourceKind === "job" && object === "Artifact") {
+    if (currentStage === "Understand role") return [
+      "Open the role posting and highlight the first must-have requirement",
+      "List the top 3 must-have requirements",
+      "List the top 2 nice-to-have signals",
+      "Write one sentence on what this role is really asking for",
+    ];
+    if (currentStage === "Map evidence") return [
+      "Open a blank note and list the top 3 role requirements",
+      "Match one concrete example to the first requirement",
+      "Match one concrete example to the second requirement",
+      "Mark the weakest proof gap",
+    ];
+    if (currentStage === "Handle gaps") return [
+      "Write down the single biggest gap in one sentence",
+      "Choose whether to explain, reframe, or offset it",
+      "Draft one mitigation line",
+      "Save that line in your role notes",
+    ];
+    if (currentStage === "Build materials") {
+      return keyword(text, /cv|resume|tailor|rewrite/) ? [
+        "Open your CV and the role posting side by side",
+        "Highlight repeated role keywords",
+        "Rewrite the first matching bullet",
+        "Save the next bullet to update later",
+      ] : [
+        "Open the application material and draft the first useful line",
+        "Answer the first prompt in rough notes",
+        "Tighten one sentence so it sounds credible",
+        "Save the next missing section",
+      ];
+    }
+    return [
+      "Open the application thread and find the next follow-up action",
+      "Write the shortest acceptable follow-up",
+      "Send it or save it ready to send",
+      "Log the follow-up date",
+    ];
+  }
+
+  if (object === "Pipeline") {
+    return currentStage === "Define target" ? [
+      "Write down the exact target lane",
+      "List 3 live targets in that lane",
+      "Mark the best one to act on first",
+      "Save the first outreach or application move",
+    ] : [
+      "Open the live target list",
+      "Pick one real target",
+      "Draft the next message or application move",
+      "Send it or save it ready to send",
+    ];
+  }
+
+  if (object === "Knowledge") {
+    return [
+      task.sourceUrl ? "Open the source and read only the first relevant section" : "Open the source note and read only the first relevant section",
+      "Write one useful takeaway in your own words",
+      "Write the one output or decision this should support",
+      "Stop once you have that one useful note",
+    ];
+  }
+
+  if (object === "Capability") {
+    return [
+      "Open a blank practice note and do one 5-minute attempt",
+      "Notice the weakest part of that attempt",
+      "Redo just that part once",
+      "Write one improvement note for next time",
+    ];
+  }
+
+  if (object === "Decision") {
+    return [
+      "Open a note and write the decision question in one line",
+      "List the real options",
+      "Choose the top 3 criteria",
+      "Mark the current default and why",
+    ];
+  }
+
+  if (object === "Problem") {
+    return [
+      "Write one sentence describing what is not working",
+      "Write when or where it shows up",
+      "List 2 likely causes",
+      "Choose the first cause to test",
+    ];
+  }
+
+  return [
+    "Open the task context",
+    "Write the intended audience or use",
+    "Name the smallest useful version",
+    "Start the first rough line or note",
+  ];
+}
+
+export function coerceTaskBreakdownSteps(task: Task, bundle: SourceBundle, workflowState: WorkflowState, rawSteps: BreakdownStep[]) {
+  const flattened = rawSteps.flatMap((step) => {
+    if (step.substeps?.length) return step.substeps;
+    return [step.text];
+  });
+  const hadMeta = flattened.some((text) => looksMetaStep(text));
+  const stripped = dedupeTexts((flattened.length ? flattened : stageActions(task, bundle, workflowState)).filter((text) => !looksMetaStep(text)));
+  const baseActions = stripped.length ? stripped : stageActions(task, bundle, workflowState);
+  const starter = tinyStarterStep(task, bundle, workflowState);
+  const first = baseActions[0] || "";
+  const ordered = dedupeTexts(
+    hadMeta || !first || !looksActionable(first)
+      ? [starter, ...baseActions]
+      : baseActions,
+  );
+  return ordered.slice(0, 4).map((text) => ({ text, done: false as const }));
+}
+
 function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowState): BreakdownStep[] {
   if (!workflowState || !steps.length) return steps;
   const [first, ...rest] = steps;
@@ -233,31 +403,8 @@ function fallbackStagePlan(task: Task, bundle: SourceBundle): { workflowState: W
   const workflow = inherited?.workflow || WORKFLOWS[object];
   const currentStage = inherited?.currentStage || workflow[0];
   const stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "One concrete stage output exists";
-  const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
-  let actions: string[] = [];
-
-  if (bundle.sourceKind === "job" && object === "Artifact") {
-    if (currentStage === "Understand role") actions = ["Open the role posting", "Extract must-have requirements", "Extract nice-to-haves", "Mark hidden asks"];
-    else if (currentStage === "Map evidence") actions = ["List key requirements", "Match one example to each", "Flag weak proof", "Choose strongest story"];
-    else if (currentStage === "Handle gaps") actions = ["Name the gap", "Choose explain or reframe", "Draft mitigation line", "Add to notes"];
-    else if (currentStage === "Build materials") actions = keyword(text, /cv|resume|tailor|rewrite/) ? ["Open CV and role posting", "Highlight repeated role keywords", "Choose three matching bullets", "Rewrite the first bullet"] : ["Open application material", "Identify what it must prove", "Draft the first useful section", "Save next gap"];
-    else actions = ["Open the related application", "Choose the next required action", "Complete or log it", "Record follow-up"];
-  } else if (object === "Pipeline") actions = currentStage === "Define target" ? ["Name the target group", "Define success criteria", "List the first batch", "Choose the top priority"] : ["Open the batch list", "Choose one target", "Draft the action", "Send or log it"];
-  else if (object === "Knowledge") actions = ["Open the resource or source", "Scan headings or summary", "Choose the useful slice", "Name the output to create"];
-  else if (object === "Capability") actions = ["Open a blank practice note", "Pick the exact skill to drill", "Do one small attempt", "Write one improvement note"];
-  else if (object === "Decision") actions = ["Write the decision question", "List the real options", "Choose three criteria", "Mark the current default"];
-  else if (object === "Problem") actions = ["Describe what is not working", "Name when it happens", "List likely causes", "Choose the first cause to test"];
-  else actions = ["Open the task context", "Write the intended audience", "Name the final artifact", "List required inputs"];
-
   const workflowState = inherited || makeWorkflowState({ workObject: object, workflow, currentStage, stageOutput, confidence: "fallback", sourceKind: bundle.sourceKind });
-  const steps = makeSteps([
-    [`Use the ${workflowState.workflowKind} ${String(object).toLowerCase()} workflow`, workflow.slice(0, 5)],
-    ["Locate the current stage", [workflowState.currentStage]],
-    ["Define this stage output", [workflowState.stageOutput]],
-    ["Check completion criteria", workflowState.completionCriteria],
-    ["Break this stage into actions", actions],
-    ["Execute until this output exists"],
-  ]);
+  const steps = coerceTaskBreakdownSteps(task, bundle, workflowState, stageActions(task, bundle, workflowState).map((text) => ({ text, done: false as const })));
   return { workflowState, steps };
 }
 
@@ -297,6 +444,12 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
   const parentWorkflow = parentWorkflowFor(task, tempBundle);
   const parentContext = parentWorkflow ? `Inherited workflow from parent ${parentWorkflow.inheritedFrom}: ${parentWorkflow.workflow.join(" → ")}. Kind: ${parentWorkflow.workflowKind}. Current stage: ${parentWorkflow.currentStage}. Stage output: ${parentWorkflow.stageOutput}. Completion criteria: ${parentWorkflow.completionCriteria.join("; ")}.` : "";
   return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow };
+}
+
+export async function buildDeterministicTaskBreakdown(task: Task) {
+  const bundle = await buildSourceContext(task);
+  const fallback = fallbackStagePlan(task, bundle);
+  return { bundle, workflowState: fallback.workflowState, steps: fallback.steps };
 }
 
 export function registerTaskBreakdownRoutes(app: Express) {
@@ -345,9 +498,11 @@ export function registerTaskBreakdownRoutes(app: Express) {
 
     if (question && !context) return res.json({ question });
     if (!steps.length || !workflowState) {
-      const fallback = fallbackStagePlan(task, bundle);
+      const fallback = await buildDeterministicTaskBreakdown(task);
       steps = fallback.steps;
       workflowState = fallback.workflowState;
+    } else {
+      steps = coerceTaskBreakdownSteps(task, bundle, workflowState, steps);
     }
     steps = attachWorkflowState(steps, workflowState);
     const updated = await storage.updateTask(id, {

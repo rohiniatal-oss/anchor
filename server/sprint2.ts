@@ -6,6 +6,7 @@ import { dayPlans, dayPlanItems, insertTaskSchema, type DayPlan, type Task, type
 import { isOpportunityActionable } from "@shared/domainState";
 import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey, refinedEstimateFromSteps, stepsWithEstimatedMinutes } from "./planningFeedback";
 import { deriveCareerGoalFrame } from "./goalState";
+import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
@@ -127,6 +128,58 @@ async function saveStarterStep(task: Task) {
   return updated;
 }
 
+function needsExecutionPlan(task: Task) {
+  const title = `${task.title || ""} ${task.doneWhen || ""}`.toLowerCase();
+  if (task.done || parseTaskSteps(task.steps || "[]").length > 0) return false;
+  if (task.size === "deep") return true;
+  if (["job", "learn", "contact", "hustle"].includes(String(task.sourceType || ""))) return true;
+  if ((task.skipped || 0) >= 1) return true;
+  return /(?:^|\b)(write|draft|rewrite|research|prepare|apply|decide|figure out|plan|outline|review|tailor|build)\b/.test(title);
+}
+
+async function saveExecutionReadySteps(task: Task) {
+  if (!needsExecutionPlan(task)) return task;
+  if (["job", "learn", "contact", "hustle"].includes(String(task.sourceType || ""))) {
+    try {
+      const breakdown = await buildDeterministicTaskBreakdown(task);
+      if (breakdown.steps.length) {
+        const updated = await storage.updateTask(task.id, {
+          steps: JSON.stringify(breakdown.steps),
+          minimumOutcome: breakdown.workflowState.stageOutput || task.minimumOutcome,
+        } as any);
+        if (updated) {
+          await storage.logActivity({
+            eventType: "starter_step_created",
+            sourceType: task.sourceType || "task",
+            sourceId: task.sourceId ?? undefined,
+            taskId: task.id,
+            planItemId: task.planItemId ?? undefined,
+            metadata: JSON.stringify({ step: breakdown.steps[0]?.text || "", deterministicBreakdown: true }),
+          } as any);
+          return updated;
+        }
+      }
+    } catch {
+      // Fall through to the simpler starter-step fallback.
+    }
+  }
+  return await saveStarterStep(task) || task;
+}
+
+function shrinkReason(task: Task) {
+  if ((task.skipped || 0) >= 1) return "This has friction already, so it was made smaller before it could stall again.";
+  if (["job", "learn", "contact", "hustle"].includes(String(task.sourceType || ""))) {
+    return "This is structured work with enough context to pre-split into easier execution steps.";
+  }
+  if (task.size === "deep") return "This is big enough that it needs a smaller visible start before execution.";
+  return "This looked cognitively heavy, so it was pre-shrunk into an easier start.";
+}
+
+function itemWasPreShrunk(item: any, task: Task | undefined, preShrunkTaskIds: Set<number>) {
+  if (!task || task.done) return false;
+  return preShrunkTaskIds.has(task.id) && item?.candidate?.taskId === task.id;
+}
+
 function estimateForPlanItem(item: any, task: Task | undefined) {
   if (task?.estimateMinutes && task.estimateMinutes > 0) return task.estimateMinutes;
   if (item?.candidate?.size === "quick") return 15;
@@ -154,16 +207,36 @@ function fitPlanToRemainingTime(plan: any[], tasks: Task[], remainingMinutes: nu
 
 async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes: number) {
   const byId = new Map(tasks.map((t) => [t.id, t]));
+  const preShrunkTaskIds = new Set<number>();
   for (const item of plan) {
     const task = item.candidate?.taskId ? byId.get(item.candidate.taskId) : undefined;
-    if (task && !task.done && task.size === "deep" && parseTaskSteps(task.steps || "[]").length === 0) {
-      await saveStarterStep(task);
+    if (task && !task.done && parseTaskSteps(task.steps || "[]").length === 0) {
+      const updated = await saveExecutionReadySteps(task);
+      if (updated) {
+        byId.set(updated.id, updated);
+        if (parseTaskSteps(updated.steps || "[]").length > 0) preShrunkTaskIds.add(updated.id);
+      }
     }
   }
   const fitted = fitPlanToRemainingTime(plan, tasks, remainingMinutes);
+  const corrected = fitted.map((item) => {
+    const task = item.candidate?.taskId ? byId.get(item.candidate.taskId) : undefined;
+    if (!itemWasPreShrunk(item, task, preShrunkTaskIds)) return item;
+    const reason = shrinkReason(task!);
+    return {
+      ...item,
+      why: `${item.why} ${reason}`.trim(),
+      explanation: {
+        ...item.explanation,
+        summary: `${item.explanation.summary} This was pre-shrunk into easier execution steps.`,
+        whyNow: reason,
+        supportingReasons: [reason, ...(item.explanation.supportingReasons || [])].slice(0, 4),
+      },
+    };
+  });
   // Report whether time pressure actually dropped anything, so the note layer
   // can explain a cut-down day without guessing from length comparisons.
-  return { plan: fitted, trimmed: fitted.length < plan.length };
+  return { plan: corrected, trimmed: fitted.length < plan.length };
 }
 
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
@@ -261,7 +334,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         sourceId: c.sourceId,
         taskId: c.taskId ?? null,
         title: c.title,
-        whySelected: item.why,
+        whySelected: item.explanation?.summary || item.why,
         doneWhen: c.doneWhen,
         status: previousAction ? previousAction.status : "planned",
         plannedFor: day,

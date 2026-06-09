@@ -2,6 +2,8 @@ import type { Express } from "express";
 import OpenAI from "openai";
 import { explainPersistedPlanItem, recommend, planDay } from "./brain";
 import { createNextTask } from "./nextTask";
+import { deterministicUnstickStep, prependStep } from "./planningFeedback";
+import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 import { storage } from "./storage";
 import { insertEventSchema, type InsertActivityLog, type InsertDayPlanItem } from "@shared/schema";
 
@@ -12,6 +14,52 @@ function decoratePlanItems(items: any[]) {
     ...item,
     explanation: explainPersistedPlanItem(item),
   }));
+}
+
+function isStructuredTask(task: { sourceType?: string | null; category?: string | null }) {
+  return ["job", "learn", "contact", "hustle", "goal"].includes(String(task.sourceType || ""))
+    || ["job", "learning", "substack", "hustle", "afterline", "interview"].includes(String(task.category || ""));
+}
+
+function parseTaskSteps(raw: string) {
+  try {
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed.filter((s) => s && typeof s.text === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function saveStarterStep(task: any) {
+  if (parseTaskSteps(task.steps || "[]").length > 0) return task;
+  const step = deterministicUnstickStep(task);
+  const steps = prependStep(task.steps || "[]", step);
+  return await storage.updateTask(task.id, { steps } as any);
+}
+
+async function ensureExecutionReadyTask(task: any) {
+  if (!task) return task;
+  if (parseTaskSteps(task.steps || "[]").length > 0) return task;
+
+  if (isStructuredTask(task)) {
+    try {
+      const breakdown = await buildDeterministicTaskBreakdown(task as any);
+      if (breakdown.steps.length) {
+        const updated = await storage.updateTask(task.id, {
+          steps: JSON.stringify(breakdown.steps),
+          minimumOutcome: breakdown.workflowState.stageOutput || task.minimumOutcome,
+        } as any);
+        if (updated) return updated;
+      }
+    } catch {
+      // Fall through to starter-step logic below.
+    }
+  }
+
+  if (task.size === "deep") {
+    return await saveStarterStep(task) || task;
+  }
+  return task;
 }
 
 async function busyMinutesFor(day: string): Promise<number> {
@@ -145,10 +193,22 @@ export function registerPlanningRoutes(app: Express) {
     }
     if (c.source === "task") {
       const updated = await storage.updateTask(Number(c.sourceId), { pinned: true, status: "in_progress" });
-      return res.json({ ok: true, task: updated });
+      return res.json({ ok: true, task: updated ? await ensureExecutionReadyTask(updated) : updated });
+    }
+    if (c.sourceId && (c.source === "job" || c.source === "learn" || c.source === "hustle" || c.source === "contact")) {
+      const result = await createNextTask({ sourceType: c.source, sourceId: Number(c.sourceId) });
+      if (result?.task) {
+        const updated = await storage.updateTask(result.task.id, {
+          list: "today",
+          block: ["morning", "afternoon", "evening"].includes(c.block) ? c.block : "morning",
+          pinned: req.body?.pin !== false,
+          status: "in_progress",
+        } as any);
+        return res.json({ ok: true, task: updated ? await ensureExecutionReadyTask(updated) : updated });
+      }
     }
     const block = ["morning", "afternoon", "evening"].includes(c.block) ? c.block : "morning";
-    const created = await storage.createTask({
+    let created = await storage.createTask({
       title: String(c.title),
       list: "today",
       block,
@@ -168,6 +228,7 @@ export function registerPlanningRoutes(app: Express) {
       sourceNote: c.sourceNote || "",
       sourceStatus: c.sourceStatus || "",
     } as any);
+    created = await ensureExecutionReadyTask(created);
     res.json({ ok: true, task: created });
   });
 
@@ -195,7 +256,18 @@ export function registerPlanningRoutes(app: Express) {
           autoShrunk = true;
         }
       } catch {
-        // Leave steps as-is if the helper call fails.
+        // Fall through to deterministic shrinking below.
+      }
+      if (!autoShrunk) {
+        try {
+          const breakdown = await buildDeterministicTaskBreakdown(task as any);
+          if (breakdown.steps.length) {
+            steps = JSON.stringify(breakdown.steps);
+            autoShrunk = true;
+          }
+        } catch {
+          // Leave steps as-is if deterministic shrinking also fails.
+        }
       }
     }
     const updated = await storage.updateTask(id, { skipped, steps, pinned: false, status: "not_started" });
@@ -302,6 +374,7 @@ export function registerPlanningRoutes(app: Express) {
         planItemId: item.id,
       } as any);
     }
+    task = await ensureExecutionReadyTask(task);
 
     await storage.updatePlanItem(item.id, { taskId: task!.id, status: "started", startedAt: Date.now() } as any);
     await storage.logActivity({ eventType: "started", sourceType: item.sourceType || "task", sourceId: item.sourceId ?? undefined, taskId: task!.id, planItemId: item.id } as any);

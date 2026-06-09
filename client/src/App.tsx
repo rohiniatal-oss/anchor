@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { apiRequest, queryClient } from "./lib/queryClient";
+import { todayKey } from "./lib/utils";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,11 +17,6 @@ function normalizeRoutePath(path: string) {
 function useNormalizedHashLocation() {
   const [location, navigate] = useHashLocation();
   return [normalizeRoutePath(location), navigate] as [string, typeof navigate];
-}
-
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function RestartFromHereButton() {
@@ -57,10 +53,8 @@ function RestartFromHereButton() {
 function TodayPlanHierarchyStyles() {
   return (
     <style>{`
-      /* Today should feel sequenced, not like three equal obligations.
-         This low-risk layer uses existing data-testid hooks so the product gets
-         a stronger Anchor -> After that hierarchy without rewriting home.tsx. */
-      button[data-testid="plan-item-0"] {
+      /* Plan hierarchy: anchor item stands out, secondary items visually recede. */
+      button[data-plan-rank="0"] {
         position: relative !important;
         display: flex !important;
         padding: 2.35rem 1rem 1rem 1rem !important;
@@ -69,7 +63,7 @@ function TodayPlanHierarchyStyles() {
         box-shadow: 0 12px 30px -24px hsl(var(--primary) / 0.85) !important;
       }
 
-      button[data-testid="plan-item-0"]::before {
+      button[data-plan-rank="0"]::before {
         content: "Your anchor for today";
         position: absolute;
         top: 0.75rem;
@@ -82,17 +76,17 @@ function TodayPlanHierarchyStyles() {
         color: hsl(var(--primary));
       }
 
-      button[data-testid="plan-item-0"] > span:first-child {
+      button[data-plan-rank="0"] > span:first-child {
         transform: scale(1.04);
         box-shadow: 0 8px 18px -14px hsl(var(--primary));
       }
 
-      button[data-testid="plan-item-0"] p:first-of-type {
+      button[data-plan-rank="0"] p:first-of-type {
         font-size: 0.98rem !important;
         line-height: 1.35 !important;
       }
 
-      button[data-testid^="plan-item-"]:not([data-testid="plan-item-0"]) {
+      button[data-plan-rank]:not([data-plan-rank="0"]) {
         position: relative !important;
         width: calc(100% - 1.15rem) !important;
         margin-left: 1.15rem !important;
@@ -102,21 +96,21 @@ function TodayPlanHierarchyStyles() {
         opacity: 0.88;
       }
 
-      button[data-testid^="plan-item-"]:not([data-testid="plan-item-0"]) > span:first-child {
+      button[data-plan-rank]:not([data-plan-rank="0"]) > span:first-child {
         background: hsl(var(--muted)) !important;
         color: hsl(var(--muted-foreground)) !important;
       }
 
-      button[data-testid^="plan-item-"]:not([data-testid="plan-item-0"]) p:first-of-type {
+      button[data-plan-rank]:not([data-plan-rank="0"]) p:first-of-type {
         font-size: 0.86rem !important;
         line-height: 1.3 !important;
       }
 
-      button[data-testid="plan-item-1"] {
+      button[data-plan-rank="1"] {
         margin-top: 1.75rem !important;
       }
 
-      button[data-testid="plan-item-1"]::before {
+      button[data-plan-rank="1"]::before {
         content: "After anchor, if you have capacity";
         position: absolute;
         top: -1.25rem;
@@ -129,7 +123,7 @@ function TodayPlanHierarchyStyles() {
         color: hsl(var(--muted-foreground));
       }
 
-      button[data-testid^="plan-item-"]:not([data-testid="plan-item-0"])::after {
+      button[data-plan-rank]:not([data-plan-rank="0"])::after {
         opacity: 0.55;
       }
     `}</style>
@@ -146,6 +140,7 @@ function AppRouter() {
       <Route path="/network" component={Home} />
       <Route path="/learn" component={Home} />
       <Route path="/wins" component={Home} />
+      <Route path="/profile" component={Home} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -493,6 +493,15 @@ type JobFormT = {
   narrativeAngle: string;
   sourceType: string;
 };
+type JobTruthStripT = {
+  jobId: number;
+  action: "apply" | "warm" | "prove" | "reject" | "clarify" | "prepare" | "follow_up";
+  actionLabel: string;
+  headline: string;
+  nextMove: string;
+  reasons: string[];
+  risks: string[];
+};
 type GoalsStateResponseT = { goals: CareerGoalT[] };
 const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "Later", bonus: "Bonus" };
 const PHASE_LABEL: Record<CareerGoalT["phase"], string> = {
@@ -1564,10 +1573,12 @@ function sortJobs(a: Job, b: Job): number {
 function JobsView() {
   const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
   const { data: learns = [] } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
+  const { data: truthStrips = [] } = useQuery<JobTruthStripT[]>({ queryKey: ["/api/jobs/truth-strips"] });
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { data: contacts = [] } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
+  const truthById = new Map(truthStrips.map((truth) => [truth.jobId, truth]));
   const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<JobFormT>(EMPTY_JOB_FORM);
@@ -1704,7 +1715,7 @@ function JobsView() {
               <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
                 <div className="flex items-center justify-between mb-2.5 px-1"><h2 className="font-semibold text-sm">{col.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div>
                 <div className="space-y-2">
-                  {items.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                  {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
                   {items.length === 0 && <p className="text-xs text-muted-foreground px-1 py-3">Add roles you want to apply for.</p>}
                 </div>
               </div>
@@ -1724,7 +1735,7 @@ function JobsView() {
                 <div className="mb-4">
                   <GroupLabel count={openFellowships.length}><Compass className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Open / apply now</GroupLabel>
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {openFellowships.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                    {openFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
                   </div>
                 </div>
               )}
@@ -1732,7 +1743,7 @@ function JobsView() {
                 <div>
                   <GroupLabel count={watchFellowships.length}><CalendarDays className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Watch / closed for 2026</GroupLabel>
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
                   </div>
                 </div>
               )}
@@ -1921,17 +1932,109 @@ function JobStepRail({ j }: { j: Job }) {
   );
 }
 
-function JobCard({ j, tracks, tasks, contacts, learns, onMove, onRemove }: { j: Job; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
+function learnSupportScore(l: Learn) {
+  let total = 0;
+  if (l.active) total += 4;
+  const outputState = getLearnOutputState(l);
+  if (outputState === "producing") total += 3;
+  if (outputState === "evidenced") total += 2;
+  if (getLearnStatus(l) === "active" || getLearnStatus(l) === "enrolled") total += 2;
+  return total;
+}
+
+function getJobCapabilitySupportItems(trackId: number | null, learns: Learn[]) {
+  if (trackId == null) return [];
+  return learns
+    .filter((l) => !l.done && getTrackId("learn", l) === trackId)
+    .sort((a, b) => learnSupportScore(b) - learnSupportScore(a) || b.id - a.id)
+    .slice(0, 3);
+}
+
+function getJobWarmSupport(trackId: number | null, contacts: Contact[]) {
+  const trackContacts = trackId != null ? contacts.filter((c) => getTrackId("contacts", c) === trackId) : [];
+  const warmTrackContacts = trackContacts.filter((c) => c.status === "messaged" || c.status === "replied" || getRelationshipStrength(c) !== "cold");
+  const weak = trackId == null ? (contacts.length === 0) : ((warmTrackContacts.length === 0));
+  const pool = trackContacts.length > 0 ? trackContacts : contacts;
+  const candidates = pool.filter((c) => c.status !== "replied").slice(0, 3);
+  return { trackContacts, warmTrackContacts, weak, candidates };
+}
+
+function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }: { j: Job; truth: JobTruthStripT | null; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
   const trackId = getTrackId("jobs", j);
+  const track = tracks.find((t) => t.id === trackId) || null;
   const linked = useLinkedTaskCount(tasks, "job", j.id);
   const [open, setOpen] = useState(false);
+  const [primaryBusy, setPrimaryBusy] = useState(false);
 
   // An eligibility-gated role is a dead end — don't dangle the whole work surface
   // (rail + outreach) under it. It collapses to a quiet "probably skip" state.
   const gated = j.eligibilityRisk === "likely_ineligible";
   const windowClosed = j.applicationWindowStatus === "closed" || j.status === "closed";
+  const warmSupport = getJobWarmSupport(trackId, contacts);
+  const supportItems = getJobCapabilitySupportItems(trackId, learns);
+  const requiredDomains = track ? requiredDomainsForTrack(track) : [];
+
+  async function createJobNextTask() {
+    const r = await mutateAndInvalidate("POST", `/api/jobs/${j.id}/create-next-task`, {}, ["/api/tasks", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    toast({
+      title: r?.reused ? "Already on your list." : "Job task created.",
+      description: r?.reused ? "There's already an open task for this role." : "Find it in Brain dump, or in Today if it gets planned.",
+    });
+  }
+
+  async function createOutreachTask(c: Contact) {
+    const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
+    toast({
+      title: r?.reused ? "Already on your list." : "Outreach task created.",
+      description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned.",
+    });
+  }
+
+  async function createSupportTask(l: Learn) {
+    const endpoint = getLearnOutputState(l) === "reference" ? `/api/learn/${l.id}/create-next-task` : `/api/learn/${l.id}/create-output-task`;
+    const r = await mutateAndInvalidate("POST", endpoint, {}, ["/api/tasks", "/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
+    toast({
+      title: r?.reused ? "Already on your list." : "Support task created.",
+      description: r?.reused ? "There's already an open task for this learning item." : "Find it in Brain dump, or in Today if it gets planned.",
+    });
+  }
+
+  function openNetworkIntake() {
+    const draft = {
+      sector: j.company || "",
+      targetOrg: j.company || "",
+      targetRole: j.title || "",
+      why: `Could help warm a path into ${j.title}${j.company ? ` at ${j.company}` : ""}.`,
+      relatedTrackId: trackId,
+      askType: truth?.action === "warm" ? "referral" : "advice",
+      relationshipStrength: "cold",
+      status: "to_contact",
+    };
+    queueIntakeDraft(PENDING_CONTACT_DRAFT_KEY, draft);
+    window.location.hash = buildPrefillHash("/network", "contactDraft", draft);
+  }
+
+  function openLearnIntake() {
+    const primaryDomain = requiredDomains.length > 0 ? domainLabel(requiredDomains[0]) : "";
+    const draft = {
+      title: primaryDomain ? `${primaryDomain} capability support` : `${track?.name || j.title} capability support`,
+      category: primaryDomain,
+      capabilityBuilt: primaryDomain,
+      requiredOutput: track ? `One reusable output that strengthens ${track.name}.` : "",
+      note: `Support ${track?.name || "this lane"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
+      relatedTrackId: trackId,
+      proofIntent: true,
+      learnStatus: "open",
+    };
+    queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
+    window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
+  }
+
+  function openRoleSource() {
+    if (j.url) window.open(j.url, "_blank", "noopener,noreferrer");
+  }
 
   // The ONE primary action for this card, by state. Calm surface = one clear move.
   const primary = (() => {
@@ -1945,6 +2048,29 @@ function JobCard({ j, tracks, tasks, contacts, learns, onMove, onRemove }: { j: 
       run: async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win 🎉", description: "Application progress counts." }); },
     };
   })();
+  const truthPrimary = (() => {
+    if (gated || windowClosed || !truth) return null;
+    if (truth.action === "warm") {
+      return warmSupport.candidates[0]
+        ? { label: "Warm this role", icon: Flame, run: async () => createOutreachTask(warmSupport.candidates[0]) }
+        : { label: "Add warm contact", icon: Users, run: async () => openNetworkIntake() };
+    }
+    if (truth.action === "prove") {
+      return supportItems[0]
+        ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
+        : { label: "Add capability support", icon: GraduationCap, run: async () => openLearnIntake() };
+    }
+    if (truth.action === "clarify") {
+      return j.url
+        ? { label: "Clarify role", icon: ExternalLink, run: async () => openRoleSource() }
+        : { label: "Clarify role", icon: Compass, run: createJobNextTask };
+    }
+    if (truth.action === "prepare") return { label: "Create prep task", icon: FileText, run: createJobNextTask };
+    if (truth.action === "follow_up") return { label: "Create follow-up task", icon: MessageSquare, run: createJobNextTask };
+    if (truth.action === "apply") return { label: "Create application task", icon: CheckCircle2, run: createJobNextTask };
+    return null;
+  })();
+  const effectivePrimary = truthPrimary || (truth ? null : primary);
 
   return (
     <div className={`group rounded-lg border bg-card p-3 ${gated || windowClosed ? "border-card-border opacity-70" : "border-card-border"}`} data-testid={`job-${j.id}`}>
@@ -1974,10 +2100,17 @@ function JobCard({ j, tracks, tasks, contacts, learns, onMove, onRemove }: { j: 
           {/* ── ONE primary action + open link + expand toggle ── */}
           <div className="flex items-center justify-between mt-2.5 gap-2">
             <div className="flex items-center gap-2">
-              {primary && (
-                <button data-testid={`button-primary-job-${j.id}`} onClick={primary.run}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-foreground bg-primary rounded-md px-2 py-1 hover-elevate">
-                  <primary.icon className="w-3.5 h-3.5" /> {primary.label}
+              {effectivePrimary && (
+                <button
+                  data-testid={`button-primary-job-${j.id}`}
+                  onClick={async () => {
+                    if (primaryBusy) return;
+                    setPrimaryBusy(true);
+                    try { await effectivePrimary.run(); } finally { setPrimaryBusy(false); }
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-foreground bg-primary rounded-md px-2 py-1 hover-elevate"
+                >
+                  {primaryBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <effectivePrimary.icon className="w-3.5 h-3.5" />} {effectivePrimary.label}
                 </button>
               )}
               {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
@@ -1987,6 +2120,23 @@ function JobCard({ j, tracks, tasks, contacts, learns, onMove, onRemove }: { j: 
               {open ? "Less" : "Open"} <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
             </button>
           </div>
+
+          {truth && (
+            <div className="mt-2 rounded-md border border-card-border bg-muted/35 px-2.5 py-2" data-testid={`job-truth-${j.id}`}>
+              <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                <span className="inline-flex rounded-full bg-card px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                  {truth.actionLabel}
+                </span>
+                {truth.reasons.slice(0, 2).map((reason) => (
+                  <span key={reason} className="inline-flex rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {reason}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-foreground leading-snug">{truth.headline}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">{truth.nextMove}</p>
+            </div>
+          )}
 
           {/* ── EXPANDED: the work surface (steps, warm path, stage move, tasks) ── */}
           {open && (

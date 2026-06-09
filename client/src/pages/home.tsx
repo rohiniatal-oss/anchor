@@ -2842,6 +2842,8 @@ function NetworkView() {
   const [seen, setSeen] = useState<string[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ContactFormT>(EMPTY_CONTACT_FORM);
+  const [selectedLane, setSelectedLane] = useState("");
+  const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
 
   useEffect(() => {
     const pending = takeHashDraft<ContactFormT>("contactDraft") || takeIntakeDraft<ContactFormT>(PENDING_CONTACT_DRAFT_KEY);
@@ -2860,15 +2862,18 @@ function NetworkView() {
   useEffect(() => { fetchSug([]); /* eslint-disable-next-line */ }, []);
   function resetForm() {
     setForm(EMPTY_CONTACT_FORM);
+    setSelectedLane("");
     setShowForm(false);
   }
   function startBlankContact() {
     setForm(EMPTY_CONTACT_FORM);
+    setSelectedLane("");
     setShowForm(true);
   }
   function startLaneContact(item: GoalPortfolioItemT) {
     const preset = contactPresetForLane(item, tracks);
     setForm({ ...EMPTY_CONTACT_FORM, ...preset });
+    setSelectedLane(item.combination);
     setShowForm(true);
   }
   function startSuggestedContact() {
@@ -2920,6 +2925,39 @@ function NetworkView() {
 
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2" data-testid="contact-intake-form">
+          {selectedLane && (
+            <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" data-testid="contact-form-lane-banner">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Supporting lane</p>
+                  <p className="text-sm font-medium">{selectedLane}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedLane("");
+                    setForm((current) => ({ ...current, sector: "", why: "", targetRole: "", relatedTrackId: null }));
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  data-testid="button-clear-contact-lane"
+                >
+                  Clear lane
+                </button>
+              </div>
+              {selectedLaneGuide && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this contact helps</p>
+                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.fitHint}</p>
+                  </div>
+                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Best first ask</p>
+                    <p className="mt-1 text-xs text-foreground">Start with advice or a reconnect unless you already have enough warmth for a referral ask.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <Input placeholder="Who they are *" value={form.who} onChange={(e) => setForm({ ...form, who: e.target.value })} data-testid="input-contact-who" />
           <Input placeholder="Name (optional)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="input-contact-name-new" />
           <Input placeholder="Sector / lane" value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} data-testid="input-contact-sector" />
@@ -2987,6 +3025,9 @@ function NetworkView() {
                   </button>
                 ))}
               </div>
+              {selectedLaneGuide && form.relatedTrackId != null && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Anchor linked the nearest matching track, but you can change it.</p>
+              )}
             </div>
           )}
 
@@ -3234,6 +3275,8 @@ function LearnView() {
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [form, setForm] = useState<LearnFormT>(EMPTY_LEARN_FORM);
+  const [selectedLane, setSelectedLane] = useState("");
+  const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
   useEffect(() => {
     const pending = takeHashDraft<LearnFormT>("learnDraft") || takeIntakeDraft<LearnFormT>(PENDING_LEARN_DRAFT_KEY);
     if (pending) {
@@ -3247,12 +3290,13 @@ function LearnView() {
   function startLaneLearn(item: GoalPortfolioItemT) {
     const preset = learnPresetForLane(item, tracks);
     setForm({ ...EMPTY_LEARN_FORM, ...preset });
+    setSelectedLane(item.combination);
     setShowForm(true);
   }
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/learn", { ...form, done: false, active: false }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]);
-    setForm(EMPTY_LEARN_FORM); setShowForm(false);
+    setForm(EMPTY_LEARN_FORM); setSelectedLane(""); setShowForm(false);
   }
   async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
   async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
@@ -3292,6 +3336,39 @@ function LearnView() {
       {activeGoal && live.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="learn" onStartLane={startLaneLearn} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
+          {selectedLane && (
+            <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" data-testid="learn-form-lane-banner">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Supporting lane</p>
+                  <p className="text-sm font-medium">{selectedLane}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedLane("");
+                    setForm((current) => ({ ...current, title: "", category: "", capabilityBuilt: "", requiredOutput: "", note: "", relatedTrackId: null, proofIntent: false }));
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  data-testid="button-clear-learn-lane"
+                >
+                  Clear lane
+                </button>
+              </div>
+              {selectedLaneGuide && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this capability helps</p>
+                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.fitHint}</p>
+                  </div>
+                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Use this output for</p>
+                    <p className="mt-1 text-xs text-foreground">A reusable memo, note, artifact, or evidence signal that strengthens this lane across multiple roles.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {suggestedDomainKeys.length > 0 && (
             <div className="sm:col-span-2">
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Suggested capability domains</p>
@@ -3380,9 +3457,12 @@ function LearnView() {
                   </button>
                 ))}
               </div>
+              {selectedLaneGuide && form.relatedTrackId != null && (
+                <p className="mt-1 text-[11px] text-muted-foreground">Anchor linked the nearest matching track, but you can change it.</p>
+              )}
             </div>
           )}
-          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => { setShowForm(false); setForm(EMPTY_LEARN_FORM); }}>Cancel</Button><Button onClick={add} data-testid="button-save-learn">Save</Button></div>
+          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_LEARN_FORM); }}>Cancel</Button><Button onClick={add} data-testid="button-save-learn">Save</Button></div>
         </div>
       )}
       {isLoading ? <Loading /> : items.length === 0 ? (

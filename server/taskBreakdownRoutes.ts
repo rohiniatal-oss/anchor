@@ -399,6 +399,41 @@ export function coerceTaskBreakdownSteps(task: Task, bundle: SourceBundle, workf
   return ordered.slice(0, 4).map((text) => ({ text, done: false as const }));
 }
 
+export async function normalizeExistingTaskBreakdown(task: Task) {
+  const raw = String(task.steps || "[]");
+  let parsed: BreakdownStep[] = [];
+  try {
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      parsed = arr.map((step) => normalizeStep(step)).filter(Boolean) as BreakdownStep[];
+    }
+  } catch {
+    parsed = [];
+  }
+
+  if (!parsed.length) return { changed: false as const };
+
+  const flattened = parsed.flatMap((step) => step.substeps?.length ? step.substeps : [step.text]);
+  const needsRepair = flattened.some((text) => looksMetaStep(text));
+  if (!needsRepair) return { changed: false as const };
+
+  const bundle = await buildSourceContext(task);
+  const fallback = fallbackStagePlan(task, bundle);
+  const repaired = attachWorkflowState(
+    coerceTaskBreakdownSteps(task, bundle, fallback.workflowState, parsed),
+    fallback.workflowState,
+  );
+  const steps = JSON.stringify(repaired);
+  if (steps === raw && (fallback.workflowState.stageOutput || "") === String(task.minimumOutcome || "")) {
+    return { changed: false as const };
+  }
+  return {
+    changed: true as const,
+    steps,
+    minimumOutcome: fallback.workflowState.stageOutput || task.minimumOutcome,
+  };
+}
+
 function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowState): BreakdownStep[] {
   if (!workflowState || !steps.length) return steps;
   const [first, ...rest] = steps;

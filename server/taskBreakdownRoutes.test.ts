@@ -85,3 +85,36 @@ test("goal-source breakdown sharpens the first role-search move for a specific m
   assert.ok(steps.length >= 1);
   assert.match(steps.map((step) => String(step.text || "")).join(" | "), /geopolitical advisory|regional or policy scope/i);
 });
+
+test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct actions", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { normalizeExistingTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Inspect three AI governance strategy roles and capture repeated requirements.",
+    category: "learning",
+    sourceType: "goal",
+    sourceId: 1,
+    sourceNote: "From Strategy Builder",
+    doneWhen: "One clear role-family signal is captured",
+    minimumOutcome: "",
+    steps: JSON.stringify([
+      { text: "Use the finite knowledge workflow", done: false, substeps: ["Orient", "Scope useful slice"] },
+      { text: "Locate the current stage", done: false },
+      { text: "Define this stage output", done: false },
+      { text: "Check completion criteria", done: false },
+      { text: "Break this stage into actions", done: false, substeps: ["Open the resource or source", "Scan headings or summary"] },
+    ]),
+  } as any;
+
+  const repaired = await normalizeExistingTaskBreakdown(task);
+
+  assert.equal(repaired.changed, true);
+  const steps = JSON.parse(String(repaired.steps));
+  assert.ok(Array.isArray(steps) && steps.length >= 1);
+  assert.doesNotMatch(
+    steps.map((step: any) => String(step.text || "")).join(" | "),
+    /use the|locate the|define this stage output|check completion criteria|break this stage into actions/i,
+  );
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|open the saved role|pipeline action/i);
+});

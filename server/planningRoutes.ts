@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { explainPersistedPlanItem, recommend, planDay } from "./brain";
 import { createNextTask } from "./nextTask";
 import { deterministicUnstickStep, prependStep } from "./planningFeedback";
-import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
+import { buildDeterministicTaskBreakdown, normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { storage } from "./storage";
 import { insertEventSchema, type InsertActivityLog, type InsertDayPlanItem } from "@shared/schema";
 
@@ -39,6 +39,14 @@ async function saveStarterStep(task: any) {
 
 async function ensureExecutionReadyTask(task: any) {
   if (!task) return task;
+  const repaired = await normalizeExistingTaskBreakdown(task as any);
+  if (repaired.changed) {
+    const updated = await storage.updateTask(task.id, {
+      steps: repaired.steps,
+      minimumOutcome: repaired.minimumOutcome,
+    } as any);
+    task = updated || { ...task, steps: repaired.steps, minimumOutcome: repaired.minimumOutcome };
+  }
   if (parseTaskSteps(task.steps || "[]").length > 0) return task;
 
   if (isStructuredTask(task)) {

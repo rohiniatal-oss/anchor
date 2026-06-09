@@ -15,6 +15,7 @@ import { registerPlanningRoutes } from "./planningRoutes";
 import { registerStrategyRoutes } from "./strategyRoutes";
 import { registerTaskAssistRoutes } from "./taskAssistRoutes";
 import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
+import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 
 function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
   create: (d: any) => Promise<any>, update: (id: number, d: any) => Promise<any>, del: (id: number) => Promise<any>) {
@@ -40,8 +41,34 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // never misclassifies a course). Safe to run on every boot.
   try { migrateFellowshipLearnRows(); } catch (e) { console.error("Fellowship migration skipped:", e); }
 
-  crud(app, "tasks", () => storage.getTasks(), insertTaskSchema,
-    (d) => storage.createTask(d), (id, d) => storage.updateTask(id, d), (id) => storage.deleteTask(id));
+  app.get("/api/tasks", async (_q, res) => {
+    const current = await storage.getTasks();
+    const repaired = await Promise.all(current.map(async (task) => {
+      const normalized = await normalizeExistingTaskBreakdown(task);
+      if (!normalized.changed) return task;
+      return await storage.updateTask(task.id, {
+        steps: normalized.steps,
+        minimumOutcome: normalized.minimumOutcome,
+      } as any) || { ...task, steps: normalized.steps, minimumOutcome: normalized.minimumOutcome };
+    }));
+    res.json(repaired);
+  });
+  app.post("/api/tasks", async (req, res) => {
+    const p = insertTaskSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    res.json(await storage.createTask(p.data));
+  });
+  app.patch("/api/tasks/:id", async (req, res) => {
+    const p = insertTaskSchema.partial().safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const u = await storage.updateTask(Number(req.params.id), p.data);
+    if (!u) return res.status(404).json({ error: "Not found" });
+    res.json(u);
+  });
+  app.delete("/api/tasks/:id", async (req, res) => {
+    await storage.deleteTask(Number(req.params.id));
+    res.json({ ok: true });
+  });
   crud(app, "jobs", () => storage.getJobs(), insertJobSchema,
     (d) => storage.createJob(d), (id, d) => storage.updateJob(id, d), (id) => storage.deleteJob(id));
   crud(app, "learn", () => storage.getLearn(), insertLearnSchema,

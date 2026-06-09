@@ -344,6 +344,45 @@ test("task breakdown updates only the task and does not rewrite parent source fi
   }
 });
 
+test("GET /api/tasks repairs legacy workflow meta-steps on saved tasks", async () => {
+  await h.storage.createTask({
+    title: "Inspect three AI governance strategy roles and capture repeated requirements.",
+    list: "today",
+    done: false,
+    status: "in_progress",
+    category: "learning",
+    sourceType: "goal",
+    sourceId: 1,
+    sourceNote: "From Strategy Builder",
+    doneWhen: "One clear role-family signal is captured",
+    minimumOutcome: "",
+    steps: JSON.stringify([
+      { text: "Use the finite knowledge workflow", done: false, substeps: ["Orient", "Scope useful slice"] },
+      { text: "Locate the current stage", done: false },
+      { text: "Define this stage output", done: false },
+      { text: "Check completion criteria", done: false },
+      { text: "Break this stage into actions", done: false, substeps: ["Open the resource or source", "Scan headings or summary"] },
+    ]),
+  } as any);
+
+  const r = await api(h.base, "GET", "/api/tasks");
+  assert.equal(r.status, 200);
+  const repaired = r.json.find((task: any) => /inspect three ai governance strategy roles/i.test(String(task.title || "")));
+  assert.ok(repaired, "the saved task should be returned");
+
+  const texts = JSON.parse(repaired.steps || "[]").map((step: any) => String(step.text || "")).join(" | ");
+  assert.doesNotMatch(
+    texts,
+    /use the|locate the|define this stage output|check completion criteria|break this stage into actions/i,
+    "legacy workflow meta-steps should be stripped on read",
+  );
+  assert.match(
+    texts,
+    /open jobs|save the first credible role|open the saved role|pipeline action/i,
+    "the repaired task should start with a direct actionable move",
+  );
+});
+
 // P4.6a #5 — the unified front-door is the ONE strategy payload, and the legacy
 // /api/strategy delegates to the same engine (no parallel computation).
 test("strategy front-door returns the unified payload off one engine", async () => {

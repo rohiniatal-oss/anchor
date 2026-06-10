@@ -234,7 +234,7 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
     <div className="group rounded-lg border border-card-border bg-card p-3" data-testid={`hustle-${h.id}`}>
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-medium text-sm leading-snug">{h.title}</h3>
-        <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-hustle-${h.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+        <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-hustle-${h.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
         <ProofKindBadge kind={kind} />
@@ -371,7 +371,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
           <div className="flex items-start justify-between gap-2">
             <h3 className={`font-medium text-sm leading-snug ${l.done ? "line-through" : ""}`}>{l.title}</h3>
             <button onClick={onToggleActive} aria-label={l.active ? "Park this" : "Make active"} title={l.active ? "Park this" : "Make active"} data-testid={`button-active-learn-${l.id}`}
-              className={`shrink-0 ${l.active ? "text-primary" : "text-muted-foreground hover:text-primary opacity-0 group-hover:opacity-100"}`}><Star className="w-4 h-4" fill={l.active ? "currentColor" : "none"} /></button>
+              className={`shrink-0 ${l.active ? "text-primary" : "text-muted-foreground hover:text-primary [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"}`}><Star className="w-4 h-4" fill={l.active ? "currentColor" : "none"} /></button>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
@@ -415,7 +415,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
 
           <div className="flex items-center gap-3 mt-2">
             {l.url && <a href={l.url} target="_blank" rel="noopener noreferrer" data-testid={`link-learn-${l.id}`} className="text-xs text-primary inline-flex items-center gap-1 hover:underline">Open <ExternalLink className="w-3 h-3" /></a>}
-            <button onClick={onRemove} data-testid={`button-delete-learn-${l.id}`} className="opacity-0 group-hover:opacity-100 text-xs text-muted-foreground hover:text-destructive inline-flex items-center gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
+            <button onClick={onRemove} data-testid={`button-delete-learn-${l.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-xs text-muted-foreground hover:text-destructive inline-flex items-center gap-1"><Trash2 className="w-3 h-3" /> Remove</button>
           </div>
 
           {outputState === "producing" && !l.done && (

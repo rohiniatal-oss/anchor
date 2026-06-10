@@ -108,7 +108,7 @@ function DoneTaskRow({ t }: { t: Task }) {
     <div className="group flex items-center gap-2 py-0.5 text-sm text-muted-foreground" data-testid={`done-task-${t.id}`}>
       <Check className="w-3.5 h-3.5 text-primary shrink-0" />
       <span className="flex-1 line-through truncate">{t.title.replace(/^✨\s*/, "")}</span>
-      <button onClick={promote} data-testid={`button-promote-win-task-${t.id}`} className="opacity-0 group-hover:opacity-100 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0"><Trophy className="w-3 h-3" /> Promote to win</button>
+      <button onClick={promote} data-testid={`button-promote-win-task-${t.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0"><Trophy className="w-3 h-3" /> Promote to win</button>
     </div>
   );
 }

@@ -32,7 +32,8 @@ import type { GoalPortfolioItemT, GoalsStateResponseT } from "@/lib/goalSpine";
 import type { JobFormT, JobTruthStripT } from "@/lib/jobsViewTypes";
 import { EMPTY_JOB_FORM } from "@/lib/jobsViewTypes";
 import { getTrackId, getRelationshipStrength, getLearnOutputState, getLearnStatus, isFellowship } from "@shared/domainState";
-import { requiredDomainsForTrack, domainLabel } from "@shared/capabilityTargets";
+import { requiredDomainsForTrack } from "@shared/capabilityTargets";
+import { domainLabel } from "@shared/capabilityDomains";
 
 const JOB_COLS = [
   { id: "wishlist", label: "Want to apply" }, { id: "applied", label: "Applied" },
@@ -626,7 +627,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
     <div className={`group rounded-lg border bg-card p-3 ${gated || windowClosed ? "border-card-border opacity-70" : "border-card-border"}`} data-testid={`job-${j.id}`}>
       <div className="flex items-start justify-between gap-2">
         <h3 className="font-medium text-sm leading-snug">{j.title}</h3>
-        <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-job-${j.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+        <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-job-${j.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
       </div>
       {(j.company || j.location) && <p className="text-xs text-muted-foreground mt-0.5">{[j.company, j.location].filter(Boolean).join(" · ")}</p>}
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">

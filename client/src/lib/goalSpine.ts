@@ -58,15 +58,6 @@ export const DECISION_MODE_LABEL: Record<CareerGoalT["decisionMode"], string> = 
   "parallel-exploration": "Exploring options",
   "broad-parallel-pursuit": "Multiple targets",
 };
-export const DAY_TYPE_LABEL: Record<string, string> = {
-  "signal-building": "Signal building",
-  "network-building": "Network building",
-  "conversion": "Conversion",
-  "capability-building": "Capability building",
-  "interview-prep": "Interview prep",
-  "stabilising": "Stabilising",
-};
-
 const PRE_SHRUNK_RE = /pre-shrunk|made smaller|pre-split|easier execution steps|easier start/i;
 
 export function isPreShrunkPlanItem(item: PlanItemT) {

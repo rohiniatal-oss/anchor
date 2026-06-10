@@ -699,6 +699,16 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
             <div className="mt-3 pt-3 border-t border-card-border space-y-3">
               <ApplicationReadinessBar j={j} expanded={true} />
               {j.note && <p className="text-xs text-muted-foreground leading-snug">{j.note}</p>}
+              {j.narrativeAngle && (
+                <p className="text-xs text-foreground/80 leading-snug">
+                  <span className="font-medium text-muted-foreground">Your angle: </span>{j.narrativeAngle}
+                </p>
+              )}
+              {j.jdText && (
+                <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                  <FileText className="w-3 h-3 shrink-0" /> JD saved — used for CV suggestions when you work on this application.
+                </p>
+              )}
               <div className="flex items-center gap-1">
                 {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">← back</button>}
                 {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">Move to {JOB_COLS[idx + 1].label} →</button>}

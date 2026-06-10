@@ -32,7 +32,8 @@ import type { GoalPortfolioItemT, GoalsStateResponseT } from "@/lib/goalSpine";
 import type { JobFormT, JobTruthStripT } from "@/lib/jobsViewTypes";
 import { EMPTY_JOB_FORM } from "@/lib/jobsViewTypes";
 import { getTrackId, getRelationshipStrength, getLearnOutputState, getLearnStatus, isFellowship } from "@shared/domainState";
-import { requiredDomainsForTrack, domainLabel } from "@shared/capabilityTargets";
+import { requiredDomainsForTrack } from "@shared/capabilityTargets";
+import { domainLabel } from "@shared/capabilityDomains";
 
 const JOB_COLS = [
   { id: "wishlist", label: "Want to apply" }, { id: "applied", label: "Applied" },

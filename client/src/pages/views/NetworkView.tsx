@@ -386,7 +386,7 @@ export function NetworkView() {
       )}
 
       {isLoading ? <Loading /> : contacts.length === 0 ? (
-        <Empty icon={Users} text="No contacts yet. Add one real contact path now." />
+        <Empty icon={Users} text="No contacts yet. Add one real contact path now." action={{ label: "Add a contact", onClick: () => setShowForm(true) }} />
       ) : (
         <div className="space-y-6">
           {(() => {

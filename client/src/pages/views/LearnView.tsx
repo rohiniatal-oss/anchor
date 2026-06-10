@@ -292,7 +292,7 @@ export function ProofAssetsView() {
         </div>
       )}
       {isLoading ? <Loading /> : hustles.length === 0 ? (
-        <Empty icon={Rocket} text="No work samples yet. Add a memo, article, or anything that shows your thinking." />
+        <Empty icon={Rocket} text="No work samples yet. Add a memo, article, or anything that shows your thinking." action={{ label: "Add a work sample", onClick: () => setShowForm(true) }} />
       ) : (
         <>
           <div className={`grid gap-4 ${active.length > 1 ? "sm:grid-cols-2" : ""}`}>
@@ -616,7 +616,7 @@ export function LearnView() {
         </div>
       )}
       {isLoading ? <Loading /> : items.length === 0 ? (
-        <Empty icon={GraduationCap} text="No support items yet. Add one reusable capability move now." />
+        <Empty icon={GraduationCap} text="No support items yet. Add one reusable capability move now." action={{ label: "Add a learning item", onClick: () => setShowForm(true) }} />
       ) : (
         <div className="space-y-6">
           {activeNow.length > 0 && (

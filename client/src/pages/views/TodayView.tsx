@@ -118,7 +118,6 @@ function RightNow({ pinned }: { pinned: Task }) {
   const { toast } = useToast();
   const [breaking, setBreaking] = useState(false);
   const [unsticking, setUnsticking] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
   // P4.6a #7 — breakdown may return ONE clarifying question before it can split
   // the task. Hold it here and re-call breakdown WITH the user's answer as context.
   const [question, setQuestion] = useState<string | null>(null);
@@ -158,7 +157,6 @@ function RightNow({ pinned }: { pinned: Task }) {
   async function checkStep() {
     if (currentIdx < 0) return;
     const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true } : s));
-    setHint(null);
     await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
     toast({ title: next.some((s) => !s.done) ? "Nice — next step's up." : "All steps done — you did it." });
   }
@@ -169,14 +167,10 @@ function RightNow({ pinned }: { pinned: Task }) {
     toast({ title: "Done — and logged as a win 🎉", description: "That's momentum. Pick your next thing when ready." });
   }
   async function unstick() {
-    if (!current) return;
     setUnsticking(true);
     try {
-      const payload: Record<string, string> = { step: current.text };
-      if (workflowCtx?.currentStage) payload.currentStage = workflowCtx.currentStage;
-      if (workflowCtx?.stageOutput) payload.stageOutput = workflowCtx.stageOutput;
-      const res = await mutateAndInvalidate("POST", "/api/unstick", payload, []);
-      setHint(res.hint || null);
+      const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/unstick-to-step`, {}, ["/api/tasks"]);
+      toast({ title: "Added a tiny first step.", description: res.step || "Just do that one thing." });
     }
     catch { toast({ title: "Couldn't think of one", description: "Try again in a moment." }); }
     finally { setUnsticking(false); }
@@ -304,15 +298,11 @@ function RightNow({ pinned }: { pinned: Task }) {
               )}
             </div>
           </div>
-          {hint ? (
-            <p className="mt-2 text-sm rounded-lg bg-accent text-accent-foreground px-3 py-2" data-testid="text-unstick-hint">{hint}</p>
-          ) : (
-            <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
+          <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
               className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary disabled:opacity-60">
               {unsticking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-              {unsticking ? "Thinking…" : "Stuck? Get a nudge"}
+              {unsticking ? "Adding step…" : "Stuck? Get a tiny first step"}
             </button>
-          )}
         </div>
       )}
       {allStepsDone && (
@@ -510,6 +500,12 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                         </div>
                       )}
                       {it.doneWhen && <p className="text-xs text-muted-foreground/80 mt-0.5 inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {it.doneWhen}</p>}
+                      {linkedTask?.sourceUrl && (
+                        <a href={linkedTask.sourceUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                          className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                          <ExternalLink className="w-3 h-3" /> View source
+                        </a>
+                      )}
                     </div>
                     <span className="shrink-0 self-center text-muted-foreground group-hover:text-primary inline-flex items-center gap-1 text-xs font-medium">Start <ChevronRight className="w-4 h-4" /></span>
                   </button>

@@ -14,7 +14,7 @@ import { GroupLabel } from "@/components/home/GroupLabel";
 import { Loading } from "@/components/home/Loading";
 import type { Tab } from "@/lib/homeTypes";
 import type { CareerGoalT, GoalsStateResponseT } from "@/lib/goalSpine";
-import { WIN_CATEGORY_LABEL as WIN_CAT_LABEL } from "@/lib/homeTypes";
+import { WIN_CATEGORY_LABEL } from "@/lib/homeTypes";
 
 type TrackDiagnostic = {
   id: number; slug: string; name: string; status: string; priority: number; whyItFits: string;
@@ -62,7 +62,7 @@ function EvidenceChips({ ev }: { ev: NonNullable<TrackDiagnostic["evidence"]> })
       </span>
       {ev.topCategory && (
         <span className="inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid="evidence-top-category">
-          {WIN_CAT_LABEL[ev.topCategory as keyof typeof WIN_CAT_LABEL] || ev.topCategory}
+          {WIN_CATEGORY_LABEL[ev.topCategory as keyof typeof WIN_CATEGORY_LABEL] || ev.topCategory}
         </span>
       )}
       <span className={`inline-flex shrink-0 text-[10px] rounded-full px-1.5 py-0.5 ${pvp.cls}`} data-testid="evidence-pvp">{pvp.label}</span>

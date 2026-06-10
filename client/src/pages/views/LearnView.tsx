@@ -321,8 +321,6 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
   const learnStatus = getLearnStatus(l);
 
   const [busy, setBusy] = useState(false);
-  const [editingOutput, setEditingOutput] = useState(false);
-  const [outputDraft, setOutputDraft] = useState(l.requiredOutput || "");
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(l.outputTitle || "");
   const [evidencing, setEvidencing] = useState(false);
@@ -331,11 +329,6 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
   const prereqIds = parseIdList(l.prerequisites);
   const unlockIds = parseIdList(l.unlocks);
 
-  async function saveOutput() {
-    const v = outputDraft.trim();
-    await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { requiredOutput: v }, ["/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
-    setEditingOutput(false);
-  }
   async function saveOutputTitle() {
     const v = titleDraft.trim();
     await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { outputTitle: v }, ["/api/learn"]);

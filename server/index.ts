@@ -19,6 +19,7 @@ import { registerProfileRoutes } from "./profileRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { serveStatic } from "./static";
 import { initStorage } from "./storage";
+import { seedInitialData } from "./seed";
 import { createServer } from "node:http";
 
 const app = express();
@@ -41,6 +42,7 @@ app.use(
 app.use(express.urlencoded({ extended: false }));
 initStorage();
 warnIfUsingDefaultDbPath();
+seedInitialData().catch((e) => console.error("Seed failed:", e));
 registerOptionalBasicAuth(app);
 startOptionalSqliteBackups();
 

@@ -15,7 +15,7 @@ import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
 import { CareerCompassCard } from "@/components/home/CareerCompassCard";
 import { GroupLabel } from "@/components/home/GroupLabel";
-import { OnboardingView } from "@/pages/views/OnboardingView";
+import OnboardingView from "@/pages/views/OnboardingView";
 import type { Task, Event } from "@shared/schema";
 import type { Tab } from "@/lib/homeTypes";
 import {
@@ -23,7 +23,7 @@ import {
   SLOT_LABEL, getBroadPursuitCoverage, isPreShrunkPlanItem, isBroadPursuitGoalItem,
   broadPursuitPlanTitle,
 } from "@/lib/goalSpine";
-import { WIN_CATEGORY_LABEL, type WinCategory } from "@shared/domainState";
+import { WIN_CATEGORY_LABEL, type WinCategory } from "@/lib/homeTypes";
 
 type WorkflowStateCtx = { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string };
 type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx };

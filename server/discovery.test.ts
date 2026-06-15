@@ -52,6 +52,24 @@ test("discovery commit creates tracks and execution-ready tasks from a career ro
   assert.ok(log.some((entry) => entry.eventType === "discovery_committed" && entry.sourceId === started.json.discoveryId));
 });
 
+test("discovery commit uses the selected route rather than the originally recommended one", async () => {
+  const started = await api(h.base, "POST", "/api/discovery/start", {
+    concern: "I need to get a job soon but networking is probably the bottleneck",
+  });
+  assert.equal(started.status, 200);
+  assert.notEqual(started.json.recommendedRoute.key, "capability-ramp");
+  assert.ok(started.json.routePreviews?.["capability-ramp"]);
+
+  const committed = await api(h.base, "POST", `/api/discovery/${started.json.discoveryId}/commit`, {
+    routeKey: "capability-ramp",
+  });
+
+  assert.equal(committed.status, 200);
+  assert.equal(committed.json.routeCommitted, "capability-ramp");
+  assert.match(String(committed.json.todayAction.title || ""), /capability signal/i);
+  assert.match(String(committed.json.todayAction.sourceStatus || ""), /capability-ramp/);
+});
+
 test("discovery start supports a non-career concern without creating fake career routes", async () => {
   const r = await api(h.base, "POST", "/api/discovery/start", {
     concern: "My health feels chaotic and stuck",
@@ -62,4 +80,19 @@ test("discovery start supports a non-career concern without creating fake career
   assert.equal(r.json.recommendedRoute.key, "reduce-friction");
   assert.ok(r.json.routes.every((route: any) => route.key !== "broad-role-pursuit"));
   assert.match(r.json.tinyNextAction.title, /friction|health/i);
+});
+
+test("discovery start keeps explicitly named career lanes visible on a blank system", async () => {
+  const r = await api(h.base, "POST", "/api/discovery/start", {
+    concern: "I need a credible role soon, but I am split between AI strategy, geopolitics, and chief of staff paths.",
+  });
+
+  assert.equal(r.status, 200);
+  const trackNames = (r.json.trackDrafts || []).map((track: any) => String(track.name).toLowerCase());
+  assert.ok(trackNames.some((name: string) => name.includes("ai strategy")));
+  assert.ok(trackNames.some((name: string) => name.includes("geopolitics")));
+  assert.ok(trackNames.some((name: string) => name.includes("chief of staff")));
+  assert.ok(trackNames.every((name: string) => !name.includes("general strategy and advisory")));
+  assert.match(String(r.json.tinyNextAction.firstStep || ""), /job sources|ai strategy|geopolitical|chief of staff/i);
+  assert.ok((r.json.knowns || []).some((line: string) => line.includes("You explicitly named these lanes")));
 });

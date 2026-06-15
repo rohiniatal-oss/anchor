@@ -39,7 +39,12 @@ const INITIAL_TRACKS = [
   },
 ];
 
+export function shouldSeedInitialData(env: NodeJS.ProcessEnv = process.env) {
+  return env.ANCHOR_ENABLE_EXAMPLE_TRACKS === "1";
+}
+
 export async function seedInitialData() {
+  if (!shouldSeedInitialData()) return;
   const existing = await storage.getCareerTracks();
   if (existing.length > 0) return;
   for (const track of INITIAL_TRACKS) {

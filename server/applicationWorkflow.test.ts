@@ -6,10 +6,20 @@ function jobBundle(source: any) {
   return { sourceContext: "", playbook: "", sourceKind: "job" as const, source, parentContext: "" };
 }
 
-test("ready-to-submit job reaches the Submit stage", () => {
+test("already-submitted job moves to Follow up stage", () => {
   const ws = parentWorkflowFor(
-    { title: "Send the application", sourceId: 1 },
+    { title: "Follow up on the application", sourceId: 1 },
     jobBundle({ id: 1, status: "wishlist", applicationReadiness: "submitted" }),
+  );
+  assert.ok(ws);
+  assert.equal(ws!.currentStage, "Follow up");
+  assert.equal(ws!.stageOutput, "Follow-up action is sent or logged");
+});
+
+test("referral-secured job moves to Submit stage", () => {
+  const ws = parentWorkflowFor(
+    { title: "Submit the application", sourceId: 3 },
+    jobBundle({ id: 3, status: "wishlist", applicationReadiness: "referral" }),
   );
   assert.ok(ws);
   assert.equal(ws!.currentStage, "Submit");

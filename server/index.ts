@@ -15,9 +15,11 @@ import { registerMarketabilityRoutes } from "./marketabilityRoutes";
 import { registerTrackSpineRoutes } from "./trackSpineRoutes";
 import { registerBrainSpineRoutes } from "./brainSpineRoutes";
 import { registerTaskBreakdownRoutes } from "./taskBreakdownRoutes";
+import { registerProfileRoutes } from "./profileRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { serveStatic } from "./static";
 import { initStorage } from "./storage";
+import { seedInitialData } from "./seed";
 import { createServer } from "node:http";
 
 const app = express();
@@ -40,6 +42,7 @@ app.use(
 app.use(express.urlencoded({ extended: false }));
 initStorage();
 warnIfUsingDefaultDbPath();
+seedInitialData().catch((e) => console.error("Seed failed:", e));
 registerOptionalBasicAuth(app);
 startOptionalSqliteBackups();
 
@@ -97,6 +100,7 @@ app.use((req, res, next) => {
   registerMarketabilityRoutes(app);
   registerBrainSpineRoutes(app);
   registerTaskBreakdownRoutes(app);
+  registerProfileRoutes(app);
   registerAnchorTodayRoutes(app);
   await registerRoutes(httpServer, app);
 

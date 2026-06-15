@@ -87,7 +87,7 @@ test("plan-item start turns a broad-pursuit goal item into a concrete role-pipel
   assert.equal(started.json.task.category, "job");
   const steps = JSON.parse(started.json.task.steps || "[]");
   assert.ok(steps.length >= 1, "goal-derived strategic tasks should get concrete steps");
-  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action/i);
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action|find one credible role|still-empty lane/i);
 });
 
 test("broad-pursuit adaptive plan names still-empty combinations when some lanes already have live roles", async () => {

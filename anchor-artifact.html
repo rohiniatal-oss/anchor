@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Anchor — Career Execution</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        primary: { DEFAULT: '#2563eb', foreground: '#ffffff' },
+        card: { DEFAULT: '#ffffff', border: '#e2e8f0' },
+        muted: { DEFAULT: '#f1f5f9', foreground: '#64748b' },
+        accent: { DEFAULT: '#eff6ff', foreground: '#1e40af' },
+        destructive: { DEFAULT: '#ef4444' },
+        border: '#e2e8f0',
+        input: '#e2e8f0',
+        foreground: '#0f172a',
+        background: '#ffffff',
+      },
+    }
+  }
+};
+</script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; }
+  .hover-elevate:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(37,99,235,0.12); }
+  .line-clamp-1 { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ─── SVG Icon Components ─────────────────────────────────────────────────────
+const Icon = ({ d, size = 16, fill = "none", stroke = "currentColor", strokeWidth = 2, viewBox = "0 0 24 24", className = "" }) => (
+  <svg width={size} height={size} viewBox={viewBox} fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    {typeof d === 'string' ? <path d={d} /> : d}
+  </svg>
+);
+const Plus = ({ className = "w-4 h-4" }) => <Icon className={className} d="M12 5v14M5 12h14" />;
+const Check = ({ className = "w-4 h-4" }) => <Icon className={className} d="M20 6 9 17l-5-5" />;
+const X = ({ className = "w-4 h-4" }) => <Icon className={className} d="M18 6 6 18M6 6l12 12" />;
+const ChevronRight = ({ className = "w-4 h-4" }) => <Icon className={className} d="m9 18 6-6-6-6" />;
+const ChevronDown = ({ className = "w-4 h-4" }) => <Icon className={className} d="m6 9 6 6 6-6" />;
+const Trash2 = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></>} />;
+const Pin = ({ className = "w-4 h-4", fill = "none" }) => <Icon className={className} fill={fill} d="M12 2a5 5 0 0 1 5 5c0 4-5 10-5 10S7 11 7 7a5 5 0 0 1 5-5z M12 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4" />;
+const Target = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></>} />;
+const Users = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></>} />;
+const BookOpen = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></>} />;
+const Trophy = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></>} />;
+const Compass = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></>} />;
+const Brain = ({ className = "w-4 h-4" }) => <Icon className={className} d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />;
+const Wand2 = ({ className = "w-4 h-4" }) => <Icon className={className} d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72z M14 7l3 3 M5 6v4 M19 14v4 M10 2v2 M7 8H3 M21 16h-4 M11 3H9" />;
+const MoveRight = ({ className = "w-4 h-4" }) => <Icon className={className} d="M18 8L22 12L18 16 M2 12H22" />;
+const MoonStar = ({ className = "w-4 h-4" }) => <Icon className={className} d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z M20 3v4 M22 5h-4" />;
+const ExternalLink = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>} />;
+const CalendarDays = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>} />;
+const AlertTriangle = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>} />;
+const Flame = ({ className = "w-4 h-4" }) => <Icon className={className} d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />;
+const GraduationCap = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></>} />;
+const Sun = ({ className = "w-4 h-4" }) => <Icon className={className} d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />;
+const Rocket = ({ className = "w-4 h-4" }) => <Icon className={className} d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0 M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />;
+const Star = ({ className = "w-4 h-4", fill = "none" }) => <Icon className={className} fill={fill} d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />;
+const ArrowUpRight = ({ className = "w-4 h-4" }) => <Icon className={className} d="M7 17L17 7 M7 7h10v10" />;
+const Lightbulb = ({ className = "w-4 h-4" }) => <Icon className={className} d="M9 21h6M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-2.26A7 7 0 0 1 5 9a7 7 0 0 1 7-7z" />;
+const Send = ({ className = "w-4 h-4" }) => <Icon className={className} d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" />;
+const Sparkles = ({ className = "w-4 h-4" }) => <Icon className={className} d="M12 3l1.912 5.813L20 10l-6.088 1.187L12 17l-1.912-5.813L4 10l6.088-1.187z" />;
+const MoreHorizontal = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></>} />;
+const Briefcase = ({ className = "w-4 h-4" }) => <Icon className={className} d={<><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></>} />;
+
+// ─── Storage helpers ──────────────────────────────────────────────────────────
+function loadLS(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } }
+function saveLS(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
+
+function nextId(items) { return items.length === 0 ? 1 : Math.max(...items.map(x => x.id)) + 1; }
+
+const TRACKS_KEY = 'anchor_tracks';
+const TASKS_KEY = 'anchor_tasks';
+const JOBS_KEY = 'anchor_jobs';
+const CONTACTS_KEY = 'anchor_contacts';
+const LEARN_KEY = 'anchor_learn';
+const WINS_KEY = 'anchor_wins';
+
+const SEED_TRACKS = [
+  { id: 1, slug: 'ai-gov-ops', name: 'AI governance strategy and implementation', status: 'active', priority: 80, whyItFits: 'Combines public-sector strategy, geopolitical judgement, implementation, and frontier-tech interest.' },
+  { id: 2, slug: 'geo-advisory', name: 'Geopolitical and strategic advisory', status: 'active', priority: 70, whyItFits: 'Strong fit with TBI, Bain-style strategy, government advisory, and cross-border investment work.' },
+  { id: 3, slug: 'strategy-cos', name: 'Chief of staff or founder office in mission-driven tech', status: 'active', priority: 60, whyItFits: 'Uses structured problem-solving, executive leverage, stakeholder management, and operating cadence.' },
+  { id: 4, slug: 'global-dev', name: 'Global development and philanthropy strategy', status: 'watch', priority: 40, whyItFits: 'Connects government advisory, development themes, capital allocation, and strategy background.' },
+];
+
+function initData() {
+  if (!loadLS(TRACKS_KEY)) saveLS(TRACKS_KEY, SEED_TRACKS);
+  if (!loadLS(TASKS_KEY)) saveLS(TASKS_KEY, []);
+  if (!loadLS(JOBS_KEY)) saveLS(JOBS_KEY, []);
+  if (!loadLS(CONTACTS_KEY)) saveLS(CONTACTS_KEY, []);
+  if (!loadLS(LEARN_KEY)) saveLS(LEARN_KEY, []);
+  if (!loadLS(WINS_KEY)) saveLS(WINS_KEY, []);
+}
+initData();
+
+// ─── Data hooks ───────────────────────────────────────────────────────────────
+function useData(key) {
+  const [data, setData] = useState(() => loadLS(key) || []);
+  const refresh = useCallback(() => setData(loadLS(key) || []), [key]);
+  const save = useCallback((items) => { saveLS(key, items); setData(items); }, [key]);
+  return [data, save, refresh];
+}
+
+// ─── Utility functions ────────────────────────────────────────────────────────
+function daysUntil(d) {
+  if (!d) return null;
+  const due = new Date(d + 'T00:00:00');
+  if (isNaN(due.getTime())) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  return Math.round((due.getTime() - now.getTime()) / 86400000);
+}
+function formatDeadline(d) {
+  const diff = daysUntil(d);
+  if (diff === null) return d || '';
+  if (diff < 0) return `${Math.abs(diff)}d overdue`;
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  const due = new Date(d + 'T00:00:00');
+  if (diff < 7) return due.toLocaleDateString(undefined, { weekday: 'short' });
+  return due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function deadlineTone(d) {
+  const diff = daysUntil(d);
+  if (diff === null) return 'bg-muted text-muted-foreground';
+  if (diff <= 2) return 'bg-red-100 text-red-700';
+  if (diff <= 7) return 'bg-blue-100 text-blue-700';
+  return 'bg-muted text-muted-foreground';
+}
+function parseStepsJSON(raw) {
+  try { const s = JSON.parse(raw || '[]'); return Array.isArray(s) ? s : []; } catch { return []; }
+}
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// ─── Deterministic planning helpers (ported from planningFeedback.ts) ─────────
+function deterministicUnstickStep(task) {
+  if (task.readiness === 'blocked' || task.blockerReason) {
+    return `Write down the missing input: ${task.blockerReason || 'what is blocking this'}`;
+  }
+  if (task.sourceUrl) return 'Open the saved link and list what is needed';
+  if (task.size === 'deep') return 'Open a blank note and write the first ugly sentence';
+  if (/email|message|reach|follow/i.test(task.title)) return 'Draft the first line only';
+  return 'Set a two-minute timer and do the smallest visible start';
+}
+
+function buildDayPlan(tasks) {
+  const today = tasks.filter(t => t.list === 'today' && !t.done);
+  const blocked = today.filter(t => t.readiness === 'blocked' || t.blockerReason).slice(0, 2);
+  const skipped2 = today.filter(t => (t.skipped || 0) >= 2 && !blocked.includes(t));
+  const rest = today.filter(t => !blocked.includes(t) && !skipped2.includes(t));
+
+  const plan = [];
+  for (const t of blocked) {
+    plan.push({ taskId: t.id, title: `Unblock: ${t.title}`, why: `Blocked — remove the blocker first: ${t.blockerReason || 'unknown'}`, slot: 'now' });
+  }
+  for (const t of skipped2) {
+    plan.push({ taskId: t.id, title: `Shrink or decide: ${t.title}`, why: `This has slipped ${t.skipped} times. Shrink it, park it, or do a 5-min start.`, slot: plan.length === 0 ? 'now' : 'next' });
+  }
+  for (const t of rest) {
+    const slot = plan.length === 0 ? 'now' : plan.length === 1 ? 'next' : plan.length === 2 ? 'later' : 'bonus';
+    plan.push({ taskId: t.id, title: t.title, why: t.size === 'deep' ? 'Deep work — start with the first tiny step.' : `On your list for today.`, slot });
+  }
+  return plan.slice(0, 4);
+}
+
+// ─── Brain dump sort heuristics ───────────────────────────────────────────────
+function heuristicSort(title) {
+  const t = title.toLowerCase();
+  if (/apply|interview|job|cv|cover letter|application|role|company|linkedin/.test(t)) return { route: 'job', label: 'File under Jobs', reason: 'Looks like a job-search task.' };
+  if (/learn|read|course|study|book|article|research|understand|ai|policy|governance/.test(t)) return { route: 'learn', label: 'File under Learn', reason: 'Looks like a learning item.' };
+  if (/reach out|contact|email|message|call|network|meet|talk to|introduce/.test(t)) return { route: 'network', label: 'File under Network', reason: 'Looks like a networking action.' };
+  if (/today|urgent|deadline|asap|now|finish|complete/.test(t)) return { route: 'today', label: 'Do today', reason: 'Seems time-sensitive.' };
+  return { route: 'keep', label: 'Keep here', reason: 'Not sure — you decide.' };
+}
+
+// ─── WIN categories ───────────────────────────────────────────────────────────
+const WIN_CATEGORIES = ['job_progress', 'network', 'learning', 'proof_asset', 'admin', 'mindset'];
+const WIN_CATEGORY_LABEL = { job_progress: 'Job progress', network: 'Network', learning: 'Learning', proof_asset: 'Proof asset', admin: 'Admin', mindset: 'Mindset' };
+const WIN_CATEGORY_SWATCH = { job_progress: 'bg-blue-100 text-blue-700', network: 'bg-emerald-100 text-emerald-700', learning: 'bg-violet-100 text-violet-700', proof_asset: 'bg-amber-100 text-amber-700', admin: 'bg-slate-100 text-slate-700', mindset: 'bg-pink-100 text-pink-700' };
+
+// ─── JOB columns ─────────────────────────────────────────────────────────────
+const JOB_COLS = [
+  { id: 'wishlist', label: 'Want to apply' },
+  { id: 'applied', label: 'Applied' },
+  { id: 'interviewing', label: 'Interviewing' },
+  { id: 'closed', label: 'Closed' },
+];
+
+// ─── CONTACT statuses ─────────────────────────────────────────────────────────
+const OUTREACH_COLS = [
+  { id: 'to_contact', label: 'To reach' },
+  { id: 'messaged', label: 'Messaged' },
+  { id: 'replied', label: 'Replied' },
+];
+const ASK_LABEL = { soft: 'soft intro', referral: 'referral', advice: 'advice', reconnect: 'reconnect', follow_up: 'follow-up' };
+
+// ─── LEARN status ─────────────────────────────────────────────────────────────
+const LEARN_STATUS_LABEL = { open: 'On the list', watch: 'Watching', active: 'Active now', enrolled: 'Enrolled', done: 'Done' };
+
+// ─── Shared UI primitives ─────────────────────────────────────────────────────
+function SectionHeading({ title, sub }) {
+  return (
+    <div className="mb-4">
+      <h1 className="text-xl font-bold tracking-tight">{title}</h1>
+      {sub && <p className="text-sm text-muted-foreground mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function GroupLabel({ children, count }) {
+  return (
+    <div className="flex items-center gap-2 mb-2.5">
+      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground inline-flex items-center gap-1.5">{children}</span>
+      {count != null && <span className="text-xs text-muted-foreground tabular-nums">({count})</span>}
+    </div>
+  );
+}
+
+function Btn({ onClick, children, variant = 'default', size = 'md', className = '', disabled = false, type = 'button' }) {
+  const base = 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed';
+  const variants = {
+    default: 'bg-blue-600 text-white hover:bg-blue-700',
+    outline: 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+    ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+    destructive: 'bg-red-600 text-white hover:bg-red-700',
+  };
+  const sizes = { sm: 'px-3 py-1.5 text-xs gap-1', md: 'px-4 py-2 text-sm gap-1.5', lg: 'px-5 py-2.5 text-base gap-2' };
+  return (
+    <button type={type} onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${sizes[size]} ${className}`}>
+      {children}
+    </button>
+  );
+}
+
+function Input({ value, onChange, onKeyDown, placeholder, className = '', autoFocus = false, type = 'text' }) {
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      placeholder={placeholder}
+      autoFocus={autoFocus}
+      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 ${className}`}
+    />
+  );
+}
+
+function Textarea({ value, onChange, placeholder, className = '', rows = 3 }) {
+  return (
+    <textarea
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      rows={rows}
+      className={`w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 resize-y ${className}`}
+    />
+  );
+}
+
+// ─── TODAY VIEW ───────────────────────────────────────────────────────────────
+function RightNow({ task, onUpdate, onRemovePin }) {
+  const steps = parseStepsJSON(task.steps);
+  const currentIdx = steps.findIndex(s => !s.done);
+  const current = currentIdx >= 0 ? steps[currentIdx] : null;
+  const allDone = steps.length > 0 && currentIdx === -1;
+  const avoided = (task.skipped || 0) >= 2;
+
+  function checkStep() {
+    if (currentIdx < 0) return;
+    const next = steps.map((s, i) => i === currentIdx ? { ...s, done: true } : s);
+    onUpdate({ steps: JSON.stringify(next) });
+  }
+
+  function unstick() {
+    const stepText = deterministicUnstickStep(task);
+    const existing = parseStepsJSON(task.steps);
+    const deduped = existing.filter(s => s.text.toLowerCase() !== stepText.toLowerCase());
+    const updated = JSON.stringify([{ text: stepText, done: false }, ...deduped]);
+    onUpdate({ steps: updated });
+  }
+
+  function finishTask() {
+    onUpdate({ done: true, status: 'done', pinned: false, list: 'today' });
+    // auto-log win
+    const wins = loadLS(WINS_KEY) || [];
+    wins.unshift({ id: nextId(wins), text: task.title, winCategory: 'admin', createdAt: Date.now() });
+    saveLS(WINS_KEY, wins);
+  }
+
+  function park() { onUpdate({ pinned: false, list: 'inbox', skipped: (task.skipped || 0) + 1 }); }
+  function skip() { onUpdate({ pinned: false, skipped: (task.skipped || 0) + 1 }); }
+  function markBlocked() { onUpdate({ pinned: false, readiness: 'blocked', blockerReason: 'Marked blocked from Today' }); }
+  function moveLater() { onUpdate({ pinned: false }); }
+
+  return (
+    <div className="mb-6 rounded-2xl border border-blue-200 bg-blue-50/50 p-5">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-600 mb-2">
+        <Pin className="w-4 h-4" fill="currentColor" /> Right now
+      </div>
+      <p className="font-semibold text-lg leading-snug mb-1">{task.title}</p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+        {task.deadline && <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${deadlineTone(task.deadline)}`}>{formatDeadline(task.deadline)}</span>}
+        {task.doneWhen && <span className="text-xs text-slate-500 inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {task.doneWhen}</span>}
+        {task.sourceUrl && <a href={task.sourceUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Open link</a>}
+      </div>
+      {avoided && (
+        <p className="text-xs rounded-lg bg-slate-100 text-slate-600 px-3 py-2 mb-2">
+          This one's been slipping a few days — totally normal. Want it smaller, or park it kindly?
+        </p>
+      )}
+
+      {steps.length === 0 && (
+        <div className="mt-2 space-y-2">
+          <p className="text-sm text-slate-500">No steps yet — mark done when ready, or add a tiny first step.</p>
+          <div className="flex gap-2">
+            <Btn size="sm" variant="outline" onClick={unstick}><Wand2 className="w-3.5 h-3.5" /> Get a tiny first step</Btn>
+            <Btn size="sm" variant="outline" onClick={finishTask}><Check className="w-3.5 h-3.5" /> Just mark it done</Btn>
+          </div>
+        </div>
+      )}
+
+      {current && (
+        <div className="mt-3">
+          {steps.length > 1 && (
+            <div className="flex items-center gap-1.5 mb-2.5">
+              {steps.map((s, idx) => (
+                <span key={idx} className={`h-1.5 rounded-full transition-all ${s.done ? 'flex-1 bg-blue-600' : idx === currentIdx ? 'flex-1 bg-blue-300' : 'w-3 bg-slate-200'}`} />
+              ))}
+              <span className="ml-1 text-xs text-slate-500 tabular-nums shrink-0">{steps.filter(s => s.done).length}/{steps.length}</span>
+            </div>
+          )}
+          <div className="flex items-start gap-3 rounded-xl bg-white border-2 border-blue-200 p-3.5 cursor-pointer hover:border-blue-400 transition-colors" onClick={checkStep}>
+            <button onClick={e => { e.stopPropagation(); checkStep(); }} className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-blue-500 grid place-items-center hover:bg-blue-500 hover:text-white transition-colors">
+              <Check className="w-3 h-3 opacity-0 group-hover:opacity-100" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <span className="font-medium leading-snug">{current.text}</span>
+              {steps.length > 1 && <p className="text-xs text-slate-500 mt-1">Tap to mark done — next step will appear</p>}
+            </div>
+          </div>
+          <button onClick={unstick} className="mt-2 inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600">
+            <Wand2 className="w-3.5 h-3.5" /> Stuck? Get a tiny first step
+          </button>
+        </div>
+      )}
+
+      {allDone && (
+        <div className="mt-3 rounded-xl bg-blue-50 border border-blue-200 p-3.5 flex items-center gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-blue-600">All steps done</p>
+            <p className="text-xs text-slate-500 mt-0.5">Finish it off and log the win.</p>
+          </div>
+          <Btn size="sm" onClick={finishTask}><Check className="w-4 h-4" /> Done</Btn>
+        </div>
+      )}
+
+      <div className="mt-4 pt-3 border-t border-blue-100 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="text-xs text-slate-500">Not feeling it?</span>
+        <button onClick={unstick} className="text-xs text-slate-500 hover:text-blue-600 inline-flex items-center gap-1"><Wand2 className="w-3.5 h-3.5" /> Make it smaller</button>
+        <button onClick={moveLater} className="text-xs text-slate-500 hover:text-blue-600 inline-flex items-center gap-1"><MoveRight className="w-3.5 h-3.5" /> Move to later</button>
+        <button onClick={park} className="text-xs text-slate-500 hover:text-blue-600 inline-flex items-center gap-1"><MoonStar className="w-3.5 h-3.5" /> Park for another day</button>
+        <button onClick={markBlocked} className="text-xs text-slate-500 hover:text-blue-600 inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> I'm blocked</button>
+      </div>
+    </div>
+  );
+}
+
+function TodayView({ onOpenTab }) {
+  const [tasks, setTasks] = useData(TASKS_KEY);
+  const [quickText, setQuickText] = useState('');
+  const [showToast, setShowToast] = useState('');
+
+  const toast = (msg) => { setShowToast(msg); setTimeout(() => setShowToast(''), 2500); };
+
+  const today = tasks.filter(t => t.list === 'today' && !t.done);
+  const doneToday = tasks.filter(t => t.list === 'today' && t.done);
+  const pinned = today.find(t => t.pinned);
+  const plan = buildDayPlan(tasks);
+
+  function updateTask(id, patch) {
+    const updated = tasks.map(t => t.id === id ? { ...t, ...patch } : t);
+    setTasks(updated);
+  }
+
+  function quickCapture() {
+    const text = quickText.trim();
+    if (!text) return;
+    setQuickText('');
+    const newTask = { id: nextId(tasks), title: text, list: 'inbox', done: false, pinned: false, steps: '[]', skipped: 0, createdAt: Date.now() };
+    setTasks([...tasks, newTask]);
+    toast('Captured — in your brain dump to sort later.');
+  }
+
+  function startPlanItem(item) {
+    const task = tasks.find(t => t.id === item.taskId);
+    if (task) {
+      // Add a tiny step if it's a deep task with no steps
+      let stepsPatch = {};
+      if (task.size === 'deep' && parseStepsJSON(task.steps).length === 0) {
+        const stepText = deterministicUnstickStep(task);
+        stepsPatch = { steps: JSON.stringify([{ text: stepText, done: false }]) };
+      }
+      updateTask(task.id, { pinned: true, ...stepsPatch });
+    }
+  }
+
+  function promoteToWin(task) {
+    const wins = loadLS(WINS_KEY) || [];
+    const cat = task.category === 'job' ? 'job_progress' : task.category === 'learning' ? 'learning' : 'admin';
+    wins.unshift({ id: nextId(wins), text: task.title, winCategory: cat, createdAt: Date.now() });
+    saveLS(WINS_KEY, wins);
+    toast('Logged as a win!');
+  }
+
+  const greeting = (() => { const h = new Date().getHours(); return h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening'; })();
+
+  return (
+    <div>
+      {showToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg">{showToast}</div>
+      )}
+      <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
+      <p className="text-sm text-slate-500 mt-1 mb-4">Here's your day. Start at the top — you don't have to decide.</p>
+
+      <div className="mb-5 flex gap-2">
+        <Input value={quickText} onChange={e => setQuickText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') quickCapture(); }} placeholder="Add anything on your mind…" />
+        <Btn variant="outline" onClick={quickCapture}><Plus className="w-4 h-4" /> Capture</Btn>
+      </div>
+
+      {pinned ? (
+        <RightNow task={pinned} onUpdate={(patch) => updateTask(pinned.id, patch)} onRemovePin={() => updateTask(pinned.id, { pinned: false })} />
+      ) : (
+        <div className="mb-6">
+          {plan.length > 0 ? (
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-5">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-600 mb-3">
+                <Target className="w-4 h-4" /> Today, in order
+              </div>
+              <div className="space-y-2">
+                {plan.map((item, i) => {
+                  const task = tasks.find(t => t.id === item.taskId);
+                  const slotColors = ['bg-blue-600 text-white', 'bg-blue-100 text-blue-700', 'bg-slate-100 text-slate-600', 'bg-slate-50 text-slate-500'];
+                  const slotLabels = { now: 'Now', next: 'Next', later: 'Later', bonus: 'Bonus' };
+                  return (
+                    <button key={item.taskId} onClick={() => startPlanItem(item)}
+                      className="group w-full text-left flex items-start gap-3 rounded-xl bg-white border border-slate-200 p-3.5 hover:border-blue-300 hover:shadow-sm transition-all">
+                      <span className={`shrink-0 mt-0.5 rounded-md text-xs font-semibold px-2 py-1 ${slotColors[i] || slotColors[3]}`}>{slotLabels[item.slot] || item.slot}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium leading-snug">{item.title}</p>
+                        {item.why && <p className="text-xs text-slate-500 mt-0.5 leading-snug">{item.why}</p>}
+                        {task?.deadline && <span className={`mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs ${deadlineTone(task.deadline)}`}><CalendarDays className="w-3 h-3" />{formatDeadline(task.deadline)}</span>}
+                      </div>
+                      <span className="shrink-0 self-center text-slate-400 group-hover:text-blue-600 inline-flex items-center gap-1 text-xs font-medium">Start <ChevronRight className="w-4 h-4" /></span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-500 mt-3 italic">Start with "Now" — only move to the next once that's done or parked.</p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 p-6 text-center">
+              <p className="text-sm text-slate-500 mb-3">Nothing on today's list yet. Add tasks from the brain dump or capture above.</p>
+              <Btn size="sm" variant="outline" onClick={() => onOpenTab('braindump')}><Brain className="w-4 h-4" /> Brain dump</Btn>
+            </div>
+          )}
+        </div>
+      )}
+
+      {(today.filter(t => !t.pinned && !plan.find(p => p.taskId === t.id)).length > 0 || doneToday.length > 0) && (
+        <div className="mt-2">
+          {today.filter(t => !t.pinned && !plan.find(p => p.taskId === t.id)).length > 0 && (
+            <div>
+              <GroupLabel>Also on your list</GroupLabel>
+              <div className="rounded-xl border border-slate-200 bg-white p-3.5">
+                <p className="text-xs text-slate-400 mb-2">Not in today's order — pick one up only if you have room.</p>
+                <div className="space-y-1">
+                  {today.filter(t => !t.pinned && !plan.find(p => p.taskId === t.id)).map(t => (
+                    <div key={t.id} className="group flex items-start gap-2 py-0.5">
+                      <button onClick={() => updateTask(t.id, { done: true, status: 'done' })} className="mt-0.5 w-4 h-4 shrink-0 rounded border border-slate-300 grid place-items-center hover:border-blue-500" />
+                      <button onClick={() => updateTask(t.id, { pinned: true })} className="flex-1 text-left text-sm leading-snug hover:text-blue-600">
+                        {t.title}
+                        {t.deadline && <span className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs ${deadlineTone(t.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(t.deadline)}</span>}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {doneToday.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {doneToday.map(t => (
+                <div key={t.id} className="group flex items-center gap-2 py-0.5 text-sm text-slate-500">
+                  <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="flex-1 line-through truncate">{t.title}</span>
+                  <button onClick={() => promoteToWin(t)} className="opacity-0 group-hover:opacity-100 text-xs text-blue-600 font-medium hover:underline inline-flex items-center gap-1 shrink-0">
+                    <Trophy className="w-3 h-3" /> Promote to win
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── JOBS VIEW ────────────────────────────────────────────────────────────────
+function JobCard({ job, tracks, onMove, onRemove, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const idx = JOB_COLS.findIndex(c => c.id === job.status);
+  const track = tracks.find(t => t.id === job.relatedTrackId);
+
+  return (
+    <div className="group rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-medium text-sm leading-snug">{job.title}</h3>
+        <button onClick={onRemove} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+      </div>
+      {(job.company || job.location) && <p className="text-xs text-slate-500 mt-0.5">{[job.company, job.location].filter(Boolean).join(' · ')}</p>}
+      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+        {track && <span className="text-xs rounded-full border border-blue-200 bg-blue-50 text-blue-700 px-2 py-0.5">{track.name}</span>}
+        {job.deadline && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium ${deadlineTone(job.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(job.deadline)}</span>}
+      </div>
+
+      <div className="flex items-center justify-between mt-2.5 gap-2">
+        <div className="flex items-center gap-2">
+          {job.url && <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-blue-600"><ExternalLink className="w-3.5 h-3.5" /></a>}
+          {idx < JOB_COLS.length - 1 && (
+            <button onClick={() => onMove(1)} className="text-xs px-2 py-1 rounded bg-blue-600 text-white font-medium hover:bg-blue-700">
+              → {JOB_COLS[idx + 1].label}
+            </button>
+          )}
+        </div>
+        <button onClick={() => setOpen(o => !o)} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
+          {open ? 'Less' : 'Details'} <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-90' : ''}`} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+          {job.narrativeAngle && <p className="text-xs text-slate-700 leading-snug"><span className="font-medium text-slate-500">Your angle: </span>{job.narrativeAngle}</p>}
+          {job.note && <p className="text-xs text-slate-500 leading-snug">{job.note}</p>}
+          {job.jdText && <p className="text-xs text-slate-400 inline-flex items-center gap-1">JD saved — use it when tailoring your application.</p>}
+          <div className="flex items-center gap-1 pt-1">
+            {idx > 0 && <button onClick={() => onMove(-1)} className="text-xs px-1.5 py-0.5 rounded text-slate-500 hover:text-slate-700 hover-elevate">← back</button>}
+            {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(1)} className="text-xs px-2 py-0.5 rounded text-blue-600 font-medium hover-elevate">Move to {JOB_COLS[idx + 1].label} →</button>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JobsView() {
+  const [jobs, setJobs] = useData(JOBS_KEY);
+  const [tracks] = useData(TRACKS_KEY);
+  const [showForm, setShowForm] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [form, setForm] = useState({ title: '', company: '', url: '', location: '', deadline: '', narrativeAngle: '', note: '', jdText: '', relatedTrackId: null });
+
+  function add() {
+    if (!form.title.trim()) return;
+    setJobs([...jobs, { id: nextId(jobs), ...form, status: 'wishlist', createdAt: Date.now() }]);
+    setForm({ title: '', company: '', url: '', location: '', deadline: '', narrativeAngle: '', note: '', jdText: '', relatedTrackId: null });
+    setShowForm(false); setShowMore(false);
+  }
+
+  function move(job, dir) {
+    const idx = JOB_COLS.findIndex(c => c.id === job.status);
+    const next = JOB_COLS[idx + dir];
+    if (next) setJobs(jobs.map(j => j.id === job.id ? { ...j, status: next.id } : j));
+  }
+
+  function remove(id) { setJobs(jobs.filter(j => j.id !== id)); }
+
+  const grouped = JOB_COLS.map(col => ({ col, items: jobs.filter(j => j.status === col.id).sort((a, b) => {
+    const da = daysUntil(a.deadline), db = daysUntil(b.deadline);
+    if (da !== null && db !== null) return da - db;
+    if (da !== null) return -1; if (db !== null) return 1;
+    return b.id - a.id;
+  }) }));
+  const active = grouped.filter(g => g.items.length > 0 || g.col.id === 'wishlist');
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <SectionHeading title="Jobs" sub="Roles and applications, soonest deadlines first." />
+        <Btn onClick={() => setShowForm(s => !s)}><Plus className="w-4 h-4" /> Add role</Btn>
+      </div>
+
+      {showForm && (
+        <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input placeholder="Role title *" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} autoFocus />
+            <Input placeholder="Company / org" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} />
+            <Input placeholder="Link to posting" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" />
+          </div>
+          {tracks.length > 0 && (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400 mb-1.5">Link to a career track (optional)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {tracks.map(t => (
+                  <button key={t.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === t.id ? null : t.id })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relatedTrackId === t.id ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:text-slate-700'}`}>
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button type="button" onClick={() => setShowMore(v => !v)} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? 'rotate-180' : ''}`} />
+            {showMore ? 'Fewer options' : 'More options (deadline, narrative, JD)'}
+          </button>
+          {showMore && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input placeholder="Deadline (YYYY-MM-DD)" value={form.deadline} onChange={e => setForm({ ...form, deadline: e.target.value })} />
+              <Input placeholder="Location" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
+              <Input placeholder="Why you fit this role (narrative angle)" value={form.narrativeAngle} onChange={e => setForm({ ...form, narrativeAngle: e.target.value })} className="sm:col-span-2" />
+              <Input placeholder="Note" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" />
+              <div className="sm:col-span-2">
+                <p className="text-xs uppercase tracking-wide text-slate-400 mb-1">Job description</p>
+                <Textarea placeholder="Paste the job posting here — used to shape your application and CV tailoring." value={form.jdText} onChange={e => setForm({ ...form, jdText: e.target.value })} rows={4} />
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Btn variant="ghost" onClick={() => { setShowForm(false); setShowMore(false); }}>Cancel</Btn>
+            <Btn onClick={add}>Save role</Btn>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {active.map(({ col, items }) => (
+          <div key={col.id}>
+            <div className="flex items-center gap-2 mb-2.5">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{col.label}</span>
+              {items.length > 0 && <span className="text-xs text-slate-400 tabular-nums">({items.length})</span>}
+            </div>
+            <div className="space-y-2">
+              {items.map(j => (
+                <JobCard key={j.id} job={j} tracks={tracks}
+                  onMove={dir => move(j, dir)}
+                  onRemove={() => remove(j.id)}
+                  onUpdate={patch => setJobs(jobs.map(x => x.id === j.id ? { ...x, ...patch } : x))} />
+              ))}
+              {items.length === 0 && col.id === 'wishlist' && (
+                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center">
+                  <p className="text-sm text-slate-500">No roles yet — add one above.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── NETWORK VIEW ─────────────────────────────────────────────────────────────
+function ContactCard({ contact, tracks, onPatch, onRemove }) {
+  const [draftOpen, setDraftOpen] = useState(false);
+  const [draft, setDraft] = useState(contact.messageDraft || '');
+  const idx = OUTREACH_COLS.findIndex(s => s.id === contact.status);
+  const track = tracks.find(t => t.id === contact.relatedTrackId);
+  const overdue = (() => {
+    if (!contact.nextFollowUpDate) return false;
+    const d = new Date(contact.nextFollowUpDate + 'T00:00:00');
+    if (isNaN(d.getTime())) return false;
+    const now = new Date(); now.setHours(0,0,0,0);
+    return Math.round((d.getTime() - now.getTime()) / 86400000) < 0;
+  })();
+
+  const replied = contact.status === 'replied';
+  const strength = contact.relationshipStrength || 'cold';
+  const tone = replied ? 'border-emerald-200 bg-emerald-50/60' : overdue ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 bg-white';
+  const strengthColors = { strong: 'bg-blue-100 text-blue-700', warm: 'bg-slate-200 text-slate-700', cold: 'bg-slate-100 text-slate-500' };
+
+  return (
+    <div className={`group rounded-lg border p-3 ${tone}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {contact.askType && <span className="inline-flex items-center gap-1 rounded-full bg-slate-700 text-slate-100 px-1.5 py-0.5 text-xs font-medium"><Send className="w-2.5 h-2.5" /> {ASK_LABEL[contact.askType] || contact.askType}</span>}
+            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium ${strengthColors[strength]}`}>{strength}</span>
+            {overdue && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-1.5 py-0.5 text-xs font-semibold">overdue</span>}
+          </div>
+          <p className="text-sm font-medium leading-snug mt-1.5">{contact.who || 'Someone worth reaching'}</p>
+          {contact.name && <p className="text-xs text-slate-500">{contact.name}</p>}
+        </div>
+        <button onClick={onRemove} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+        {track && <span className="text-xs rounded-full border border-blue-200 bg-blue-50 text-blue-700 px-2 py-0.5">{track.name}</span>}
+        {(contact.targetOrg || contact.targetRole) && <span className="inline-flex items-center text-xs rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5">{[contact.targetRole, contact.targetOrg].filter(Boolean).join(' · ')}</span>}
+        {contact.nextFollowUpDate && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium ${overdue ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(contact.nextFollowUpDate)}</span>}
+      </div>
+
+      {contact.why && <p className="text-xs text-slate-500 mt-1.5 leading-snug">{contact.why}</p>}
+
+      {draftOpen && (
+        <div className="mt-2">
+          <Textarea value={draft} onChange={e => setDraft(e.target.value)} placeholder="Draft your outreach message…" rows={3} />
+          <div className="flex items-center gap-2 mt-1.5">
+            <Btn size="sm" onClick={() => { onPatch({ messageDraft: draft }); setDraftOpen(false); }}>Save draft</Btn>
+            <button onClick={() => { setDraft(contact.messageDraft || ''); setDraftOpen(false); }} className="text-xs text-slate-500 hover:text-slate-700">cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center gap-1 mt-2.5">
+        {idx > 0 && <button onClick={() => onPatch({ status: OUTREACH_COLS[idx - 1].id })} className="text-xs px-1.5 py-0.5 rounded text-slate-500 hover:text-slate-700 hover-elevate">←</button>}
+        {idx < OUTREACH_COLS.length - 1 && <button onClick={() => onPatch({ status: OUTREACH_COLS[idx + 1].id })} className="text-xs px-2 py-0.5 rounded text-blue-600 font-medium hover-elevate">{OUTREACH_COLS[idx + 1].label} →</button>}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5 pt-2 border-t border-slate-100">
+        <button onClick={() => setDraftOpen(o => !o)} className="text-xs text-slate-500 hover:text-slate-700 inline-flex items-center gap-1">
+          <Send className="w-3.5 h-3.5" /> {draftOpen ? 'Close' : 'Message draft'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NetworkView() {
+  const [contacts, setContacts] = useData(CONTACTS_KEY);
+  const [tracks] = useData(TRACKS_KEY);
+  const [showForm, setShowForm] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [form, setForm] = useState({ who: '', name: '', targetOrg: '', targetRole: '', askType: 'soft', relationshipStrength: 'cold', why: '', nextFollowUpDate: '', relatedTrackId: null, status: 'to_contact', messageDraft: '' });
+
+  function addContact() {
+    if (!form.who.trim()) return;
+    setContacts([...contacts, { id: nextId(contacts), ...form, createdAt: Date.now() }]);
+    setForm({ who: '', name: '', targetOrg: '', targetRole: '', askType: 'soft', relationshipStrength: 'cold', why: '', nextFollowUpDate: '', relatedTrackId: null, status: 'to_contact', messageDraft: '' });
+    setShowForm(false); setShowMore(false);
+  }
+
+  function patch(c, body) { setContacts(contacts.map(x => x.id === c.id ? { ...x, ...body } : x)); }
+  function remove(id) { setContacts(contacts.filter(c => c.id !== id)); }
+
+  const overdue = contacts.filter(c => {
+    if (!c.nextFollowUpDate) return false;
+    const d = new Date(c.nextFollowUpDate + 'T00:00:00');
+    if (isNaN(d.getTime())) return false;
+    const now = new Date(); now.setHours(0,0,0,0);
+    return Math.round((d.getTime() - now.getTime()) / 86400000) < 0;
+  });
+  const notOverdue = contacts.filter(c => !overdue.includes(c));
+
+  const byStatus = OUTREACH_COLS.map(col => ({ col, items: notOverdue.filter(c => c.status === col.id) })).filter(g => g.items.length > 0);
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <SectionHeading title="Network" sub="People who could help. Each card leads with the ask." />
+        <Btn onClick={() => setShowForm(s => !s)}><Plus className="w-4 h-4" /> Add contact</Btn>
+      </div>
+
+      {showForm && (
+        <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input placeholder="Who they are (role / title) *" value={form.who} onChange={e => setForm({ ...form, who: e.target.value })} autoFocus className="sm:col-span-2" />
+            <Input placeholder="Name (optional)" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            <Input placeholder="Org / company" value={form.targetOrg} onChange={e => setForm({ ...form, targetOrg: e.target.value })} />
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400 mb-1.5">Ask</p>
+              <div className="flex flex-wrap gap-1.5">
+                {['soft', 'advice', 'referral', 'reconnect', 'follow_up'].map(v => (
+                  <button key={v} type="button" onClick={() => setForm({ ...form, askType: v })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.askType === v ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+                    {ASK_LABEL[v] || v}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400 mb-1.5">Warmth</p>
+              <div className="flex flex-wrap gap-1.5">
+                {['cold', 'warm', 'strong'].map(v => (
+                  <button key={v} type="button" onClick={() => setForm({ ...form, relationshipStrength: v })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relationshipStrength === v ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+                    {v.charAt(0).toUpperCase() + v.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <button type="button" onClick={() => setShowMore(v => !v)} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? 'rotate-180' : ''}`} />
+            {showMore ? 'Fewer options' : 'More options (track, follow-up, notes)'}
+          </button>
+          {showMore && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input placeholder="Target role" value={form.targetRole} onChange={e => setForm({ ...form, targetRole: e.target.value })} />
+              <Input placeholder="Follow up date (YYYY-MM-DD)" value={form.nextFollowUpDate} onChange={e => setForm({ ...form, nextFollowUpDate: e.target.value })} />
+              <Input placeholder="Why this person matters" value={form.why} onChange={e => setForm({ ...form, why: e.target.value })} className="sm:col-span-2" />
+              {tracks.length > 0 && (
+                <div className="sm:col-span-2">
+                  <p className="text-xs uppercase tracking-wide text-slate-400 mb-1.5">Link to path</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tracks.map(t => (
+                      <button key={t.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === t.id ? null : t.id })}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relatedTrackId === t.id ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:text-slate-700'}`}>
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Btn variant="ghost" onClick={() => { setShowForm(false); setShowMore(false); }}>Cancel</Btn>
+            <Btn onClick={addContact}>Save contact</Btn>
+          </div>
+        </div>
+      )}
+
+      {contacts.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center">
+          <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">No contacts yet. Add one real contact path now.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {overdue.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-xs font-semibold uppercase tracking-wide text-amber-700">Overdue follow-ups</span>
+                <span className="rounded-full bg-amber-100 text-amber-700 text-xs font-medium px-1.5 py-0.5">{overdue.length}</span>
+              </div>
+              <div className="space-y-2">
+                {overdue.map(c => <ContactCard key={c.id} contact={c} tracks={tracks} onPatch={body => patch(c, body)} onRemove={() => remove(c.id)} />)}
+              </div>
+            </div>
+          )}
+          {byStatus.map(({ col, items }) => (
+            <div key={col.id}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{col.label}</span>
+                <span className="text-xs text-slate-400 tabular-nums">({items.length})</span>
+              </div>
+              <div className="space-y-2">
+                {items.map(c => <ContactCard key={c.id} contact={c} tracks={tracks} onPatch={body => patch(c, body)} onRemove={() => remove(c.id)} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── LEARN VIEW ───────────────────────────────────────────────────────────────
+function LearnCard({ item, tracks, onToggle, onRemove }) {
+  const track = tracks.find(t => t.id === item.relatedTrackId);
+  const learnStatus = item.learnStatus || 'open';
+  const outputState = item.proofIntent ? (item.outputStatus === 'published' ? 'evidenced' : 'producing') : 'reference';
+
+  const outputMeta = {
+    reference: { label: 'Reference only', cls: 'bg-slate-100 text-slate-600' },
+    producing: { label: 'Building output', cls: 'bg-violet-100 text-violet-700' },
+    evidenced: { label: 'Evidenced', cls: 'bg-emerald-100 text-emerald-700' },
+  }[outputState];
+
+  return (
+    <div className={`group rounded-xl border bg-white p-4 ${item.active && !item.done ? 'border-blue-300' : 'border-slate-200'} ${item.done ? 'opacity-60' : ''}`}>
+      <div className="flex items-start gap-2.5">
+        <button onClick={onToggle} className={`mt-0.5 w-4 h-4 shrink-0 rounded border grid place-items-center ${item.done ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300'}`}>
+          {item.done && <Check className="w-3 h-3" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className={`font-medium text-sm leading-snug ${item.done ? 'line-through' : ''}`}>{item.title}</h3>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => {}} title={item.active ? 'Park' : 'Make active'} className={`${item.active ? 'text-blue-600' : 'text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100'}`}>
+                <Star className="w-4 h-4" fill={item.active ? 'currentColor' : 'none'} />
+              </button>
+              <button onClick={onRemove} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            {track && <span className="text-xs rounded-full border border-blue-200 bg-blue-50 text-blue-700 px-2 py-0.5">{track.name}</span>}
+            {item.capabilityBuilt && <span className="text-xs rounded-md bg-blue-50 text-blue-600 px-1.5 py-0.5">{item.capabilityBuilt}</span>}
+            <span className="text-xs rounded-md bg-slate-100 text-slate-500 px-1.5 py-0.5">{LEARN_STATUS_LABEL[learnStatus] || learnStatus}</span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium ${outputMeta.cls}`}>{outputMeta.label}</span>
+          </div>
+
+          {item.requiredOutput && <p className="text-xs text-slate-600 mt-2 leading-snug"><span className="font-medium">Output:</span> {item.requiredOutput}</p>}
+          {item.note && <p className="text-xs text-slate-500 mt-1.5 leading-snug">{item.note}</p>}
+
+          {item.url && (
+            <a href={item.url} target="_blank" rel="noopener noreferrer" className="mt-2 text-xs text-blue-600 inline-flex items-center gap-1 hover:underline">
+              Open <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LearnView() {
+  const [items, setItems] = useData(LEARN_KEY);
+  const [tracks] = useData(TRACKS_KEY);
+  const [showForm, setShowForm] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [form, setForm] = useState({ title: '', url: '', note: '', capabilityBuilt: '', requiredOutput: '', learnStatus: 'open', proofIntent: false, relatedTrackId: null });
+
+  function add() {
+    if (!form.title.trim()) return;
+    setItems([...items, { id: nextId(items), ...form, done: false, active: false, createdAt: Date.now() }]);
+    setForm({ title: '', url: '', note: '', capabilityBuilt: '', requiredOutput: '', learnStatus: 'open', proofIntent: false, relatedTrackId: null });
+    setShowForm(false); setShowMore(false);
+  }
+
+  function toggle(item) { setItems(items.map(x => x.id === item.id ? { ...x, done: !x.done } : x)); }
+  function remove(id) { setItems(items.filter(x => x.id !== id)); }
+
+  const live = items.filter(x => !x.done);
+  const done = items.filter(x => x.done);
+  const activeNow = live.filter(x => x.active);
+  const rest = live.filter(x => !x.active);
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <SectionHeading title="Learn" sub="What you're building so future roles and interviews feel easier." />
+        <Btn onClick={() => setShowForm(s => !s)}><Plus className="w-4 h-4" /> Add</Btn>
+      </div>
+
+      {showForm && (
+        <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+          <Input placeholder="Title *" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} autoFocus />
+          <Input placeholder="Link (optional)" value={form.url} onChange={e => setForm({ ...form, url: e.target.value })} />
+          <button type="button" onClick={() => setShowMore(v => !v)} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMore ? 'rotate-180' : ''}`} />
+            {showMore ? 'Fewer options' : 'More options (output, status, track)'}
+          </button>
+          {showMore && (
+            <div className="space-y-2">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input placeholder="Capability this builds" value={form.capabilityBuilt} onChange={e => setForm({ ...form, capabilityBuilt: e.target.value })} />
+                <Input placeholder="Intended output" value={form.requiredOutput} onChange={e => setForm({ ...form, requiredOutput: e.target.value })} />
+                <Input placeholder="Note" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" />
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400 mb-1.5">Mode</p>
+                  <div className="flex gap-1.5">
+                    <button type="button" onClick={() => setForm({ ...form, proofIntent: false })} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${!form.proofIntent ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500'}`}>Reference only</button>
+                    <button type="button" onClick={() => setForm({ ...form, proofIntent: true })} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.proofIntent ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500'}`}>Build output</button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400 mb-1.5">Status</p>
+                  <div className="flex gap-1.5">
+                    {['open', 'watch', 'active'].map(s => (
+                      <button key={s} type="button" onClick={() => setForm({ ...form, learnStatus: s })}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.learnStatus === s ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500'}`}>
+                        {LEARN_STATUS_LABEL[s]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {tracks.length > 0 && (
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400 mb-1.5">Link to path</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tracks.map(t => (
+                      <button key={t.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === t.id ? null : t.id })}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relatedTrackId === t.id ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500 hover:text-slate-700'}`}>
+                        {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Btn variant="ghost" onClick={() => { setShowForm(false); setShowMore(false); }}>Cancel</Btn>
+            <Btn onClick={add}>Save</Btn>
+          </div>
+        </div>
+      )}
+
+      {items.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center">
+          <GraduationCap className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">No learning items yet. Add one reusable capability move now.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {activeNow.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Active now</span>
+                <span className="text-xs text-slate-400 tabular-nums">({activeNow.length})</span>
+              </div>
+              <div className="space-y-2">{activeNow.map(x => <LearnCard key={x.id} item={x} tracks={tracks} onToggle={() => toggle(x)} onRemove={() => remove(x.id)} />)}</div>
+            </div>
+          )}
+          {rest.length > 0 && (
+            <div>
+              {activeNow.length > 0 && <GroupLabel count={rest.length}>Everything else</GroupLabel>}
+              <div className="space-y-2">{rest.map(x => <LearnCard key={x.id} item={x} tracks={tracks} onToggle={() => toggle(x)} onRemove={() => remove(x.id)} />)}</div>
+            </div>
+          )}
+          {done.length > 0 && (
+            <div>
+              <button onClick={() => setShowDone(s => !s)} className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2.5 hover:text-slate-700">
+                {showDone ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />} Done ({done.length})
+              </button>
+              {showDone && <div className="space-y-2">{done.map(x => <LearnCard key={x.id} item={x} tracks={tracks} onToggle={() => toggle(x)} onRemove={() => remove(x.id)} />)}</div>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── BRAIN DUMP VIEW ──────────────────────────────────────────────────────────
+function BrainDumpView({ onOpenTab }) {
+  const [tasks, setTasks] = useData(TASKS_KEY);
+  const [text, setText] = useState('');
+  const [triage, setTriage] = useState({});
+  const [sorting, setSorting] = useState(false);
+  const [toast, setToast] = useState('');
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2000); };
+
+  const inbox = tasks.filter(t => t.list === 'inbox' && !t.done);
+
+  function add() {
+    if (!text.trim()) return;
+    const newTask = { id: nextId(tasks), title: text.trim(), list: 'inbox', done: false, pinned: false, steps: '[]', skipped: 0, createdAt: Date.now() };
+    setTasks([...tasks, newTask]);
+    setText('');
+  }
+
+  function remove(id) { setTasks(tasks.filter(t => t.id !== id)); }
+
+  function sortAll() {
+    setSorting(true);
+    setTimeout(() => {
+      const map = {};
+      inbox.forEach(t => { map[t.id] = heuristicSort(t.title); });
+      setTriage(map);
+      setSorting(false);
+      showToast('Sorted! Review each suggestion below.');
+    }, 600);
+  }
+
+  function applyRoute(task, route) {
+    let patch = {};
+    if (route === 'today') patch = { list: 'today' };
+    else if (route === 'task') patch = { list: 'today' };
+    else if (route === 'job') {
+      const jobs = loadLS(JOBS_KEY) || [];
+      jobs.unshift({ id: nextId(jobs), title: task.title, status: 'wishlist', createdAt: Date.now() });
+      saveLS(JOBS_KEY, jobs);
+      patch = { done: true };
+    } else if (route === 'learn') {
+      const learn = loadLS(LEARN_KEY) || [];
+      learn.unshift({ id: nextId(learn), title: task.title, learnStatus: 'open', done: false, active: false, createdAt: Date.now() });
+      saveLS(LEARN_KEY, learn);
+      patch = { done: true };
+    } else if (route === 'network') {
+      const contacts = loadLS(CONTACTS_KEY) || [];
+      contacts.unshift({ id: nextId(contacts), who: task.title, status: 'to_contact', askType: 'advice', relationshipStrength: 'cold', createdAt: Date.now() });
+      saveLS(CONTACTS_KEY, contacts);
+      patch = { done: true };
+    } else {
+      patch = {};
+    }
+    setTasks(tasks.map(t => t.id === task.id ? { ...t, ...patch } : t).filter(t => !(t.id === task.id && patch.done)));
+    setTriage(st => { const n = { ...st }; delete n[task.id]; return n; });
+    showToast('Done!');
+  }
+
+  const ROUTE_LABEL = { today: 'Do today', task: 'Keep as task', job: 'File under Jobs', learn: 'File under Learn', network: 'File under Network', keep: 'Keep here' };
+
+  return (
+    <div>
+      {toast && <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg">{toast}</div>}
+      <SectionHeading title="Brain dump" sub="Empty your head now. Sort it later." />
+      <div className="flex gap-2 mb-3">
+        <Input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add(); }} placeholder="Type anything and hit Enter…" />
+        <Btn onClick={add}><Plus className="w-4 h-4" /> Add</Btn>
+      </div>
+      {inbox.length > 0 && (
+        <div className="mb-5">
+          <Btn variant="outline" onClick={sortAll} disabled={sorting}>
+            {sorting ? '⏳ Sorting…' : <><Wand2 className="w-4 h-4" /> Sort these for me</>}
+          </Btn>
+          <p className="text-xs text-slate-500 mt-1.5">I'll work out what each one is — a task for today, a job to track, or something to learn.</p>
+        </div>
+      )}
+      {inbox.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center">
+          <Sparkles className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">Empty head, clear mind. Add a thought above when one shows up.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {inbox.map(t => {
+            const tr = triage[t.id];
+            return (
+              <div key={t.id} className="group rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="flex-1 text-sm">{t.title}</span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!tr && <Btn size="sm" variant="outline" onClick={() => applyRoute(t, 'today')}>Add to day</Btn>}
+                    <button onClick={() => remove(t.id)} className="text-slate-400 hover:text-red-500 ml-0.5"><X className="w-4 h-4" /></button>
+                  </div>
+                </div>
+                {tr && (
+                  <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-slate-500">{tr.reason}</span>
+                    {tr.route !== 'keep' && (
+                      <button onClick={() => applyRoute(t, tr.route)} className="text-xs font-medium text-blue-600 inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 hover-elevate">
+                        <ArrowUpRight className="w-3 h-3" /> {ROUTE_LABEL[tr.route] || 'File it'}
+                      </button>
+                    )}
+                    {tr.route !== 'today' && <button onClick={() => applyRoute(t, 'today')} className="text-xs text-slate-500 hover:text-slate-700">or just do today</button>}
+                    <button onClick={() => setTriage(s => { const n = { ...s }; delete n[t.id]; return n; })} className="text-xs text-slate-500 hover:text-slate-700">keep here</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── WINS VIEW ────────────────────────────────────────────────────────────────
+function WinsView() {
+  const [wins, setWins] = useData(WINS_KEY);
+  const [text, setText] = useState('');
+  const [category, setCategory] = useState('mindset');
+
+  function add() {
+    if (!text.trim()) return;
+    setWins([{ id: nextId(wins), text: text.trim(), winCategory: category, createdAt: Date.now() }, ...wins]);
+    setText('');
+  }
+
+  function remove(id) { setWins(wins.filter(w => w.id !== id)); }
+
+  const weekAgo = Date.now() - 7 * 86400000;
+  const thisWeek = wins.filter(w => w.createdAt >= weekAgo);
+  const earlier = wins.filter(w => w.createdAt < weekAgo);
+
+  function dayLabel(ts) { return new Date(ts).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); }
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <SectionHeading title="Wins" sub="Small wins count — log them so you don't forget the progress you made." />
+        {wins.length > 0 && (
+          <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-blue-50 text-blue-700 px-3 py-1.5 text-sm font-medium">
+            <Trophy className="w-4 h-4" /> {wins.length} total
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-3">
+        <Input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') add(); }} placeholder="What went well? Anything counts…" className="flex-1 min-w-48" />
+        <select value={category} onChange={e => setCategory(e.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+          {WIN_CATEGORIES.map(c => <option key={c} value={c}>{WIN_CATEGORY_LABEL[c]}</option>)}
+        </select>
+        <Btn onClick={add}><Trophy className="w-4 h-4" /> Log win</Btn>
+      </div>
+
+      {wins.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center">
+          <Trophy className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">No wins logged yet. Start with one small thing you did today.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {thisWeek.length > 0 && (
+            <div>
+              <GroupLabel count={thisWeek.length}>This week</GroupLabel>
+              <div className="space-y-2">
+                {thisWeek.map(w => (
+                  <div key={w.id} className="group flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3.5 py-3">
+                    <Trophy className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="flex-1 text-sm">{w.text}</span>
+                    {w.winCategory && <span className={`hidden sm:inline-flex shrink-0 text-xs rounded-full px-1.5 py-0.5 ${WIN_CATEGORY_SWATCH[w.winCategory] || 'bg-slate-100 text-slate-600'}`}>{WIN_CATEGORY_LABEL[w.winCategory] || w.winCategory}</span>}
+                    <span className="text-xs text-slate-400 shrink-0">{dayLabel(w.createdAt)}</span>
+                    <button onClick={() => remove(w.id)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {earlier.length > 0 && (
+            <div>
+              <GroupLabel count={earlier.length}>Earlier</GroupLabel>
+              <div className="space-y-2">
+                {earlier.map(w => (
+                  <div key={w.id} className="group flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3.5 py-3">
+                    <Trophy className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="flex-1 text-sm">{w.text}</span>
+                    {w.winCategory && <span className={`hidden sm:inline-flex shrink-0 text-xs rounded-full px-1.5 py-0.5 ${WIN_CATEGORY_SWATCH[w.winCategory] || 'bg-slate-100 text-slate-600'}`}>{WIN_CATEGORY_LABEL[w.winCategory] || w.winCategory}</span>}
+                    <span className="text-xs text-slate-400 shrink-0">{dayLabel(w.createdAt)}</span>
+                    <button onClick={() => remove(w.id)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── STRATEGY VIEW ────────────────────────────────────────────────────────────
+function StrategyView({ onOpenTab }) {
+  const [tracks] = useData(TRACKS_KEY);
+  const [jobs] = useData(JOBS_KEY);
+  const [contacts] = useData(CONTACTS_KEY);
+  const [learn] = useData(LEARN_KEY);
+  const [wins] = useData(WINS_KEY);
+  const [tasks] = useData(TASKS_KEY);
+
+  const trackStats = tracks.map(t => {
+    const trackJobs = jobs.filter(j => j.relatedTrackId === t.id);
+    const trackContacts = contacts.filter(c => c.relatedTrackId === t.id);
+    const trackLearn = learn.filter(l => l.relatedTrackId === t.id && !l.done);
+    const warmContacts = trackContacts.filter(c => c.status === 'messaged' || c.status === 'replied' || c.relationshipStrength === 'warm' || c.relationshipStrength === 'strong');
+
+    let bottleneck = 'none';
+    let bottleneckLabel = '';
+    let recommendedMove = '';
+
+    if (trackJobs.length === 0) {
+      bottleneck = 'direction';
+      bottleneckLabel = 'No roles linked to this track yet.';
+      recommendedMove = 'Add at least one target role to give this track a real destination.';
+    } else if (warmContacts.length === 0) {
+      bottleneck = 'warmth';
+      bottleneckLabel = 'No warm contacts in this track.';
+      recommendedMove = 'Add a contact who could speak to your fit for this lane.';
+    } else if (trackLearn.length === 0) {
+      bottleneck = 'proof';
+      bottleneckLabel = 'No capability support in this track.';
+      recommendedMove = 'Add a learning item that builds evidence for this lane.';
+    } else {
+      recommendedMove = 'Keep going — maintain momentum across jobs, contacts, and learning.';
+    }
+
+    return { ...t, counts: { jobs: trackJobs.length, contacts: trackContacts.length, learn: trackLearn.length, warm: warmContacts.length }, bottleneck, bottleneckLabel, recommendedMove };
+  });
+
+  const active = trackStats.filter(t => t.status === 'active');
+  const watching = trackStats.filter(t => t.status !== 'active');
+
+  const weekAgo = Date.now() - 7 * 86400000;
+  const thisWeekWins = wins.filter(w => w.createdAt >= weekAgo).length;
+  const openTasks = tasks.filter(t => !t.done && t.list === 'today').length;
+
+  return (
+    <div>
+      <h1 className="text-xl font-bold tracking-tight">Strategy</h1>
+      <p className="text-sm text-slate-500 mt-1 mb-5">Active role types and what each needs.</p>
+
+      <div className="mb-6 grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
+          <p className="text-2xl font-bold text-blue-600">{jobs.length}</p>
+          <p className="text-xs text-slate-500 mt-1">Total roles</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
+          <p className="text-2xl font-bold text-emerald-600">{wins.length}</p>
+          <p className="text-xs text-slate-500 mt-1">Wins logged</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
+          <p className="text-2xl font-bold text-violet-600">{thisWeekWins}</p>
+          <p className="text-xs text-slate-500 mt-1">This week</p>
+        </div>
+      </div>
+
+      {active.length > 0 && (
+        <>
+          <GroupLabel>Active role types</GroupLabel>
+          <div className="grid gap-3 sm:grid-cols-2 mt-2 mb-6">
+            {active.map(t => (
+              <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-sm leading-snug">{t.name}</h3>
+                    {t.whyItFits && <p className="text-xs text-slate-500 mt-0.5 leading-snug">{t.whyItFits}</p>}
+                  </div>
+                  <span className="text-xs text-slate-400 shrink-0 mt-0.5">{t.counts.jobs} role{t.counts.jobs !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                  <span className="inline-flex items-center gap-1 text-xs rounded-full bg-slate-100 text-slate-600 px-2 py-0.5"><Briefcase className="w-3 h-3" /> {t.counts.jobs} jobs</span>
+                  <span className="inline-flex items-center gap-1 text-xs rounded-full bg-slate-100 text-slate-600 px-2 py-0.5"><Users className="w-3 h-3" /> {t.counts.contacts} contacts</span>
+                  <span className="inline-flex items-center gap-1 text-xs rounded-full bg-slate-100 text-slate-600 px-2 py-0.5"><BookOpen className="w-3 h-3" /> {t.counts.learn} learn</span>
+                </div>
+                {t.bottleneck !== 'none' ? (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mt-2.5">
+                    <p className="text-xs text-amber-800 leading-snug">{t.bottleneckLabel}</p>
+                    <p className="text-xs text-blue-600 mt-1.5 flex items-start gap-1"><ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-px" />{t.recommendedMove}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-blue-600 mt-2.5 flex items-start gap-1"><ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-px" />{t.recommendedMove}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {watching.length > 0 && (
+        <>
+          <GroupLabel>Watching</GroupLabel>
+          <div className="grid gap-3 sm:grid-cols-2 mt-2 mb-6">
+            {watching.map(t => (
+              <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-4 opacity-75">
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-sm leading-snug">{t.name}</h3>
+                  <span className="text-xs text-slate-400 shrink-0 mt-0.5 rounded-full bg-slate-100 px-1.5 py-0.5">watch</span>
+                </div>
+                {t.whyItFits && <p className="text-xs text-slate-500 mt-0.5">{t.whyItFits}</p>}
+                <p className="text-xs text-blue-600 mt-2.5 flex items-start gap-1"><ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-px" />{t.recommendedMove}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="flex flex-wrap gap-2 mt-4">
+        <Btn size="sm" variant="outline" onClick={() => onOpenTab('jobs')}><Briefcase className="w-4 h-4" /> Jobs</Btn>
+        <Btn size="sm" variant="outline" onClick={() => onOpenTab('network')}><Users className="w-4 h-4" /> Network</Btn>
+        <Btn size="sm" variant="outline" onClick={() => onOpenTab('learn')}><GraduationCap className="w-4 h-4" /> Learn</Btn>
+        <Btn size="sm" variant="outline" onClick={() => onOpenTab('today')}><Target className="w-4 h-4" /> Today</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ─── TASKS FROM BRAIN DUMP helper (create tasks for today) ───────────────────
+function QuickAddTask({ onAdd }) {
+  const [text, setText] = useState('');
+  function submit() {
+    if (!text.trim()) return;
+    onAdd(text.trim());
+    setText('');
+  }
+  return (
+    <div className="flex gap-2 mb-4">
+      <Input value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') submit(); }} placeholder="Add a task for today…" />
+      <Btn variant="outline" onClick={submit}><Plus className="w-4 h-4" /> Add</Btn>
+    </div>
+  );
+}
+
+// ─── MORE MENU (Wins + Strategy) ─────────────────────────────────────────────
+function MoreMenu({ onSelect, open, setOpen }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    if (open) document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open, setOpen]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)} className={`flex flex-col items-center gap-0.5 px-3 py-2 text-xs font-medium ${open ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+        <MoreHorizontal className="w-5 h-5" />
+        <span>More</span>
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 mb-2 w-40 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden z-50">
+          <button onClick={() => { onSelect('wins'); setOpen(false); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
+            <Trophy className="w-4 h-4 text-blue-600" /> Wins
+          </button>
+          <button onClick={() => { onSelect('strategy'); setOpen(false); }} className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
+            <Compass className="w-4 h-4 text-blue-600" /> Strategy
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ROOT APP ─────────────────────────────────────────────────────────────────
+const TABS = [
+  { id: 'today', label: 'Today', Icon: Sun },
+  { id: 'jobs', label: 'Jobs', Icon: Briefcase },
+  { id: 'network', label: 'Network', Icon: Users },
+  { id: 'learn', label: 'Learn', Icon: BookOpen },
+  { id: 'braindump', label: 'Dump', Icon: Brain },
+];
+
+function App() {
+  const [tab, setTab] = useState('today');
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  function openTab(t) { setTab(t); setMoreOpen(false); }
+
+  const isMore = tab === 'wins' || tab === 'strategy';
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
+            <Target className="w-4 h-4 text-white" />
+          </div>
+          <span className="font-bold text-slate-800 text-base tracking-tight">Anchor</span>
+        </div>
+        <span className="text-xs text-slate-400">{new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+      </header>
+
+      {/* Main content */}
+      <main className="flex-1 overflow-auto pb-24">
+        <div className="max-w-2xl mx-auto px-4 py-5">
+          {tab === 'today' && <TodayView onOpenTab={openTab} />}
+          {tab === 'jobs' && <JobsView />}
+          {tab === 'network' && <NetworkView />}
+          {tab === 'learn' && <LearnView />}
+          {tab === 'braindump' && <BrainDumpView onOpenTab={openTab} />}
+          {tab === 'wins' && <WinsView />}
+          {tab === 'strategy' && <StrategyView onOpenTab={openTab} />}
+        </div>
+      </main>
+
+      {/* Bottom tab bar */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 safe-area-pb">
+        <div className="max-w-2xl mx-auto flex items-center justify-around px-1">
+          {TABS.map(({ id, label, Icon }) => {
+            const active = tab === id;
+            return (
+              <button key={id} onClick={() => openTab(id)} className={`flex flex-col items-center gap-0.5 px-3 py-2 text-xs font-medium transition-colors ${active ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Icon className={`w-5 h-5 ${active ? 'text-blue-600' : ''}`} />
+                <span>{label}</span>
+                {active && <span className="absolute bottom-0 w-5 h-0.5 bg-blue-600 rounded-t-full" />}
+              </button>
+            );
+          })}
+          <MoreMenu onSelect={openTab} open={moreOpen} setOpen={setMoreOpen} />
+        </div>
+      </nav>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>

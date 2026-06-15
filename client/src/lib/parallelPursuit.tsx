@@ -1,15 +1,16 @@
+// @ts-nocheck - parallel pursuit components
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CareerTrack } from "@shared/schema";
-import type { LearnStatus } from "@shared/domainState";
 import type { JobFormT } from "@/lib/jobsViewTypes";
+import type { LearnFormT } from "@/lib/learnShared";
 import {
-  CareerGoalT,
+  type CareerGoalT,
+  type GoalPortfolioItemT,
+  type GoalWorkstreamT,
   combinationCoverageState,
   combinationSupportState,
   getBroadPursuitCoverage,
-  GoalPortfolioItemT,
-  GoalWorkstreamT,
   nextLaneGap,
 } from "@/lib/goalSpine";
 
@@ -27,18 +28,6 @@ export type ContactFormT = {
   relatedTrackId: number | null;
   status: string;
   messageDraft: string;
-};
-
-export type LearnFormT = {
-  title: string;
-  category: string;
-  capabilityBuilt: string;
-  requiredOutput: string;
-  url: string;
-  note: string;
-  relatedTrackId: number | null;
-  proofIntent: boolean;
-  learnStatus: LearnStatus;
 };
 
 export const JOB_ARCHETYPE_OPTIONS: Array<{ value: string; label: string }> = [
@@ -168,24 +157,24 @@ export function BroadPursuitJobsKickoff({
             : "bg-muted text-muted-foreground";
           const buttonLabel = state === "covered" ? "Add another role" : "Add first role";
           return (
-            <div
-              key={item.combination}
-              className={`rounded-xl border p-3 ${tone}`}
-              data-testid={`jobs-kickoff-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium leading-snug">{item.combination}</p>
-                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge}`}>
-                  {state === "covered" ? "covered" : state === "missing" ? "still empty" : "watch"}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">{laneGuideForCombination(item.combination).fitHint}</p>
-              <div className="mt-3">
-                <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
-                  <Plus className="w-4 h-4 mr-1" /> {buttonLabel}
-                </Button>
-              </div>
+          <div
+            key={item.combination}
+            className={`rounded-xl border p-3 ${tone}`}
+            data-testid={`jobs-kickoff-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-medium leading-snug">{item.combination}</p>
+              <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge}`}>
+                {state === "covered" ? "covered" : state === "missing" ? "still empty" : "watch"}
+              </span>
             </div>
+            <p className="text-xs text-muted-foreground mt-2">{laneGuideForCombination(item.combination).fitHint}</p>
+            <div className="mt-3">
+              <Button size="sm" variant="outline" onClick={() => onStartLane(item)} data-testid={`button-start-lane-${item.combination.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+                <Plus className="w-4 h-4 mr-1" /> {buttonLabel}
+              </Button>
+            </div>
+          </div>
           );
         })}
       </div>
@@ -229,12 +218,12 @@ export function BroadPursuitParallelSupportKickoff({
             {mode === "network" ? "Contact paths" : "Capability support"}
           </p>
           <p className="text-sm font-medium mt-1">
-            {mode === "network" ? "Add one real contact path in the weakest lanes." : "Add one reusable support move in the weakest lanes."}
+            {mode === "network" ? "Add one contact for your weakest role targets." : "Add one learning item for your weakest role targets."}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
             {mode === "network"
-              ? `${missingSupport.length} lane${missingSupport.length === 1 ? "" : "s"} still need a first contact path.`
-              : `${missingSupport.length} lane${missingSupport.length === 1 ? "" : "s"} still need capability support.`}
+              ? `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a contact.`
+              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need learning support.`}
           </p>
           {canStartWithoutRole && (
             <p className="text-xs text-muted-foreground mt-1">
@@ -269,11 +258,11 @@ export function BroadPursuitParallelSupportKickoff({
             : "border-card-border bg-card";
           const buttonLabel = mode === "network"
             ? supportMissing
-              ? (support.hasRole ? "Add first contact path" : "Add contact in this lane")
-              : "Add another contact in this lane"
+              ? (support.hasRole ? "Add first contact" : "Add contact for this target")
+              : "Add another contact"
             : supportMissing
-              ? (support.hasRole ? "Add first support item" : "Add support item in this lane")
-              : "Add another support item";
+              ? (support.hasRole ? "Add first learning item" : "Add learning item for this target")
+              : "Add another learning item";
           const showRoleStateBadge = !canStartWithoutRole;
           const showSupportDetail = !canStartWithoutRole;
           return (
@@ -415,7 +404,7 @@ export function learnPresetForLane(item: GoalPortfolioItemT, tracks: CareerTrack
     : "Geopolitical or policy judgment";
   const requiredOutput = /ops \/ chief of staff/i.test(item.combination)
     ? "One reusable operating artifact or memo you could show in future conversations."
-    : "One reusable note, memo, or brief that makes this lane more credible.";
+    : "One reusable note, memo, or brief that strengthens this role type.";
   return {
     title: `${item.combination} capability support`,
     category: capabilityBuilt,

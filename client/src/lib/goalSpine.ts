@@ -48,25 +48,16 @@ export type GoalsStateResponseT = { goals: CareerGoalT[] };
 export const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "Later", bonus: "Bonus" };
 export const PHASE_LABEL: Record<CareerGoalT["phase"], string> = {
   "fit-discovery": "Discover fit",
-  "lane-narrowing": "Narrow lanes",
+  "lane-narrowing": "Narrow focus",
   "role-targeting": "Target roles",
   "interview-prep": "Interview prep",
 };
 export const DECISION_MODE_LABEL: Record<CareerGoalT["decisionMode"], string> = {
-  "single-track": "Single track",
-  "forced-comparison": "Forced comparison",
-  "parallel-exploration": "Parallel exploration",
-  "broad-parallel-pursuit": "Broad pursuit",
+  "single-track": "One path",
+  "forced-comparison": "Comparing options",
+  "parallel-exploration": "Exploring options",
+  "broad-parallel-pursuit": "Multiple targets",
 };
-export const DAY_TYPE_LABEL: Record<string, string> = {
-  "signal-building": "Signal building",
-  "network-building": "Network building",
-  "conversion": "Conversion",
-  "capability-building": "Capability building",
-  "interview-prep": "Interview prep",
-  "stabilising": "Stabilising",
-};
-
 const PRE_SHRUNK_RE = /pre-shrunk|made smaller|pre-split|easier execution steps|easier start/i;
 
 export function isPreShrunkPlanItem(item: PlanItemT) {
@@ -94,9 +85,9 @@ export function isBroadPursuitGoalItem(item: PlanItemT, goal?: CareerGoalT | nul
 export function broadPursuitPlanTitle(goal?: CareerGoalT | null) {
   if (!goal) return null;
   const coverage = getBroadPursuitCoverage(goal);
-  if (coverage.missing.length === 0) return "Keep the live lanes moving";
-  if (coverage.missing.length === 1) return "Fill the last empty lane";
-  return `Fill ${coverage.missing.length} still-empty lanes`;
+  if (coverage.missing.length === 0) return "Keep your active targets moving";
+  if (coverage.missing.length === 1) return "Add a role for the last target";
+  return `Add roles for ${coverage.missing.length} targets`;
 }
 
 export function getBroadPursuitCoverage(goal: CareerGoalT): BroadPursuitCoverageT {
@@ -164,27 +155,27 @@ export function nextLaneGap(goal: CareerGoalT, combination: string) {
   if (!support.hasRole) {
     return {
       label: "Needs first real role",
-      detail: "Save one credible role so this lane becomes real.",
+      detail: "Save one real role for this target.",
       tone: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
     };
   }
   if (!support.hasNetworkSupport) {
     return {
-      label: "Needs first contact path",
-      detail: "Add one real person or warm route into this lane.",
+      label: "Needs first contact",
+      detail: "Add one contact who could help here.",
       tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
     };
   }
   if (!support.hasCapabilitySupport) {
     return {
-      label: "Needs first support item",
-      detail: "Add one reusable learning or capability move for this lane.",
+      label: "Needs learning support",
+      detail: "Add one learning item for this target.",
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
     };
   }
   return {
-    label: "Supported enough for now",
-    detail: "This lane has a role, a contact path, and capability support.",
+    label: "Well supported",
+    detail: "This target has a role, a contact, and learning support.",
     tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   };
 }

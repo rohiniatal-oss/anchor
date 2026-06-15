@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, Plus } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 type OnboardingRole = { archetype: string; priority: string; fitLogic: string; nextExperiment: string };
 
@@ -44,11 +44,11 @@ export default function OnboardingView() {
     <div>
       <h1 className="text-xl font-bold tracking-tight">Let's set up your strategy</h1>
       <p className="text-sm text-muted-foreground mt-1 mb-6">
-        Add the lanes you want to pursue first. Anchor can shape your plan around several plausible tracks in parallel and then narrow from live evidence.
+        Add the role types you want to pursue. Anchor builds your plan around several directions at once and narrows based on what's actually moving.
       </p>
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="w-4 h-4 animate-spin" /> Thinking about your optionsÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦
+          <Loader2 className="w-4 h-4 animate-spin" /> Thinking about your options…
         </div>
       ) : (
         <div className="space-y-3">
@@ -76,7 +76,7 @@ export default function OnboardingView() {
                       isAccepted ? "bg-primary/10 text-primary" : "bg-primary text-primary-foreground hover:bg-primary/90"
                     }`}>
                     {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isAccepted ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
-                    {isAccepted ? "Added" : "Add track"}
+                    {isAccepted ? "Added" : "Add role type"}
                   </button>
                 </div>
               </div>
@@ -88,7 +88,7 @@ export default function OnboardingView() {
         <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4 flex items-center gap-3">
           <Loader2 className="w-4 h-4 shrink-0 animate-spin text-primary" />
           <div>
-            <p className="text-sm font-medium">{accepted.size === 1 ? "1 track added" : `${accepted.size} tracks added`} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â building your planÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦</p>
+            <p className="text-sm font-medium">{accepted.size === 1 ? "1 role type added" : `${accepted.size} role types added`} — building your plan…</p>
             <p className="text-xs text-muted-foreground mt-0.5">Anchor is shaping today around {accepted.size === 1 ? "it" : "them"} while keeping the wider search coherent. Your first moves will appear in a moment.</p>
           </div>
         </div>

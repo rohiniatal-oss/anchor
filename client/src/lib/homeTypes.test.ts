@@ -9,10 +9,10 @@ import {
   type Tab,
 } from "./homeTypes";
 
-const EXPECTED_TABS: Tab[] = ["today", "strategy", "braindump", "jobs", "network", "learn", "wins"];
+const EXPECTED_TABS: Tab[] = ["today", "strategy", "braindump", "jobs", "network", "learn", "wins", "profile"];
 
 test("home route paths cover every shell tab exactly once", () => {
-  assert.deepEqual(HOME_ROUTE_PATHS, ["/", "/strategy", "/braindump", "/jobs", "/network", "/learn", "/wins"]);
+  assert.deepEqual(HOME_ROUTE_PATHS, ["/", "/strategy", "/braindump", "/jobs", "/network", "/learn", "/wins", "/profile"]);
   assert.equal(new Set(HOME_ROUTE_PATHS).size, HOME_ROUTE_PATHS.length);
 });
 
@@ -27,6 +27,7 @@ test("tabFromPath ignores query strings on deep-linked hash routes", () => {
   assert.equal(tabFromPath("/network?contactDraft=%7B%7D"), "network");
   assert.equal(tabFromPath("/learn?learnDraft=%7B%7D"), "learn");
   assert.equal(tabFromPath("/strategy?foo=bar"), "strategy");
+  assert.equal(tabFromPath("/profile?from=jobs"), "profile");
 });
 
 test("routeBase strips query strings without losing the base route", () => {

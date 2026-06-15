@@ -5,14 +5,19 @@ import { storage } from "./storage";
 export function registerTaskAssistRoutes(app: Express) {
   app.post("/api/unstick", async (req, res) => {
     const step = String(req.body?.step || "").trim();
+    const currentStage = String(req.body?.currentStage || "").trim();
+    const stageOutput = String(req.body?.stageOutput || "").trim();
     if (!step) return res.status(400).json({ error: "Need a step" });
     try {
       const client = new OpenAI();
+      const stageCtx = currentStage
+        ? ` The broader task is in the "${currentStage}" stage — the goal for this stage is: ${stageOutput || "not specified"}.`
+        : "";
       const r = await client.responses.create({
         model: "gpt_5_1",
-        input: 'Someone with ADHD is stuck and can\'t start this step: "' + step + '". ' +
-          "Give ONE tiny physical 60-second action to break the freeze (e.g. 'Open a blank doc and type one sentence'). " +
-          "Warm, one short sentence, no preamble. Return just the sentence.",
+        input: 'Someone with ADHD is stuck and can\'t start this step: "' + step + '".' + stageCtx +
+          " Give ONE tiny physical 60-second action to break the freeze (e.g. 'Open a blank doc and type one sentence')." +
+          " Warm, one short sentence, no preamble. Return just the sentence.",
       });
       const hint = (r.output_text || "").trim().replace(/^["']|["']$/g, "");
       res.json({ hint: hint || "Set a 2-minute timer and just open the first thing." });

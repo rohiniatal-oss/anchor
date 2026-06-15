@@ -62,7 +62,7 @@ test("goal-source breakdown turns broad pursuit into concrete lane-filling steps
   assert.equal(workflowState.workObject, "Pipeline");
   assert.match(workflowState.currentStage, /Define target|Build list|Execute next batch/);
   assert.ok(steps.length >= 1);
-  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action/i);
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action|find one credible role|still-empty lane/i);
 });
 
 test("goal-source breakdown sharpens the first role-search move for a specific missing combination", async () => {
@@ -116,5 +116,5 @@ test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct
     steps.map((step: any) => String(step.text || "")).join(" | "),
     /use the|locate the|define this stage output|check completion criteria|break this stage into actions/i,
   );
-  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|open the saved role|pipeline action/i);
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|open the saved role|pipeline action|find one credible role|still-empty lane|most promising saved role/i);
 });

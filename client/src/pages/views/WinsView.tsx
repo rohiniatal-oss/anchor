@@ -1,26 +1,22 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Flame, Trophy, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Empty } from "@/components/home/Empty";
+import { mutateAndInvalidate } from "@/lib/api";
+import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { WIN_CATEGORY_LABEL, WIN_CATEGORY_SWATCH } from "@/lib/homeTypes";
+import { SectionHeading } from "@/components/home/SectionHeading";
 import { GroupLabel } from "@/components/home/GroupLabel";
 import { Loading } from "@/components/home/Loading";
-import { SectionHeading } from "@/components/home/SectionHeading";
-import { useCareerTracks } from "@/hooks/useCareerTracks";
-import { mutateAndInvalidate } from "@/lib/api";
-import { WIN_CATEGORY_LABEL, WIN_CATEGORY_SWATCH } from "@/lib/homeTypes";
-import type { Win } from "@shared/schema";
+import { Empty } from "@/components/home/Empty";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { WIN_CATEGORIES, type WinCategory } from "@shared/domainState";
+import type { Win } from "@shared/schema";
 
 type WinsSummary = {
-  total: number;
-  thisWeek: number;
-  thisMonth: number;
-  byCategory: Record<WinCategory, number>;
-  byCategoryWeek: Record<WinCategory, number>;
-  streakDays: number;
-  trackByWinId: Record<number, number | "untracked">;
+  total: number; thisWeek: number; thisMonth: number;
+  byCategory: Record<WinCategory, number>; byCategoryWeek: Record<WinCategory, number>;
+  streakDays: number; trackByWinId: Record<number, number | "untracked">;
 };
 
 export default function WinsView() {
@@ -31,20 +27,13 @@ export default function WinsView() {
   const trackNameById = new Map(careerTracks.map((t) => [t.id, t.name] as const));
   const [text, setText] = useState("");
   const [category, setCategory] = useState<WinCategory>("mindset");
-
   async function add() {
     if (!text.trim()) return;
     await mutateAndInvalidate("POST", "/api/wins", { text: text.trim(), winCategory: category }, ["/api/wins", "/api/stats", "/api/wins/summary"]);
     setText("");
   }
-
-  async function remove(id: number) {
-    await mutateAndInvalidate("DELETE", `/api/wins/${id}`, undefined, ["/api/wins", "/api/stats", "/api/wins/summary"]);
-  }
-
-  function dayLabel(ts: number) {
-    return new Date(ts).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/wins/${id}`, undefined, ["/api/wins", "/api/stats", "/api/wins/summary"]); }
+  function dayLabel(ts: number) { return new Date(ts).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); }
 
   const weekAgo = Date.now() - 7 * 86400000;
   const thisWeek = wins.filter((w) => w.createdAt >= weekAgo);
@@ -60,7 +49,7 @@ export default function WinsView() {
         {trackName && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid={`win-track-${w.id}`} title="Derived track">{trackName}</span>}
         {w.winCategory && <span className="hidden sm:inline-flex shrink-0 text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{WIN_CATEGORY_LABEL[w.winCategory as WinCategory] || w.winCategory}</span>}
         <span className="text-xs text-muted-foreground shrink-0">{dayLabel(w.createdAt)}</span>
-        <button onClick={() => remove(w.id)} aria-label="Delete" data-testid={`button-delete-win-${w.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
+        <button onClick={() => remove(w.id)} aria-label="Delete" data-testid={`button-delete-win-${w.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
       </div>
     );
   }
@@ -97,7 +86,6 @@ export default function WinsView() {
           </div>
         </div>
       )}
-
       <div className="flex flex-wrap gap-2 mb-3">
         <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="What went well? Anything counts…" className="h-11 flex-1 min-w-[12rem]" data-testid="input-win" />
         <select value={category} onChange={(e) => setCategory(e.target.value as WinCategory)} data-testid="select-win-category"

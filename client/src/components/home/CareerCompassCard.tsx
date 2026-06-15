@@ -72,8 +72,8 @@ export function CareerCompassCard({
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {coverage.missing.length > 0
-                  ? `Role gaps: ${compactLanePreview(coverage.missing, "Every live lane has a real role.")}`
-                  : "Every live lane has a real role."}
+                  ? `Role gaps: ${compactLanePreview(coverage.missing, "Every target has a real role.")}`
+                  : "Every target has a real role."}
               </p>
               {(coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0) && (
                 <p className="text-xs text-muted-foreground mt-1">
@@ -122,8 +122,8 @@ export function CareerCompassCard({
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             {coverage.missing.length > 0
-              ? `Still empty: ${compactLanePreview(coverage.missing, "Every live lane has a real role.")}`
-              : "Every live lane has a real role."}
+              ? `Still empty: ${compactLanePreview(coverage.missing, "Every target has a real role.")}`
+              : "Every target has a real role."}
           </p>
         </div>
       )}

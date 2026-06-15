@@ -1,27 +1,20 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Loader2, Plus, Sparkles, Wand2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Empty } from "@/components/home/Empty";
-import { Loading } from "@/components/home/Loading";
-import { SectionHeading } from "@/components/home/SectionHeading";
 import { mutateAndInvalidate } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { SectionHeading } from "@/components/home/SectionHeading";
+import { Loading } from "@/components/home/Loading";
+import { Empty } from "@/components/home/Empty";
 import type { Task } from "@shared/schema";
 
 type CaptureSug = { id: number; route: string; label: string; reason: string; confidence: string; question?: string };
-
 const ROUTE_ACTION_LABEL: Record<string, string> = {
-  today: "Do today",
-  task: "Keep as task",
-  job: "File under Jobs",
-  learn: "File under Learn",
-  network: "File under Network",
-  proof: "File as Proof asset",
-  decision: "Needs a decision",
-  keep: "Keep here",
+  today: "Do today", task: "Keep as task", job: "File under Jobs", learn: "File under Learn",
+  network: "File under Network", proof: "File as Work sample", decision: "Needs a decision", keep: "Keep here",
 };
 
 export default function BrainDumpView() {
@@ -38,10 +31,7 @@ export default function BrainDumpView() {
     setText("");
     if (created?.id) mutateAndInvalidate("POST", `/api/tasks/${created.id}/enrich`, {}, ["/api/tasks"]).catch(() => {});
   }
-
-  async function remove(id: number) {
-    await mutateAndInvalidate("DELETE", `/api/tasks/${id}`, undefined, ["/api/tasks"]);
-  }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/tasks/${id}`, undefined, ["/api/tasks"]); }
 
   async function sortAll() {
     setSorting(true);
@@ -49,24 +39,15 @@ export default function BrainDumpView() {
       const r = await apiRequest("POST", "/api/capture/sort");
       const data = await r.json();
       const map: Record<number, CaptureSug> = {};
-      (data?.suggestions || []).forEach((sg: CaptureSug) => {
-        map[sg.id] = sg;
-      });
+      (data?.suggestions || []).forEach((sg: CaptureSug) => { map[sg.id] = sg; });
       setTriage(map);
-    } catch {
-      toast({ title: "Couldn't sort right now", description: "Give it another go in a moment." });
-    } finally {
-      setSorting(false);
-    }
+    } catch { toast({ title: "Couldn't sort right now", description: "Give it another go in a moment." }); }
+    finally { setSorting(false); }
   }
 
   async function applyRoute(t: Task, route: string, label = "Done") {
     await mutateAndInvalidate("POST", `/api/capture/${t.id}/route`, { route }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current"]);
-    setTriage((st) => {
-      const n = { ...st };
-      delete n[t.id];
-      return n;
-    });
+    setTriage((st) => { const n = { ...st }; delete n[t.id]; return n; });
     toast({ title: label });
   }
 

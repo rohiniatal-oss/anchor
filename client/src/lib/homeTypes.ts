@@ -1,9 +1,9 @@
 import type { WinCategory } from "@shared/domainState";
 
-export type Step = { text: string; done: boolean };
+export type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string } };
 
-export type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins";
-export const HOME_ROUTE_PATHS = ["/", "/strategy", "/braindump", "/jobs", "/network", "/learn", "/wins"] as const;
+export type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins" | "profile";
+export const HOME_ROUTE_PATHS = ["/", "/strategy", "/braindump", "/jobs", "/network", "/learn", "/wins", "/profile"] as const;
 
 export const GOAL_SPINE_QUERY_KEYS = ["/api/goals/state", "/api/strategy/front-door", "/api/strategy/diagnostics"] as const;
 export const PENDING_CONTACT_DRAFT_KEY = "anchor.pending-contact-draft";
@@ -18,18 +18,13 @@ export function parseSteps(raw: string): Step[] {
   }
 }
 
-export function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 export const SIZE_LABEL: Record<string, string> = { quick: "quick", medium: "~45m", deep: "deep" };
 
 export const WIN_CATEGORY_LABEL: Record<WinCategory, string> = {
   job_progress: "Job progress",
   learning: "Learning",
   network: "Network",
-  proof_asset: "Proof asset",
+  proof_asset: "Work sample",
   mindset: "Mindset",
   admin: "Admin",
 };
@@ -140,6 +135,8 @@ export function tabFromPath(path: string): Tab {
       return "learn";
     case "/wins":
       return "wins";
+    case "/profile":
+      return "profile";
     default:
       return "today";
   }

@@ -10,6 +10,7 @@ export type JobFormT = {
   roleArchetype: string;
   narrativeAngle: string;
   sourceType: string;
+  jdText: string;
 };
 
 export const EMPTY_JOB_FORM: JobFormT = {
@@ -24,6 +25,7 @@ export const EMPTY_JOB_FORM: JobFormT = {
   roleArchetype: "",
   narrativeAngle: "",
   sourceType: "posting",
+  jdText: "",
 };
 
 export type JobTruthStripT = {

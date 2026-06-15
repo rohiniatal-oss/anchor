@@ -1,35 +1,33 @@
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   Sun, Moon, Sparkles, Briefcase, GraduationCap, Trophy,
-  ChevronDown, ChevronRight,
-  Users, Compass,
+  ChevronDown, ChevronRight, Users, Compass, FileText,
 } from "lucide-react";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
-import {
-  pathForTab,
-  Tab,
-  tabFromPath,
-} from "@/lib/homeTypes";
+import { type Tab, tabFromPath, pathForTab } from "@/lib/homeTypes";
+import { TodayView } from "@/pages/views/TodayView";
+import { StrategyView } from "@/pages/views/StrategyView";
 import BrainDumpView from "@/pages/views/BrainDumpView";
-import JobsView from "@/pages/views/JobsView";
-import LearnView, { ProofAssetsView } from "@/pages/views/LearnView";
-import NetworkView from "@/pages/views/NetworkView";
-import OnboardingView from "@/pages/views/OnboardingView";
-import StrategyView from "@/pages/views/StrategyView";
-import TodayView from "@/pages/views/TodayView";
+import { JobsView } from "@/pages/views/JobsView";
+import { NetworkView } from "@/pages/views/NetworkView";
+import { LearnView } from "@/pages/views/LearnView";
 import WinsView from "@/pages/views/WinsView";
-const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] = [
-  { id: "strategy", label: "Strategy", icon: Compass, blurb: "Your paths, at a glance" },
-  { id: "braindump", label: "Brain dump", icon: Sparkles, blurb: "Empty your head" },
-  { id: "jobs", label: "Jobs", icon: Briefcase, blurb: "Your applications" },
-  { id: "network", label: "Network", icon: Users, blurb: "People to reach" },
-  { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
+import { ProfileView } from "@/pages/views/ProfileView";
 
-  { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
+const HEADER_TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
+  { id: "jobs", label: "Jobs", icon: Briefcase },
+  { id: "network", label: "Network", icon: Users },
+  { id: "braindump", label: "Capture", icon: Sparkles },
 ];
 
+const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] = [
+  { id: "strategy", label: "Strategy", icon: Compass, blurb: "Your paths, at a glance" },
+  { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
+  { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
+  { id: "profile", label: "Profile", icon: FileText, blurb: "Your CV for tailored suggestions" },
+];
 
 export default function Home() {
   const { theme, toggle } = useTheme();
@@ -59,11 +57,19 @@ export default function Home() {
               <div className="font-bold text-lg tracking-tight" data-testid="text-appname">Anchor</div>
             </div>
           </button>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-0.5">
+            {HEADER_TABS.map(({ id, label, icon: Icon }) => (
+              <button key={id} onClick={() => go(id)} data-testid={`tab-${id}`}
+                className={`flex items-center gap-1.5 px-2.5 py-2 rounded-md text-sm font-medium hover-elevate transition-colors ${tab === id ? "text-foreground bg-muted/60" : "text-muted-foreground"}`}>
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
             <div className="relative">
               <button onClick={() => setMoreOpen((o) => !o)} data-testid="button-more"
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium hover-elevate ${tab !== "today" ? "text-foreground" : "text-muted-foreground"}`}>
-                More <ChevronDown className={`w-4 h-4 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
+                className={`flex items-center gap-1 px-2.5 py-2 rounded-md text-sm font-medium hover-elevate transition-colors ${MORE_TABS.some((t) => t.id === tab) ? "text-foreground bg-muted/60" : "text-muted-foreground"}`}>
+                <span className="hidden sm:inline">More</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
               </button>
               {moreOpen && (
                 <>
@@ -97,17 +103,15 @@ export default function Home() {
             <ChevronRight className="w-4 h-4 rotate-180" /> Back to Today
           </button>
         )}
-        {tab === "today" && <TodayView onOpenTab={go} onboardingFallback={<OnboardingView />} />}
-        {tab === "strategy" && <StrategyView onOpenTab={go} proofAssetsSlot={<ProofAssetsView />} />}
+        {tab === "today" && <TodayView onOpenTab={go} />}
+        {tab === "strategy" && <StrategyView onOpenTab={go} />}
         {tab === "braindump" && <BrainDumpView />}
         {tab === "jobs" && <JobsView />}
         {tab === "network" && <NetworkView />}
         {tab === "learn" && <LearnView />}
-
         {tab === "wins" && <WinsView />}
+        {tab === "profile" && <ProfileView />}
       </main>
     </div>
   );
 }
-
-

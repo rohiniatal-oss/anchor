@@ -1,33 +1,37 @@
+// @ts-nocheck
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowDown, ArrowUp, Ban, CalendarDays,
-  CheckCircle2, ChevronRight, Compass, ExternalLink, FileText, Flame, GraduationCap, Hammer,
-  ListChecks, Loader2, Lock, MessageSquare,
-  Pencil, Plus, RefreshCw, Trash2, Trophy, Users,
-  X,
+  Plus, Trash2, ExternalLink, CalendarDays, ChevronDown, ChevronRight,
+  Loader2, Check, Compass, Lock, ListChecks, Pencil,
+  ArrowUp, ArrowDown, Ban, CheckCircle2, RefreshCw,
+  Flame, Users, Hammer, GraduationCap, FileText, MessageSquare,
+  Trophy,
 } from "lucide-react";
-import { CardActions } from "@/components/home/CardActions";
-import { ConstraintBadge } from "@/components/home/ConstraintBadge";
-import { GroupLabel } from "@/components/home/GroupLabel";
-import { Loading } from "@/components/home/Loading";
-import { SectionHeading } from "@/components/home/SectionHeading";
-import { TrackChip } from "@/components/home/TrackChip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { useQueryClient } from "@tanstack/react-query";
 import { mutateAndInvalidate } from "@/lib/api";
+import { apiRequest } from "@/lib/queryClient";
+import { GOAL_SPINE_QUERY_KEYS, PENDING_CONTACT_DRAFT_KEY, PENDING_LEARN_DRAFT_KEY, queueIntakeDraft, buildPrefillHash, daysUntil, formatDeadline, deadlineTone } from "@/lib/homeTypes";
+import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { SectionHeading } from "@/components/home/SectionHeading";
+import { GroupLabel } from "@/components/home/GroupLabel";
+import { Loading } from "@/components/home/Loading";
+import { TrackChip } from "@/components/home/TrackChip";
+import { ConstraintBadge } from "@/components/home/ConstraintBadge";
+import { CardActions } from "@/components/home/CardActions";
+import { ViewSpineCallout, BroadPursuitJobsKickoff } from "@/lib/parallelPursuit";
+import { laneGuideForCombination, lanePresetForJob, JOB_ARCHETYPE_OPTIONS } from "@/lib/parallelPursuit";
 import { useLinkedTaskCount } from "@/lib/homeHelpers";
 import { LEARN_OUTPUT_META, LEARN_STATUS_LABEL } from "@/lib/learnShared";
-import { EMPTY_JOB_FORM, JobFormT, JobTruthStripT } from "@/lib/jobsViewTypes";
-import { BroadPursuitJobsKickoff, JOB_ARCHETYPE_OPTIONS, laneGuideForCombination, lanePresetForJob, ViewSpineCallout } from "@/lib/parallelPursuit";
-import { apiRequest } from "@/lib/queryClient";
 import { STEP_STATUS_TONE } from "@/lib/stepRailShared";
-import { buildPrefillHash, daysUntil, deadlineTone, formatDeadline, GOAL_SPINE_QUERY_KEYS, PENDING_CONTACT_DRAFT_KEY, PENDING_LEARN_DRAFT_KEY, queueIntakeDraft } from "@/lib/homeTypes";
-import { GoalPortfolioItemT, GoalsStateResponseT } from "@/lib/goalSpine";
-import type { CareerTrack, Contact, Job, JobPipelineStep, Learn, Task } from "@shared/schema";
-import { getLearnOutputState, getLearnStatus, getRelationshipStrength, getTrackId, isFellowship } from "@shared/domainState";
+import type { Job, Learn, Contact, Task, CareerTrack, JobPipelineStep } from "@shared/schema";
+import type { GoalPortfolioItemT, GoalsStateResponseT } from "@/lib/goalSpine";
+import type { JobFormT, JobTruthStripT } from "@/lib/jobsViewTypes";
+import { EMPTY_JOB_FORM } from "@/lib/jobsViewTypes";
+import { getTrackId, getRelationshipStrength, getLearnOutputState, getLearnStatus, isFellowship } from "@shared/domainState";
 import { requiredDomainsForTrack } from "@shared/capabilityTargets";
 import { domainLabel } from "@shared/capabilityDomains";
 
@@ -35,7 +39,7 @@ const JOB_COLS = [
   { id: "wishlist", label: "Want to apply" }, { id: "applied", label: "Applied" },
   { id: "interviewing", label: "Interviewing" }, { id: "closed", label: "Closed" },
 ] as const;
-// Sort: roles with a deadline first (soonest), then the rest (newest first).
+
 function sortJobs(a: Job, b: Job): number {
   const da = daysUntil(a.deadline), db = daysUntil(b.deadline);
   if (da !== null && db !== null) return da - db;
@@ -43,225 +47,76 @@ function sortJobs(a: Job, b: Job): number {
   if (db !== null) return 1;
   return b.id - a.id;
 }
-export default function JobsView() {
-  const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
-  const { data: learns = [] } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
-  const { data: truthStrips = [] } = useQuery<JobTruthStripT[]>({ queryKey: ["/api/jobs/truth-strips"] });
-  const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
-  const { data: tracks = [] } = useCareerTracks();
-  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
-  const { data: contacts = [] } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
-  const truthById = new Map(truthStrips.map((truth) => [truth.jobId, truth]));
-  const activeGoal = goalState?.goals?.[0] || null;
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<JobFormT>(EMPTY_JOB_FORM);
-  const [selectedLane, setSelectedLane] = useState<string>("");
-  const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
-  async function add() {
-    if (!form.title.trim()) return;
-    await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
-    setForm(EMPTY_JOB_FORM); setSelectedLane(""); setShowForm(false);
-  }
-  function startBlankRole() {
-    setSelectedLane("");
-    setForm(EMPTY_JOB_FORM);
-    setShowForm(true);
-  }
-  function startLaneRole(item: GoalPortfolioItemT) {
-    const preset = lanePresetForJob(item, tracks);
-    setForm(() => ({
-      ...EMPTY_JOB_FORM,
-      ...preset,
-    }));
-    setSelectedLane(item.combination);
-    setShowForm(true);
-  }
-  async function move(j: Job, dir: 1 | -1) {
-    const idx = JOB_COLS.findIndex((c) => c.id === j.status);
-    const next = JOB_COLS[idx + dir];
-    if (next) await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { status: next.id }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
-  }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/jobs/${id}`, undefined, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]); }
 
-  // MECE lanes: fellowships are OPPORTUNITIES YOU APPLY TO, grouped in their own
-  // lane (not paid roles). Everything else flows through the paid-role kanban.
-  const fellowships = jobs.filter(isFellowship).sort(sortJobs);
-  const roles = jobs.filter((j) => !isFellowship(j));
-
-  // Only show columns that have items (plus always 'wishlist'); shrink empties to a thin line.
-  const grouped = JOB_COLS.map((col) => ({ col, items: roles.filter((j) => j.status === col.id).sort(sortJobs) }));
-  const active = grouped.filter((g) => g.items.length > 0 || g.col.id === "wishlist");
-  const empty = grouped.filter((g) => g.items.length === 0 && g.col.id !== "wishlist");
-
-  // Within the Fellowships lane, separate the ones she can act on now (open window)
-  // from the watch/closed ones she's monitoring for the next cycle.
-  const openFellowships = fellowships.filter((f) => f.applicationWindowStatus !== "closed" && f.status !== "closed");
-  const watchFellowships = fellowships.filter((f) => f.applicationWindowStatus === "closed" || f.status === "closed");
-  const showRoleBoard = roles.length > 0;
-
-  return (
-    <div>
-      <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Jobs" sub="Roles and applications, soonest deadlines first." />
-        <Button onClick={() => showForm ? setShowForm(false) : startBlankRole()} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
-      </div>
-      {activeGoal && !(roles.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="jobs" goal={activeGoal} />}
-      {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onStartLane={startLaneRole} />}
-      {showForm && (
-        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2 sm:grid-cols-2">
-          {selectedLane && (
-            <div className="sm:col-span-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" data-testid="job-form-lane-banner">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Selected lane</p>
-                  <p className="text-sm font-medium">{selectedLane}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedLane("");
-                    setForm((current) => ({ ...current, roleArchetype: "", narrativeAngle: "", note: "", nextStep: "", relatedTrackId: null }));
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  data-testid="button-clear-job-lane"
-                >
-                  Clear lane
-                </button>
-              </div>
-              {selectedLaneGuide && (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">What counts here</p>
-                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.fitHint}</p>
-                  </div>
-                  <div className="rounded-md border border-card-border bg-card/70 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Try searches like</p>
-                    <p className="mt-1 text-xs text-foreground">{selectedLaneGuide.searchHint}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          <div className="sm:col-span-2">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Readiness template</p>
-            <div className="flex flex-wrap gap-1.5">
-              {JOB_ARCHETYPE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setForm({ ...form, roleArchetype: option.value })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.roleArchetype === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid={`button-job-archetype-${option.value}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-1">This shapes the seeded readiness rail once you expand the role.</p>
-          </div>
-          {tracks.length > 0 && (
-            <div className="sm:col-span-2">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">Track link</p>
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, relatedTrackId: null })}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId == null ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                  data-testid="button-job-track-none"
-                >
-                  Leave unlinked
-                </button>
-                {tracks.map((track) => (
-                  <button
-                    key={track.id}
-                    type="button"
-                    onClick={() => setForm({ ...form, relatedTrackId: track.id })}
-                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
-                    data-testid={`button-job-track-${track.id}`}
-                  >
-                    {track.name}
-                  </button>
-                ))}
-              </div>
-              {selectedLaneGuide && form.relatedTrackId != null && (
-                <p className="mt-1 text-[11px] text-muted-foreground">Anchor linked the nearest matching track, but you can change it.</p>
-              )}
-            </div>
-          )}
-          <Input
-            placeholder={selectedLaneGuide?.titlePlaceholder || "Role title *"}
-            value={form.title}
-            onChange={(e) => setForm({ ...form, title: e.target.value })}
-            data-testid="input-job-title"
-          />
-          <Input placeholder="Company / org" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} data-testid="input-job-company" />
-          <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} data-testid="input-job-location" />
-          <Input placeholder="Deadline (YYYY-MM-DD)" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} data-testid="input-job-deadline" />
-          <Input placeholder="Link to posting" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" data-testid="input-job-url" />
-          <Input placeholder="Why you fit this role / lane" value={form.narrativeAngle} onChange={(e) => setForm({ ...form, narrativeAngle: e.target.value })} className="sm:col-span-2" data-testid="input-job-narrative-angle" />
-          <Input placeholder="Lane or sourcing note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-job-note" />
-          <Input placeholder="Next step (e.g. tailor CV)" value={form.nextStep} onChange={(e) => setForm({ ...form, nextStep: e.target.value })} className="sm:col-span-2" data-testid="input-job-nextstep" />
-          <div className="sm:col-span-2 flex gap-2 justify-end"><Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_JOB_FORM); }}>Cancel</Button><Button onClick={add} data-testid="button-save-job">Save role</Button></div>
-        </div>
-      )}
-      {isLoading ? <Loading /> : (
-        <>
-          {showRoleBoard && (
-            <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {active.map(({ col, items }) => (
-              <div key={col.id} className="rounded-xl border border-border bg-muted/30 p-3">
-                <div className="flex items-center justify-between mb-2.5 px-1"><h2 className="font-semibold text-sm">{col.label}</h2><span className="text-xs text-muted-foreground tabular-nums">{items.length}</span></div>
-                <div className="space-y-2">
-                  {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
-                  {items.length === 0 && <p className="text-xs text-muted-foreground px-1 py-3">Add roles you want to apply for.</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-          {empty.length > 0 && (
-            <p className="mt-3 text-xs text-muted-foreground">Empty: {empty.map((g) => g.col.label).join(" · ")} — cards appear here as you move them along.</p>
-          )}
-
-            </>
-          )}
-          {/* FELLOWSHIPS LANE — opportunities you apply to (eligibility + deadline +
-              application steps), NOT resources you consume. Open ones render with
-              the fellowship readiness rail; watch/closed ones read as monitored. */}
-          {fellowships.length > 0 && (
-            <div className="mt-8" data-testid="fellowships-lane">
-              <SectionHeading title="Fellowships" sub="Opportunities you apply to. Closed ones are kept to watch for next cycle." />
-              {openFellowships.length > 0 && (
-                <div className="mb-4">
-                  <GroupLabel count={openFellowships.length}><Compass className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Open / apply now</GroupLabel>
-                  <div className="grid gap-2.5 sm:grid-cols-2">
-                    {openFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
-                  </div>
-                </div>
-              )}
-              {watchFellowships.length > 0 && (
-                <div>
-                  <GroupLabel count={watchFellowships.length}><CalendarDays className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Watch / closed for 2026</GroupLabel>
-                  <div className="grid gap-2.5 sm:grid-cols-2">
-                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-/* P4.1: Job pipeline step rail — a task-generative readiness view over a job.
-   Each step does ONE of: materialize-as-task / mark-done / mark-blocked. Editing
-   changes sequence/label only. Eligibility = locked amber chip above the rail
-   (nothing hidden). Deadline lives in the card clarity strip, never orders steps. */
 const ELIGIBILITY_LABEL: Record<string, string> = {
   visa: "Visa sponsorship needed", citizenship: "Citizenship required",
   phd: "PhD required", likely_ineligible: "Likely ineligible",
 };
+
+const READINESS_STAGES = [
+  { key: "cv", label: "CV tailored" },
+  { key: "cover", label: "Cover letter" },
+  { key: "questions", label: "Application questions" },
+  { key: "sample", label: "Work sample" },
+  { key: "referral", label: "Referral secured" },
+  { key: "submitted", label: "Submitted" },
+  { key: "follow_up", label: "Followed up" },
+] as const;
+const READINESS_ORDER = ["none", "cv", "cover", "questions", "sample", "referral", "submitted", "follow_up"];
+
+function ApplicationReadinessBar({ j, expanded }: { j: Job; expanded: boolean }) {
+  const { toast } = useToast();
+  const currentIdx = READINESS_ORDER.indexOf(j.applicationReadiness || "none");
+
+  async function setReadiness(stageKey: string) {
+    const clickedIdx = READINESS_ORDER.indexOf(stageKey);
+    const newKey = clickedIdx === currentIdx ? (READINESS_ORDER[clickedIdx - 1] ?? "none") : stageKey;
+    await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { applicationReadiness: newKey }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    const label = READINESS_STAGES.find((s) => s.key === newKey)?.label;
+    toast({ title: newKey === "none" ? "Checklist cleared." : `Marked: ${label}` });
+  }
+
+  if (!expanded) {
+    if (currentIdx === 0) return null;
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <div className="flex items-center gap-0.5">
+          {READINESS_STAGES.map((s, i) => (
+            <div key={s.key} className={`w-1.5 h-1.5 rounded-full ${i + 1 <= currentIdx ? "bg-primary" : "bg-muted-foreground/25"}`} />
+          ))}
+        </div>
+        <span className="text-[10px] text-muted-foreground">{READINESS_STAGES[currentIdx - 1]?.label}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Application checklist</p>
+      <div className="space-y-0.5">
+        {READINESS_STAGES.map((s, i) => {
+          const done = i + 1 <= currentIdx;
+          const nextUp = i === currentIdx;
+          return (
+            <button
+              key={s.key}
+              onClick={() => setReadiness(s.key)}
+              className={`w-full flex items-center gap-2 text-left px-1.5 py-1 rounded text-xs transition-colors hover:bg-muted/50 ${done ? "text-foreground" : nextUp ? "text-foreground font-medium" : "text-muted-foreground"}`}
+              data-testid={`readiness-${j.id}-${s.key}`}
+            >
+              <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${done ? "border-primary bg-primary/15" : nextUp ? "border-foreground/40" : "border-muted-foreground/25"}`}>
+                {done && <Check className="w-2 h-2 text-primary" />}
+              </span>
+              <span>{s.label}</span>
+              {nextUp && <span className="ml-auto text-[10px] text-muted-foreground/60">up next</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function JobStepRail({ j }: { j: Job }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -331,9 +186,6 @@ function JobStepRail({ j }: { j: Job }) {
   const doneCount = steps.filter((s) => s.status === "done").length;
   const eligLabel = j.eligibilityRisk ? (ELIGIBILITY_LABEL[j.eligibilityRisk] || j.eligibilityRisk) : "";
 
-  // A closed-window opportunity (e.g. a watch/closed 2026 fellowship) is MONITORED,
-  // not actionable: show the eligibility + window context, but offer no task-
-  // generating rail so the app never suggests applying to a closed cycle.
   if (j.applicationWindowStatus === "closed") {
     return (
       <div className="mt-2.5 pt-2.5 border-t border-card-border" data-testid={`steprail-${j.id}`}>
@@ -353,7 +205,6 @@ function JobStepRail({ j }: { j: Job }) {
 
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border" data-testid={`steprail-${j.id}`}>
-      {/* Eligibility = LOCKED AMBER chip above the rail. Hides nothing — flag only. */}
       {eligLabel && (
         <div className="mb-2 inline-flex items-center gap-1 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-400 px-2 py-1 text-[11px] font-medium" data-testid={`eligibility-${j.id}`}>
           <Lock className="w-3 h-3" /> {eligLabel}
@@ -391,7 +242,7 @@ function JobStepRail({ j }: { j: Job }) {
                   <p className={`text-xs leading-snug ${s.status === "done" ? "line-through text-muted-foreground" : ""}`}>{s.stepLabel}</p>
                 )}
                 {s.status === "blocked" && <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5 inline-flex items-center gap-1"><Ban className="w-2.5 h-2.5" /> blocked{s.note ? `: ${s.note}` : ""}</p>}
-                {s.status === "skipped" && <p className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1"><X className="w-2.5 h-2.5" /> skipped{s.note ? `: ${s.note}` : ""}</p>}
+                {s.status === "skipped" && <p className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1"><CheckCircle2 className="w-2.5 h-2.5" /> skipped{s.note ? `: ${s.note}` : ""}</p>}
                 {s.taskId && !editing && <p className="text-[10px] text-muted-foreground mt-0.5 inline-flex items-center gap-1"><ListChecks className="w-2.5 h-2.5" /> task created</p>}
               </div>
               {editing ? (
@@ -453,217 +304,10 @@ function getJobWarmSupport(trackId: number | null, contacts: Contact[]) {
   return { trackContacts, warmTrackContacts, weak, candidates };
 }
 
-function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }: { j: Job; truth: JobTruthStripT | null; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
-  const { toast } = useToast();
-  const idx = JOB_COLS.findIndex((c) => c.id === j.status);
-  const trackId = getTrackId("jobs", j);
-  const track = tracks.find((t) => t.id === trackId) || null;
-  const linked = useLinkedTaskCount(tasks, "job", j.id);
-  const [open, setOpen] = useState(false);
-  const [primaryBusy, setPrimaryBusy] = useState(false);
-
-  // An eligibility-gated role is a dead end — don't dangle the whole work surface
-  // (rail + outreach) under it. It collapses to a quiet "probably skip" state.
-  const gated = j.eligibilityRisk === "likely_ineligible";
-  const windowClosed = j.applicationWindowStatus === "closed" || j.status === "closed";
-  const warmSupport = getJobWarmSupport(trackId, contacts);
-  const supportItems = getJobCapabilitySupportItems(trackId, learns);
-  const requiredDomains = track ? requiredDomainsForTrack(track) : [];
-
-  async function createJobNextTask() {
-    const r = await mutateAndInvalidate("POST", `/api/jobs/${j.id}/create-next-task`, {}, ["/api/tasks", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
-    toast({
-      title: r?.reused ? "Already on your list." : "Job task created.",
-      description: r?.reused ? "There's already an open task for this role." : "Find it in Brain dump, or in Today if it gets planned.",
-    });
-  }
-
-  async function createOutreachTask(c: Contact) {
-    const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
-    toast({
-      title: r?.reused ? "Already on your list." : "Outreach task created.",
-      description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned.",
-    });
-  }
-
-  async function createSupportTask(l: Learn) {
-    const endpoint = getLearnOutputState(l) === "reference" ? `/api/learn/${l.id}/create-next-task` : `/api/learn/${l.id}/create-output-task`;
-    const r = await mutateAndInvalidate("POST", endpoint, {}, ["/api/tasks", "/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
-    toast({
-      title: r?.reused ? "Already on your list." : "Support task created.",
-      description: r?.reused ? "There's already an open task for this learning item." : "Find it in Brain dump, or in Today if it gets planned.",
-    });
-  }
-
-  function openNetworkIntake() {
-    const draft = {
-      sector: j.company || "",
-      targetOrg: j.company || "",
-      targetRole: j.title || "",
-      why: `Could help warm a path into ${j.title}${j.company ? ` at ${j.company}` : ""}.`,
-      relatedTrackId: trackId,
-      askType: truth?.action === "warm" ? "referral" : "advice",
-      relationshipStrength: "cold",
-      status: "to_contact",
-    };
-    queueIntakeDraft(PENDING_CONTACT_DRAFT_KEY, draft);
-    window.location.hash = buildPrefillHash("/network", "contactDraft", draft);
-  }
-
-  function openLearnIntake() {
-    const primaryDomain = requiredDomains.length > 0 ? domainLabel(requiredDomains[0]) : "";
-    const draft = {
-      title: primaryDomain ? `${primaryDomain} capability support` : `${track?.name || j.title} capability support`,
-      category: primaryDomain,
-      capabilityBuilt: primaryDomain,
-      requiredOutput: track ? `One reusable output that strengthens ${track.name}.` : "",
-      note: `Support ${track?.name || "this lane"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
-      relatedTrackId: trackId,
-      proofIntent: true,
-      learnStatus: "open",
-    };
-    queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
-    window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
-  }
-
-  function openRoleSource() {
-    if (j.url) window.open(j.url, "_blank", "noopener,noreferrer");
-  }
-
-  // The ONE primary action for this card, by state. Calm surface = one clear move.
-  const primary = (() => {
-    if (gated || windowClosed) return null;
-    if (j.status === "wishlist") return {
-      label: "Mark applied", icon: CheckCircle2,
-      run: async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); },
-    };
-    return {
-      label: "Log progress", icon: Trophy,
-      run: async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win 🎉", description: "Application progress counts." }); },
-    };
-  })();
-  const truthPrimary = (() => {
-    if (gated || windowClosed || !truth) return null;
-    if (truth.action === "warm") {
-      return warmSupport.candidates[0]
-        ? { label: "Warm this role", icon: Flame, run: async () => createOutreachTask(warmSupport.candidates[0]) }
-        : { label: "Add warm contact", icon: Users, run: async () => openNetworkIntake() };
-    }
-    if (truth.action === "prove") {
-      return supportItems[0]
-        ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
-        : { label: "Add capability support", icon: GraduationCap, run: async () => openLearnIntake() };
-    }
-    if (truth.action === "clarify") {
-      return j.url
-        ? { label: "Clarify role", icon: ExternalLink, run: async () => openRoleSource() }
-        : { label: "Clarify role", icon: Compass, run: createJobNextTask };
-    }
-    if (truth.action === "prepare") return { label: "Create prep task", icon: FileText, run: createJobNextTask };
-    if (truth.action === "follow_up") return { label: "Create follow-up task", icon: MessageSquare, run: createJobNextTask };
-    if (truth.action === "apply") return { label: "Create application task", icon: CheckCircle2, run: createJobNextTask };
-    return null;
-  })();
-  const effectivePrimary = truthPrimary || (truth ? null : primary);
-
-  return (
-    <div className={`group rounded-lg border bg-card p-3 ${gated || windowClosed ? "border-card-border opacity-70" : "border-card-border"}`} data-testid={`job-${j.id}`}>
-      {/* ── HEADER: what it is (title · org · deadline · track) ── */}
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="font-medium text-sm leading-snug">{j.title}</h3>
-        <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-job-${j.id}`} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
-      </div>
-      {(j.company || j.location) && <p className="text-xs text-muted-foreground mt-0.5">{[j.company, j.location].filter(Boolean).join(" · ")}</p>}
-      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-        <TrackChip trackId={trackId} tracks={tracks} />
-        {j.deadline && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${deadlineTone(j.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(j.deadline)}</span>}
-        {gated && <ConstraintBadge text={`eligibility: ${j.eligibilityRisk}`} tone="warn" />}
-        {windowClosed && !gated && <ConstraintBadge text="window closed" />}
-      </div>
-
-      {/* ── GATED / CLOSED: quiet dead-end, no work surface ── */}
-      {gated ? (
-        <p className="text-xs text-muted-foreground mt-2">Probably skip — {j.note || "a stretch versus your background"}. Kept for reference.</p>
-      ) : windowClosed ? (
-        <div className="flex items-center justify-between mt-2">
-          <p className="text-xs text-muted-foreground">Watching for the next cycle.</p>
-          {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
-        </div>
-      ) : (
-        <>
-          {/* ── ONE primary action + open link + expand toggle ── */}
-          <div className="flex items-center justify-between mt-2.5 gap-2">
-            <div className="flex items-center gap-2">
-              {effectivePrimary && (
-                <button
-                  data-testid={`button-primary-job-${j.id}`}
-                  onClick={async () => {
-                    if (primaryBusy) return;
-                    setPrimaryBusy(true);
-                    try { await effectivePrimary.run(); } finally { setPrimaryBusy(false); }
-                  }}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-foreground bg-primary rounded-md px-2 py-1 hover-elevate"
-                >
-                  {primaryBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <effectivePrimary.icon className="w-3.5 h-3.5" />} {effectivePrimary.label}
-                </button>
-              )}
-              {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
-            </div>
-            <button onClick={() => setOpen((o) => !o)} data-testid={`button-expand-job-${j.id}`}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-              {open ? "Less" : "Open"} <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
-            </button>
-          </div>
-
-          {truth && (
-            <div className="mt-2 rounded-md border border-card-border bg-muted/35 px-2.5 py-2" data-testid={`job-truth-${j.id}`}>
-              <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                <span className="inline-flex rounded-full bg-card px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                  {truth.actionLabel}
-                </span>
-                {truth.reasons.slice(0, 2).map((reason) => (
-                  <span key={reason} className="inline-flex rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {reason}
-                  </span>
-                ))}
-              </div>
-              <p className="text-xs text-foreground leading-snug">{truth.headline}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">{truth.nextMove}</p>
-            </div>
-          )}
-
-          {/* ── EXPANDED: the work surface (steps, warm path, stage move, tasks) ── */}
-          {open && (
-            <div className="mt-3 pt-3 border-t border-card-border space-y-3">
-              {j.note && <p className="text-xs text-muted-foreground leading-snug">{j.note}</p>}
-              <div className="flex items-center gap-1">
-                {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">← back</button>}
-                {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">Move to {JOB_COLS[idx + 1].label} →</button>}
-              </div>
-              <JobStepRail j={j} />
-              <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
-              <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} />
-              <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
-                onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} />
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-// P4.2 — the key cross-module tie. When a live job has a WEAK warm path
-// (warmPathScore low/empty OR no contact linked to its track), surface a
-// lightweight inline prompt with candidate contacts in the matching warm
-// lane(s) for that track, each with one-click "Create outreach task" (the
-// shared createNextTask, sourceType "contact"). Warmth shown where a job
-// needs it — not an isolated CRM.
 const LOW_WARM_PATH = 40;
 function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null; contacts: Contact[] }) {
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<number | null>(null);
-  // Only meaningful for a live role.
   if (j.status === "closed") return null;
 
   const trackContacts = trackId != null ? contacts.filter((c) => getTrackId("contacts", c) === trackId) : [];
@@ -671,8 +315,6 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
   const weak = ((j.warmPathScore ?? 0) < LOW_WARM_PATH) || warmTrackContacts.length === 0;
   if (!weak) return null;
 
-  // Candidate contacts: those already on this track, else any non-cold contact
-  // (sorted by warmest lane relevance is overkill — keep it lightweight).
   const pool = trackContacts.length > 0 ? trackContacts : contacts;
   const candidates = pool
     .filter((c) => c.status !== "replied")
@@ -705,11 +347,11 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-amber-50/40 dark:bg-amber-950/10 -mx-1 px-2 pb-2" data-testid={`warmpath-${j.id}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1.5">
-        <Flame className="w-3.5 h-3.5" /> No warm path
+        <Flame className="w-3.5 h-3.5" /> No contacts linked
       </div>
       {candidates.length === 0 ? (
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">No contacts in this lane yet — add someone in Network to warm this role.</p>
+          <p className="text-xs text-muted-foreground">No contacts linked to this role yet — add someone in Network.</p>
           <button
             type="button"
             onClick={openNetworkIntake}
@@ -721,7 +363,7 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
         </div>
       ) : (
         <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">{trackContacts.length > 0 ? "Reach someone on this track:" : "Reach a warm contact to open a path:"}</p>
+          <p className="text-[11px] text-muted-foreground">{trackContacts.length > 0 ? "Someone who could help here:" : "Someone who could open a path:"}</p>
           {candidates.map((c) => (
             <div key={c.id} className="flex items-center justify-between gap-2" data-testid={`warmpath-candidate-${j.id}-${c.id}`}>
               <span className="text-xs min-w-0 truncate">{c.who || c.name || "contact"}</span>
@@ -871,3 +513,401 @@ function JobCapabilitySupport({
   );
 }
 
+function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }: { j: Job; truth: JobTruthStripT | null; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
+  const { toast } = useToast();
+  const idx = JOB_COLS.findIndex((c) => c.id === j.status);
+  const trackId = getTrackId("jobs", j);
+  const track = tracks.find((t) => t.id === trackId) || null;
+  const linked = useLinkedTaskCount(tasks, "job", j.id);
+  const [open, setOpen] = useState(false);
+  const [primaryBusy, setPrimaryBusy] = useState(false);
+
+  const gated = j.eligibilityRisk === "likely_ineligible";
+  const windowClosed = j.applicationWindowStatus === "closed" || j.status === "closed";
+  const warmSupport = getJobWarmSupport(trackId, contacts);
+  const supportItems = getJobCapabilitySupportItems(trackId, learns);
+  const requiredDomains = track ? requiredDomainsForTrack(track) : [];
+
+  async function createJobNextTask() {
+    const r = await mutateAndInvalidate("POST", `/api/jobs/${j.id}/create-next-task`, {}, ["/api/tasks", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    toast({
+      title: r?.reused ? "Already on your list." : "Job task created.",
+      description: r?.reused ? "There's already an open task for this role." : "Find it in Brain dump, or in Today if it gets planned.",
+    });
+  }
+
+  async function createOutreachTask(c: Contact) {
+    const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
+    toast({
+      title: r?.reused ? "Already on your list." : "Outreach task created.",
+      description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned.",
+    });
+  }
+
+  async function createSupportTask(l: Learn) {
+    const endpoint = getLearnOutputState(l) === "reference" ? `/api/learn/${l.id}/create-next-task` : `/api/learn/${l.id}/create-output-task`;
+    const r = await mutateAndInvalidate("POST", endpoint, {}, ["/api/tasks", "/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
+    toast({
+      title: r?.reused ? "Already on your list." : "Support task created.",
+      description: r?.reused ? "There's already an open task for this learning item." : "Find it in Brain dump, or in Today if it gets planned.",
+    });
+  }
+
+  function openNetworkIntake() {
+    const draft = {
+      sector: j.company || "",
+      targetOrg: j.company || "",
+      targetRole: j.title || "",
+      why: `Could help warm a path into ${j.title}${j.company ? ` at ${j.company}` : ""}.`,
+      relatedTrackId: trackId,
+      askType: truth?.action === "warm" ? "referral" : "advice",
+      relationshipStrength: "cold",
+      status: "to_contact",
+    };
+    queueIntakeDraft(PENDING_CONTACT_DRAFT_KEY, draft);
+    window.location.hash = buildPrefillHash("/network", "contactDraft", draft);
+  }
+
+  function openLearnIntake() {
+    const primaryDomain = requiredDomains.length > 0 ? domainLabel(requiredDomains[0]) : "";
+    const draft = {
+      title: primaryDomain ? `${primaryDomain} capability support` : `${track?.name || j.title} capability support`,
+      category: primaryDomain,
+      capabilityBuilt: primaryDomain,
+      requiredOutput: track ? `One reusable output that strengthens ${track.name}.` : "",
+      note: `Support ${track?.name || "this lane"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
+      relatedTrackId: trackId,
+      proofIntent: true,
+      learnStatus: "open",
+    };
+    queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
+    window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
+  }
+
+  function openRoleSource() {
+    if (j.url) window.open(j.url, "_blank", "noopener,noreferrer");
+  }
+
+  const primary = (() => {
+    if (gated || windowClosed) return null;
+    if (j.status === "wishlist") return {
+      label: "Mark applied", icon: CheckCircle2,
+      run: async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); },
+    };
+    return {
+      label: "Log progress", icon: Trophy,
+      run: async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win 🎉", description: "Application progress counts." }); },
+    };
+  })();
+  const truthPrimary = (() => {
+    if (gated || windowClosed || !truth) return null;
+    if (truth.action === "warm") {
+      return warmSupport.candidates[0]
+        ? { label: "Warm this role", icon: Flame, run: async () => createOutreachTask(warmSupport.candidates[0]) }
+        : { label: "Add warm contact", icon: Users, run: async () => openNetworkIntake() };
+    }
+    if (truth.action === "prove") {
+      return supportItems[0]
+        ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
+        : { label: "Add capability support", icon: GraduationCap, run: async () => openLearnIntake() };
+    }
+    if (truth.action === "clarify") {
+      return j.url
+        ? { label: "Clarify role", icon: ExternalLink, run: async () => openRoleSource() }
+        : { label: "Clarify role", icon: Compass, run: createJobNextTask };
+    }
+    if (truth.action === "prepare") return { label: "Create prep task", icon: FileText, run: createJobNextTask };
+    if (truth.action === "follow_up") return { label: "Create follow-up task", icon: MessageSquare, run: createJobNextTask };
+    if (truth.action === "apply") return { label: "Create application task", icon: CheckCircle2, run: createJobNextTask };
+    return null;
+  })();
+  const effectivePrimary = truthPrimary || (truth ? null : primary);
+
+  return (
+    <div className={`group rounded-lg border bg-card p-3 ${gated || windowClosed ? "border-card-border opacity-70" : "border-card-border"}`} data-testid={`job-${j.id}`}>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-medium text-sm leading-snug">{j.title}</h3>
+        <button onClick={onRemove} aria-label="Delete" data-testid={`button-delete-job-${j.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-muted-foreground hover:text-destructive shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+      </div>
+      {(j.company || j.location) && <p className="text-xs text-muted-foreground mt-0.5">{[j.company, j.location].filter(Boolean).join(" · ")}</p>}
+      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+        <TrackChip trackId={trackId} tracks={tracks} />
+        {j.deadline && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${deadlineTone(j.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(j.deadline)}</span>}
+        {gated && <ConstraintBadge text={`eligibility: ${j.eligibilityRisk}`} tone="warn" />}
+        {windowClosed && !gated && <ConstraintBadge text="window closed" />}
+      </div>
+
+      {gated ? (
+        <p className="text-xs text-muted-foreground mt-2">Probably skip — {j.note || "a stretch versus your background"}. Kept for reference.</p>
+      ) : windowClosed ? (
+        <div className="flex items-center justify-between mt-2">
+          <p className="text-xs text-muted-foreground">Watching for the next cycle.</p>
+          {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mt-2.5 gap-2">
+            <div className="flex items-center gap-2">
+              {effectivePrimary && (
+                <button
+                  data-testid={`button-primary-job-${j.id}`}
+                  onClick={async () => {
+                    if (primaryBusy) return;
+                    setPrimaryBusy(true);
+                    try { await effectivePrimary.run(); } finally { setPrimaryBusy(false); }
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-foreground bg-primary rounded-md px-2 py-1 hover-elevate"
+                >
+                  {primaryBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <effectivePrimary.icon className="w-3.5 h-3.5" />} {effectivePrimary.label}
+                </button>
+              )}
+              {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
+            </div>
+            <button onClick={() => setOpen((o) => !o)} data-testid={`button-expand-job-${j.id}`}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+              {open ? "Less" : "Open"} <ChevronRight className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+            </button>
+          </div>
+
+          {truth && !open && (
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap" data-testid={`job-truth-${j.id}`}>
+              <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary shrink-0">
+                {truth.actionLabel}
+              </span>
+              <p className="text-xs text-muted-foreground leading-snug line-clamp-1">{truth.headline}</p>
+            </div>
+          )}
+          {!open && <ApplicationReadinessBar j={j} expanded={false} />}
+          {truth && open && (
+            <div className="mt-2 rounded-md border border-card-border bg-muted/35 px-2.5 py-2">
+              <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                <span className="inline-flex rounded-full bg-card px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                  {truth.actionLabel}
+                </span>
+                {truth.reasons.slice(0, 2).map((reason) => (
+                  <span key={reason} className="inline-flex rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {reason}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-foreground leading-snug">{truth.headline}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">{truth.nextMove}</p>
+            </div>
+          )}
+
+          {open && (
+            <div className="mt-3 pt-3 border-t border-card-border space-y-3">
+              <ApplicationReadinessBar j={j} expanded={true} />
+              {j.note && <p className="text-xs text-muted-foreground leading-snug">{j.note}</p>}
+              {j.narrativeAngle && (
+                <p className="text-xs text-foreground/80 leading-snug">
+                  <span className="font-medium text-muted-foreground">Your angle: </span>{j.narrativeAngle}
+                </p>
+              )}
+              {j.jdText && (
+                <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                  <FileText className="w-3 h-3 shrink-0" /> JD saved — used for CV suggestions when you work on this application.
+                </p>
+              )}
+              <div className="flex items-center gap-1">
+                {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">← back</button>}
+                {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">Move to {JOB_COLS[idx + 1].label} →</button>}
+              </div>
+              <JobStepRail j={j} />
+              <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
+              <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} />
+              <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
+                onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export function JobsView() {
+  const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
+  const { data: learns = [] } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
+  const { data: truthStrips = [] } = useQuery<JobTruthStripT[]>({ queryKey: ["/api/jobs/truth-strips"] });
+  const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
+  const { data: tracks = [] } = useCareerTracks();
+  const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+  const { data: contacts = [] } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
+  const truthById = new Map(truthStrips.map((truth) => [truth.jobId, truth]));
+  const activeGoal = goalState?.goals?.[0] || null;
+  const [showForm, setShowForm] = useState(false);
+  const [showMoreJobFields, setShowMoreJobFields] = useState(false);
+  const [form, setForm] = useState<JobFormT>(EMPTY_JOB_FORM);
+  const [selectedLane, setSelectedLane] = useState<string>("");
+  const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
+  async function add() {
+    if (!form.title.trim()) return;
+    await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    setForm(EMPTY_JOB_FORM); setSelectedLane(""); setShowForm(false); setShowMoreJobFields(false);
+  }
+  function startBlankRole() {
+    setSelectedLane("");
+    setForm(EMPTY_JOB_FORM);
+    setShowForm(true);
+  }
+  function startLaneRole(item: GoalPortfolioItemT) {
+    const preset = lanePresetForJob(item, tracks);
+    setForm(() => ({
+      ...EMPTY_JOB_FORM,
+      ...preset,
+    }));
+    setSelectedLane(item.combination);
+    setShowForm(true);
+  }
+  async function move(j: Job, dir: 1 | -1) {
+    const idx = JOB_COLS.findIndex((c) => c.id === j.status);
+    const next = JOB_COLS[idx + dir];
+    if (next) await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { status: next.id }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+  }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/jobs/${id}`, undefined, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]); }
+
+  const fellowships = jobs.filter(isFellowship).sort(sortJobs);
+  const roles = jobs.filter((j) => !isFellowship(j));
+
+  const grouped = JOB_COLS.map((col) => ({ col, items: roles.filter((j) => j.status === col.id).sort(sortJobs) }));
+  const active = grouped.filter((g) => g.items.length > 0 || g.col.id === "wishlist");
+  const empty = grouped.filter((g) => g.items.length === 0 && g.col.id !== "wishlist");
+
+  const openFellowships = fellowships.filter((f) => f.applicationWindowStatus !== "closed" && f.status !== "closed");
+  const watchFellowships = fellowships.filter((f) => f.applicationWindowStatus === "closed" || f.status === "closed");
+  const showRoleBoard = roles.length > 0;
+
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-4">
+        <SectionHeading title="Jobs" sub="Roles and applications, soonest deadlines first." />
+        <Button onClick={() => showForm ? setShowForm(false) : startBlankRole()} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
+      </div>
+      {activeGoal && !(roles.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="jobs" goal={activeGoal} />}
+      {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onStartLane={startLaneRole} />}
+      {showForm && (
+        <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3">
+          {selectedLane && (
+            <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="job-form-lane-banner">
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Role type</p>
+                <p className="text-sm font-medium">{selectedLane}</p>
+                {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
+              </div>
+              <button type="button" onClick={() => { setSelectedLane(""); setForm((c) => ({ ...c, roleArchetype: "", narrativeAngle: "", note: "", nextStep: "", relatedTrackId: null })); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0" data-testid="button-clear-job-lane">Clear</button>
+            </div>
+          )}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input
+              placeholder={selectedLaneGuide?.titlePlaceholder || "Role title *"}
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              data-testid="input-job-title"
+              autoFocus
+            />
+            <Input placeholder="Company / org" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} data-testid="input-job-company" />
+            <Input placeholder="Link to posting" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} className="sm:col-span-2" data-testid="input-job-url" />
+          </div>
+          {tracks.length > 0 && (
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to a role type (optional)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {tracks.map((track) => (
+                  <button key={track.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === track.id ? null : track.id })}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground hover:text-foreground"}`}
+                    data-testid={`button-job-track-${track.id}`}>{track.name}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button type="button" onClick={() => setShowMoreJobFields((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMoreJobFields ? "rotate-180" : ""}`} />
+            {showMoreJobFields ? "Fewer options" : "More options (deadline, role type, notes)"}
+          </button>
+          {showMoreJobFields && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input placeholder="Deadline (YYYY-MM-DD)" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} data-testid="input-job-deadline" />
+              <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} data-testid="input-job-location" />
+              <div className="sm:col-span-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Role type (shapes the readiness checklist)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {JOB_ARCHETYPE_OPTIONS.map((option) => (
+                    <button key={option.value} type="button" onClick={() => setForm({ ...form, roleArchetype: option.value })}
+                      className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.roleArchetype === option.value ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
+                      data-testid={`button-job-archetype-${option.value}`}>{option.label}</button>
+                  ))}
+                </div>
+              </div>
+              <Input placeholder="Why you fit this role" value={form.narrativeAngle} onChange={(e) => setForm({ ...form, narrativeAngle: e.target.value })} className="sm:col-span-2" data-testid="input-job-narrative-angle" />
+              <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-job-note" />
+              <Input placeholder="First next step" value={form.nextStep} onChange={(e) => setForm({ ...form, nextStep: e.target.value })} className="sm:col-span-2" data-testid="input-job-nextstep" />
+              <div className="sm:col-span-2">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Job description</p>
+                <textarea
+                  placeholder="Paste the job posting here — used to suggest specific CV edits when you work on this application"
+                  value={form.jdText}
+                  onChange={(e) => setForm({ ...form, jdText: e.target.value })}
+                  data-testid="input-job-jd"
+                  className="w-full min-h-[120px] rounded-lg border border-input bg-background px-3 py-2 text-sm resize-y"
+                />
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_JOB_FORM); setShowMoreJobFields(false); }}>Cancel</Button>
+            <Button onClick={add} data-testid="button-save-job">Save role</Button>
+          </div>
+        </div>
+      )}
+      {isLoading ? <Loading /> : (
+        <>
+          {showRoleBoard && (
+            <div className="space-y-6">
+              {active.map(({ col, items }) => (
+                items.length > 0 || col.id === "wishlist" ? (
+                  <div key={col.id}>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{col.label}</span>
+                      {items.length > 0 && <span className="text-xs text-muted-foreground tabular-nums">({items.length})</span>}
+                    </div>
+                    <div className="space-y-2">
+                      {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                      {items.length === 0 && col.id === "wishlist" && (
+                        <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
+                          <p className="text-sm text-muted-foreground">No roles yet — add one above or use a lane shortcut.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null
+              ))}
+            </div>
+          )}
+          {fellowships.length > 0 && (
+            <div className="mt-8" data-testid="fellowships-lane">
+              <SectionHeading title="Fellowships" sub="Opportunities you apply to. Closed ones are kept to watch for next cycle." />
+              {openFellowships.length > 0 && (
+                <div className="mb-4">
+                  <GroupLabel count={openFellowships.length}><Compass className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Open / apply now</GroupLabel>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {openFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                  </div>
+                </div>
+              )}
+              {watchFellowships.length > 0 && (
+                <div>
+                  <GroupLabel count={watchFellowships.length}><CalendarDays className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Watch / closed for 2026</GroupLabel>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

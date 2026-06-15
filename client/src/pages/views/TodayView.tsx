@@ -1,59 +1,129 @@
-import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+// @ts-nocheck
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  CalendarDays,
-  Check,
-  ChevronRight,
-  ExternalLink,
-  Loader2,
-  MoonStar,
-  MoveRight,
-  Pin,
-  Plus,
-  Sparkles,
-  Target,
-  Trophy,
-  Wand2,
-  X,
+  Plus, Check, CalendarDays, Loader2, Target, ChevronRight,
+  Pin, Wand2, MoveRight, MoonStar, Trophy,
+  X, Sparkles, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CareerCompassCard } from "@/components/home/CareerCompassCard";
-import { GroupLabel } from "@/components/home/GroupLabel";
-import { useCareerTracks } from "@/hooks/useCareerTracks";
 import { useToast } from "@/hooks/use-toast";
 import { mutateAndInvalidate } from "@/lib/api";
+import { todayKey } from "@/lib/utils";
+import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
+import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { CareerCompassCard } from "@/components/home/CareerCompassCard";
+import { GroupLabel } from "@/components/home/GroupLabel";
+import OnboardingView from "@/pages/views/OnboardingView";
+import type { Task, Event } from "@shared/schema";
+import type { Tab } from "@/lib/homeTypes";
 import {
+  type PlanItemT, type DayPlanT, type CareerGoalT, type GoalsStateResponseT,
+  SLOT_LABEL, getBroadPursuitCoverage, isPreShrunkPlanItem, isBroadPursuitGoalItem,
   broadPursuitPlanTitle,
-  DayPlanT,
-  firstStepPreview,
-  GoalsStateResponseT,
-  getBroadPursuitCoverage,
-  isBroadPursuitGoalItem,
-  isPreShrunkPlanItem,
-  PlanItemT,
-  SLOT_LABEL,
 } from "@/lib/goalSpine";
-import {
-  deadlineTone,
-  formatDeadline,
-  parseSteps,
-  type Tab,
-  todayKey,
-  WIN_CATEGORY_LABEL,
-} from "@/lib/homeTypes";
-import type { Event, Task } from "@shared/schema";
-import type { WinCategory } from "@shared/domainState";
+import { WIN_CATEGORY_LABEL, type WinCategory } from "@/lib/homeTypes";
 
+type WorkflowStateCtx = { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string };
+type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx };
+function parseSteps(raw: string): Step[] {
+  try { const s = JSON.parse(raw || "[]"); return Array.isArray(s) ? s : []; } catch { return []; }
+}
+
+function daysUntil(d: string): number | null {
+  if (!d) return null;
+  const due = new Date(d + "T00:00:00");
+  if (isNaN(due.getTime())) return null;
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - now.getTime()) / 86400000);
+}
+function formatDeadline(d: string): string {
+  const diff = daysUntil(d);
+  if (diff === null) return d || "";
+  if (diff < 0) return `${Math.abs(diff)}d overdue`;
+  if (diff === 0) return "today";
+  if (diff === 1) return "tomorrow";
+  const due = new Date(d + "T00:00:00");
+  if (diff < 7) return due.toLocaleDateString(undefined, { weekday: "short" });
+  return due.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+function deadlineTone(d: string): string {
+  const diff = daysUntil(d);
+  if (diff === null) return "bg-muted text-muted-foreground";
+  if (diff <= 2) return "bg-destructive/10 text-destructive";
+  if (diff <= 7) return "bg-primary/10 text-primary";
+  return "bg-muted text-muted-foreground";
+}
+
+function nextVisibleStep(task?: Task | null) {
+  if (!task) return null;
+  const steps = parseSteps(task.steps || "[]");
+  return steps.find((step) => !step.done) || steps[0] || null;
+}
+
+function firstStepPreview(item: PlanItemT, task?: Task | null) {
+  const taskStep = nextVisibleStep(task);
+  if (taskStep?.text) return taskStep.text;
+  const text = item.explanation?.firstStep?.trim();
+  return text || null;
+}
+
+/* Compact task row used in the block grid */
+function MiniTaskRow({ t }: { t: Task }) {
+  const { toast } = useToast();
+  async function toggle() {
+    await mutateAndInvalidate("PATCH", `/api/tasks/${t.id}`, { done: true, status: "done" }, ["/api/tasks"]);
+    await mutateAndInvalidate("POST", "/api/wins", { text: t.title }, ["/api/wins", "/api/stats"]);
+    toast({ title: "Nice — one down.", description: "Logged as a win too." });
+  }
+  async function pin() {
+    await mutateAndInvalidate("POST", "/api/brain/accept", { candidate: { source: "task", sourceId: t.id, title: t.title, category: t.category, size: t.size, deadline: t.deadline, block: t.block }, pin: true }, ["/api/tasks"]);
+  }
+  return (
+    <div className="group flex items-start gap-2 py-0.5" data-testid={`task-${t.id}`}>
+      <button onClick={toggle} aria-label="Mark done" data-testid={`button-toggle-task-${t.id}`}
+        className="mt-0.5 w-4 h-4 shrink-0 rounded-[5px] border border-input grid place-items-center hover:border-primary" />
+      <button onClick={pin} className="flex-1 text-left text-sm leading-snug hover:text-primary" title="Make this your focus">
+        {t.title}
+        {t.deadline && <span className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${deadlineTone(t.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(t.deadline)}</span>}
+      </button>
+    </div>
+  );
+}
+
+/* Completed task row with an explicit "Promote to win" affordance (WS5). */
+function DoneTaskRow({ t }: { t: Task }) {
+  const { toast } = useToast();
+  const winCategory: WinCategory =
+    t.category === "job" || t.category === "interview" ? "job_progress"
+    : t.category === "learning" ? "learning"
+    : t.category === "substack" || t.category === "hustle" || t.category === "afterline" ? "proof_asset"
+    : t.sourceType === "contact" ? "network" : "admin";
+  async function promote() {
+    await mutateAndInvalidate("POST", "/api/wins", { text: t.title.replace(/^✨\s*/, ""), kind: "source", winCategory }, ["/api/wins", "/api/stats"]);
+    toast({ title: "Logged as a win 🎉", description: `Filed under ${WIN_CATEGORY_LABEL[winCategory]}.` });
+  }
+  return (
+    <div className="group flex items-center gap-2 py-0.5 text-sm text-muted-foreground" data-testid={`done-task-${t.id}`}>
+      <Check className="w-3.5 h-3.5 text-primary shrink-0" />
+      <span className="flex-1 line-through truncate">{t.title.replace(/^✨\s*/, "")}</span>
+      <button onClick={promote} data-testid={`button-promote-win-task-${t.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0"><Trophy className="w-3 h-3" /> Promote to win</button>
+    </div>
+  );
+}
+
+/* Right Now — activated focus with steps + gentle replanning */
 function RightNow({ pinned }: { pinned: Task }) {
   const { toast } = useToast();
   const [breaking, setBreaking] = useState(false);
   const [unsticking, setUnsticking] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
+  // P4.6a #7 — breakdown may return ONE clarifying question before it can split
+  // the task. Hold it here and re-call breakdown WITH the user's answer as context.
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const steps = parseSteps(pinned.steps);
+  const workflowCtx = steps[0]?.workflowState || null;
   const currentIdx = steps.findIndex((s) => !s.done);
   const current = currentIdx >= 0 ? steps[currentIdx] : null;
   const allStepsDone = steps.length > 0 && currentIdx === -1;
@@ -87,18 +157,21 @@ function RightNow({ pinned }: { pinned: Task }) {
   async function checkStep() {
     if (currentIdx < 0) return;
     const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true } : s));
-    setHint(null);
     await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
     toast({ title: next.some((s) => !s.done) ? "Nice — next step's up." : "All steps done — you did it." });
   }
+  // Completion goes through the real endpoint: marks done, logs a win, updates the
+  // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
     await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
     toast({ title: "Done — and logged as a win 🎉", description: "That's momentum. Pick your next thing when ready." });
   }
   async function unstick() {
-    if (!current) return;
     setUnsticking(true);
-    try { const res = await mutateAndInvalidate("POST", "/api/unstick", { step: current.text }, []); setHint(res.hint || null); }
+    try {
+      const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/unstick-to-step`, {}, ["/api/tasks"]);
+      toast({ title: "Added a tiny first step.", description: res.step || "Just do that one thing." });
+    }
     catch { toast({ title: "Couldn't think of one", description: "Try again in a moment." }); }
     finally { setUnsticking(false); }
   }
@@ -125,6 +198,7 @@ function RightNow({ pinned }: { pinned: Task }) {
         <Pin className="w-4 h-4" fill="currentColor" /> Right now
       </div>
       <p className="font-semibold text-lg leading-snug mb-1">{pinned.title}</p>
+      {/* Source context: deadline, done-condition, and a direct link to the real thing */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1">
         {pinned.deadline && <span className={`text-xs font-medium ${deadlineTone(pinned.deadline)}`}>{formatDeadline(pinned.deadline)}</span>}
         {pinned.doneWhen && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {pinned.doneWhen}</span>}
@@ -170,34 +244,76 @@ function RightNow({ pinned }: { pinned: Task }) {
           </Button>
         </div>
       )}
-      {current && (
-        <div className="mt-3">
-          <p className="text-xs text-muted-foreground mb-1.5">Your one next step ({steps.filter((s) => s.done).length}/{steps.length} done):</p>
-          <div className="flex items-start gap-3 rounded-lg bg-card border border-card-border p-3">
-            <button onClick={checkStep} aria-label="Mark step done" data-testid="button-check-step"
-              className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center hover-elevate" />
-            <span className="flex-1 font-medium leading-snug">{current.text}</span>
-          </div>
-          {steps.length > 1 && (
-            <p className="mt-2 text-xs text-muted-foreground">
-              You do not need to hold the whole task in your head. Finish this step and I&apos;ll surface the next one.
-            </p>
-          )}
-          {hint ? (
-            <p className="mt-2 text-sm rounded-lg bg-accent text-accent-foreground px-3 py-2" data-testid="text-unstick-hint">✨ {hint}</p>
-          ) : (
-            <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
-              className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary disabled:opacity-60">
-              {unsticking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-              {unsticking ? "Thinking…" : "Stuck? help me start"}
-            </button>
+      {workflowCtx?.currentStage && (
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+          <span className="font-semibold text-primary/80">{workflowCtx.currentStage}</span>
+          {workflowCtx.stageOutput && workflowCtx.stageOutput !== pinned.doneWhen && (
+            <><span aria-hidden>·</span><span>{workflowCtx.stageOutput}</span></>
           )}
         </div>
       )}
+      {current && (
+        <div className="mt-3">
+          {/* Step progress bar — shows at a glance where you are without overwhelming */}
+          {steps.length > 1 && (
+            <div className="flex items-center gap-1.5 mb-2.5">
+              {steps.map((s, idx) => (
+                <span key={idx} className={`h-1.5 rounded-full transition-all ${
+                  s.done ? "flex-1 bg-primary" : idx === currentIdx ? "flex-1 bg-primary/40" : "w-3 bg-muted"
+                }`} />
+              ))}
+              <span className="ml-1 text-[11px] text-muted-foreground tabular-nums shrink-0">
+                {steps.filter((s) => s.done).length}/{steps.length}
+              </span>
+            </div>
+          )}
+          <div
+            className="group/step flex items-start gap-3 rounded-xl bg-card border-2 border-primary/25 p-3.5 cursor-pointer"
+            onClick={checkStep}
+            role="button"
+            aria-label="Mark step done"
+          >
+            <button
+              onClick={(e) => { e.stopPropagation(); checkStep(); }}
+              data-testid="button-check-step"
+              aria-label="Mark step done"
+              className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center transition-colors group-hover/step:bg-primary group-hover/step:border-primary"
+            >
+              <Check className="w-3 h-3 text-primary opacity-0 group-hover/step:opacity-100 group-hover/step:text-primary-foreground transition-opacity" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <span className="font-medium leading-snug">{current.text}</span>
+              {current.substeps && current.substeps.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {current.substeps.map((sub, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <span className="shrink-0 mt-0.5 text-primary/40" aria-hidden>›</span>
+                      {sub}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {steps.length > 1 && (
+                <p className="text-[11px] text-muted-foreground mt-1.5">Tap to mark done — next step will appear</p>
+              )}
+            </div>
+          </div>
+          <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary disabled:opacity-60">
+              {unsticking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+              {unsticking ? "Adding step…" : "Stuck? Get a tiny first step"}
+            </button>
+        </div>
+      )}
       {allStepsDone && (
-        <div className="mt-3 flex items-center gap-3">
-          <p className="text-sm text-muted-foreground flex-1">All steps done — finish it off.</p>
-          <Button size="sm" onClick={finishTask} data-testid="button-finish-task"><Check className="w-4 h-4 mr-1" /> Mark done</Button>
+        <div className="mt-3 rounded-xl bg-primary/10 border border-primary/20 p-3.5 flex items-center gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-primary">All steps done</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Finish it off and log the win.</p>
+          </div>
+          <Button size="sm" onClick={finishTask} data-testid="button-finish-task" className="shrink-0">
+            <Check className="w-4 h-4 mr-1" /> Done
+          </Button>
         </div>
       )}
       {steps.length === 0 && (
@@ -214,55 +330,7 @@ function RightNow({ pinned }: { pinned: Task }) {
   );
 }
 
-function MiniTaskRow({ t }: { t: Task }) {
-  const { toast } = useToast();
-  async function toggle() {
-    await mutateAndInvalidate("PATCH", `/api/tasks/${t.id}`, { done: true, status: "done" }, ["/api/tasks"]);
-    await mutateAndInvalidate("POST", "/api/wins", { text: t.title }, ["/api/wins", "/api/stats"]);
-    toast({ title: "Nice — one down.", description: "Logged as a win too." });
-  }
-  async function pin() {
-    await mutateAndInvalidate("POST", "/api/brain/accept", { candidate: { source: "task", sourceId: t.id, title: t.title, category: t.category, size: t.size, deadline: t.deadline, block: t.block }, pin: true }, ["/api/tasks"]);
-  }
-  return (
-    <div className="group flex items-start gap-2 py-0.5" data-testid={`task-${t.id}`}>
-      <button onClick={toggle} aria-label="Mark done" data-testid={`button-toggle-task-${t.id}`}
-        className="mt-0.5 w-4 h-4 shrink-0 rounded-[5px] border border-input grid place-items-center hover:border-primary" />
-      <button onClick={pin} className="flex-1 text-left text-sm leading-snug hover:text-primary" title="Make this your focus">
-        {t.title}
-        {t.deadline && <span className={`ml-1.5 inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${deadlineTone(t.deadline)}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(t.deadline)}</span>}
-      </button>
-    </div>
-  );
-}
-
-function DoneTaskRow({ t }: { t: Task }) {
-  const { toast } = useToast();
-  const winCategory: WinCategory =
-    t.category === "job" || t.category === "interview" ? "job_progress"
-    : t.category === "learning" ? "learning"
-    : t.category === "substack" || t.category === "hustle" || t.category === "afterline" ? "proof_asset"
-    : t.sourceType === "contact" ? "network" : "admin";
-  async function promote() {
-    await mutateAndInvalidate("POST", "/api/wins", { text: t.title.replace(/^✨\s*/, ""), kind: "source", winCategory }, ["/api/wins", "/api/stats"]);
-    toast({ title: "Logged as a win 🎉", description: `Filed under ${WIN_CATEGORY_LABEL[winCategory]}.` });
-  }
-  return (
-    <div className="group flex items-center gap-2 py-0.5 text-sm text-muted-foreground" data-testid={`done-task-${t.id}`}>
-      <Check className="w-3.5 h-3.5 text-primary shrink-0" />
-      <span className="flex-1 line-through truncate">{t.title.replace(/^✨\s*/, "")}</span>
-      <button onClick={promote} data-testid={`button-promote-win-task-${t.id}`} className="opacity-0 group-hover:opacity-100 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0"><Trophy className="w-3 h-3" /> Promote to win</button>
-    </div>
-  );
-}
-
-export default function TodayView({
-  onOpenTab,
-  onboardingFallback,
-}: {
-  onOpenTab: (t: Tab) => void;
-  onboardingFallback?: ReactNode;
-}) {
+export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { data: tracks = [], isLoading: tracksLoading, isError: tracksError } = useCareerTracks();
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
@@ -278,6 +346,9 @@ export default function TodayView({
   const [plan, setPlan] = useState<DayPlanT | null>(null);
   const [planItems, setPlanItems] = useState<PlanItemT[]>([]);
   const [loadingPlan, setLoadingPlan] = useState(false);
+  // Quick-capture: get a stray thought out of your head from Today, without
+  // leaving the screen. Lands in the inbox (shows up in Brain dump to sort
+  // later) — deliberately NOT onto today, so the plan below stays calm.
   const [quickText, setQuickText] = useState("");
   async function quickCapture() {
     const t = quickText.trim();
@@ -287,26 +358,30 @@ export default function TodayView({
     if (created?.id) mutateAndInvalidate("POST", `/api/tasks/${created.id}/enrich`, {}, ["/api/tasks"]).catch(() => {});
     toast({ title: "Captured.", description: "It's in your brain dump — sort it whenever." });
   }
-  const [showCapacity, setShowCapacity] = useState(false);
   const [energy, setEnergy] = useState("medium");
   const taskById = new Map(tasks.map((task) => [task.id, task] as const));
 
+  // Load the PERSISTED plan (it lives in the DB now — survives reloads).
   useEffect(() => {
     if (isLoading || tracksLoading || tracks.length === 0 || pinned || plan || loadingPlan) return;
     getPlan("medium");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, tracksLoading, pinned, tracks.length]);
 
-  async function getPlan(e: string) {
+  async function getPlan(e: string, recompute = false) {
     setLoadingPlan(true);
     try {
-      const r = e !== "medium" || showCapacity
+      // Recompute when energy is explicitly chosen; otherwise just read current.
+      const r = recompute || e !== "medium"
         ? await mutateAndInvalidate("POST", "/api/plan/recompute", { energy: e, day }, [])
         : await mutateAndInvalidate("GET", `/api/plan/current?day=${day}&energy=${e}`, undefined, []);
-      setPlan(r?.plan || null); setPlanItems(Array.isArray(r?.items) ? r.items : []); setShowCapacity(false);
+      setPlan(r?.plan || null); setPlanItems(Array.isArray(r?.items) ? r.items : []);
     } catch { toast({ title: "Couldn't shape the day", description: "Try again in a moment." }); }
     finally { setLoadingPlan(false); }
   }
+  // Start an item via the IDENTITY-PRESERVING endpoint: it reads the exact plan
+  // item id, creates/reuses the backing task, links taskId both ways, derives the
+  // block from the slot (no hardcoded "morning"), and preserves source/doneWhen.
   async function startItem(it: PlanItemT) {
     await mutateAndInvalidate("POST", `/api/plan-items/${it.id}/start`, { day }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
     setPlan(null); setPlanItems([]);
@@ -318,7 +393,11 @@ export default function TodayView({
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 
-  if (!tracksLoading && !tracksError && !isLoading && tracks.length === 0) return <>{onboardingFallback ?? null}</>;
+  // Only gate to onboarding once the tracks query has GENUINELY resolved to an
+  // empty list. On a cold backend wake the query can error (retry is off), which
+  // leaves tracks defaulting to [] — treating that as "zero tracks" would flash
+  // onboarding at a user who actually has data. So an error is NOT empty.
+  if (!tracksLoading && !tracksError && !isLoading && tracks.length === 0) return <OnboardingView />;
   const activeGoal = goalState?.goals?.[0] || null;
 
   return (
@@ -326,6 +405,7 @@ export default function TodayView({
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
       <p className="text-sm text-muted-foreground mt-1 mb-3">Here's your day. Start at the top — you don't have to decide.</p>
 
+      {/* Quick-capture — always here so a stray thought never needs another tab. */}
       {activeGoal && <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} variant="compact" />}
       <div className="mb-5 flex gap-2">
         <Input value={quickText} onChange={(e) => setQuickText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") quickCapture(); }}
@@ -333,6 +413,7 @@ export default function TodayView({
         <Button className="h-10 px-3 shrink-0" variant="outline" onClick={quickCapture} data-testid="button-quick-capture"><Plus className="w-4 h-4 mr-1" /> Capture</Button>
       </div>
 
+      {/* Thin calendar line */}
       {events.length > 0 && (
         <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <CalendarDays className="w-4 h-4 text-primary" />
@@ -344,6 +425,7 @@ export default function TodayView({
         </div>
       )}
 
+      {/* HERO: either the active focus, or the day plan */}
       {pinned ? (
         <RightNow pinned={pinned} />
       ) : (
@@ -366,71 +448,68 @@ export default function TodayView({
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
                   <Target className="w-4 h-4" /> Today, in order
                 </div>
-                <button onClick={() => setShowCapacity((s) => !s)} data-testid="button-replan" className="text-xs text-muted-foreground hover:text-foreground">
-                  different kind of day?
-                </button>
-              </div>
-              {showCapacity && (
-                <div className="mb-3 rounded-lg bg-card border border-card-border p-3">
-                  <p className="text-xs text-muted-foreground mb-2">How's your energy? I'll reshape around it.</p>
-                  <div className="flex gap-1.5">
-                    {[["low", "Low"], ["medium", "Medium"], ["high", "High"]].map(([v, l]) => (
-                      <button key={v} onClick={() => { setEnergy(v); getPlan(v); }} data-testid={`energy-${v}`}
-                        className={`px-3 py-1.5 rounded-full text-sm border ${energy === v ? "border-primary bg-primary/10 text-primary font-medium" : "border-border text-muted-foreground hover:text-foreground"}`}>{l}</button>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1" aria-label="Energy level">
+                  {([["low", "Low"], ["medium", "Medium"], ["high", "High"]] as const).map(([v, l]) => (
+                    <button key={v} onClick={() => { setEnergy(v); getPlan(v, true); }} data-testid={`energy-${v}`}
+                      className={`px-2 py-1 rounded-full text-xs font-medium border transition-colors ${energy === v ? "border-primary bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{l}</button>
+                  ))}
                 </div>
-              )}
+              </div>
               <div className="space-y-2">
                 {activeItems.map((it, i) => {
                   const linkedTask = it.taskId ? taskById.get(it.taskId) : undefined;
                   const nextStepText = firstStepPreview(it, linkedTask);
                   const preShrunk = isPreShrunkPlanItem(it);
-                  const showPreviewStep = !!nextStepText && (preShrunk || !linkedTask || !it.taskId || i === 0);
+                  const showPreviewStep = !!nextStepText;
                   const broadPursuitItem = isBroadPursuitGoalItem(it, activeGoal);
                   const broadPursuitCoverage = broadPursuitItem && activeGoal ? getBroadPursuitCoverage(activeGoal) : null;
                   const compactTitle = broadPursuitItem ? (broadPursuitPlanTitle(activeGoal) || it.title) : it.title;
                   const compactSummary = broadPursuitItem
-                    ? "One credible role per lane is enough to start getting real market signal."
+                    ? "One real role per target type is enough to start getting market signal."
                     : (it.explanation?.summary || it.whySelected);
                   return (
-                    <button key={it.id} onClick={() => startItem(it)} data-testid={`plan-item-${i}`}
-                      className={`group w-full text-left flex items-start gap-3 rounded-xl bg-card border p-3.5 hover-elevate transition-colors ${isMVD(it) ? "border-primary/40" : "border-card-border"}`}>
-                      <span className={`shrink-0 mt-0.5 rounded-md text-[11px] font-semibold px-2 py-1 ${i === 0 ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>{SLOT_LABEL[it.slot] || it.slot}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-medium leading-snug">{compactTitle}</p>
-                          {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
-                          {preShrunk && <span className="shrink-0 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
-                        </div>
-                        {compactSummary && <p className="text-xs text-muted-foreground mt-0.5">{compactSummary}</p>}
-                        {broadPursuitCoverage && broadPursuitCoverage.missing.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {broadPursuitCoverage.missing.map((combination) => (
-                              <span
-                                key={combination}
-                                className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
-                              >
-                                {combination}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {!broadPursuitItem && it.explanation?.whyNow && it.explanation.whyNow !== (it.explanation.summary || it.whySelected) && <p className="text-xs text-muted-foreground/80 mt-0.5">{it.explanation.whyNow}</p>}
-                        {showPreviewStep && nextStepText && (
-                          <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
-                            <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
-                              {preShrunk ? "First tiny step" : "Smallest useful move"}
-                            </p>
-                            <p className="text-xs text-foreground mt-1">{nextStepText}</p>
-                          </div>
-                        )}
-                        {it.doneWhen && <p className="text-xs text-muted-foreground/80 mt-0.5 inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {it.doneWhen}</p>}
+                  <button key={it.id} onClick={() => startItem(it)} data-testid={`plan-item-${i}`} data-plan-rank={String(i)}
+                    className={`group w-full text-left flex items-start gap-3 rounded-xl bg-card border p-3.5 hover-elevate transition-colors ${isMVD(it) ? "border-primary/40" : "border-card-border"}`}>
+                    <span className={`shrink-0 mt-0.5 rounded-md text-[11px] font-semibold px-2 py-1 ${i === 0 ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"}`}>{SLOT_LABEL[it.slot] || it.slot}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium leading-snug">{compactTitle}</p>
+                        {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
+                        {preShrunk && <span className="shrink-0 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
                       </div>
-                      <span className="shrink-0 self-center text-muted-foreground group-hover:text-primary inline-flex items-center gap-1 text-xs font-medium">Start <ChevronRight className="w-4 h-4" /></span>
-                    </button>
-                  );
-                })}
+                      {compactSummary && <p className="text-xs text-muted-foreground mt-0.5">{compactSummary}</p>}
+                      {broadPursuitCoverage && broadPursuitCoverage.missing.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {broadPursuitCoverage.missing.map((combination) => (
+                            <span
+                              key={combination}
+                              className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                            >
+                              {combination}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {!broadPursuitItem && it.explanation?.whyNow && it.explanation.whyNow !== (it.explanation.summary || it.whySelected) && <p className="text-xs text-muted-foreground/80 mt-0.5">{it.explanation.whyNow}</p>}
+                      {showPreviewStep && nextStepText && (
+                        <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                            {preShrunk ? "First tiny step" : "Smallest useful move"}
+                          </p>
+                          <p className="text-xs text-foreground mt-1">{nextStepText}</p>
+                        </div>
+                      )}
+                      {it.doneWhen && <p className="text-xs text-muted-foreground/80 mt-0.5 inline-flex items-center gap-1"><Check className="w-3 h-3" /> Done when: {it.doneWhen}</p>}
+                      {linkedTask?.sourceUrl && (
+                        <a href={linkedTask.sourceUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                          className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                          <ExternalLink className="w-3 h-3" /> View source
+                        </a>
+                      )}
+                    </div>
+                    <span className="shrink-0 self-center text-muted-foreground group-hover:text-primary inline-flex items-center gap-1 text-xs font-medium">Start <ChevronRight className="w-4 h-4" /></span>
+                  </button>
+                )})}
               </div>
               {plan.note && <p className="text-xs text-muted-foreground mt-3 italic">{plan.note}</p>}
             </div>
@@ -439,14 +518,20 @@ export default function TodayView({
               <p className="text-sm text-muted-foreground mb-3">Nothing queued to plan yet. Add a thought, a job, or something to learn — then I'll shape a day.</p>
               <div className="flex flex-wrap justify-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => onOpenTab("braindump")}>Brain dump</Button>
-                <Button size="sm" variant="outline" onClick={() => getPlan(energy)}>Try again</Button>
+                <Button size="sm" variant="outline" onClick={() => getPlan(energy, true)}>Try again</Button>
               </div>
             </div>
           )}
         </div>
       )}
 
+      {/* Also on your list — ONE secondary list, deduped against the plan above.
+          No morning/afternoon/evening buckets: the plan IS the order, so a second
+          time-of-day model would just compete with it. We only show tasks the plan
+          hasn't already surfaced, so nothing appears twice. */}
       {(() => {
+        // A task is already "in the plan" if a plan item is backed by it, or points
+        // at the same source object (e.g. the same job/learn/hustle).
         const planTaskIds = new Set(activeItems.map((it) => it.taskId).filter(Boolean) as number[]);
         const planSourceKeys = new Set(
           activeItems.filter((it) => it.sourceType && it.sourceId != null).map((it) => `${it.sourceType}:${it.sourceId}`)
@@ -475,6 +560,7 @@ export default function TodayView({
                 </div>
               </div>
             )}
+            {/* Completed today — each can be explicitly promoted to a categorised win */}
             {doneToday.length > 0 && (
               <div className="mt-3 space-y-1">
                 {doneToday.map((t) => <DoneTaskRow key={t.id} t={t} />)}

@@ -94,6 +94,7 @@ export const jobs = sqliteTable("jobs", {
   sourceCheckedAt: integer("source_checked_at"),
   deadlineConfidence: text("deadline_confidence").notNull().default(""), // low|med|high
   applicationWindowStatus: text("application_window_status").notNull().default("open"), // open|rolling|closing|closed
+  jdText: text("jd_text").notNull().default(""), // pasted job description text
   createdAt: integer("created_at").notNull(),
 });
 
@@ -154,7 +155,9 @@ export const learn = sqliteTable("learn", {
   timeRequired: text("time_required").notNull().default(""),
   capabilityBuilt: text("capability_built").notNull().default(""), // what skill it produces
   requiredOutput: text("required_output").notNull().default(""), // the INTENDED output that proves it
-  outputEvidenceUrl: text("output_evidence_url").notNull().default(""), // P4.4: link/ref to the PRODUCED artifact
+  outputTitle: text("output_title").notNull().default(""), // actual title of the piece being built
+  outputStatus: text("output_status").notNull().default(""), // idea|drafting|published
+  outputEvidenceUrl: text("output_evidence_url").notNull().default(""), // link to the PRODUCED artifact
   prerequisites: text("prerequisites").notNull().default("[]"), // JSON [learnId,...]
   unlocks: text("unlocks").notNull().default("[]"), // JSON [learnId,...]
   relatedTrackId: integer("related_track_id"),
@@ -183,6 +186,15 @@ export const hustles = sqliteTable("hustles", {
   publishingCadence: text("publishing_cadence").notNull().default(""),
   proofAssetForTrack: integer("proof_asset_for_track"), // career_tracks.id
   createdAt: integer("created_at").notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// USER PROFILE — CV text and other per-user settings.
+// ─────────────────────────────────────────────────────────────────────────
+export const userProfile = sqliteTable("user_profile", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  cvText: text("cv_text").notNull().default(""),
+  updatedAt: integer("updated_at").notNull(),
 });
 
 export const wins = sqliteTable("wins", {
@@ -308,6 +320,7 @@ export const insertProofAssetStepSchema = createInsertSchema(proofAssetSteps).om
 export const insertWinSchema = createInsertSchema(wins).omit({ id: true, createdAt: true });
 export const insertContactSchema = createInsertSchema(contacts).omit({ id: true, createdAt: true });
 export const insertCareerTrackSchema = createInsertSchema(careerTracks).omit({ id: true, createdAt: true });
+export const insertUserProfileSchema = createInsertSchema(userProfile).omit({ id: true });
 export const insertDayPlanSchema = createInsertSchema(dayPlans).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertDayPlanItemSchema = createInsertSchema(dayPlanItems).omit({ id: true, createdAt: true });
 export const insertEntityLinkSchema = createInsertSchema(entityLinks).omit({ id: true, createdAt: true });
@@ -342,3 +355,5 @@ export type InsertEntityLink = z.infer<typeof insertEntityLinkSchema>;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 export type ActivityLog = typeof activityLog.$inferSelect;
+export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
+export type UserProfile = typeof userProfile.$inferSelect;

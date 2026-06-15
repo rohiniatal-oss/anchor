@@ -237,6 +237,16 @@ CREATE TABLE IF NOT EXISTS user_profile (
   cv_text TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS discovery_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain TEXT NOT NULL DEFAULT 'career',
+  concern TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft',
+  recommended_route TEXT NOT NULL DEFAULT '',
+  payload TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 // Migrations for columns added to existing tables after initial release.

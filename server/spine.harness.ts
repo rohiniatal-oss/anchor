@@ -19,6 +19,7 @@ export type Harness = {
 const TABLES = [
   "tasks", "events", "jobs", "job_pipeline_steps", "proof_asset_steps",
   "learn", "hustles", "wins", "contacts", "career_tracks",
+  "discovery_sessions",
   "day_plans", "day_plan_items", "entity_links", "activity_log",
 ];
 
@@ -40,6 +41,7 @@ export async function makeHarness(): Promise<Harness> {
   const { registerSprint1Routes } = await import("./sprint1");
   const { registerJobTruthRoutes } = await import("./jobTruth");
   const { registerCandidateRoutes } = await import("./candidates");
+  const { registerDiscoveryRoutes } = await import("./discovery");
   const { registerGoalStateRoutes } = await import("./goalState");
   const { registerTaskBreakdownRoutes } = await import("./taskBreakdownRoutes");
   const { registerRoutes } = await import("./routes");
@@ -56,6 +58,7 @@ export async function makeHarness(): Promise<Harness> {
   registerSprint1Routes(app);
   registerJobTruthRoutes(app);
   registerCandidateRoutes(app);
+  registerDiscoveryRoutes(app);
   registerGoalStateRoutes(app);
   registerTaskBreakdownRoutes(app);
   await registerRoutes(httpServer, app);

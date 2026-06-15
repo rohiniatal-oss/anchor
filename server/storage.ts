@@ -1,7 +1,7 @@
 import {
   tasks, events, jobs, learn, hustles, wins, contacts,
   dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps, proofAssetSteps, entityLinks,
-  userProfile,
+  userProfile, discoverySessions,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
@@ -16,6 +16,7 @@ import {
   type ActivityLog, type InsertActivityLog,
   type CareerTrack, type InsertCareerTrack,
   type UserProfile,
+  type DiscoverySession, type InsertDiscoverySession,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -154,6 +155,9 @@ export interface IStorage {
   getActivityLog(): Promise<ActivityLog[]>;
   getCareerTracks(): Promise<CareerTrack[]>;
   createCareerTrack(t: InsertCareerTrack): Promise<CareerTrack>;
+  getDiscoverySession(id: number): Promise<DiscoverySession | undefined>;
+  createDiscoverySession(session: InsertDiscoverySession): Promise<DiscoverySession>;
+  updateDiscoverySession(id: number, patch: Partial<InsertDiscoverySession>): Promise<DiscoverySession | undefined>;
   linkTrack(entity: TrackEntity, id: number, trackId: number | null): Promise<any | undefined>;
   // P4.4 — learn proof-building
   markLearnEvidenced(id: number, outputEvidenceUrl: string, proofToId?: number | null): Promise<Learn | undefined>;
@@ -305,6 +309,14 @@ export class DatabaseStorage implements IStorage {
   async getActivityLog() { return db.select().from(activityLog).orderBy(desc(activityLog.timestamp)).all(); }
   async getCareerTracks() { return db.select().from(careerTracks).orderBy(desc(careerTracks.priority)).all(); }
   async createCareerTrack(t: InsertCareerTrack) { return db.insert(careerTracks).values({ ...t, createdAt: Date.now() }).returning().get(); }
+  async getDiscoverySession(id: number) { return db.select().from(discoverySessions).where(eq(discoverySessions.id, id)).get(); }
+  async createDiscoverySession(session: InsertDiscoverySession) {
+    const now = Date.now();
+    return db.insert(discoverySessions).values({ ...session, createdAt: now, updatedAt: now }).returning().get();
+  }
+  async updateDiscoverySession(id: number, patch: Partial<InsertDiscoverySession>) {
+    return db.update(discoverySessions).set({ ...patch, updatedAt: Date.now() }).where(eq(discoverySessions.id, id)).returning().get();
+  }
   async linkTrack(entity: TrackEntity, id: number, trackId: number | null) {
     const table = TRACK_TABLES[entity];
     const patch = entity === "hustles" ? { proofAssetForTrack: trackId } : { relatedTrackId: trackId };

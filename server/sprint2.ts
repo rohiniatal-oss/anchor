@@ -462,7 +462,7 @@ function inferTrackId(title: string, tracks: CareerTrack[]) {
   return best?.id ?? undefined;
 }
 
-async function enrichTaskInput(raw: any) {
+export async function enrichTaskInput(raw: any) {
   const title = String(raw?.title || "").trim();
   const category = inferCategory(title, raw?.category);
   const estimate = inferEstimate(title, raw?.size);

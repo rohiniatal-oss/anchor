@@ -7,6 +7,7 @@ import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
 import { registerJobTruthRoutes } from "./jobTruth";
 import { registerCandidateRoutes } from "./candidates";
+import { registerDiscoveryRoutes } from "./discovery";
 import { registerGoalStateRoutes } from "./goalState";
 import { registerExplorationQueueRoutes } from "./explorationQueue";
 import { registerAnchorTodayRoutes } from "./anchorToday";
@@ -93,6 +94,7 @@ app.use((req, res, next) => {
   registerSprint1Routes(app);
   registerJobTruthRoutes(app);
   registerCandidateRoutes(app);
+  registerDiscoveryRoutes(app);
   registerGoalStateRoutes(app);
   registerExplorationQueueRoutes(app);
   registerStrategyBuilderRoutes(app);

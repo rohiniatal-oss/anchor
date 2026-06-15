@@ -197,6 +197,18 @@ export const userProfile = sqliteTable("user_profile", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+// DISCOVERY SESSIONS — lightweight working-goal drafts created from vague concerns.
+export const discoverySessions = sqliteTable("discovery_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  domain: text("domain").notNull().default("career"),
+  concern: text("concern").notNull().default(""),
+  status: text("status").notNull().default("draft"), // draft|committed|abandoned
+  recommendedRoute: text("recommended_route").notNull().default(""),
+  payload: text("payload").notNull().default("{}"), // JSON snapshot of the draft
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const wins = sqliteTable("wins", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   text: text("text").notNull(),
@@ -321,6 +333,7 @@ export const insertWinSchema = createInsertSchema(wins).omit({ id: true, created
 export const insertContactSchema = createInsertSchema(contacts).omit({ id: true, createdAt: true });
 export const insertCareerTrackSchema = createInsertSchema(careerTracks).omit({ id: true, createdAt: true });
 export const insertUserProfileSchema = createInsertSchema(userProfile).omit({ id: true });
+export const insertDiscoverySessionSchema = createInsertSchema(discoverySessions).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertDayPlanSchema = createInsertSchema(dayPlans).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertDayPlanItemSchema = createInsertSchema(dayPlanItems).omit({ id: true, createdAt: true });
 export const insertEntityLinkSchema = createInsertSchema(entityLinks).omit({ id: true, createdAt: true });
@@ -349,6 +362,8 @@ export type InsertCareerTrack = z.infer<typeof insertCareerTrackSchema>;
 export type CareerTrack = typeof careerTracks.$inferSelect;
 export type InsertDayPlan = z.infer<typeof insertDayPlanSchema>;
 export type DayPlan = typeof dayPlans.$inferSelect;
+export type InsertDiscoverySession = z.infer<typeof insertDiscoverySessionSchema>;
+export type DiscoverySession = typeof discoverySessions.$inferSelect;
 export type InsertDayPlanItem = z.infer<typeof insertDayPlanItemSchema>;
 export type DayPlanItem = typeof dayPlanItems.$inferSelect;
 export type InsertEntityLink = z.infer<typeof insertEntityLinkSchema>;

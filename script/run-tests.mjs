@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(import.meta.dirname, "..");
-const serverDir = path.join(repoRoot, "server");
+const testRoots = [path.join(repoRoot, "server"), path.join(repoRoot, "client", "src")];
 
 function collectTestFiles(dir) {
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -25,10 +25,10 @@ function collectTestFiles(dir) {
   return files;
 }
 
-const testFiles = collectTestFiles(serverDir).sort();
+const testFiles = testRoots.flatMap((dir) => collectTestFiles(dir)).sort();
 
 if (testFiles.length === 0) {
-  console.error("No test files found under server/.");
+  console.error("No test files found under server/ or client/src/.");
   process.exit(1);
 }
 

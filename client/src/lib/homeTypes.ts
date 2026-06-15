@@ -3,6 +3,7 @@ import type { WinCategory } from "@shared/domainState";
 export type Step = { text: string; done: boolean };
 
 export type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins";
+export const HOME_ROUTE_PATHS = ["/", "/strategy", "/braindump", "/jobs", "/network", "/learn", "/wins"] as const;
 
 export const GOAL_SPINE_QUERY_KEYS = ["/api/goals/state", "/api/strategy/front-door", "/api/strategy/diagnostics"] as const;
 export const PENDING_CONTACT_DRAFT_KEY = "anchor.pending-contact-draft";

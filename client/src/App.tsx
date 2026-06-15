@@ -6,21 +6,17 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { HOME_ROUTE_PATHS, routeBase, todayKey } from "@/lib/homeTypes";
 import Home from "@/pages/home";
 import NotFound from "@/pages/not-found";
 
 function normalizeRoutePath(path: string) {
-  return path.split("?")[0] || path;
+  return routeBase(path);
 }
 
 function useNormalizedHashLocation() {
   const [location, navigate] = useHashLocation();
   return [normalizeRoutePath(location), navigate] as [string, typeof navigate];
-}
-
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function RestartFromHereButton() {
@@ -139,13 +135,9 @@ function TodayPlanHierarchyStyles() {
 function AppRouter() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/strategy" component={Home} />
-      <Route path="/braindump" component={Home} />
-      <Route path="/jobs" component={Home} />
-      <Route path="/network" component={Home} />
-      <Route path="/learn" component={Home} />
-      <Route path="/wins" component={Home} />
+      {HOME_ROUTE_PATHS.map((path) => (
+        <Route key={path} path={path} component={Home} />
+      ))}
       <Route component={NotFound} />
     </Switch>
   );

@@ -20,7 +20,7 @@ import { registerProfileRoutes } from "./profileRoutes";
 import { registerNetworkStrategyRoutes } from "./networkStrategyRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { serveStatic } from "./static";
-import { initStorage } from "./storage";
+import { initStorage, getStorageRuntime } from "./storage";
 import { seedInitialData } from "./seed";
 import { createServer } from "node:http";
 
@@ -45,6 +45,17 @@ app.use(express.urlencoded({ extended: false }));
 initStorage();
 warnIfUsingDefaultDbPath();
 seedInitialData().catch((e) => console.error("Seed failed:", e));
+
+app.get("/api/health", (_req, res) => {
+  try {
+    getStorageRuntime().rawDb.prepare("SELECT 1").get();
+    res.json({ status: "ok", uptime: process.uptime() });
+  } catch (error) {
+    console.error("Health check failed:", error);
+    res.status(503).json({ status: "error" });
+  }
+});
+
 registerOptionalBasicAuth(app);
 startOptionalSqliteBackups();
 

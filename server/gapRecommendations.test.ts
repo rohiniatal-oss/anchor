@@ -21,10 +21,27 @@ async function makeAdvisoryTrack(h: Harness, extra: Record<string, unknown> = {}
   } as any);
 }
 
+async function syncRecommendations() {
+  const sync = await api(h.base, "POST", "/api/recommendations/sync", {});
+  assert.equal(sync.status, 200);
+  return api(h.base, "GET", "/api/recommendations");
+}
+
+test("GET /api/recommendations is read-only until sync is triggered", async () => {
+  await makeAdvisoryTrack(h);
+
+  const before = await api(h.base, "GET", "/api/recommendations");
+  assert.equal(before.status, 200);
+  assert.equal((before.json as any[]).length, 0);
+
+  const after = await syncRecommendations();
+  assert.ok((after.json as any[]).length > 0);
+});
+
 test("learning-theme recs are created for each open gap domain on an active track", async () => {
   const track = await makeAdvisoryTrack(h);
 
-  const res = await api(h.base, "GET", "/api/recommendations");
+  const res = await syncRecommendations();
   assert.equal(res.status, 200);
 
   const recs = res.json as any[];
@@ -43,11 +60,11 @@ test("learning-theme recs are created for each open gap domain on an active trac
   assert.equal(commsRec.source, "system");
 });
 
-test("sync is idempotent — no duplicate recs on repeated GET /api/recommendations", async () => {
+test("sync is idempotent — no duplicate recs on repeated POST /api/recommendations/sync", async () => {
   await makeAdvisoryTrack(h);
 
-  await api(h.base, "GET", "/api/recommendations");
-  const second = await api(h.base, "GET", "/api/recommendations");
+  await syncRecommendations();
+  const second = await syncRecommendations();
   assert.equal(second.status, 200);
 
   const recs = second.json as any[];
@@ -59,7 +76,7 @@ test("learning rec is staled when the gap domain becomes evidenced", async () =>
   const track = await makeAdvisoryTrack(h);
 
   // First sync creates recs
-  await api(h.base, "GET", "/api/recommendations");
+  await syncRecommendations();
 
   // Create a learn item that covers the geo domain and mark it evidenced
   const learnRes = await api(h.base, "POST", "/api/learn", {
@@ -78,7 +95,7 @@ test("learning rec is staled when the gap domain becomes evidenced", async () =>
   assert.equal(evidenceRes.status, 200);
 
   // Second sync should stale the geo rec
-  const afterEvidence = await api(h.base, "GET", "/api/recommendations");
+  const afterEvidence = await syncRecommendations();
   const recs = afterEvidence.json as any[];
   const geoRec = recs.find((r) => r.linkedTrackId === track.id && r.linkedGapKey === "geo");
   const commsRec = recs.find((r) => r.linkedTrackId === track.id && r.linkedGapKey === "comms");
@@ -92,12 +109,12 @@ test("system recs are staled when a track is deactivated", async () => {
   const track = await makeAdvisoryTrack(h);
 
   // First sync creates recs
-  await api(h.base, "GET", "/api/recommendations");
+  await syncRecommendations();
 
   // Deactivate the track directly (no PATCH route for career-tracks exists)
   h.sqlite.prepare("UPDATE career_tracks SET status = ? WHERE id = ?").run("paused", track.id);
 
-  const afterPause = await api(h.base, "GET", "/api/recommendations");
+  const afterPause = await syncRecommendations();
   const recs = afterPause.json as any[];
   const geoRec = recs.find((r) => r.linkedTrackId === track.id && r.linkedGapKey === "geo");
 
@@ -116,7 +133,7 @@ test("network-target rec is created for active tracks with live jobs but no cont
   });
   assert.equal(jobRes.status, 200);
 
-  const res = await api(h.base, "GET", "/api/recommendations");
+  const res = await syncRecommendations();
   const recs = res.json as any[];
   const networkRec = recs.find((r) => r.linkedTrackId === track.id && r.collection === "network-targets");
 
@@ -130,7 +147,7 @@ test("no network rec is created when a track has no live jobs", async () => {
   const track = await makeAdvisoryTrack(h);
   // No jobs added
 
-  const res = await api(h.base, "GET", "/api/recommendations");
+  const res = await syncRecommendations();
   const recs = res.json as any[];
   const networkRec = recs.find((r) => r.linkedTrackId === track.id && r.collection === "network-targets");
 
@@ -148,7 +165,7 @@ test("network rec is staled when a contact is added for the track", async () => 
   });
 
   // First sync creates network rec
-  await api(h.base, "GET", "/api/recommendations");
+  await syncRecommendations();
 
   // Add a contact for the track
   const contactRes = await api(h.base, "POST", "/api/contacts", {
@@ -160,7 +177,7 @@ test("network rec is staled when a contact is added for the track", async () => 
   assert.equal(contactRes.status, 200);
 
   // Second sync should stale the network rec
-  const afterContact = await api(h.base, "GET", "/api/recommendations");
+  const afterContact = await syncRecommendations();
   const recs = afterContact.json as any[];
   const networkRec = recs.find((r) => r.linkedTrackId === track.id && r.collection === "network-targets");
 
@@ -186,7 +203,7 @@ test("accepted or rejected recs are never staled by the sync", async () => {
   const rejectedId = recRes.json.id;
 
   // Sync should create a NEW geo rec (the rejected one doesn't count as coverage)
-  const after = await api(h.base, "GET", "/api/recommendations");
+  const after = await syncRecommendations();
   const recs = after.json as any[];
 
   const rejectedRec = recs.find((r) => r.id === rejectedId);

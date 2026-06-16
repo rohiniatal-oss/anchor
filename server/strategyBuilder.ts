@@ -1,6 +1,7 @@
 import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { buildLaneOperatingModel, type LaneOperatingModel } from "./laneState";
 import OpenAI from "openai";
+import { USER_PROFILE } from "./userPromptProfile";
 
 export type RoleArchetypeRecommendation = {
   archetype: string;
@@ -148,7 +149,7 @@ async function getMarketGroundedArchetypes(tasks: Task[], jobs: Job[], learn: Le
       // system state. No fake employers/URLs; role archetypes and people types only.
       input:
         `You are the market-grounding strategy engine for a job-search operating system. ` +
-        `User profile: ex-Bain, ex-Tony Blair Institute, Abraaj/private equity, public-sector strategy, KSA/Africa investment work; targeting London/UAE/remote roles around AI governance, geopolitical/strategic advisory, chief-of-staff/founder office, development/philanthropy strategy. ` +
+        `User profile: ${USER_PROFILE} ` +
         `Using current labour-market patterns and the saved system snapshot, recommend 3-5 role archetypes to explore/convert/watch. ` +
         `For each, return: archetype, priority (explore|convert|watch|pause), fitLogic, credibilityGap, capabilitySignal, peopleToFind (2-4 person TYPES, not names), resourceNeed, nextExperiment, marketSignal. ` +
         `MarketSignal should summarize why this lane exists now, not cite URLs. Do not invent specific open roles or specific people. ` +

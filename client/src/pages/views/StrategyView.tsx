@@ -12,6 +12,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { mutateAndInvalidate } from "@/lib/api";
 import { GOAL_SPINE_QUERY_KEYS, PENDING_CONTACT_DRAFT_KEY, PENDING_LEARN_DRAFT_KEY, queueIntakeDraft, buildPrefillHash } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { useRecommendations } from "@/hooks/useRecommendations";
 import { CareerCompassCard } from "@/components/home/CareerCompassCard";
 import { GroupLabel } from "@/components/home/GroupLabel";
 import { Loading } from "@/components/home/Loading";
@@ -182,6 +183,7 @@ function recommendationKindLabel(rec: RecommendationItem) {
 function recommendationShapeLabel(rec: RecommendationItem) {
   if (rec.executionShape === "ongoing-program") return "Multi-session";
   if (rec.executionShape === "sequenced-item") return "Multi-step";
+  if (rec.executionShape === "milestone-arc") return "Step-by-step arc";
   return "Single move";
 }
 
@@ -196,7 +198,7 @@ function recommendationPrimaryActionLabel(entityType: string) {
 export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data, isLoading } = useQuery<FrontDoor>({ queryKey: ["/api/strategy/front-door"] });
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
-  const { data: recommendations = [] } = useQuery<RecommendationItem[]>({ queryKey: ["/api/recommendations"] });
+  const { data: recommendations = [] } = useRecommendations<RecommendationItem[]>();
   const { data: careerTracks = [] } = useCareerTracks();
   const [openRecommendationId, setOpenRecommendationId] = useState<string>("");
   if (isLoading) return <Loading />;

@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import type { Task } from "@shared/schema";
 import OpenAI from "openai";
 import { buildCaptureTaskPatch } from "./captureTaskRouting";
+import { USER_PROFILE } from "./userPromptProfile";
 
 // Resolve a bare captured thought into REAL asset details before filing, so a
 // brain-dump like "read 80,000 hours career guide" becomes a Learn item WITH its
@@ -23,7 +24,7 @@ async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof
     const out = await client.responses.create({
       model: "gpt_5_1",
       input:
-        `Rohini targets AI governance / strategic advisory / chief-of-staff roles (ex-Bain, TBI, Abraaj). ` +
+        `User profile: ${USER_PROFILE} ` +
         `${ask}\nUse real-world knowledge; NEVER invent a fake URL â€” use "" if unsure. ` +
         `Capture: "${title}". Return ONLY a JSON object with those exact fields.`,
     });

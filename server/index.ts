@@ -50,7 +50,8 @@ app.get("/api/health", (_req, res) => {
   try {
     getStorageRuntime().rawDb.prepare("SELECT 1").get();
     res.json({ status: "ok", uptime: process.uptime() });
-  } catch {
+  } catch (error) {
+    console.error("Health check failed:", error);
     res.status(503).json({ status: "error" });
   }
 });

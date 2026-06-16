@@ -14,6 +14,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+RUN chown -R node:node /app
+USER node
 
 ENV NODE_ENV=production
 EXPOSE 5000

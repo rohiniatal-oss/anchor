@@ -335,7 +335,6 @@ CREATE TABLE IF NOT EXISTS contact_interactions (
   created_at INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_type, source_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_source_step ON tasks(source_step_type, source_step_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_list_done ON tasks(list, done);
 CREATE INDEX IF NOT EXISTS idx_day_plan_items_plan ON day_plan_items(plan_id);
 CREATE INDEX IF NOT EXISTS idx_day_plan_items_task ON day_plan_items(task_id);
@@ -361,6 +360,7 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE learn ADD COLUMN source_id INTEGER`,
   `ALTER TABLE tasks ADD COLUMN source_step_type TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE tasks ADD COLUMN source_step_id INTEGER`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_source_step ON tasks(source_step_type, source_step_id)`,
   `ALTER TABLE recommendation_milestones ADD COLUMN milestone_type TEXT NOT NULL DEFAULT 'content'`,
   `ALTER TABLE recommendation_milestones ADD COLUMN scaffolding TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE recommendation_milestones ADD COLUMN completion_note TEXT NOT NULL DEFAULT ''`,

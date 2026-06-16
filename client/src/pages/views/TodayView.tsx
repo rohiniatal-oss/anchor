@@ -585,6 +585,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [showCompass, setShowCompass] = useState(false);
   const [showSecondary, setShowSecondary] = useState<boolean | null>(null);
   const [showDoneList, setShowDoneList] = useState<boolean | null>(null);
+  const [showUpcomingPlan, setShowUpcomingPlan] = useState<boolean | null>(null);
   // Quick-capture: get a stray thought out of your head from Today, without
   // leaving the screen. Lands in the inbox (shows up in Brain dump to sort
   // later) — deliberately NOT onto today, so the plan below stays calm.
@@ -675,6 +676,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         ? await mutateAndInvalidate("POST", "/api/plan/recompute", { energy: e, day }, [])
         : await mutateAndInvalidate("GET", `/api/plan/current?day=${day}&energy=${e}`, undefined, []);
       setPlan(r?.plan || null); setPlanItems(Array.isArray(r?.items) ? r.items : []);
+      setShowUpcomingPlan(null);
       if (typeof r?.plan?.energy === "string" && ["low", "medium", "high"].includes(r.plan.energy)) {
         setEnergy(r.plan.energy);
       }
@@ -704,6 +706,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const hasPrimaryFocus = executionState.hasPrimaryFocus;
   const secondaryOpen = showSecondary ?? executionState.defaultSecondaryOpen;
   const doneListOpen = showDoneList ?? executionState.defaultDoneListOpen;
+  const upcomingPlanOpen = showUpcomingPlan ?? false;
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 
@@ -874,6 +877,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               </div>
               <div className="space-y-2">
                 {activeItems.map((it, i) => {
+                  if (i > 0 && !upcomingPlanOpen) return null;
                   const linkedTask = it.taskId ? taskById.get(it.taskId) : undefined;
                   const nextStepText = firstStepPreview(it, linkedTask);
                   const preShrunk = isPreShrunkPlanItem(it);
@@ -1061,6 +1065,29 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                   </div>
                 )})}
               </div>
+              {activeItems.length > 1 && (
+                <div className="mt-3 rounded-xl border border-card-border bg-card/70 px-3.5 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowUpcomingPlan((current) => current == null ? !upcomingPlanOpen : !current)}
+                    className="w-full flex items-center justify-between gap-3 text-left"
+                    data-testid="button-toggle-upcoming-plan"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{upcomingPlanOpen ? "Hide later cards" : `Show ${activeItems.length - 1} later card${activeItems.length - 1 === 1 ? "" : "s"}`}</p>
+                      <p className="text-xs text-muted-foreground/70 mt-0.5">
+                        {upcomingPlanOpen
+                          ? "Keep these visible if it helps, but you only need to start with the first card."
+                          : `${activeItems.length - 1} more planned move${activeItems.length - 1 === 1 ? "" : "s"} can wait until the first card is started.`}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
+                      {activeItems.length - 1}
+                      <ChevronRight className={`w-4 h-4 transition-transform ${upcomingPlanOpen ? "rotate-90" : ""}`} />
+                    </span>
+                  </button>
+                </div>
+              )}
               {plan.note && <p className="text-xs text-muted-foreground mt-3 italic">{plan.note}</p>}
             </div>
           ) : (

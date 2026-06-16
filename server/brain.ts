@@ -351,14 +351,17 @@ function buildStrategicContext(
   const broadPursuitSupportOpen = goalFrame.decisionMode === "broad-parallel-pursuit"
     && broadPursuitCoverage.missing.length === 0
     && (broadPursuitCoverage.missingNetworkSupport.length > 0 || broadPursuitCoverage.missingLearningSupport.length > 0);
+  const broadPursuitHasMixedSupportGaps = broadPursuitSupportOpen
+    && broadPursuitCoverage.missingNetworkSupport.length > 0
+    && broadPursuitCoverage.missingLearningSupport.length > 0;
+  // Only narrow the bottleneck to a single support type when there isn't also an opposite gap
   const broadPursuitNeedsNetworkSupport = broadPursuitSupportOpen
+    && !broadPursuitHasMixedSupportGaps
     && goalFrame.recommendedFocus === GOAL_WORKSTREAM.NETWORK
     && broadPursuitCoverage.missingNetworkSupport.length > 0;
   const broadPursuitNeedsLearningSupport = broadPursuitSupportOpen
+    && !broadPursuitHasMixedSupportGaps
     && goalFrame.recommendedFocus === GOAL_WORKSTREAM.PREP_UPSKILLING
-    && broadPursuitCoverage.missingLearningSupport.length > 0;
-  const broadPursuitHasMixedSupportGaps = broadPursuitSupportOpen
-    && broadPursuitCoverage.missingNetworkSupport.length > 0
     && broadPursuitCoverage.missingLearningSupport.length > 0;
   return {
     bottleneck: broadPursuitNeedsRealRoles

@@ -19,12 +19,12 @@ import { ProfileView } from "@/pages/views/ProfileView";
 
 const HEADER_TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
   { id: "jobs", label: "Jobs", icon: Briefcase },
+  { id: "strategy", label: "Strategy", icon: Compass },
   { id: "network", label: "Network", icon: Users },
   { id: "braindump", label: "Capture", icon: Sparkles },
 ];
 
 const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] = [
-  { id: "strategy", label: "Strategy", icon: Compass, blurb: "Your paths, at a glance" },
   { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
   { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
   { id: "profile", label: "Profile", icon: FileText, blurb: "Your CV for tailored suggestions" },

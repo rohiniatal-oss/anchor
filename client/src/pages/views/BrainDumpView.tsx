@@ -18,7 +18,7 @@ const ROUTE_ACTION_LABEL: Record<string, string> = {
   job: "File under Jobs",
   learn: "File under Learn / prep",
   network: "File under Network",
-  proof: "File under Projects and public work",
+  proof: "File under Projects / proof assets",
   decision: "Needs a decision",
   keep: "Keep here",
 };

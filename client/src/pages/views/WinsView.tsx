@@ -39,6 +39,27 @@ export default function WinsView() {
   const thisWeek = wins.filter((w) => w.createdAt >= weekAgo);
   const earlier = wins.filter((w) => w.createdAt < weekAgo);
 
+  function dayGroupLabel(ts: number) {
+    const d = new Date(ts);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    const winDay = new Date(d); winDay.setHours(0, 0, 0, 0);
+    if (winDay.getTime() === today.getTime()) return "Today";
+    if (winDay.getTime() === yesterday.getTime()) return "Yesterday";
+    return d.toLocaleDateString(undefined, { weekday: "long" });
+  }
+
+  function groupByDay(list: Win[]): { label: string; key: string; items: Win[] }[] {
+    const groups: { label: string; key: string; items: Win[] }[] = [];
+    for (const w of list) {
+      const key = new Date(w.createdAt).toDateString();
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) { last.items.push(w); }
+      else { groups.push({ label: dayGroupLabel(w.createdAt), key, items: [w] }); }
+    }
+    return groups;
+  }
+
   function Row({ w }: { w: Win }) {
     const tid = summary?.trackByWinId[w.id];
     const trackName = tid && tid !== "untracked" ? trackNameById.get(tid) : undefined;
@@ -98,7 +119,19 @@ export default function WinsView() {
         <Empty icon={Trophy} text="No wins logged yet. A win can be a task finished, a message sent, or something you learned — anything counts." />
       ) : (
         <div className="space-y-6">
-          {thisWeek.length > 0 && (<div><GroupLabel count={thisWeek.length}>This week</GroupLabel><div className="space-y-2">{thisWeek.map((w) => <Row key={w.id} w={w} />)}</div></div>)}
+          {thisWeek.length > 0 && (
+            <div>
+              <GroupLabel count={thisWeek.length}>This week</GroupLabel>
+              <div className="space-y-4">
+                {groupByDay(thisWeek).map(({ label, key, items }) => (
+                  <div key={key}>
+                    <p className="text-xs font-medium text-muted-foreground mb-1.5 pl-1">{label}</p>
+                    <div className="space-y-2">{items.map((w) => <Row key={w.id} w={w} />)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {earlier.length > 0 && (<div><GroupLabel count={earlier.length}>Earlier</GroupLabel><div className="space-y-2">{earlier.map((w) => <Row key={w.id} w={w} />)}</div></div>)}
         </div>
       )}

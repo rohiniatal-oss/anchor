@@ -134,9 +134,8 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
 }
 
 const RECOMMENDATION_STATUS_LABEL: Record<string, string> = {
-  new: "New",
-  ranked: "Ranked",
-  saved: "Saved",
+  ranked: "Ready to review",
+  saved: "Saved for later",
 };
 const RECOMMENDATION_ENTITY_TAB: Record<string, Tab> = {
   learn: "learn",
@@ -169,15 +168,15 @@ function inferRecommendationEntityType(rec: Pick<RecommendationItem, "collection
 }
 
 function recommendationKindLabel(rec: RecommendationItem) {
-  if (rec.kind === "learning-theme") return "Theme to get up to speed on";
-  if (rec.kind === "learning-resource") return "Starter learning material";
-  if (rec.kind === "contact-person-type") return "Useful person type";
+  if (rec.kind === "learning-theme") return "Theme to study";
+  if (rec.kind === "learning-resource") return "Learning resource";
+  if (rec.kind === "contact-person-type") return "Person to reach out to";
   if (rec.kind === "contact-actual-person") return "Specific contact";
-  if (rec.kind === "project-idea") return "Project or public work idea";
-  if (rec.kind === "organization-target") return "Organization to inspect";
-  if (rec.kind === "role-example") return "Role example to inspect";
+  if (rec.kind === "project-idea") return "Project idea";
+  if (rec.kind === "organization-target") return "Company or org to look at";
+  if (rec.kind === "role-example") return "Example role to look at";
   if (rec.kind === "next-step-idea") return "Suggested next move";
-  return "Suggested support";
+  return "Suggested next step";
 }
 
 function recommendationShapeLabel(rec: RecommendationItem) {
@@ -187,11 +186,11 @@ function recommendationShapeLabel(rec: RecommendationItem) {
 }
 
 function recommendationPrimaryActionLabel(entityType: string) {
-  if (entityType === "learn") return "Add to Learn";
-  if (entityType === "contact") return "Add to Network";
-  if (entityType === "hustle") return "Add to Projects";
-  if (entityType === "job") return "Add to Jobs";
-  return "Add as Task";
+  if (entityType === "learn") return "Add to my learning list";
+  if (entityType === "contact") return "Add to my network";
+  if (entityType === "hustle") return "Add to my projects";
+  if (entityType === "job") return "Add to my jobs";
+  return "Add as a task";
 }
 
 export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
@@ -255,6 +254,22 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     const needsFirstRole = t.bottleneck === "direction" && t.counts.jobs === 0;
     const needsContactPath = t.bottleneck === "warmth" && t.counts.contacts === 0;
     const needsContactFollowThrough = t.bottleneck === "warmth" && t.counts.contacts > 0;
+
+    // Use a saved recommendation when one exists for this gap — avoids a blank form.
+    const savedLearningRec = needsPrepItem
+      ? (visibleRecommendations.find((r) =>
+          r.linkedTrackId === t.id &&
+          r.linkedGapKey === (t.learningGap?.topGapDomain ?? "") &&
+          r.collection === "learning-corpus"
+        ) ?? null)
+      : null;
+    const savedContactRec = needsContactPath
+      ? (visibleRecommendations.find((r) =>
+          r.linkedTrackId === t.id &&
+          r.collection === "network-targets"
+        ) ?? null)
+      : null;
+
     return (
       <div className="rounded-xl border border-card-border bg-card p-4" data-testid={`track-${t.slug}`}>
         <div className="flex items-start justify-between gap-2">
@@ -276,7 +291,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           <div className="mt-2.5 space-y-2">
             {needsFirstRole && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">No live role yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
+                <p className="text-xs text-muted-foreground leading-snug">No live role saved yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
                 <Button size="sm" variant="outline" onClick={() => openTrackTab("jobs")} data-testid={`button-add-gap-job-${t.slug}`}>
                   <Briefcase className="w-4 h-4 mr-1" /> Add role
                 </Button>
@@ -284,15 +299,21 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             )}
             {needsContactPath && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">No useful person to reach out to yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
-                <Button size="sm" variant="outline" onClick={() => openContactDraftForTrack(t)} data-testid={`button-add-gap-contact-${t.slug}`}>
-                  <Users className="w-4 h-4 mr-1" /> Add contact
-                </Button>
+                <p className="text-xs text-muted-foreground leading-snug">No one to reach out to yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
+                {savedContactRec ? (
+                  <Button size="sm" variant="outline" onClick={() => acceptRecommendation(savedContactRec)} data-testid={`button-use-saved-contact-${t.slug}`}>
+                    <Users className="w-4 h-4 mr-1" /> Use saved suggestion
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => openContactDraftForTrack(t)} data-testid={`button-add-gap-contact-${t.slug}`}>
+                    <Users className="w-4 h-4 mr-1" /> Add contact
+                  </Button>
+                )}
               </div>
             )}
             {needsContactFollowThrough && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">Contacts exist for <span className="font-medium text-foreground">{t.name}</span>, but they likely need a follow-up or clearer ask.</p>
+                <p className="text-xs text-muted-foreground leading-snug">You have contacts for <span className="font-medium text-foreground">{t.name}</span> — check if any need a follow-up or a clearer ask.</p>
                 <Button size="sm" variant="outline" onClick={() => openTrackTab("network")} data-testid={`button-open-gap-contact-${t.slug}`}>
                   <Users className="w-4 h-4 mr-1" /> Open network
                 </Button>
@@ -301,14 +322,20 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             {needsPrepItem && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> is still thin right now.</p>
-                  {prepStarter && (
-                    <p className="text-[11px] text-muted-foreground mt-1 leading-snug">First prep item: <span className="font-medium text-foreground">{prepStarter.title}</span>.</p>
+                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a first prep item.</p>
+                  {prepStarter && !savedLearningRec && (
+                    <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Start with: <span className="font-medium text-foreground">{prepStarter.title}</span>.</p>
                   )}
                 </div>
-                <Button size="sm" variant="outline" onClick={() => openLearnDraftFromGap(t)} data-testid={`button-add-gap-learn-${t.slug}`}>
-                  <GraduationCap className="w-4 h-4 mr-1" /> Add starter
-                </Button>
+                {savedLearningRec ? (
+                  <Button size="sm" variant="outline" onClick={() => acceptRecommendation(savedLearningRec)} data-testid={`button-use-saved-learn-${t.slug}`}>
+                    <GraduationCap className="w-4 h-4 mr-1" /> Use saved theme
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => openLearnDraftFromGap(t)} data-testid={`button-add-gap-learn-${t.slug}`}>
+                    <GraduationCap className="w-4 h-4 mr-1" /> Add starter
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -397,7 +424,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               <>
                 {subdivisions.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-foreground">Subtopics</p>
+                    <p className="text-xs font-medium text-foreground">What's inside</p>
                     <div className="mt-2 space-y-2">
                       {subdivisions.map((subdivision) => {
                         const materials = parseStringList(subdivision.suggestedMaterials);
@@ -520,9 +547,9 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
       {visibleRecommendations.length > 0 && (
         <div className="mb-6">
-          <GroupLabel count={visibleRecommendations.length}>Suggested next support</GroupLabel>
+          <GroupLabel count={visibleRecommendations.length}>Ideas to look at next</GroupLabel>
           <p className="mb-2 text-xs text-muted-foreground">
-            The app can keep broad themes, contact targets, and project ideas here before turning them into real Learn, Network, Project, or Today items.
+            Things worth looking at — a theme to study, someone to reach out to, or a project idea. Tap any to review it and decide if you want to act on it.
           </p>
           <Accordion type="single" collapsible value={openRecommendationId} onValueChange={setOpenRecommendationId} className="space-y-2">
             {visibleRecommendations.map((rec) => <RecommendationCard key={rec.id} rec={rec} />)}

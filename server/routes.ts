@@ -19,6 +19,7 @@ import { registerTaskAssistRoutes } from "./taskAssistRoutes";
 import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
+import { syncGapRecommendations } from "./gapRecommendations";
 
 const acceptRecommendationSchema = z.object({
   entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
@@ -119,6 +120,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     (d) => storage.createWin(d), () => Promise.resolve(undefined), (id) => storage.deleteWin(id));
   crud(app, "contacts", () => storage.getContacts(), insertContactSchema,
     (d) => storage.createContact(d), (id, d) => storage.updateContact(id, d), (id) => storage.deleteContact(id));
+  // Auto-generate gap-driven recommendations before returning the list; must be
+  // registered before the crud() line so Express resolves this GET first.
+  app.get("/api/recommendations", async (_q, res) => {
+    try { await syncGapRecommendations(); } catch (e) { console.error("gap-rec sync skipped:", e); }
+    res.json(await storage.getRecommendations());
+  });
   crud(app, "recommendations", () => storage.getRecommendations(), insertRecommendationSchema,
     (d) => storage.createRecommendation(d), (id, d) => storage.updateRecommendation(id, d), (id) => storage.deleteRecommendation(id));
 

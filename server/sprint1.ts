@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { explainPersistedPlanItem, planDay } from "./brain";
-import { enrichPlanItems } from "./planItemEnrichment";
+import { enrichPlanItems, buildLearnMilestoneProgress } from "./planItemEnrichment";
 import { completeRecommendationMilestone } from "./recommendationMilestoneProgress";
 import { classifyCapture, routeCapture, type CaptureRoute } from "./capture";
 import {
@@ -129,17 +129,6 @@ async function busyMinutesFor(day: string) {
     }
   }
   return busy;
-}
-
-async function buildLearnMilestoneProgress(learnItems: any[]): Promise<Map<number, { done: number; total: number }>> {
-  const map = new Map<number, { done: number; total: number }>();
-  for (const l of learnItems) {
-    if (l.sourceType !== "recommendation" || l.sourceId == null) continue;
-    const milestones = await storage.getRecommendationMilestones(l.sourceId).catch(() => []);
-    if (!milestones.length) continue;
-    map.set(l.id, { done: milestones.filter((m) => m.status === "done").length, total: milestones.length });
-  }
-  return map;
 }
 
 async function buildPlanTransactional(day: string, energy: Energy) {

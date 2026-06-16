@@ -1,45 +1,10 @@
 import type { Express } from "express";
 import { storage } from "./storage";
-import { explainPersistedPlanItem, planDay, recommend } from "./brain";
+import { planDay, recommend } from "./brain";
+import { enrichPlanItems, buildLearnMilestoneProgress } from "./planItemEnrichment";
 
 function validEnergy(value: unknown): "low" | "medium" | "high" {
   return ["low", "medium", "high"].includes(String(value)) ? String(value) as any : "medium";
-}
-
-async function activeMilestoneForLearnItem(learnItem: { sourceType?: string | null; sourceId?: number | null } | null): Promise<{ label: string; suggestedTaskTitle: string; doneWhen: string } | null> {
-  if (!learnItem || learnItem.sourceType !== "recommendation" || learnItem.sourceId == null) return null;
-  const milestones = await storage.getRecommendationMilestones(learnItem.sourceId);
-  if (!milestones.length) return null;
-  const active = milestones.find((m) => m.status === "active")
-    || milestones.find((m) => m.status === "todo")
-    || null;
-  return active ? { label: active.label, suggestedTaskTitle: active.suggestedTaskTitle, doneWhen: active.doneWhen } : null;
-}
-
-async function decoratePlanItems(items: any[]) {
-  const learnItems = items.filter((item) => item.sourceType === "learn" && item.sourceId != null);
-  const learnById = new Map<number, any>();
-  for (const item of learnItems) {
-    if (!learnById.has(item.sourceId)) {
-      const l = await storage.getLearnItem(item.sourceId).catch(() => null);
-      if (l) learnById.set(item.sourceId, l);
-    }
-  }
-  return Promise.all(items.map(async (item) => {
-    const base = { ...item, explanation: explainPersistedPlanItem(item) };
-    if (item.sourceType === "learn" && item.sourceId != null) {
-      const learnItem = learnById.get(item.sourceId) || null;
-      const milestone = await activeMilestoneForLearnItem(learnItem);
-      if (milestone?.suggestedTaskTitle) {
-        base.explanation = {
-          ...base.explanation,
-          firstStep: milestone.suggestedTaskTitle,
-          nextCheckpoint: { label: milestone.label, doneWhen: milestone.doneWhen },
-        };
-      }
-    }
-    return base;
-  }));
 }
 
 async function busyMinutesFor(day: string): Promise<number> {
@@ -69,17 +34,6 @@ async function readBrainInputs(day?: string) {
     day ? storage.getEvents(day) : Promise.resolve([]),
   ]);
   return { tasks, jobs, learn, hustles, contacts, tracks, events };
-}
-
-async function buildLearnMilestoneProgress(learnItems: any[]): Promise<Map<number, { done: number; total: number }>> {
-  const map = new Map<number, { done: number; total: number }>();
-  for (const l of learnItems) {
-    if (l.sourceType !== "recommendation" || l.sourceId == null) continue;
-    const milestones = await storage.getRecommendationMilestones(l.sourceId).catch(() => []);
-    if (!milestones.length) continue;
-    map.set(l.id, { done: milestones.filter((m: any) => m.status === "done").length, total: milestones.length });
-  }
-  return map;
 }
 
 async function buildAndPersistPlan(day: string, energy: "low" | "medium" | "high") {
@@ -151,7 +105,7 @@ export function registerBrainSpineRoutes(app: Express) {
       plan = await storage.getPlanByDate(day);
       const items = plan ? await storage.getPlanItems(plan.id) : [];
       const events = await storage.getEvents(day);
-      res.json({ plan, items: await decoratePlanItems(items), events });
+      res.json({ plan, items: await enrichPlanItems(items), events });
     } catch (err) { next(err); }
   });
 
@@ -162,7 +116,7 @@ export function registerBrainSpineRoutes(app: Express) {
       await buildAndPersistPlan(day, energy);
       const plan = await storage.getPlanByDate(day);
       const items = plan ? await storage.getPlanItems(plan.id) : [];
-      res.json({ plan, items: await decoratePlanItems(items) });
+      res.json({ plan, items: await enrichPlanItems(items) });
     } catch (err) { next(err); }
   });
 }

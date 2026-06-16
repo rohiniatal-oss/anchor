@@ -50,6 +50,17 @@ async function activeMilestoneForLearnItem(
   };
 }
 
+export async function buildLearnMilestoneProgress(learnItems: any[]): Promise<Map<number, { done: number; total: number }>> {
+  const map = new Map<number, { done: number; total: number }>();
+  for (const l of learnItems) {
+    if (l.sourceType !== "recommendation" || l.sourceId == null) continue;
+    const milestones = await storage.getRecommendationMilestones(l.sourceId).catch(() => []);
+    if (!milestones.length) continue;
+    map.set(l.id, { done: milestones.filter((m: any) => m.status === "done").length, total: milestones.length });
+  }
+  return map;
+}
+
 export async function enrichPlanItems(items: any[]): Promise<any[]> {
   const learnSourceIds = [...new Set(
     items.filter((i) => i.sourceType === "learn" && i.sourceId != null).map((i) => i.sourceId as number),

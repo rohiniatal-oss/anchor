@@ -23,7 +23,7 @@ import type { Tab } from "@/lib/homeTypes";
 import {
   type PlanItemT, type DayPlanT, type CareerGoalT, type GoalsStateResponseT,
   SLOT_LABEL, deriveTodayExecutionState, getBroadPursuitCoverage, isPreShrunkPlanItem, isBroadPursuitGoalItem,
-  broadPursuitGapLines, broadPursuitPlanTitle, broadPursuitPrimarySummary, goalMorningBriefWithExecution, goalTodayIntroLine, opportunityPipelineMixLine,
+  broadPursuitGapLines, broadPursuitPlanTitle, broadPursuitPrimarySummary, goalMorningBriefWithExecution, goalTodayIntroLine,
 } from "@/lib/goalSpine";
 import { WIN_CATEGORY_LABEL, type WinCategory } from "@/lib/homeTypes";
 
@@ -600,9 +600,6 @@ function TodayBrief({
           </span>
         )}
       </div>
-      {opportunityPipelineMixLine(goal) && (
-        <p className="mt-2 text-xs text-muted-foreground">{opportunityPipelineMixLine(goal)}</p>
-      )}
       {brief.summary && (
         <p className="text-sm font-medium mt-3">{brief.summary}</p>
       )}

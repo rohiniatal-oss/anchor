@@ -256,6 +256,20 @@ function dominantOpportunityBlockerFor(input: {
   return "none";
 }
 
+function pipelineActionMix(
+  snapshot: Pick<GoalSnapshot, "applicationActionCounts">,
+  limit = 3,
+) {
+  const parts = [
+    snapshot.applicationActionCounts.prepare > 0 ? `${snapshot.applicationActionCounts.prepare} interview-prep role${snapshot.applicationActionCounts.prepare === 1 ? "" : "s"}` : "",
+    snapshot.applicationActionCounts.follow_up > 0 ? `${snapshot.applicationActionCounts.follow_up} follow-up role${snapshot.applicationActionCounts.follow_up === 1 ? "" : "s"}` : "",
+    snapshot.applicationActionCounts.apply > 0 ? `${snapshot.applicationActionCounts.apply} ready-to-apply role${snapshot.applicationActionCounts.apply === 1 ? "" : "s"}` : "",
+    snapshot.applicationActionCounts.warm > 0 ? `${snapshot.applicationActionCounts.warm} contact-first role${snapshot.applicationActionCounts.warm === 1 ? "" : "s"}` : "",
+    snapshot.applicationActionCounts.clarify > 0 ? `${snapshot.applicationActionCounts.clarify} clarify-first role${snapshot.applicationActionCounts.clarify === 1 ? "" : "s"}` : "",
+  ].filter(Boolean).slice(0, limit);
+  return parts.length > 0 ? parts.join("; ") : "";
+}
+
 function describeOpportunityState(summary: OpportunityStateSummary, snapshot: Pick<GoalSnapshot, "savedJobs" | "viableApplicationCount" | "activeOpportunityCount" | "applicationActionCounts">) {
   if (summary.state === "empty") return "No real opportunities are active yet, so the next step is to create one.";
   if (summary.state === "interviewing") return "A live interview process exists, so preparation has the highest leverage.";
@@ -273,12 +287,14 @@ function describeOpportunityState(summary: OpportunityStateSummary, snapshot: Pi
     return `${snapshot.applicationActionCounts.prove} promising role${snapshot.applicationActionCounts.prove === 1 ? " points" : "s point"} to the same weak area, so one strengthening move has reuse across them.`;
   }
   if (summary.state === "researching") {
+    const mix = pipelineActionMix(snapshot);
     return snapshot.viableApplicationCount > 0
-      ? `${snapshot.viableApplicationCount} viable role${snapshot.viableApplicationCount === 1 ? " is" : "s are"} in view, but none are moving yet.`
+      ? `${snapshot.viableApplicationCount} viable role${snapshot.viableApplicationCount === 1 ? " is" : "s are"} in view. ${mix ? `${mix}.` : "None are moving yet."}`
       : `${snapshot.savedJobs.length} saved role${snapshot.savedJobs.length === 1 ? "" : "s"} exist, but none are strong enough yet to convert.`;
   }
   if (summary.state === "converting") {
-    return `${snapshot.activeOpportunityCount} active opportunity${snapshot.activeOpportunityCount === 1 ? " is" : "ies are"} already in motion.`;
+    const mix = pipelineActionMix(snapshot, 2);
+    return `${snapshot.activeOpportunityCount} active opportunit${snapshot.activeOpportunityCount === 1 ? "y is" : "ies are"} already in motion.${mix ? ` Current mix: ${mix}.` : ""}`;
   }
   return "The opportunity picture is mixed, so the next move should reduce uncertainty or move the best live role forward.";
 }

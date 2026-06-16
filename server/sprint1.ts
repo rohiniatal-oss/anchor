@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { explainPersistedPlanItem, planDay } from "./brain";
 import { enrichPlanItems } from "./planItemEnrichment";
+import { completeRecommendationMilestone } from "./recommendationMilestoneProgress";
 import { classifyCapture, routeCapture, type CaptureRoute } from "./capture";
 import {
   dayPlans,
@@ -64,6 +65,24 @@ async function syncPlanItem(day: string, task: Task, patch: any) {
   if (item) await storage.updatePlanItem(item.id, patch);
 }
 
+async function advanceMilestoneForTask(task: Task) {
+  // Path 1: task was directly generated from a specific milestone (sourceStepType set).
+  if (task.sourceStepType === "recommendation_milestone" && task.sourceStepId) {
+    await completeRecommendationMilestone(task.sourceStepId);
+    return;
+  }
+  // Path 2: task is for a learn item that came from accepting a recommendation.
+  // Walk learn → recommendation → active milestone.
+  if (task.sourceType === "learn" && task.sourceId != null) {
+    const learnItem = await storage.getLearnItem(task.sourceId).catch(() => undefined);
+    if (learnItem?.sourceType === "recommendation" && learnItem.sourceId != null) {
+      const milestones = await storage.getRecommendationMilestones(learnItem.sourceId);
+      const active = milestones.find((m) => m.status === "active") || milestones.find((m) => m.status === "todo");
+      if (active) await completeRecommendationMilestone(active.id);
+    }
+  }
+}
+
 async function completeTask(task: Task, day: string, extraPatch: Partial<Task> = {}) {
   const completedAt = Date.now();
   const updated = await storage.updateTask(task.id, {
@@ -87,6 +106,7 @@ async function completeTask(task: Task, day: string, extraPatch: Partial<Task> =
     planItemId: task.planItemId ?? undefined,
   } as any);
   await syncPlanItem(day, task, { status: "completed", completedAt });
+  await advanceMilestoneForTask(task);
   await refreshDoneEnough(day);
   return updated;
 }

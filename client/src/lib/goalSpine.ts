@@ -1,7 +1,7 @@
 import type { Task } from "@shared/schema";
 import { parseSteps } from "@/lib/homeTypes";
 
-export type PlanItemExplanationT = { summary: string; whyNow: string; whyThis: string; supportingReasons: string[]; firstStep: string; stopRule: string };
+export type PlanItemExplanationT = { summary: string; whyNow: string; whyThis: string; supportingReasons: string[]; firstStep: string; stopRule: string; nextCheckpoint?: { label: string; doneWhen: string } };
 export type PlanItemT = { id: number; slot: string; title: string; whySelected: string; doneWhen: string; status: string; sourceType: string; sourceId: number | null; taskId: number | null; explanation?: PlanItemExplanationT };
 export type DayPlanT = { id: number; mode: string; note: string; status: string; minimumViableItemId: number | null; enoughForToday: boolean };
 export type GoalTrajectoryT = { key: string; title: string; status: "complete" | "current" | "pending"; description: string };

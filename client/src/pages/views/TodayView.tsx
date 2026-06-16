@@ -599,6 +599,11 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                             {preShrunk ? "First tiny step" : "Smallest useful move"}
                           </p>
                           <p className="text-xs text-foreground mt-1">{nextStepText}</p>
+                          {it.explanation?.nextCheckpoint?.doneWhen && (
+                            <p className="text-[11px] text-primary/70 mt-1.5 border-t border-primary/10 pt-1.5">
+                              <span className="font-semibold">Done when:</span> {it.explanation.nextCheckpoint.doneWhen}
+                            </p>
+                          )}
                         </div>
                       )}
                       {extraReasons.length > 0 && (

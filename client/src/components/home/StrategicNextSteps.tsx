@@ -119,8 +119,8 @@ function buildSteps(
           ? `Unblock the next application move for "${track.name}"`
           : `Work the strongest role for "${track.name}"`,
         detail: track.recommendedMove || track.bottleneckLabel || "A real role is close enough to work on now, so the next move should make it more ready rather than add more prep.",
-        action: hasTaskTrail ? "Open tasks" : "Open jobs",
-        onClick: () => onOpenTab(hasTaskTrail ? "braindump" : "jobs"),
+        action: hasTaskTrail ? "Open today" : "Open jobs",
+        onClick: () => onOpenTab(hasTaskTrail ? "today" : "jobs"),
       });
     } else if (b === "warmth") {
       const hasContacts = track.counts.contacts > 0;
@@ -156,8 +156,8 @@ function buildSteps(
         icon: ListChecks,
         title: "Pick one task and finish it today",
         detail: track.bottleneckLabel || "You have tasks ready to go - none have been started yet.",
-        action: "See tasks",
-        onClick: () => onOpenTab("braindump"),
+        action: "Open today",
+        onClick: () => onOpenTab("today"),
       });
     } else if (b === "proof") {
       steps.push({

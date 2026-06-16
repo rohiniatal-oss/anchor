@@ -527,6 +527,38 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
 
+      {unlinkedItems.length > 0 && (
+        <div className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
+            <span className="text-sm font-medium">{unlinkedItems.length} item{unlinkedItems.length > 1 ? "s" : ""} not linked to a role type</span>
+          </div>
+          <div className="space-y-1.5">
+            {unlinkedItems.map((it) => (
+              <div key={`${it.entity}-${it.id}`} className="flex items-center gap-2 rounded-lg bg-card border border-card-border px-3 py-2" data-testid={`unlinked-${it.entity}-${it.id}`}>
+                <span className="text-[10px] rounded-full bg-muted text-muted-foreground px-1.5 py-0.5 shrink-0">{ENTITY_LABEL[it.entity]}</span>
+                <span className="flex-1 text-sm truncate">{it.title}</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0" data-testid={`button-link-unlinked-${it.entity}-${it.id}`}><Link2 className="w-3.5 h-3.5" /> Link</button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-1.5" align="end">
+                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a role type</p>
+                    <div className="space-y-0.5">
+                      {careerTracks.map((t) => (
+                        <button key={t.id} onClick={() => linkUnlinked(it, t.id)} className="w-full text-left text-sm px-2 py-1.5 rounded-md hover-elevate">{t.name}</button>
+                      ))}
+                      {careerTracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No role types yet.</p>}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <button onClick={() => onOpenTab(ENTITY_TAB[it.entity])} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Open"><ChevronRight className="w-4 h-4" /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {active.length > 0 ? (
         <>
           <GroupLabel>Active role types</GroupLabel>
@@ -559,35 +591,6 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
 
-      {unlinkedItems.length > 0 && (
-        <div className="mb-6">
-          <GroupLabel count={unlinkedItems.length}><AlertTriangle className="w-4 h-4 text-destructive" /> Not linked to a role type</GroupLabel>
-          <p className="text-xs text-muted-foreground mb-2">These items aren't tied to any role type yet - link them so they count toward the right target.</p>
-          <div className="space-y-2">
-            {unlinkedItems.map((it) => (
-              <div key={`${it.entity}-${it.id}`} className="flex items-center gap-2 rounded-lg border border-card-border bg-card px-3 py-2" data-testid={`unlinked-${it.entity}-${it.id}`}>
-                <span className="text-[10px] rounded-full bg-muted text-muted-foreground px-1.5 py-0.5 shrink-0">{ENTITY_LABEL[it.entity]}</span>
-                <span className="flex-1 text-sm truncate">{it.title}</span>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0" data-testid={`button-link-unlinked-${it.entity}-${it.id}`}><Link2 className="w-3.5 h-3.5" /> Link</button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-56 p-1.5" align="end">
-                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a role type</p>
-                    <div className="space-y-0.5">
-                      {careerTracks.map((t) => (
-                        <button key={t.id} onClick={() => linkUnlinked(it, t.id)} className="w-full text-left text-sm px-2 py-1.5 rounded-md hover-elevate">{t.name}</button>
-                      ))}
-                      {careerTracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No role types yet.</p>}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                <button onClick={() => onOpenTab(ENTITY_TAB[it.entity])} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Open"><ChevronRight className="w-4 h-4" /></button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div className="flex flex-wrap gap-2 mt-8">
         <Button size="sm" variant="outline" onClick={() => onOpenTab("jobs")}><Briefcase className="w-4 h-4 mr-1" /> Jobs</Button>

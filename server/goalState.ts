@@ -170,6 +170,11 @@ type OpportunityStateSummary = {
     interviews: number;
     activeConversations: number;
     dueFollowUps: number;
+    apply: number;
+    warm: number;
+    clarify: number;
+    followUp: number;
+    prepare: number;
   };
 };
 
@@ -1337,6 +1342,11 @@ function buildOpportunityStateSummary(snapshot: GoalSnapshot): OpportunityStateS
       interviews: snapshot.interviewingJobs,
       activeConversations: snapshot.activeConversationCount,
       dueFollowUps: snapshot.dueFollowUpCount,
+      apply: snapshot.applicationActionCounts.apply,
+      warm: snapshot.applicationActionCounts.warm,
+      clarify: snapshot.applicationActionCounts.clarify,
+      followUp: snapshot.applicationActionCounts.follow_up,
+      prepare: snapshot.applicationActionCounts.prepare,
     },
   };
   summary.summary = describeOpportunityState(summary, snapshot);

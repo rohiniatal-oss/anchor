@@ -98,6 +98,11 @@ export type OpportunityStateT = {
     interviews: number;
     activeConversations: number;
     dueFollowUps: number;
+    apply: number;
+    warm: number;
+    clarify: number;
+    followUp: number;
+    prepare: number;
   };
 };
 export type CareerGoalT = {

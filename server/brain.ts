@@ -1094,7 +1094,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (c.source === "goal") {
     s += 42;
     if (c.sourceStatus === "broad_parallel_pursuit_network_support") trace.push("some live role paths still need someone useful to reach out to");
-    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") trace.push("some live role paths still need role-specific support");
+    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") trace.push("some live role paths still need focused prep support");
     else trace.push("several role paths still need a real role before you narrow");
   }
 
@@ -1232,7 +1232,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
       return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Open Learn and add one prep item, note, or resource for ${candidate.targetRole}.`;
+      if (candidate?.targetRole) return `Use Jobs or Learn to set up one prep starter, note, or resource for ${candidate.targetRole}.`;
       return broadPursuitMissingPrepFirstStep(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {

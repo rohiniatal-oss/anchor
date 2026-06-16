@@ -1273,6 +1273,12 @@ function hustleCombination(item: Hustle, tracks: CareerTrack[], combinations: st
   );
 }
 
+function jobHasPrepSupport(job: Job) {
+  return (job.applicationReadiness || "none") !== "none"
+    || !!(job.narrativeAngle || "").trim()
+    || !!(job.jdText || "").trim();
+}
+
 function buildBroadPursuitCoverage(snapshot: GoalSnapshot): BroadPursuitCoverage {
   const combinations = buildParallelExperiments(snapshot).map((item) => item.combination);
   const coveredSet = new Set(
@@ -1288,6 +1294,16 @@ function buildBroadPursuitCoverage(snapshot: GoalSnapshot): BroadPursuitCoverage
       .map((item) => learnCombination(item, snapshot.activeTracks, combinations))
       .filter(Boolean) as string[],
   );
+  const jobPrepSupportedSet = new Set(
+    snapshot.savedJobs
+      .filter((job) => jobHasPrepSupport(job))
+      .map((job) => jobCombination(job, combinations))
+      .filter(Boolean) as string[],
+  );
+  const prepSupportedSet = new Set<string>([
+    ...learningSupportedSet,
+    ...jobPrepSupportedSet,
+  ]);
   const exampleProjectSupportedSet = new Set(
     snapshot.activeHustleItems
       .map((item) => hustleCombination(item, snapshot.activeTracks, combinations))
@@ -1295,12 +1311,12 @@ function buildBroadPursuitCoverage(snapshot: GoalSnapshot): BroadPursuitCoverage
   );
   const covered = combinations.filter((combination) => coveredSet.has(combination));
   const networkSupported = combinations.filter((combination) => networkSupportedSet.has(combination));
-  const learningSupported = combinations.filter((combination) => learningSupportedSet.has(combination));
+  const learningSupported = combinations.filter((combination) => prepSupportedSet.has(combination));
   const exampleProjectSupported = combinations.filter((combination) => exampleProjectSupportedSet.has(combination));
   const missing = combinations.filter((combination) => !covered.includes(combination));
   const missingNetworkSupport = combinations.filter((combination) => coveredSet.has(combination) && !networkSupportedSet.has(combination));
-  const missingLearningSupport = combinations.filter((combination) => coveredSet.has(combination) && !learningSupportedSet.has(combination));
-  const fullySupported = combinations.filter((combination) => coveredSet.has(combination) && networkSupportedSet.has(combination) && learningSupportedSet.has(combination));
+  const missingLearningSupport = combinations.filter((combination) => coveredSet.has(combination) && !prepSupportedSet.has(combination));
+  const fullySupported = combinations.filter((combination) => coveredSet.has(combination) && networkSupportedSet.has(combination) && prepSupportedSet.has(combination));
   const laneStates = combinations.map((combination) => ({
     combination,
     roleCount: snapshot.savedJobs.filter((job) => jobCombination(job, combinations) === combination).length,

@@ -200,9 +200,67 @@ test("broad parallel pursuit tracks missing network and learning support after l
   assert.ok(state.broadPursuitCoverage.networkSupported.includes("Geopolitics / geopolitical advisory x Ops / chief of staff"));
   assert.ok(state.broadPursuitCoverage.missingNetworkSupport.includes("AI / technology strategy x Ops / chief of staff"));
   assert.ok(state.broadPursuitCoverage.missingLearningSupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
-  assert.match(state.decisionQuestion, /need outreach, role-specific support, or both next/i);
+  assert.match(state.decisionQuestion, /need outreach, more focused prep support, or both next/i);
   assert.match(state.todayPlan.mustDo, /Add the next useful contact or outreach path/i);
   assert.match(state.todayPlan.mustDo, /AI \/ technology strategy x Ops \/ chief of staff/i);
+});
+
+test("job-side prep signals count as prep support even without a Learn item", () => {
+  const jobs = [
+    {
+      id: 1,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+      applicationReadiness: "questions",
+      narrativeAngle: "Strong bridge from strategy to AI governance",
+    },
+    {
+      id: 2,
+      title: "AI Chief of Staff",
+      company: "Model Lab",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      roleArchetype: "chief of staff / operations",
+    },
+    {
+      id: 3,
+      title: "Geopolitical Advisory Associate",
+      company: "Risk Group",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "UAE",
+      roleArchetype: "strategy / advisory",
+      jdText: "Looking for someone to lead geopolitical analysis and shape client-facing advisory work.",
+    },
+    {
+      id: 4,
+      title: "Geopolitical Chief of Staff",
+      company: "Policy Org",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "London",
+      roleArchetype: "chief of staff / operations",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, []);
+  assert.deepEqual(state.broadPursuitCoverage.covered, [
+    "AI / technology strategy x Strategy / advisory",
+    "AI / technology strategy x Ops / chief of staff",
+    "Geopolitics / geopolitical advisory x Strategy / advisory",
+    "Geopolitics / geopolitical advisory x Ops / chief of staff",
+  ]);
+  assert.ok(state.broadPursuitCoverage.learningSupported.includes("AI / technology strategy x Strategy / advisory"));
+  assert.ok(state.broadPursuitCoverage.learningSupported.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
+  assert.deepEqual(state.broadPursuitCoverage.missingLearningSupport.sort(), [
+    "AI / technology strategy x Ops / chief of staff",
+    "Geopolitics / geopolitical advisory x Ops / chief of staff",
+  ].sort());
 });
 
 test("broad parallel pursuit support ordering follows portfolio order, not save order", () => {

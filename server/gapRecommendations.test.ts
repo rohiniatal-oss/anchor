@@ -141,6 +141,15 @@ test("network-target rec is created for active tracks with live jobs but no cont
   assert.equal(networkRec.kind, "contact-person-type");
   assert.equal(networkRec.source, "system");
   assert.equal(networkRec.acceptanceEntityType, "contact");
+  assert.equal(networkRec.executionShape, "ongoing-program");
+  assert.doesNotMatch(String(networkRec.title || ""), /someone who can open doors/i);
+
+  const subdivisions = await h.storage.getRecommendationSubdivisions(networkRec.id);
+  const milestones = await h.storage.getRecommendationMilestones(networkRec.id);
+  assert.ok(subdivisions.length >= 2, "network rec should have starter archetypes immediately");
+  assert.ok(milestones.length >= 4, "network rec should have starter networking checkpoints immediately");
+  assert.equal(milestones[0].status, "active");
+  assert.match(String(milestones[0].suggestedTaskTitle || ""), /map|networking targets|people/i);
 });
 
 test("no network rec is created when a track has no live jobs", async () => {

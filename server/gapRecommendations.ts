@@ -1,6 +1,7 @@
 import { storage } from "./storage";
 import { computeLearningGaps } from "./learningStrategy";
 import { learningGapPrepStarter } from "@shared/learningGapSuggestions";
+import { networkTargetStarterPacket } from "@shared/networkTargetSuggestions";
 import { domainLabel } from "@shared/capabilityDomains";
 import type { CapabilityDomainKey } from "@shared/capabilityTargets";
 import { generateLearningCurriculum, generateContactArchetypes } from "./learningCurriculum";
@@ -147,13 +148,14 @@ export async function syncGapRecommendations(): Promise<void> {
     );
     if (covered) continue;
 
+    const starter = networkTargetStarterPacket(track.name, track.targetRoleArchetype || "advisory");
     const created = await storage.createRecommendation({
       collection: "network-targets",
       kind: "contact-person-type",
       status: "new",
       source: "system",
-      title: `Someone who can open doors for ${track.name}`,
-      whySuggested: `You have live roles on ${track.name} but no one to reach out to yet. A warm intro or referral from the right person would help far more than saving another role.`,
+      title: starter.title,
+      whySuggested: `You have live roles on ${track.name} but no one to reach out to yet. ${starter.why}`,
       linkedTrackId: track.id,
       linkedGapKey: "warmth",
       linkedCombination: "",
@@ -162,21 +164,49 @@ export async function syncGapRecommendations(): Promise<void> {
       sourceUrl: "",
       rankScore: track.priority * 10,
       rankReason: `${track.name} has no contacts yet`,
-      executionShape: "single-step",
+      executionShape: "ongoing-program",
       acceptanceEntityType: "contact",
       acceptanceDraft: JSON.stringify({
         sector: track.name,
         targetRole: track.name,
-        who: `Someone working in ${track.name.toLowerCase()}`,
-        why: `Could help you reality-check or open doors for ${track.name}.`,
+        who: starter.title,
+        why: starter.why,
         relatedTrackId: track.id,
-        askType: "advice",
+        askType: starter.askType,
         relationshipStrength: "cold",
         status: "to_contact",
       }),
       confidenceScore: null,
       duplicateOfId: null,
     });
+
+    for (let i = 0; i < starter.subdivisions.length; i++) {
+      const subdivision = starter.subdivisions[i];
+      await storage.createRecommendationSubdivision({
+        recommendationId: created.id,
+        subdivisionKey: subdivision.key,
+        label: subdivision.label,
+        whyItMatters: subdivision.whyItMatters,
+        suggestedMaterials: JSON.stringify(subdivision.suggestedMaterials),
+        sequence: i,
+      });
+    }
+
+    for (let i = 0; i < starter.milestones.length; i++) {
+      const milestone = starter.milestones[i];
+      await storage.createRecommendationMilestone({
+        recommendationId: created.id,
+        milestoneKey: milestone.key,
+        label: milestone.label,
+        doneWhen: milestone.doneWhen,
+        status: i === 0 ? "active" : "todo",
+        sequence: i,
+        suggestedTaskTitle: milestone.suggestedTaskTitle,
+        subdivisionKey: milestone.subdivisionKey,
+        milestoneType: milestone.milestoneType,
+        scaffolding: milestone.scaffolding.join(" | "),
+      } as any);
+    }
 
     // Fire-and-forget: generate specific contact archetypes with LLM
     generateContactArchetypes(created.id, track.name, track.targetRoleArchetype || "advisory").catch(() => {

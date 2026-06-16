@@ -13,11 +13,7 @@
 import OpenAI from "openai";
 import { storage } from "./storage";
 import type { Job, Hustle } from "@shared/schema";
-
-const USER_PROFILE =
-  "ex-Bain consultant, ex-Tony Blair Institute, Abraaj/private equity, public-sector strategy, KSA/Africa investment work. " +
-  "Targeting London/UAE/remote roles in AI governance, geopolitical advisory, chief-of-staff/founder office, development/philanthropy strategy. " +
-  "Strong on strategy and written communication; building depth in technical governance areas.";
+import { USER_PROFILE } from "./userPromptProfile";
 
 function clean(value: unknown, max = 280): string {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -47,6 +43,10 @@ function parseMilestones(arr: unknown[]): RawMilestone[] {
 function scaffoldingText(value: unknown): string {
   if (Array.isArray(value)) return value.map((s) => clean(s, 200)).filter(Boolean).join(" | ");
   return clean(value, 600);
+}
+
+function normalizeSubdivisionToken(value: unknown): string {
+  return clean(value, 80).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 }
 
 /**
@@ -128,8 +128,9 @@ export async function generateContactArchetypes(
     const sub = rawSubs[i];
     const label = clean(sub.label, 120);
     if (!label) continue;
-    const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
-    subdivisionKeyMap.set(label, key);
+    const key = normalizeSubdivisionToken(label);
+    subdivisionKeyMap.set(normalizeSubdivisionToken(label), key);
+    subdivisionKeyMap.set(normalizeSubdivisionToken(key), key);
     await storage.createRecommendationSubdivision({
       recommendationId,
       subdivisionKey: key,
@@ -145,7 +146,8 @@ export async function generateContactArchetypes(
     const label = clean(m.label, 120);
     if (!label) continue;
     const rawSubKey = clean(m.subdivisionKey, 80);
-    const subdivisionKey = [...subdivisionKeyMap.values()].find((v) => v === rawSubKey) || rawSubKey;
+    const normalizedSubKey = normalizeSubdivisionToken(rawSubKey);
+    const subdivisionKey = subdivisionKeyMap.get(normalizedSubKey) || normalizedSubKey || rawSubKey;
     const milestoneType = ["content", "synthesis", "artifact"].includes(String(m.milestoneType))
       ? String(m.milestoneType) as "content" | "synthesis" | "artifact"
       : "content";
@@ -275,8 +277,9 @@ export async function generateLearningCurriculum(
     const sub = rawSubs[i];
     const label = clean(sub.label, 120);
     if (!label) continue;
-    const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
-    subdivisionKeyMap.set(label, key);
+    const key = normalizeSubdivisionToken(label);
+    subdivisionKeyMap.set(normalizeSubdivisionToken(label), key);
+    subdivisionKeyMap.set(normalizeSubdivisionToken(key), key);
     await storage.createRecommendationSubdivision({
       recommendationId,
       subdivisionKey: key,
@@ -292,7 +295,8 @@ export async function generateLearningCurriculum(
     const label = clean(m.label, 120);
     if (!label) continue;
     const rawSubKey = clean(m.subdivisionKey, 80);
-    const subdivisionKey = [...subdivisionKeyMap.values()].find((v) => v === rawSubKey) || rawSubKey;
+    const normalizedSubKey = normalizeSubdivisionToken(rawSubKey);
+    const subdivisionKey = subdivisionKeyMap.get(normalizedSubKey) || normalizedSubKey || rawSubKey;
     const milestoneType = ["content", "synthesis", "artifact"].includes(String(m.milestoneType))
       ? String(m.milestoneType) as "content" | "synthesis" | "artifact"
       : "content";

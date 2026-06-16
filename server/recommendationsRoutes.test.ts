@@ -8,6 +8,16 @@ before(async () => { h = await makeHarness(); });
 after(async () => { await h.close(); });
 beforeEach(() => { h.reset(); });
 
+async function waitFor<T>(label: string, fn: () => Promise<T | null>, timeoutMs = 1500) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const value = await fn();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  assert.fail(`Timed out waiting for ${label}`);
+}
+
 test("recommendation detail and accept preserve a broad learning theme as a durable learn item", async () => {
   const track = await h.storage.createCareerTrack({
     name: "AI strategy",
@@ -301,4 +311,109 @@ test("blocking and parking a learn task syncs blocked and active milestone state
   assert.equal(afterPark.json[0].id, milestoneId);
   assert.equal(afterPark.json[0].status, "active");
   assert.equal(afterPark.json[1].status, "todo");
+});
+
+test("synthesis helper routes return fallback text with an error marker when the model is unavailable", async () => {
+  const created = await api(h.base, "POST", "/api/recommendations", {
+    collection: "learning-corpus",
+    kind: "learning-theme",
+    status: "saved",
+    source: "manual",
+    title: "AI governance foundations",
+    whySuggested: "Structured prep theme.",
+    executionShape: "ongoing-program",
+  });
+  assert.equal(created.status, 200);
+
+  const milestone = await api(h.base, "POST", `/api/recommendations/${created.json.id}/milestones`, {
+    milestoneKey: "synth",
+    label: "Make sense of what you learned",
+    doneWhen: "You can explain the most useful insight clearly",
+    status: "todo",
+    sequence: 0,
+    suggestedTaskTitle: "Write three bullets on what matters most",
+    subdivisionKey: "",
+    milestoneType: "synthesis",
+    scaffolding: "What changed your view? | What still feels fuzzy?",
+  });
+  assert.equal(milestone.status, 200);
+
+  const starter = await api(h.base, "POST", `/api/recommendation-milestones/${milestone.json.id}/synthesis-starter`, {});
+  assert.equal(starter.status, 200);
+  assert.ok(String(starter.json.draft || "").trim().length > 0);
+  assert.match(String(starter.json.error || ""), /AI helper unavailable/i);
+
+  const critique = await api(h.base, "POST", `/api/recommendation-milestones/${milestone.json.id}/critique`, {
+    draft: starter.json.draft,
+  });
+  assert.equal(critique.status, 200);
+  assert.ok(String(critique.json.critique || "").trim().length > 0);
+  assert.match(String(critique.json.error || ""), /AI helper unavailable/i);
+});
+
+test("saving a job auto-creates an accepted job prep arc and linked learn item", async () => {
+  const track = await h.storage.createCareerTrack({
+    name: "AI strategy",
+    slug: "ai-strategy-job-arc",
+    description: "",
+    targetRoleArchetype: "ai-strategy",
+    priority: 80,
+    status: "active",
+    whyItFits: "",
+  } as any);
+
+  const created = await api(h.base, "POST", "/api/jobs", {
+    title: "AI Strategy Lead",
+    company: "Acme",
+    status: "wishlist",
+    relatedTrackId: track.id,
+  });
+  assert.equal(created.status, 200);
+
+  const rec = await waitFor("job prep recommendation", async () => {
+    const recs = await h.storage.getRecommendations();
+    return recs.find((item) => item.linkedGapKey === `job-prep-${created.json.id}`) || null;
+  });
+  assert.equal(rec.collection, "job-prep-arc");
+  assert.equal(rec.kind, "job-prep");
+  assert.equal(rec.status, "accepted");
+  assert.equal(rec.executionShape, "milestone-arc");
+  assert.equal(rec.acceptanceEntityType, "learn");
+
+  const learn = await waitFor("job prep learn item", async () => {
+    const learns = await h.storage.getLearn();
+    return learns.find((item) => item.sourceType === "recommendation" && item.sourceId === rec.id) || null;
+  });
+  assert.equal(learn.title, "Prep: AI Strategy Lead at Acme");
+  assert.equal(learn.learnStatus, "active");
+  assert.equal(learn.active, true);
+});
+
+test("saving a hustle auto-creates an accepted execution arc and linked learn item", async () => {
+  const created = await api(h.base, "POST", "/api/hustles", {
+    title: "AI policy Substack",
+    note: "Weekly essay idea",
+    coreClaim: "The policy conversation is too abstract",
+    contentPillar: "AI policy",
+    stage: "idea",
+  });
+  assert.equal(created.status, 200);
+
+  const rec = await waitFor("hustle arc recommendation", async () => {
+    const recs = await h.storage.getRecommendations();
+    return recs.find((item) => item.linkedGapKey === `hustle-arc-${created.json.id}`) || null;
+  });
+  assert.equal(rec.collection, "hustle-arc");
+  assert.equal(rec.kind, "hustle-arc");
+  assert.equal(rec.status, "accepted");
+  assert.equal(rec.executionShape, "milestone-arc");
+  assert.equal(rec.acceptanceEntityType, "learn");
+
+  const learn = await waitFor("hustle arc learn item", async () => {
+    const learns = await h.storage.getLearn();
+    return learns.find((item) => item.sourceType === "recommendation" && item.sourceId === rec.id) || null;
+  });
+  assert.equal(learn.title, "Build: AI policy Substack");
+  assert.equal(learn.learnStatus, "active");
+  assert.equal(learn.active, true);
 });

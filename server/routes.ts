@@ -21,6 +21,7 @@ import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
 import { generateJobPrepArc, generateHustleArc } from "./learningCurriculum";
+import { USER_PROFILE } from "./userPromptProfile";
 import OpenAI from "openai";
 
 const acceptRecommendationSchema = z.object({
@@ -57,6 +58,67 @@ function inferRecommendationEntityType(rec: {
   if (rec.collection === "project-ideas" || rec.kind === "project-idea") return "hustle";
   if (rec.kind === "organization-target" || rec.kind === "role-example" || rec.kind === "next-step-idea") return "task";
   return "task";
+}
+
+function summarizeCompletedMilestones(completed: Array<{
+  label: string;
+  suggestedTaskTitle: string;
+  completionNote?: string | null;
+}>) {
+  return completed.map((m, i) =>
+    `${i + 1}. ${m.label} - "${m.suggestedTaskTitle}"${m.completionNote ? ` (note: ${m.completionNote})` : ""}`,
+  ).join("\n");
+}
+
+function starterFallback(params: {
+  milestoneType: string;
+  milestoneLabel: string;
+  taskTitle: string;
+  scaffolding: string;
+  recommendationTitle?: string | null;
+  completedCount: number;
+}) {
+  const topic = params.recommendationTitle || params.milestoneLabel || "this topic";
+  const prompts = params.scaffolding.split("|").map((part) => part.trim()).filter(Boolean).slice(0, 3);
+  if (params.milestoneType === "artifact") {
+    const evidenceLine = params.completedCount > 0
+      ? `I've already done ${params.completedCount} prep step${params.completedCount === 1 ? "" : "s"}, so this draft should sound grounded rather than generic.`
+      : "I'm using this draft to turn what I know so far into something concrete I can reuse.";
+    return [
+      `I'm building a clearer point of view on ${topic} and how it connects to the work I want to do.`,
+      evidenceLine,
+      `This draft is my first pass at: ${params.taskTitle}.`,
+    ].join(" ");
+  }
+  const bullets = [
+    `- The main thing I am trying to understand about ${topic} is what matters most in practice, not just in theory.`,
+    `- ${params.completedCount > 0 ? `From the prep I have already done, I can see` : `My early read is`} that this overlaps with the kind of structured problem-solving and judgement I have used before.`,
+    `- ${prompts[0] || `If I had to explain why ${topic} matters in an interview, I would focus on one clear tradeoff and one concrete example.`}`,
+  ];
+  return bullets.join("\n");
+}
+
+function critiqueFallback(params: {
+  milestoneType: string;
+  draft: string;
+  doneWhen: string;
+}) {
+  const draftText = params.draft.trim();
+  const hasSpecifics = /\b(example|because|specific|for example|such as|for instance)\b/i.test(draftText);
+  const isLongEnough = draftText.split(/\s+/).filter(Boolean).length >= 35;
+  const weakness = !isLongEnough
+    ? "The draft is still too thin to sound convincing."
+    : !hasSpecifics
+      ? "The biggest gap is specificity."
+      : "The main opportunity is to make the strongest point land earlier.";
+  const thirdPart = params.milestoneType === "artifact"
+    ? "Try rewriting the weakest line so it names one real example, one judgment, and why that matters."
+    : "Push one level deeper: what is the clearest example or tension that proves your point?";
+  return [
+    "What's working: you have a usable starting point rather than a blank page.",
+    `What's missing or weak: ${weakness} Use the done-when bar as the standard: ${params.doneWhen || "make the outcome concrete and specific"}.`,
+    thirdPart,
+  ].join("\n");
 }
 
 function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
@@ -122,8 +184,18 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       console.error(`job prep arc generation skipped for job ${job.id}`);
     });
   });
-  crud(app, "jobs", () => storage.getJobs(), insertJobSchema,
-    (d) => storage.createJob(d), (id, d) => storage.updateJob(id, d), (id) => storage.deleteJob(id));
+  app.get("/api/jobs", async (_q, res) => res.json(await storage.getJobs()));
+  app.patch("/api/jobs/:id", async (req, res) => {
+    const p = insertJobSchema.partial().safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const updated = await storage.updateJob(Number(req.params.id), p.data);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  });
+  app.delete("/api/jobs/:id", async (req, res) => {
+    await storage.deleteJob(Number(req.params.id));
+    res.json({ ok: true });
+  });
   crud(app, "learn", () => storage.getLearn(), insertLearnSchema,
     (d) => storage.createLearn(d), (id, d) => storage.updateLearn(id, d), (id) => storage.deleteLearn(id));
   // Custom POST /api/hustles: same as crud but fires hustle arc generation.
@@ -136,17 +208,32 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       console.error(`hustle arc generation skipped for hustle ${hustle.id}`);
     });
   });
-  crud(app, "hustles", () => storage.getHustles(), insertHustleSchema,
-    (d) => storage.createHustle(d), (id, d) => storage.updateHustle(id, d), (id) => storage.deleteHustle(id));
+  app.get("/api/hustles", async (_q, res) => res.json(await storage.getHustles()));
+  app.patch("/api/hustles/:id", async (req, res) => {
+    const p = insertHustleSchema.partial().safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const updated = await storage.updateHustle(Number(req.params.id), p.data);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  });
+  app.delete("/api/hustles/:id", async (req, res) => {
+    await storage.deleteHustle(Number(req.params.id));
+    res.json({ ok: true });
+  });
   crud(app, "wins", () => storage.getWins(), insertWinSchema,
     (d) => storage.createWin(d), () => Promise.resolve(undefined), (id) => storage.deleteWin(id));
   crud(app, "contacts", () => storage.getContacts(), insertContactSchema,
     (d) => storage.createContact(d), (id, d) => storage.updateContact(id, d), (id) => storage.deleteContact(id));
-  // Auto-generate gap-driven recommendations before returning the list; must be
-  // registered before the crud() line so Express resolves this GET first.
   app.get("/api/recommendations", async (_q, res) => {
-    try { await syncGapRecommendations(); } catch (e) { console.error("gap-rec sync skipped:", e); }
     res.json(await storage.getRecommendations());
+  });
+  app.post("/api/recommendations/sync", async (_req, res, next) => {
+    try {
+      await syncGapRecommendations();
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
   });
   crud(app, "recommendations", () => storage.getRecommendations(), insertRecommendationSchema,
     (d) => storage.createRecommendation(d), (id, d) => storage.updateRecommendation(id, d), (id) => storage.deleteRecommendation(id));
@@ -242,24 +329,38 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const milestoneType = (milestone as any).milestoneType || "synthesis";
       const scaffolding = (milestone as any).scaffolding || "";
+      const fallbackDraft = starterFallback({
+        milestoneType,
+        milestoneLabel: milestone.label,
+        taskTitle: milestone.suggestedTaskTitle,
+        scaffolding,
+        recommendationTitle: rec?.title,
+        completedCount: completed.length,
+      });
 
       const completedSummary = completed.map((m, i) =>
         `${i + 1}. ${m.label} — "${m.suggestedTaskTitle}"${(m as any).completionNote ? ` (note: ${(m as any).completionNote})` : ""}`
       ).join("\n");
 
+      const completedSummaryText = summarizeCompletedMilestones(completed.map((m) => ({
+        label: m.label,
+        suggestedTaskTitle: m.suggestedTaskTitle,
+        completionNote: (m as any).completionNote,
+      })));
+
       const prompt = milestoneType === "artifact"
         ? `You are a job-search coach helping a candidate prepare a concrete piece of writing.\n` +
-          `User profile: ex-Bain consultant, ex-Tony Blair Institute, Abraaj PE, KSA/Africa work. ` +
+          `User profile: ${USER_PROFILE} ` +
           `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
           `They are working on: "${rec?.title || milestone.label}".\n` +
           `The task: ${milestone.suggestedTaskTitle}\n` +
           `Guidance: ${scaffolding}\n\n` +
-          `Milestones they've already completed:\n${completedSummary || "(none yet)"}\n\n` +
+          `Milestones they've already completed:\n${completedSummaryText || "(none yet)"}\n\n` +
           `Write a concrete first draft they can edit — not a template with [BRACKETS], an actual specific attempt. ` +
           `Keep it tight (under 120 words). Make it specific to their background.\n` +
           `Return ONLY the draft text, no explanation.`
         : `You are a learning coach helping a candidate synthesise what they've learned.\n` +
-          `User profile: ex-Bain consultant, ex-Tony Blair Institute, Abraaj PE, KSA/Africa work. ` +
+          `User profile: ${USER_PROFILE} ` +
           `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
           `They are working on: "${rec?.title || milestone.label}".\n` +
           `The synthesis task: ${milestone.suggestedTaskTitle}\n` +
@@ -270,10 +371,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Write it AS IF you are them, in first person, so they can edit it directly.\n` +
           `Return ONLY the bullet points, no preamble.`;
 
-      const client = new OpenAI();
-      const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-      const draft = (r.output_text || "").trim();
-      res.json({ draft });
+      try {
+        const client = new OpenAI();
+        const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
+        const draft = (r.output_text || "").trim();
+        if (draft) return res.json({ draft });
+      } catch {}
+      res.json({
+        draft: fallbackDraft,
+        error: "AI helper unavailable right now, so this is a simpler starter draft.",
+      });
     } catch (err) { next(err); }
   });
 
@@ -289,10 +396,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       if (!milestone) return res.status(404).json({ error: "Not found" });
       const rec = await storage.getRecommendation(milestone.recommendationId);
       const milestoneType = (milestone as any).milestoneType || "synthesis";
+      const fallback = critiqueFallback({
+        milestoneType,
+        draft,
+        doneWhen: milestone.doneWhen,
+      });
 
       const prompt =
         `You are a demanding but constructive coach reviewing a candidate's draft.\n` +
-        `User profile: ex-Bain consultant, ex-Tony Blair Institute, Abraaj PE. Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
+        `User profile: ${USER_PROFILE} Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
         `Task they completed: ${milestone.suggestedTaskTitle}\n` +
         `Done-when criteria: ${milestone.doneWhen}\n\n` +
         `Their draft:\n"""\n${draft}\n"""\n\n` +
@@ -305,9 +417,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         `Be direct. Don't be encouraging for its own sake — only praise what's actually good. Under 150 words total.\n` +
         `Return plain text, no markdown headers.`;
 
-      const client = new OpenAI();
-      const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-      res.json({ critique: (r.output_text || "").trim() });
+      try {
+        const client = new OpenAI();
+        const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
+        const critique = (r.output_text || "").trim();
+        if (critique) return res.json({ critique });
+      } catch {}
+      res.json({
+        critique: fallback,
+        error: "AI helper unavailable right now, so this is a simpler critique.",
+      });
     } catch (err) { next(err); }
   });
 

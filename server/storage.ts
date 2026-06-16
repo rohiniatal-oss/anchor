@@ -23,7 +23,7 @@ import {
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, asc, desc } from "drizzle-orm";
+import { eq, asc, desc, inArray } from "drizzle-orm";
 import { templateForArchetype } from "@shared/jobTemplates";
 import { templateForProofAsset } from "@shared/proofAssetTemplates";
 import { SPINE_DDL, SPINE_MIGRATIONS } from "./spine.schema.sql";
@@ -126,6 +126,7 @@ export interface IStorage {
   reorderJobSteps(jobId: number, orderedStepIds: number[]): Promise<JobPipelineStep[]>;
   getLearn(): Promise<Learn[]>;
   getLearnItem(id: number): Promise<Learn | undefined>;
+  getLearnItems(ids: number[]): Promise<Learn[]>;
   createLearn(l: InsertLearn): Promise<Learn>;
   updateLearn(id: number, patch: Partial<InsertLearn>): Promise<Learn | undefined>;
   deleteLearn(id: number): Promise<void>;
@@ -172,6 +173,7 @@ export interface IStorage {
   updateRecommendationSubdivision(id: number, patch: Partial<InsertRecommendationSubdivision>): Promise<RecommendationSubdivision | undefined>;
   deleteRecommendationSubdivision(id: number): Promise<void>;
   getRecommendationMilestones(recommendationId: number): Promise<RecommendationMilestone[]>;
+  getRecommendationMilestonesForRecommendationIds(recommendationIds: number[]): Promise<RecommendationMilestone[]>;
   getRecommendationMilestone(id: number): Promise<RecommendationMilestone | undefined>;
   createRecommendationMilestone(item: InsertRecommendationMilestone): Promise<RecommendationMilestone>;
   updateRecommendationMilestone(id: number, patch: Partial<InsertRecommendationMilestone>): Promise<RecommendationMilestone | undefined>;
@@ -253,6 +255,10 @@ export class DatabaseStorage implements IStorage {
 
   async getLearn() { return db.select().from(learn).orderBy(desc(learn.id)).all(); }
   async getLearnItem(id: number) { return db.select().from(learn).where(eq(learn.id, id)).get(); }
+  async getLearnItems(ids: number[]) {
+    if (!ids.length) return [];
+    return db.select().from(learn).where(inArray(learn.id, ids)).all();
+  }
   async createLearn(l: InsertLearn) { return db.insert(learn).values({ ...l, createdAt: Date.now() }).returning().get(); }
   async updateLearn(id: number, patch: Partial<InsertLearn>) { return db.update(learn).set(patch).where(eq(learn.id, id)).returning().get(); }
   async deleteLearn(id: number) { db.delete(learn).where(eq(learn.id, id)).run(); }
@@ -373,6 +379,16 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(recommendationMilestones)
       .where(eq(recommendationMilestones.recommendationId, recommendationId))
       .orderBy(asc(recommendationMilestones.sequence), asc(recommendationMilestones.id)).all();
+  }
+  async getRecommendationMilestonesForRecommendationIds(recommendationIds: number[]) {
+    if (!recommendationIds.length) return [];
+    return db.select().from(recommendationMilestones)
+      .where(inArray(recommendationMilestones.recommendationId, recommendationIds))
+      .orderBy(
+        asc(recommendationMilestones.recommendationId),
+        asc(recommendationMilestones.sequence),
+        asc(recommendationMilestones.id),
+      ).all();
   }
   async getRecommendationMilestone(id: number) {
     return db.select().from(recommendationMilestones)

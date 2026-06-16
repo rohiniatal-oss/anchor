@@ -298,6 +298,7 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
 }
 
 export function ProofAssetsView() {
+  const { toast } = useToast();
   const { data: hustles = [], isLoading } = useQuery<Hustle[]>({ queryKey: ["/api/hustles"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
@@ -306,6 +307,10 @@ export function ProofAssetsView() {
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/hustles", { ...form, stage: "idea" }, ["/api/hustles"]);
+    toast({
+      title: "Saved.",
+      description: "I also started a step-by-step arc for this so it is easier to move from idea to output.",
+    });
     setForm({ title: "", note: "", coreClaim: "", contentPillar: "" }); setShowForm(false);
   }
   async function move(h: Hustle, dir: 1 | -1) {

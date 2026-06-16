@@ -13,6 +13,7 @@ import { mutateAndInvalidate } from "@/lib/api";
 import { todayKey } from "@/lib/utils";
 import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { useRecommendations } from "@/hooks/useRecommendations";
 import { CareerCompassCard } from "@/components/home/CareerCompassCard";
 import { StrategicNextSteps } from "@/components/home/StrategicNextSteps";
 import { GroupLabel } from "@/components/home/GroupLabel";
@@ -163,6 +164,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
   // Synthesis panel state — local to RightNow (plan list has its own in TodayView)
   const [synthDraft, setSynthDraft] = useState("");
   const [synthCritique, setSynthCritique] = useState("");
+  const [synthError, setSynthError] = useState("");
   const [synthLoadingState, setSynthLoadingState] = useState<"starter" | "critique" | null>(null);
   // P4.6a #7 — breakdown may return ONE clarifying question before it can split
   // the task. Hold it here and re-call breakdown WITH the user's answer as context.
@@ -247,8 +249,12 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
     if (!checkpoint) return;
     setSynthLoadingState("starter");
     try {
+      setSynthError("");
       const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${checkpoint.id}/synthesis-starter`, {}, []);
       if (res?.draft) setSynthDraft(res.draft);
+      setSynthError(res?.error || "");
+    } catch {
+      setSynthError("The AI helper could not load a starter right now.");
     } finally { setSynthLoadingState(null); }
   }
 
@@ -256,8 +262,12 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
     if (!checkpoint || !synthDraft.trim()) return;
     setSynthLoadingState("critique");
     try {
+      setSynthError("");
       const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${checkpoint.id}/critique`, { draft: synthDraft }, []);
       if (res?.critique) setSynthCritique(res.critique);
+      setSynthError(res?.error || "");
+    } catch {
+      setSynthError("The AI helper could not critique this draft right now.");
     } finally { setSynthLoadingState(null); }
   }
 
@@ -457,6 +467,11 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
                   </Button>
                 )}
               </div>
+              {synthError && (
+                <div className="mt-2 rounded-md border border-amber-300/70 bg-white/70 px-2.5 py-2 text-xs text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/20 dark:text-amber-200">
+                  {synthError}
+                </div>
+              )}
               {synthCritique && (
                 <div className="mt-2 rounded-md bg-amber-100/60 dark:bg-amber-900/30 px-2.5 py-2 text-xs text-amber-900 dark:text-amber-200 whitespace-pre-wrap">
                   {synthCritique}
@@ -493,7 +508,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tracks = [], isLoading: tracksLoading, isError: tracksError } = useCareerTracks();
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: diagnosticsData } = useQuery({ queryKey: ["/api/strategy/diagnostics"] });
-  const { data: recommendations = [] } = useQuery<Recommendation[]>({ queryKey: ["/api/recommendations"] });
+  const { data: recommendations = [] } = useRecommendations<Recommendation[]>();
   const diagnosticTracks = (diagnosticsData as any)?.tracks || [];
   const day = todayKey();
   const { data: events = [] } = useQuery<Event[]>({ queryKey: ["/api/events", day] });
@@ -523,6 +538,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   // Synthesis/artifact panel state — keyed by plan item id
   const [synthDrafts, setSynthDrafts] = useState<Record<number, string>>({});
   const [synthCritiques, setSynthCritiques] = useState<Record<number, string>>({});
+  const [synthErrors, setSynthErrors] = useState<Record<number, string>>({});
   const [synthLoading, setSynthLoading] = useState<Record<number, "starter" | "critique" | null>>({});
 
   async function saveMilestoneCapture() {
@@ -541,8 +557,12 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   async function getSynthesisStarter(itemId: number, milestoneId: number) {
     setSynthLoading((s) => ({ ...s, [itemId]: "starter" }));
     try {
+      setSynthErrors((s) => ({ ...s, [itemId]: "" }));
       const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${milestoneId}/synthesis-starter`, {}, []);
       if (res?.draft) setSynthDrafts((d) => ({ ...d, [itemId]: res.draft }));
+      setSynthErrors((s) => ({ ...s, [itemId]: res?.error || "" }));
+    } catch {
+      setSynthErrors((s) => ({ ...s, [itemId]: "The AI helper could not load a starter right now." }));
     } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
   }
   async function getCritique(itemId: number, milestoneId: number) {
@@ -550,8 +570,12 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     if (!draft?.trim()) return;
     setSynthLoading((s) => ({ ...s, [itemId]: "critique" }));
     try {
+      setSynthErrors((s) => ({ ...s, [itemId]: "" }));
       const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${milestoneId}/critique`, { draft }, []);
       if (res?.critique) setSynthCritiques((c) => ({ ...c, [itemId]: res.critique }));
+      setSynthErrors((s) => ({ ...s, [itemId]: res?.error || "" }));
+    } catch {
+      setSynthErrors((s) => ({ ...s, [itemId]: "The AI helper could not critique this draft right now." }));
     } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
   }
 
@@ -853,6 +877,11 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                               </Button>
                             )}
                           </div>
+                          {synthErrors[it.id] && (
+                            <div className="mt-2 rounded-md border border-amber-300/70 bg-white/70 px-2.5 py-2 text-xs text-amber-900 dark:border-amber-700/50 dark:bg-amber-950/20 dark:text-amber-200">
+                              {synthErrors[it.id]}
+                            </div>
+                          )}
                           {synthCritiques[it.id] && (
                             <div className="mt-2 rounded-md bg-amber-100/60 dark:bg-amber-900/30 px-2.5 py-2 text-xs text-amber-900 dark:text-amber-200 whitespace-pre-wrap">
                               {synthCritiques[it.id]}

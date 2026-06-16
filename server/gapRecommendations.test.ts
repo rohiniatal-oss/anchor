@@ -54,10 +54,18 @@ test("learning-theme recs are created for each open gap domain on an active trac
   assert.equal(geoRec.status, "new");
   assert.equal(geoRec.collection, "learning-corpus");
   assert.equal(geoRec.acceptanceEntityType, "learn");
+  assert.equal(geoRec.executionShape, "ongoing-program");
 
   assert.ok(commsRec, "should create a comms gap rec");
   assert.equal(commsRec.kind, "learning-theme");
   assert.equal(commsRec.source, "system");
+
+  const subdivisions = await h.storage.getRecommendationSubdivisions(geoRec.id);
+  const milestones = await h.storage.getRecommendationMilestones(geoRec.id);
+  assert.ok(subdivisions.length >= 1, "geo rec should have starter subtopics immediately");
+  assert.ok(milestones.length >= 2, "geo rec should have starter checkpoints immediately");
+  assert.equal(milestones[0].status, "active");
+  assert.ok(String(milestones[0].scaffolding || "").length > 0, "starter milestone should include scaffolding");
 });
 
 test("sync is idempotent — no duplicate recs on repeated POST /api/recommendations/sync", async () => {

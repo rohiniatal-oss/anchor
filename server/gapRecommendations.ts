@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import { computeLearningGaps } from "./learningStrategy";
-import { learningGapPrepStarter } from "@shared/learningGapSuggestions";
+import { learningGapStarterPacket } from "@shared/learningGapSuggestions";
 import { domainLabel } from "@shared/capabilityDomains";
 import type { CapabilityDomainKey } from "@shared/capabilityTargets";
 import { generateLearningCurriculum, generateContactArchetypes } from "./learningCurriculum";
@@ -86,7 +86,7 @@ export async function syncGapRecommendations(): Promise<void> {
       if (covered) continue;
 
       const label = domainLabel(domain as CapabilityDomainKey);
-      const starter = learningGapPrepStarter(domain as CapabilityDomainKey, label);
+      const starter = learningGapStarterPacket(domain as CapabilityDomainKey, label);
 
       const created = await storage.createRecommendation({
         collection: "learning-corpus",
@@ -103,7 +103,7 @@ export async function syncGapRecommendations(): Promise<void> {
         sourceUrl: "",
         rankScore: lg.priority * 10,
         rankReason: `${label} is a required prep area for ${lg.name}`,
-        executionShape: "single-step",
+        executionShape: "ongoing-program",
         acceptanceEntityType: "learn",
         acceptanceDraft: JSON.stringify({
           title: starter.title,
@@ -117,6 +117,34 @@ export async function syncGapRecommendations(): Promise<void> {
         confidenceScore: null,
         duplicateOfId: null,
       });
+
+      for (let i = 0; i < starter.subdivisions.length; i++) {
+        const subdivision = starter.subdivisions[i];
+        await storage.createRecommendationSubdivision({
+          recommendationId: created.id,
+          subdivisionKey: subdivision.key,
+          label: subdivision.label,
+          whyItMatters: subdivision.whyItMatters,
+          suggestedMaterials: JSON.stringify(subdivision.suggestedMaterials),
+          sequence: i,
+        });
+      }
+
+      for (let i = 0; i < starter.milestones.length; i++) {
+        const milestone = starter.milestones[i];
+        await storage.createRecommendationMilestone({
+          recommendationId: created.id,
+          milestoneKey: milestone.key,
+          label: milestone.label,
+          doneWhen: milestone.doneWhen,
+          status: i === 0 ? "active" : "todo",
+          sequence: i,
+          suggestedTaskTitle: milestone.suggestedTaskTitle,
+          subdivisionKey: milestone.subdivisionKey,
+          milestoneType: milestone.milestoneType,
+          scaffolding: milestone.scaffolding.join(" | "),
+        } as any);
+      }
 
       newLearningRecs.push({ id: created.id, domain, label, trackId: lg.trackId });
     }

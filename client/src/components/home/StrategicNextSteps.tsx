@@ -131,12 +131,12 @@ function buildSteps(
       steps.push({
         icon: hasTaskTrail ? ListChecks : Briefcase,
         title: hasTaskTrail
-          ? `Unblock the next application move for "${track.name}"`
+          ? `Review the strongest role for "${track.name}"`
           : `Work the strongest role for "${track.name}"`,
         detail: track.recommendedMove || track.bottleneckLabel || "A real role is close enough to work on now, so the next move should make it more ready rather than add more prep.",
-        action: hasTaskTrail ? "Open today" : "Open jobs",
+        action: "Open jobs",
         mode: "do-now",
-        onClick: () => onOpenTab(hasTaskTrail ? "today" : "jobs"),
+        onClick: () => onOpenTab("jobs"),
       });
     } else if (b === "warmth") {
       const hasContacts = track.counts.contacts > 0;
@@ -169,14 +169,7 @@ function buildSteps(
         },
       });
     } else if (b === "execution") {
-      steps.push({
-        icon: ListChecks,
-        title: "Pick one task and finish it today",
-        detail: track.bottleneckLabel || "You have tasks ready to go - none have been started yet.",
-        action: "Open today",
-        mode: "do-now",
-        onClick: () => onOpenTab("today"),
-      });
+      continue;
     } else if (b === "proof") {
       steps.push({
         icon: Rocket,

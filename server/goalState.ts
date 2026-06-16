@@ -1109,8 +1109,11 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
       };
     }
     if (coverage.missingNetworkSupport.length > 0 || coverage.missingPrepSupport.length > 0) {
-      const focusNetwork = focus.name === GOAL_WORKSTREAM.NETWORK && coverage.missingNetworkSupport.length > 0;
-      const focusPrep = focus.name === GOAL_WORKSTREAM.PREP_UPSKILLING && coverage.missingPrepSupport.length > 0;
+      const hasNetworkGap = coverage.missingNetworkSupport.length > 0;
+      const hasPrepGap = coverage.missingPrepSupport.length > 0;
+      const supportNeedsAreMixed = hasNetworkGap && hasPrepGap;
+      const focusNetwork = !supportNeedsAreMixed && focus.name === GOAL_WORKSTREAM.NETWORK && hasNetworkGap;
+      const focusPrep = !supportNeedsAreMixed && focus.name === GOAL_WORKSTREAM.PREP_UPSKILLING && hasPrepGap;
       return {
         mustDo: focusNetwork
           ? broadPursuitNextMissingContactTodayMustDo(coverage.missingNetworkSupport)

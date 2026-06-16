@@ -365,7 +365,7 @@ test("planner surfaces missing broad-pursuit contact support once live role type
   assert.equal(result.plan[0].candidate.source, "goal");
   assert.match(result.plan[0].candidate.title, /contact/i);
   assert.match(result.plan[0].explanation.firstStep, /Open Network/i);
-  assert.match(result.note, /someone useful to reach out to/i);
+  assert.match(result.note, /outreach, more focused prep support, or both/i);
 });
 
 test("planner surfaces missing broad-pursuit prep support after contact support exists", () => {
@@ -421,6 +421,76 @@ test("planner surfaces missing broad-pursuit prep support after contact support 
   assert.match(result.plan[0].candidate.title, /prep starter/i);
   assert.match(result.plan[0].explanation.firstStep, /Jobs or Learn/i);
   assert.match(result.note, /prep starter|focused prep support/i);
+});
+
+test("planner describes mixed broad-pursuit support gaps without hiding prep behind outreach", () => {
+  const jobs = [
+    job({
+      id: 104,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+      relatedTrackId: 1,
+    }),
+    job({
+      id: 105,
+      title: "AI Chief of Staff",
+      company: "Model Lab",
+      location: "Remote",
+      roleArchetype: "chief of staff / operations",
+      relatedTrackId: 2,
+    }),
+    job({
+      id: 106,
+      title: "Geopolitical Advisory Associate",
+      company: "Risk Desk",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+      relatedTrackId: 3,
+    }),
+    job({
+      id: 107,
+      title: "Geopolitics Chief of Staff",
+      company: "Policy Lab",
+      location: "Remote",
+      roleArchetype: "chief of staff / operations",
+      relatedTrackId: 4,
+    }),
+  ];
+  const contacts = [
+    contact({ id: 14, who: "AI strategy operator", relatedTrackId: 1, askType: "advice", status: "to_contact" }),
+    contact({ id: 15, who: "Geopolitics chief of staff operator", relatedTrackId: 4, askType: "advice", status: "to_contact" }),
+  ];
+  const learn = [
+    {
+      id: 1,
+      title: "AI strategy memo drill",
+      capabilityBuilt: "AI / technology strategy",
+      requiredOutput: "one memo",
+      proofIntent: true,
+      learnStatus: "active",
+      note: "Strategy / advisory lane support",
+      done: false,
+      active: true,
+      type: "resource",
+      category: "AI / technology strategy",
+      url: "",
+      cost: "",
+      outputEvidenceUrl: "",
+      relatedTrackId: 1,
+    },
+  ];
+  const tracks = [
+    { id: 1, name: "AI strategy", slug: "ai-strategy", status: "active", targetRoleArchetype: "AI strategy / advisory", whyItFits: "Technology strategy and advisory fit", description: "Explore AI strategy roles in parallel" },
+    { id: 2, name: "AI operations", slug: "ai-operations", status: "active", targetRoleArchetype: "chief of staff / operations", whyItFits: "Operating roles are plausible", description: "Parallel operating lane" },
+    { id: 3, name: "Geopolitical advisory", slug: "geopolitical-advisory", status: "active", targetRoleArchetype: "geopolitical advisory", whyItFits: "Strong geopolitical and advisory fit", description: "Parallel geopolitical advisory lane" },
+    { id: 4, name: "Geopolitics operations", slug: "geopolitics-operations", status: "active", targetRoleArchetype: "geopolitics chief of staff operations", whyItFits: "Geopolitical operating roles are plausible", description: "Parallel geopolitical operating lane" },
+  ] as any;
+
+  const result = planDay([], jobs as any, [], learn as any, "medium", { remainingMinutes: 240 }, contacts as any, tracks);
+  assert.match(result.note, /outreach, more focused prep support, or both/i);
+  assert.ok(result.plan.some((item) => /prep starter/i.test(item.candidate.title)), "prep support should stay visible alongside outreach gaps");
 });
 
 test("planner keeps a real application move ahead of broad-pursuit support gaps", () => {

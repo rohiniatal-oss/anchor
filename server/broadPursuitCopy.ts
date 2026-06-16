@@ -235,7 +235,7 @@ export function broadPursuitMissingSupportContextReason(
   missingPrep: string[] = [],
 ) {
   const detail = broadPursuitMissingSupportDetail(missingNetwork, missingPrep);
-  return `Live roles already exist across the paths you are testing, but some still need outreach, more focused prep support, or both: ${detail}. Add the missing prep before doing lower-value narrowing work.`;
+  return `Live roles already exist across the paths you are testing, but some still need outreach, more focused prep support, or both: ${detail}. Add the next missing support where it will unlock the strongest live role fastest, without losing momentum on the others.`;
 }
 
 export function broadPursuitMissingSupportTodayMustDo(
@@ -243,7 +243,7 @@ export function broadPursuitMissingSupportTodayMustDo(
   missingPrep: string[] = [],
 ) {
   const detail = broadPursuitMissingSupportDetail(missingNetwork, missingPrep);
-  return `Fill the main gaps in the live role types next: ${detail}`;
+  return `Add the next missing support move for the strongest live path: ${detail}`;
 }
 
 export function broadPursuitMissingSupportStopRule() {

@@ -16,6 +16,8 @@ import {
   broadPursuitMissingPrepContextReason,
   broadPursuitMissingPrepDoneWhen,
   broadPursuitMissingPrepFirstStep,
+  broadPursuitMissingSupportContextReason,
+  broadPursuitMissingSupportTodayMustDo,
   broadPursuitNextMissingPrepPlanNote,
   broadPursuitMissingPrepSourceFrame,
   broadPursuitMissingPrepSourceNote,
@@ -346,14 +348,17 @@ function buildStrategicContext(
     && viableApplicationTruth.every((truth) => truth.action === "clarify");
   const liveJobTargets = jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" }));
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
-  const broadPursuitNeedsNetworkSupport = goalFrame.decisionMode === "broad-parallel-pursuit"
+  const broadPursuitSupportOpen = goalFrame.decisionMode === "broad-parallel-pursuit"
     && broadPursuitCoverage.missing.length === 0
+    && (broadPursuitCoverage.missingNetworkSupport.length > 0 || broadPursuitCoverage.missingLearningSupport.length > 0);
+  const broadPursuitNeedsNetworkSupport = broadPursuitSupportOpen
     && goalFrame.recommendedFocus === GOAL_WORKSTREAM.NETWORK
     && broadPursuitCoverage.missingNetworkSupport.length > 0;
-  const broadPursuitNeedsLearningSupport = goalFrame.decisionMode === "broad-parallel-pursuit"
-    && broadPursuitCoverage.missing.length === 0
-    && broadPursuitCoverage.missingNetworkSupport.length === 0
+  const broadPursuitNeedsLearningSupport = broadPursuitSupportOpen
     && goalFrame.recommendedFocus === GOAL_WORKSTREAM.PREP_UPSKILLING
+    && broadPursuitCoverage.missingLearningSupport.length > 0;
+  const broadPursuitHasMixedSupportGaps = broadPursuitSupportOpen
+    && broadPursuitCoverage.missingNetworkSupport.length > 0
     && broadPursuitCoverage.missingLearningSupport.length > 0;
   return {
     bottleneck: broadPursuitNeedsRealRoles
@@ -365,6 +370,11 @@ function buildStrategicContext(
           : spine.bestMove.lane,
     reason: broadPursuitNeedsRealRoles
       ? broadPursuitMissingRolesContextReason(broadPursuitCoverage.missing, spine.bestMove.trackName || undefined)
+      : broadPursuitHasMixedSupportGaps
+        ? broadPursuitMissingSupportContextReason(
+          broadPursuitCoverage.missingNetworkSupport,
+          broadPursuitCoverage.missingLearningSupport,
+        )
       : broadPursuitNeedsNetworkSupport
         ? broadPursuitMissingContactsContextReason(broadPursuitCoverage.missingNetworkSupport)
         : broadPursuitNeedsLearningSupport
@@ -380,9 +390,14 @@ function buildStrategicContext(
         : broadPursuitNeedsLearningSupport
           ? LANE_NAME.LEARNING_DEVELOPMENT
           : spine.bestMove.lane,
-    laneStage: broadPursuitNeedsRealRoles || broadPursuitNeedsNetworkSupport || broadPursuitNeedsLearningSupport ? "active" : lane?.stage || "active",
+    laneStage: broadPursuitNeedsRealRoles || broadPursuitSupportOpen ? "active" : lane?.stage || "active",
     laneUnlockMove: broadPursuitNeedsRealRoles
       ? broadPursuitMissingRolesUnlockMove()
+      : broadPursuitHasMixedSupportGaps
+        ? broadPursuitMissingSupportTodayMustDo(
+          broadPursuitCoverage.missingNetworkSupport,
+          broadPursuitCoverage.missingLearningSupport,
+        )
       : broadPursuitNeedsNetworkSupport
         ? broadPursuitMissingContactsUnlockMove()
         : broadPursuitNeedsLearningSupport
@@ -1500,6 +1515,14 @@ export function planDay(
     : budget < 90 ? "One useful application or track move is enough for the time left today."
     : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
     : mode === "strategy" && needsBroadPursuitGoalCandidate(context) ? broadPursuitNextMissingRolePlanNote(context.broadPursuitMissingCombinations)
+    : mode === "strategy"
+      && context.broadPursuitMissingNetworkSupport.length > 0
+      && context.broadPursuitMissingLearningSupport.length > 0
+      && context.broadPursuitMissingCombinations.length === 0
+      ? broadPursuitMissingSupportContextReason(
+        context.broadPursuitMissingNetworkSupport,
+        context.broadPursuitMissingLearningSupport,
+      )
     : mode === "strategy" && context.broadPursuitMissingNetworkSupport.length > 0 && context.broadPursuitMissingCombinations.length === 0 ? broadPursuitNextMissingContactPlanNote(context.broadPursuitMissingNetworkSupport)
     : mode === "strategy" && context.broadPursuitMissingLearningSupport.length > 0 && context.broadPursuitMissingCombinations.length === 0 ? broadPursuitNextMissingPrepPlanNote(context.broadPursuitMissingLearningSupport)
     : mode === "strategy" ? `The main constraint right now is ${focusAreaLabel(context.bottleneckLane)}. Anchor picked the next move to unblock it.`

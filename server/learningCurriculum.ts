@@ -316,7 +316,7 @@ export async function generateLearningCurriculum(
 }
 
 /**
- * Generate and persist a structured prep arc for a saved job.
+ * Generate and persist a structured prep arc for a single role.
  * Idempotent: skips if a job-prep recommendation already exists for this job.
  *
  * Arc: ORIENT → RESEARCH → SYNTHESISE → ARTIFACT

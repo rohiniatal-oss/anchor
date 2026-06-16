@@ -20,7 +20,7 @@ import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
-import { generateJobPrepArc, generateHustleArc } from "./learningCurriculum";
+import { generateHustleArc } from "./learningCurriculum";
 import { USER_PROFILE } from "./userPromptProfile";
 import OpenAI from "openai";
 
@@ -174,15 +174,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     await storage.deleteTask(Number(req.params.id));
     res.json({ ok: true });
   });
-  // Custom POST /api/jobs: same as crud but fires job prep arc generation.
+  // Custom POST /api/jobs: same as crud, but keeps saved roles lightweight.
+  // Role-specific prep lives in Jobs (readiness rail / generated steps); Learn
+  // is reserved for reusable capability work rather than one arc per saved role.
   app.post("/api/jobs", async (req, res) => {
     const p = insertJobSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const job = await storage.createJob(p.data);
     res.json(job);
-    generateJobPrepArc(job).catch(() => {
-      console.error(`job prep arc generation skipped for job ${job.id}`);
-    });
   });
   app.get("/api/jobs", async (_q, res) => res.json(await storage.getJobs()));
   app.patch("/api/jobs/:id", async (req, res) => {
@@ -522,7 +521,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         roleArchetype: trimSentence(draft.roleArchetype, 120),
         relatedTrackId: trackId,
       } as any);
-      if (created) generateJobPrepArc(created).catch(() => {});
     } else {
       created = await storage.createTask({
         title,

@@ -435,7 +435,7 @@ test("synthesis helper routes return fallback text with an error marker when the
   assert.match(String(critique.json.error || ""), /AI helper unavailable/i);
 });
 
-test("saving a job auto-creates an accepted job prep arc and linked learn item", async () => {
+test("saving a job keeps the role lightweight and does not auto-create a learn prep arc", async () => {
   const track = await h.storage.createCareerTrack({
     name: "AI strategy",
     slug: "ai-strategy-job-arc",
@@ -454,23 +454,53 @@ test("saving a job auto-creates an accepted job prep arc and linked learn item",
   });
   assert.equal(created.status, 200);
 
-  const rec = await waitFor("job prep recommendation", async () => {
-    const recs = await h.storage.getRecommendations();
-    return recs.find((item) => item.linkedGapKey === `job-prep-${created.json.id}`) || null;
-  });
-  assert.equal(rec.collection, "job-prep-arc");
-  assert.equal(rec.kind, "job-prep");
-  assert.equal(rec.status, "accepted");
-  assert.equal(rec.executionShape, "milestone-arc");
-  assert.equal(rec.acceptanceEntityType, "learn");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const recs = await h.storage.getRecommendations();
+  const learns = await h.storage.getLearn();
+  assert.equal(recs.some((item) => item.linkedGapKey === `job-prep-${created.json.id}`), false);
+  assert.equal(learns.some((item) => item.title === "Prep: AI Strategy Lead at Acme"), false);
+});
 
-  const learn = await waitFor("job prep learn item", async () => {
-    const learns = await h.storage.getLearn();
-    return learns.find((item) => item.sourceType === "recommendation" && item.sourceId === rec.id) || null;
+test("accepting a job recommendation creates the role without auto-creating a learn prep arc", async () => {
+  const track = await h.storage.createCareerTrack({
+    name: "AI strategy",
+    slug: "ai-strategy-job-rec",
+    description: "",
+    targetRoleArchetype: "ai-strategy",
+    priority: 80,
+    status: "active",
+    whyItFits: "",
+  } as any);
+
+  const rec = await api(h.base, "POST", "/api/recommendations", {
+    collection: "role-opportunities",
+    kind: "job-opportunity",
+    status: "saved",
+    source: "llm",
+    title: "AI Strategy Lead",
+    whySuggested: "Strong fit.",
+    linkedTrackId: track.id,
+    sourceUrl: "https://example.com/job",
+    acceptanceDraft: JSON.stringify({
+      company: "Acme",
+      roleArchetype: "ai-strategy",
+      nextStep: "Review fit and decide whether to pursue",
+    }),
   });
-  assert.equal(learn.title, "Prep: AI Strategy Lead at Acme");
-  assert.equal(learn.learnStatus, "active");
-  assert.equal(learn.active, true);
+  assert.equal(rec.status, 200);
+
+  const accepted = await api(h.base, "POST", `/api/recommendations/${rec.json.id}/accept`, {
+    entityType: "job",
+  });
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.json.entityType, "job");
+  assert.equal(accepted.json.created.title, "AI Strategy Lead");
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const recs = await h.storage.getRecommendations();
+  const learns = await h.storage.getLearn();
+  assert.equal(recs.some((item) => item.linkedGapKey === `job-prep-${accepted.json.created.id}`), false);
+  assert.equal(learns.some((item) => item.title === "Prep: AI Strategy Lead at Acme"), false);
 });
 
 test("saving a hustle auto-creates an accepted execution arc and linked learn item", async () => {

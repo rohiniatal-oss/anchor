@@ -815,7 +815,7 @@ export function JobsView() {
     await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
     toast({
       title: "Role saved.",
-      description: "I also started a prep arc for it in Learn so you have structured interview prep ready.",
+      description: "It stays in Jobs for now. Use the readiness rail when you decide to work this one.",
     });
     setForm(EMPTY_JOB_FORM); setSelectedLane(""); setShowForm(false); setShowMoreJobFields(false);
   }

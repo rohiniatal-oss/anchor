@@ -745,6 +745,11 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
               <BadgeCheck className="w-3 h-3" /> {l.outputTitle || "View linked notes"} <ExternalLink className="w-3 h-3" />
             </a>
           )}
+          {l.done && !!l.proofIntent && !l.outputEvidenceUrl && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-2 inline-flex items-center gap-1" data-testid={`learn-done-nudge-${l.id}`}>
+              <Hammer className="w-3 h-3" /> You finished this — did you save your notes anywhere?
+            </p>
+          )}
 
           <div className="flex items-center gap-3 mt-2">
             {l.url && <a href={l.url} target="_blank" rel="noopener noreferrer" data-testid={`link-learn-${l.id}`} className="text-xs text-primary inline-flex items-center gap-1 hover:underline">Open <ExternalLink className="w-3 h-3" /></a>}

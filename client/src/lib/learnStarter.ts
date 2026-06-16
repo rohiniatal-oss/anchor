@@ -52,9 +52,9 @@ function starterWhyText(
   subjectText: string,
 ): string {
   if (basis === "explicit-gap") return `Suggested because ${subjectText} still looks thinnest in ${label}.`;
-  if (basis === "subject-match") return `Suggested because ${subjectText} looks closest to ${label} prep right now.`;
-  if (basis === "track-gap") return `Suggested because the linked role type most likely needs ${label} prep first.`;
-  return `Suggested as a simple first prep item for ${subjectText}.`;
+  if (basis === "subject-match") return `Suggested because ${subjectText} looks closest to ${label} learning right now.`;
+  if (basis === "track-gap") return `Suggested because the linked role type most likely needs ${label} support first.`;
+  return `Suggested as a simple first learning item for ${subjectText}.`;
 }
 
 export function buildLearnStarterDraft({
@@ -91,7 +91,7 @@ export function buildLearnStarterDraft({
   }
 
   return {
-    title: fallbackTitle || `Prep for ${subjectText}`,
+    title: fallbackTitle || `Learning starter for ${subjectText}`,
     category: "",
     capabilityBuilt: "",
     requiredOutput: "",
@@ -102,7 +102,7 @@ export function buildLearnStarterDraft({
     relatedTrackId,
     proofIntent: false,
     learnStatus: "open",
-    starterLabel: fallbackTitle || `Prep for ${subjectText}`,
+    starterLabel: fallbackTitle || `Learning starter for ${subjectText}`,
     starterWhy: starterWhyText("fallback", "", subjectText),
   };
 }

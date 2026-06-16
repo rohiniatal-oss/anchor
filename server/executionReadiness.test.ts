@@ -113,8 +113,8 @@ test("plan-item start keeps broad-pursuit prep-support goal items as learning ta
     sourceType: "goal",
     sourceId: 3,
     taskId: null,
-    title: "Add one prep item for AI / technology strategy x Ops / chief of staff",
-    doneWhen: "One prep item exists for AI / technology strategy x Ops / chief of staff",
+    title: "Add one learning item for AI / technology strategy x Ops / chief of staff",
+    doneWhen: "One learning item exists for AI / technology strategy x Ops / chief of staff",
     slot: "now",
   });
 

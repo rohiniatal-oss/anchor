@@ -92,7 +92,7 @@ export function StrategyBuilderPanel() {
                 <div>
                   <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary"><Sparkles className="h-4 w-4" /> Strategy Builder</div>
                   <h2 className="mt-1 text-lg font-bold tracking-tight">What Anchor recommends next</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Suggested role types, people to reach out to, prep items to add, and optional writing, project, or brand ideas. Nothing is added unless you accept it.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Suggested role types, people to reach out to, learning starters to add, and optional writing, project, or brand ideas. Nothing is added unless you accept it.</p>
                 </div>
                 <button onClick={() => setOpen(false)} className="rounded-md p-1 text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
               </div>
@@ -150,7 +150,7 @@ export function StrategyBuilderPanel() {
                     </section>
 
                     <section>
-                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><BookOpen className="h-4 w-4 text-primary" /> Prep to add only if useful</h3>
+                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><BookOpen className="h-4 w-4 text-primary" /> Learning to add only if useful</h3>
                       <div className="space-y-2">
                         {(data.resourceMap || []).slice(0, 3).map((r) => (
                           <div key={`${r.category}-${r.linkedArchetype}`} className="rounded-xl border border-card-border bg-background/40 p-3">
@@ -160,7 +160,7 @@ export function StrategyBuilderPanel() {
                                 <p className="mt-1 text-xs text-muted-foreground">{r.why}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Possible useful note:</span> {r.output}</p>
                               </div>
-                              <AcceptButton label="Create prep item" onClick={() => post("/api/strategy-builder/accept-resource", r)} />
+                              <AcceptButton label="Create learning item" onClick={() => post("/api/strategy-builder/accept-resource", r)} />
                             </div>
                           </div>
                         ))}

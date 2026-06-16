@@ -105,14 +105,14 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
       moves.push({
         kind: "cleanup", lane: "Stability", priority: 84, trackId: track.id, trackName: name,
         title: `Reduce ${name} prep to one active item with one useful result`,
-        doneWhen: "Only one prep item remains active for this track; others are parked",
+        doneWhen: "Only one learning item remains active for this track; others are parked",
         reason: "Too many learning items usually creates avoidance and weakens execution focus.",
         outputType: "cleanup",
       });
     } else if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done) && !hasOpenTask(input.tasks, /convert .*resource|convert .*prep|useful note|learning item|prep item|produce/i, track)) {
       moves.push({
         kind: "upskill", lane: "Learning", priority: mode === "role_active" ? 38 : 56, trackId: track.id, trackName: name,
-        title: `Turn one ${name} prep item into five usable application or interview bullets`,
+        title: `Turn one ${name} learning item into five usable application or interview bullets`,
         doneWhen: "Five reusable bullets exist; no more consumption is needed today",
         reason: "Learning should produce near-term application/interview leverage.",
         outputType: "note",

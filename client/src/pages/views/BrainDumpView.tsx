@@ -113,7 +113,7 @@ export default function BrainDumpView() {
             {sorting ? "Sorting..." : "Sort these for me"}
           </Button>
           <p className="text-xs text-muted-foreground mt-1.5">
-            I'll work out what each one probably is: something to do today, a prep item, part of something you're already on, an idea, or just a note.
+            I'll work out what each one probably is: something to do today, a learning item, part of something you're already on, an idea, or just a note.
           </p>
         </div>
       )}

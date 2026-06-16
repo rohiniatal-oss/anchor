@@ -163,7 +163,7 @@ export function broadPursuitPrimarySummary(goal?: CareerGoalT | null) {
   const coverage = getBroadPursuitCoverage(goal);
   if (coverage.missing.length > 0) return "One real role per role type is enough to start learning what is viable.";
   if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
-    return "Keep the live role types moving while you add the missing contact or prep support.";
+    return "Keep the live role types moving while you add the missing contact or learning support.";
   }
   return "Keep the strongest live role moving without dropping the other active paths.";
 }
@@ -728,7 +728,7 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
       key: "covered",
       label: "Covered",
       tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
-      text: "Each active role type has a real role, someone useful to reach out to, and prep support.",
+      text: "Each active role type has a real role, someone useful to reach out to, and learning support.",
     });
   }
   return lines;

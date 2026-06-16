@@ -418,9 +418,9 @@ test("planner surfaces missing broad-pursuit prep support after contact support 
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, contacts as any, tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /prep item/i);
+  assert.match(result.plan[0].candidate.title, /learning item/i);
   assert.match(result.plan[0].explanation.firstStep, /Open Learn/i);
-  assert.match(result.note, /prep support/i);
+  assert.match(result.note, /learning support/i);
 });
 
 test("planner keeps job pursuit and capability-building in parallel when time allows", () => {

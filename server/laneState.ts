@@ -211,13 +211,13 @@ function learningLane(tasks: Task[], learn: Learn[]): LaneState {
     bottleneck:
       stage === "output_missing" ? "learning has not yet turned into something you can use later" :
       stage === "active" ? "active learning needs one concrete note, brief, or practice attempt" :
-      stage === "queued" ? "prep items are queued but not yet selected for use" :
+      stage === "queued" ? "learning items are queued but not yet selected for use" :
       stage === "converted" ? "learning is already turning into something reusable" :
       "no active learning lane",
     unlockMove:
       stage === "output_missing" ? "Turn one learning item into notes, bullets, or a reusable example" :
-      stage === "active" ? "Finish the smallest useful note, brief, or practice attempt from one active prep item" :
-      stage === "queued" ? "Choose one prep item only if it supports the current bottleneck" :
+      stage === "active" ? "Finish the smallest useful note, brief, or practice attempt from one active learning item" :
+      stage === "queued" ? "Choose one learning item only if it supports the current bottleneck" :
       "Do not add learning unless it helps with direction, writing/projects, or applications",
     stopRule: "Stop after one useful note, brief, or practice attempt exists; do not keep consuming.",
     evidence: [`${open.length} open learning items`, `${active.length} active`, `${outputMissing.length} still need notes or a brief`],

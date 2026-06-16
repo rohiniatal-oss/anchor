@@ -113,7 +113,7 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   // One-word / name-only items are usually people or vague reminders, but they are
   // not safely routeable without the user's intent.
   if (title.split(" ").length <= 2 && !has(t, /\b(read|study|apply|write|pay|book|send|message|call|email|course|job|role)\b/)) {
-    return suggestion(id, "keep", "low", "Too little context to route safely", "Is this a person, task, prep item, or idea?");
+    return suggestion(id, "keep", "low", "Too little context to route safely", "Is this a person, task, learning item, or idea?");
   }
 
   // Source hygiene before destination routing: these are updates to existing work,
@@ -127,7 +127,7 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   }
 
   if (has(t, /\b(step|subtask|part of|for the role|for that job|for the application|for the memo|for substack|for course|under)\b/)) {
-    return suggestion(id, "subtask", "medium", "This sounds like a child action under an existing object", "Which job, prep item, or project/public-work item should this attach to?");
+    return suggestion(id, "subtask", "medium", "This sounds like a child action under an existing object", "Which job, learning item, or project/public-work item should this attach to?");
   }
 
   if (has(t, /\b(already added|duplicate|same as|covered by|already have)\b/)) {
@@ -166,7 +166,7 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   // Decision / research is not automatically Learn: it is a thinking task until it
   // becomes a resource or output.
   if (has(t, /\b(figure out|work out|decide|choose|clarify|think through|whether|what kind|what type|pros and cons|trade[- ]?off)\b/)) {
-    return suggestion(id, "decision", "medium", "This is a decision or research question, not a prep item yet");
+    return suggestion(id, "decision", "medium", "This is a decision or research question, not a learning item yet");
   }
 
   // Concrete execution verbs.
@@ -179,7 +179,7 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
     return suggestion(id, "task", "medium", "This looks actionable but has no specialist destination");
   }
 
-  return suggestion(id, "keep", "low", "Not enough signal to route safely", "Should this become a task, prep item, contact, job, or project/public-work item?");
+  return suggestion(id, "keep", "low", "Not enough signal to route safely", "Should this become a task, learning item, contact, job, or project/public-work item?");
 }
 
 // A capture has no slot/plan context, so we never fabricate a time block.

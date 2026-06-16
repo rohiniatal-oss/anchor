@@ -61,10 +61,10 @@ function buildSteps(
         icon: GraduationCap,
         title: domainLabel
           ? `Start studying ${domainLabel} — needed for "${track.name}"`
-          : `Add a prep item for "${track.name}"`,
+          : `Add a learning item for "${track.name}"`,
         detail: domainLabel
           ? `${domainLabel} is a required skill for this type of role and you haven't covered it yet.`
-          : "This track needs its first prep item before you can be ready to apply.",
+          : "This track needs its first learning item before you can be ready to apply.",
         action: "Start studying",
         onClick: () => {
           const draft = buildLearnStarterDraft({

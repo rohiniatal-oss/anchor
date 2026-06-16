@@ -179,7 +179,7 @@ export function diagnoseTrack(
   if (directionGap > 0) {
     bottleneck = "direction";
     bottleneckLabel = "No live roles yet";
-    recommendedMove = "Add a role or prep item to get started on this track";
+    recommendedMove = "Add a role or learning item to get started on this track";
   } else if (warmthGap > 0 && tLiveJobs.length > 0) {
     const overdue = tContacts.filter(isContactOverdue).length;
     bottleneck = "warmth";

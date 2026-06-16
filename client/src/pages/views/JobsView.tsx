@@ -456,8 +456,8 @@ function JobCapabilitySupport({
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
             {needsPrep
-              ? "This role may need clearer prep. Add one starter prep item if you want more focused support here."
-              : "No prep item is linked to this role type yet. Add one starter prep item if you want extra prep for this role or interview."}
+              ? "This role may need clearer learning support. Add one suggested starter if you want more focused help here."
+              : "No learning item is linked to this role type yet. Add one suggested starter if you want extra support for this role or interview."}
           </p>
           {requiredDomains.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -474,7 +474,7 @@ function JobCapabilitySupport({
             className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
             data-testid={`button-open-learn-from-job-${j.id}`}
           >
-            <GraduationCap className="w-3.5 h-3.5" /> Add starter
+            <GraduationCap className="w-3.5 h-3.5" /> Use suggested starter
           </button>
         </div>
       ) : (
@@ -613,7 +613,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
     if (truth.action === "prove") {
       return supportItems[0]
         ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
-        : { label: "Use prep starter", icon: GraduationCap, run: async () => openLearnIntake() };
+        : { label: "Use suggested starter", icon: GraduationCap, run: async () => openLearnIntake() };
     }
     if (truth.action === "clarify") {
       return j.url

@@ -155,8 +155,8 @@ export function registerStrategyBuilderRoutes(app: Express) {
       if (needsLearningSupport) {
         const resource = strategy.resourceMap.find((r) => norm(r.linkedArchetype) === norm(plan.track.name) || norm(r.linkedArchetype) === norm(plan.track.targetRoleArchetype))
           || {
-            category: `${plan.track.name} prep item`,
-            why: `Give ${plan.track.name} one concrete prep item Anchor can turn into interview or application support`,
+            category: `${plan.track.name} learning item`,
+            why: `Give ${plan.track.name} one concrete learning item Anchor can turn into interview or application support`,
             output: "A useful note, checklist, or interview example",
             linkedArchetype: plan.track.name,
           };

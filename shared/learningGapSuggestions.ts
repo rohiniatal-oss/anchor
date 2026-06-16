@@ -55,7 +55,7 @@ export function learningGapMissingReason(
   domainLabel: string,
 ): string {
   const starter = learningGapPrepStarter(domain, domainLabel);
-  return `No prep item is saved yet for ${domainLabel}. Start with the suggested prep item "${starter.title}" so Anchor has one clear way to help you begin.`;
+  return `No learning item is saved yet for ${domainLabel}. Start with the suggested starter "${starter.title}" so Anchor has one clear way to help you begin.`;
 }
 
 export function learningGapRecommendedMove(
@@ -63,5 +63,5 @@ export function learningGapRecommendedMove(
   domainLabel: string,
 ): string {
   const starter = learningGapPrepStarter(domain, domainLabel);
-  return `Use the suggested prep item "${starter.title}" to start strengthening ${domainLabel}.`;
+  return `Use the suggested starter "${starter.title}" to start strengthening ${domainLabel}.`;
 }

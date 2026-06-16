@@ -228,15 +228,15 @@ export function BroadPursuitParallelSupportKickoff({
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid={`${mode}-broad-pursuit-kickoff`}>
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {mode === "network" ? "Contacts to add" : "Prep to add"}
+            {mode === "network" ? "Contacts to add" : "Learning to add"}
           </p>
           <p className="text-sm font-medium mt-1">
-            {mode === "network" ? "Add one contact for your weakest role types." : "Use one prep starter for your weakest role types."}
+            {mode === "network" ? "Add one contact for your weakest role types." : "Use one suggested starter for your weakest role types."}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
             {mode === "network"
               ? `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a contact.`
-              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a prep item.`}
+              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a learning item.`}
           </p>
           {canStartWithoutRole && (
             <p className="text-xs text-muted-foreground mt-1">
@@ -274,8 +274,8 @@ export function BroadPursuitParallelSupportKickoff({
               ? (support.hasRole ? "Add first contact" : "Add contact for this target")
               : "Add another contact"
             : supportMissing
-              ? (support.hasRole ? "Use first prep starter" : "Use prep starter for this target")
-              : "Use another prep starter";
+              ? (support.hasRole ? "Use first suggested starter" : "Use suggested starter for this target")
+              : "Use another suggested starter";
           const showRoleStateBadge = !canStartWithoutRole;
           const showSupportDetail = !canStartWithoutRole;
           return (

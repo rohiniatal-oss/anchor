@@ -13,8 +13,8 @@ test("goal-derived contact support items become admin tasks when started", () =>
 test("goal-derived prep support items become learning tasks when started", () => {
   assert.equal(categoryForPlanItem({
     sourceType: "goal",
-    title: "Add one prep item for AI / technology strategy x Ops / chief of staff",
-    doneWhen: "One prep item exists for AI / technology strategy x Ops / chief of staff",
+    title: "Add one learning item for AI / technology strategy x Ops / chief of staff",
+    doneWhen: "One learning item exists for AI / technology strategy x Ops / chief of staff",
   }), "learning");
 });
 

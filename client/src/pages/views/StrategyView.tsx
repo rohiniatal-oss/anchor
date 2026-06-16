@@ -118,16 +118,16 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="capability-chips">
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-medium px-1.5 py-0.5" data-testid="capability-evidenced">
-        {lg.evidencedCount}/{lg.requiredCount} prep areas covered
+        {lg.evidencedCount}/{lg.requiredCount} learning areas covered
       </span>
       {lg.gapCount > 0 && (
         <span className="inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid="capability-gap">
-          {lg.gapCount} area{lg.gapCount === 1 ? "" : "s"} still needs prep{lg.topGapLabel ? ` | ${lg.topGapLabel}` : ""}
+          {lg.gapCount} area{lg.gapCount === 1 ? "" : "s"} still needs support{lg.topGapLabel ? ` | ${lg.topGapLabel}` : ""}
         </span>
       )}
       {lg.gapCount > 0 && lg.topGapLabel && (
         <span className={`inline-flex shrink-0 text-[10px] rounded-full px-1.5 py-0.5 ${lg.topGapHasResource ? "bg-slate-100 text-slate-600" : "bg-slate-200 text-slate-700"}`} data-testid="capability-resource">
-          {lg.topGapHasResource ? "prep item saved" : "needs first prep item"}
+          {lg.topGapHasResource ? "learning item saved" : "needs first learning item"}
         </span>
       )}
     </div>
@@ -324,18 +324,18 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             {needsPrepItem && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a first prep item.</p>
+                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a first learning item.</p>
                   {prepStarter && !savedLearningRec && (
                     <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Start with: <span className="font-medium text-foreground">{prepStarter.title}</span>.</p>
                   )}
                 </div>
                 {savedLearningRec ? (
                   <Button size="sm" variant="outline" onClick={() => acceptRecommendation(savedLearningRec)} data-testid={`button-use-saved-learn-${t.slug}`}>
-                    <GraduationCap className="w-4 h-4 mr-1" /> Use saved theme
+                    <GraduationCap className="w-4 h-4 mr-1" /> Use saved suggestion
                   </Button>
                 ) : (
                   <Button size="sm" variant="outline" onClick={() => openLearnDraftFromGap(t)} data-testid={`button-add-gap-learn-${t.slug}`}>
-                    <GraduationCap className="w-4 h-4 mr-1" /> Add starter
+                    <GraduationCap className="w-4 h-4 mr-1" /> Use suggested starter
                   </Button>
                 )}
               </div>

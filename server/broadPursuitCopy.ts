@@ -157,62 +157,62 @@ export function broadPursuitNextMissingContactPlanNote(combinations: string[] = 
 }
 
 export function broadPursuitMissingPrepUnlockMove() {
-  return "Add one prep item to each live role type still missing one.";
+  return "Add one learning item to each live role type still missing one.";
 }
 
 export function broadPursuitMissingPrepTitle() {
-  return "Add one prep item for each live path still missing one";
+  return "Add one learning item for each live path still missing one";
 }
 
 export function broadPursuitMissingPrepDoneWhen() {
-  return "One prep item exists for each live role type that was missing one";
+  return "One learning item exists for each live role type that was missing one";
 }
 
 export function broadPursuitMissingPrepWhyNow() {
-  return "some live role types still need prep support";
+  return "some live role types still need learning support";
 }
 
 export function broadPursuitMissingPrepContextReason(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "some live paths");
-  return `Some live role types still need prep support: ${missingText}. Add one prep item to each of those live paths next.`;
+  return `Some live role types still need learning support: ${missingText}. Add one learning item to each of those live paths next.`;
 }
 
 export function broadPursuitMissingPrepSourceNote(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "the live role types still missing one");
-  return `These live role types still need prep support: ${missingText}. Add one prep item to each one.`;
+  return `These live role types still need learning support: ${missingText}. Add one learning item to each one.`;
 }
 
 export function broadPursuitMissingPrepFirstStep(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "the live paths still missing one");
-  return `Open Learn and add one prep item for each live path still missing one: ${missingText}.`;
+  return `Open Learn and add one learning item for each live path still missing one: ${missingText}.`;
 }
 
 export function broadPursuitMissingPrepStopRule() {
-  return "Stop after each live role type that was missing one now has a prep item.";
+  return "Stop after each live role type that was missing one now has a learning item.";
 }
 
 export function broadPursuitMissingPrepSourceFrame(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "the live paths still missing one");
-  return `Some live role types still need prep support, so the best move is to add one prep item for each missing one: ${missingText}.`;
+  return `Some live role types still need learning support, so the best move is to add one learning item for each missing one: ${missingText}.`;
 }
 
 export function broadPursuitMissingPrepPlanNote() {
-  return "You have live role types already, but some still need prep support. Add the missing prep before drifting into lower-value work.";
+  return "You have live role types already, but some still need learning support. Add the missing support before drifting into lower-value work.";
 }
 
 export function broadPursuitNextMissingPrepTodayMustDo(combinations: string[] = []) {
   const target = broadPursuitPathList(combinations, "the live path still missing prep", 1);
-  return `Add the next prep item for ${target}.`;
+  return `Add the next learning item for ${target}.`;
 }
 
 export function broadPursuitNextMissingPrepStopRule(combinations: string[] = []) {
   const target = broadPursuitPathList(combinations, "the live path still missing prep", 1);
-  return `Stop after ${target} has one prep item.`;
+  return `Stop after ${target} has one learning item.`;
 }
 
 export function broadPursuitNextMissingPrepPlanNote(combinations: string[] = []) {
   const target = broadPursuitPathList(combinations, "the live path still missing prep", 1);
-  return `You have live role types already, but the next missing support move is prep support for ${target}. Add that before drifting into lower-value work.`;
+  return `You have live role types already, but the next missing support move is learning support for ${target}. Add that before drifting into lower-value work.`;
 }
 
 export function broadPursuitMissingSupportDetail(

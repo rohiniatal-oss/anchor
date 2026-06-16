@@ -6,10 +6,13 @@
  * questions to guide active reading. Synthesis milestones prompt reflection
  * rather than new reading. The final milestone always produces a reusable
  * artifact (cover-letter framing, interview answer).
+ *
+ * Also generates per-job prep arcs: orient → research → synthesise → artifact.
  */
 
 import OpenAI from "openai";
 import { storage } from "./storage";
+import type { Job } from "@shared/schema";
 
 const USER_PROFILE =
   "ex-Bain consultant, ex-Tony Blair Institute, Abraaj/private equity, public-sector strategy, KSA/Africa investment work. " +
@@ -299,6 +302,142 @@ export async function generateLearningCurriculum(
       milestoneType,
       scaffolding: scaffoldingText(m.scaffolding),
       subdivisionKey,
+      status: i === 0 ? "active" : "todo",
+      sequence: i,
+    } as any);
+  }
+}
+
+/**
+ * Generate and persist a structured prep arc for a saved job.
+ * Idempotent: skips if a job-prep recommendation already exists for this job.
+ *
+ * Arc: ORIENT → RESEARCH → SYNTHESISE → ARTIFACT
+ * - ORIENT (content): Read the JD carefully; map where you're strongest/weakest
+ * - RESEARCH (content): Company context, team, recent news, competitive landscape
+ * - SYNTHESISE (synthesis): No new reading — write how your experience maps to their requirements
+ * - ARTIFACT (artifact): Draft the opening narrative / "why me + why them" angle
+ */
+export async function generateJobPrepArc(job: Job): Promise<void> {
+  const gapKey = `job-prep-${job.id}`;
+  const existing = await storage.getRecommendations();
+  if (existing.some((r) => r.linkedGapKey === gapKey)) return;
+
+  const recTitle = `Prep: ${job.title}${job.company ? ` at ${job.company}` : ""}`;
+  const rec = await storage.createRecommendation({
+    collection: "job-prep-arc",
+    kind: "job-prep",
+    status: "accepted",
+    source: "system",
+    title: recTitle,
+    whySuggested: `Structured prep arc for ${job.title}${job.company ? ` at ${job.company}` : ""}.`,
+    linkedTrackId: job.relatedTrackId ?? null,
+    linkedGapKey: gapKey,
+    linkedCombination: "",
+    freshnessLabel: "",
+    sourceLabel: "Anchor",
+    sourceUrl: job.url || job.sourceUrl || "",
+    rankScore: 85,
+    rankReason: "Direct application prep",
+    executionShape: "milestone-arc",
+    acceptanceEntityType: "learn",
+    acceptanceDraft: JSON.stringify({ jobId: job.id }),
+    confidenceScore: null,
+    duplicateOfId: null,
+  });
+
+  await storage.createLearn({
+    title: recTitle,
+    category: "prep",
+    type: "resource",
+    learnStatus: "active",
+    active: true,
+    done: false,
+    sourceType: "recommendation",
+    sourceId: rec.id,
+    relatedTrackId: job.relatedTrackId ?? undefined,
+    capabilityBuilt: `Application prep for ${job.title}`,
+    requiredOutput: `Application-ready narrative for ${job.title}`,
+    note: job.url ? `Role URL: ${job.url}` : "",
+  } as any);
+
+  const hasJD = (job.jdText || "").trim().length > 40;
+  const jobContext = [
+    `Role: ${job.title}`,
+    job.company ? `Company: ${job.company}` : "",
+    job.location ? `Location: ${job.location}` : "",
+    job.roleArchetype ? `Archetype: ${job.roleArchetype}` : "",
+    hasJD ? `\nJob description:\n${job.jdText!.trim().slice(0, 1800)}` : "",
+  ].filter(Boolean).join("\n");
+
+  const client = new OpenAI();
+  const prompt =
+    `You are a job-application coach for a senior strategy professional. ` +
+    `User profile: ${USER_PROFILE}\n\n` +
+    `${jobContext}\n\n` +
+    `Generate a 4-milestone prep arc for this specific role. ` +
+    `Each milestone must be concrete and role-specific — not generic advice.\n\n` +
+    `MILESTONE 1 — ORIENT (milestoneType: "content"):\n` +
+    `Read and map the role. If a JD is provided, extract the 3 requirements where the user is STRONGEST and the 2 where she is WEAKEST. ` +
+    `If no JD: research what this type of role typically requires at this company/organisation.\n` +
+    `suggestedTaskTitle: a specific task, e.g. "Read the ${job.title} JD — highlight 3 strengths and 2 gaps"\n` +
+    `scaffolding: 3 questions, e.g. "What are the 2-3 requirements where your Bain/PE background directly applies? | ` +
+    `Where is the biggest gap — technical depth, sector knowledge, or seniority signal? | ` +
+    `What's the one thing they seem to value most that you'll need to make credible?"\n` +
+    `doneWhen: has identified 3 specific requirements she can speak to directly and 1-2 gaps she'll need to address.\n\n` +
+    `MILESTONE 2 — RESEARCH (milestoneType: "content"):\n` +
+    `Understand the employer — not just what they say on their website.\n` +
+    `suggestedTaskTitle: a specific research task, e.g. "Look up ${job.company || "the organisation"}'s recent news, the team, and any relevant LinkedIn profiles"\n` +
+    `scaffolding: "What have they actually been working on in the last 6-12 months — any news, hires, strategic announcements? | ` +
+    `Who would be interviewing or managing this role — what's their background? | ` +
+    `What does this company actually care about that the JD doesn't say explicitly?"\n` +
+    `doneWhen: has 3 specific facts about the organisation that she could reference naturally in an interview.\n\n` +
+    `MILESTONE 3 — SYNTHESISE (milestoneType: "synthesis"):\n` +
+    `No new research. Map existing experience to requirements. Pure reflection.\n` +
+    `suggestedTaskTitle: "Write how your 3 strongest experiences map to the 3 requirements you flagged — one sentence each"\n` +
+    `scaffolding: "For each of the 3 requirements you flagged: what's the ONE story from your past that shows this most clearly? | ` +
+    `What's the specific outcome or number you can cite? | ` +
+    `What's the gap you'll need to address honestly — and what's the honest reframe (learning curve vs. irrelevant vs. actually covered)?"\n` +
+    `doneWhen: has written 3 experience-to-requirement mappings, each with a specific example and outcome.\n\n` +
+    `MILESTONE 4 — ARTIFACT (milestoneType: "artifact"):\n` +
+    `Produce the opening narrative — the "why me, why them, why now" angle she'd actually use.\n` +
+    `suggestedTaskTitle: "Draft the opening 2-3 sentences: why ${job.company || "this organisation"} now, and what specifically in your background makes you the right hire"\n` +
+    `scaffolding: "Sentence 1: one thing specific about ${job.company || "them"} that you find genuinely compelling (not generic). ` +
+    `Sentence 2: the one thread in your background — Bain, PE, TBI, or KSA work — that maps directly to what they need. ` +
+    `Sentence 3: what you'd bring that someone with a purely academic or policy background wouldn't. ` +
+    `Keep it under 80 words. Read it aloud — if it sounds like a template, rewrite it."\n` +
+    `doneWhen: has a complete opening narrative she would actually use — not a draft, a real version she'd send.\n\n` +
+    `Return ONLY valid JSON:\n` +
+    `{"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["question 1","question 2","question 3"]}]}`;
+
+  let parsed: { milestones?: unknown[] } = {};
+  try {
+    const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
+    const text = (r.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    try { parsed = JSON.parse(text); } catch { return; }
+  } catch {
+    return;
+  }
+
+  const rawMilestones = Array.isArray(parsed.milestones) ? parseMilestones(parsed.milestones) : [];
+  if (!rawMilestones.length) return;
+
+  for (let i = 0; i < rawMilestones.length; i++) {
+    const m = rawMilestones[i];
+    const label = clean(m.label, 120);
+    if (!label) continue;
+    const milestoneType = ["content", "synthesis", "artifact"].includes(String(m.milestoneType))
+      ? String(m.milestoneType) as "content" | "synthesis" | "artifact"
+      : "content";
+    await storage.createRecommendationMilestone({
+      recommendationId: rec.id,
+      milestoneKey: `m${i + 1}`,
+      label,
+      doneWhen: clean(m.doneWhen, 300),
+      suggestedTaskTitle: clean(m.suggestedTaskTitle, 200),
+      milestoneType,
+      scaffolding: scaffoldingText(m.scaffolding),
+      subdivisionKey: "",
       status: i === 0 ? "active" : "todo",
       sequence: i,
     } as any);

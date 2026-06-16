@@ -152,10 +152,18 @@ function DoneTaskRow({ t }: { t: Task }) {
 }
 
 /* Right Now — activated focus with steps + gentle replanning */
-function RightNow({ pinned }: { pinned: Task }) {
+function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
+  pinned: Task;
+  onMilestoneCompleted: (milestoneId: number, label: string, draft?: string) => void;
+  pinnedPlanItem?: PlanItemT | null;
+}) {
   const { toast } = useToast();
   const [breaking, setBreaking] = useState(false);
   const [unsticking, setUnsticking] = useState(false);
+  // Synthesis panel state — local to RightNow (plan list has its own in TodayView)
+  const [synthDraft, setSynthDraft] = useState("");
+  const [synthCritique, setSynthCritique] = useState("");
+  const [synthLoadingState, setSynthLoadingState] = useState<"starter" | "critique" | null>(null);
   // P4.6a #7 — breakdown may return ONE clarifying question before it can split
   // the task. Hold it here and re-call breakdown WITH the user's answer as context.
   const [question, setQuestion] = useState<string | null>(null);
@@ -204,9 +212,7 @@ function RightNow({ pinned }: { pinned: Task }) {
     const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
     toast({ title: "Done - and logged as a win", description: "That's momentum. Pick your next thing when ready." });
     if (res?.completedMilestoneId) {
-      const milestone = pinned.title;
-      setMilestoneCapture({ milestoneId: res.completedMilestoneId, label: milestone });
-      setCaptureNote("");
+      onMilestoneCompleted(res.completedMilestoneId, pinned.title, synthDraft || undefined);
     }
   }
   async function unstick() {
@@ -235,36 +241,24 @@ function RightNow({ pinned }: { pinned: Task }) {
     toast({ title: "Marked blocked.", description: "I'll stop surfacing it until it's unblocked." });
   }
 
-  async function saveMilestoneCapture() {
-    if (!milestoneCapture || savingCapture) return;
-    setSavingCapture(true);
+  const checkpoint = pinnedPlanItem?.explanation?.nextCheckpoint;
+
+  async function getPinnedStarter() {
+    if (!checkpoint) return;
+    setSynthLoadingState("starter");
     try {
-      if (captureNote.trim()) {
-        await mutateAndInvalidate("PATCH", `/api/recommendation-milestones/${milestoneCapture.milestoneId}`, { completionNote: captureNote.trim() }, []);
-      }
-    } finally {
-      setSavingCapture(false);
-      setMilestoneCapture(null);
-      setCaptureNote("");
-    }
+      const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${checkpoint.id}/synthesis-starter`, {}, []);
+      if (res?.draft) setSynthDraft(res.draft);
+    } finally { setSynthLoadingState(null); }
   }
 
-  async function getSynthesisStarter(itemId: number, milestoneId: number) {
-    setSynthLoading((s) => ({ ...s, [itemId]: "starter" }));
+  async function getPinnedCritique() {
+    if (!checkpoint || !synthDraft.trim()) return;
+    setSynthLoadingState("critique");
     try {
-      const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${milestoneId}/synthesis-starter`, {}, []);
-      if (res?.draft) setSynthDrafts((d) => ({ ...d, [itemId]: res.draft }));
-    } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
-  }
-
-  async function getCritique(itemId: number, milestoneId: number) {
-    const draft = synthDrafts[itemId];
-    if (!draft?.trim()) return;
-    setSynthLoading((s) => ({ ...s, [itemId]: "critique" }));
-    try {
-      const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${milestoneId}/critique`, { draft }, []);
-      if (res?.critique) setSynthCritiques((c) => ({ ...c, [itemId]: res.critique }));
-    } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
+      const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${checkpoint.id}/critique`, { draft: synthDraft }, []);
+      if (res?.critique) setSynthCritique(res.critique);
+    } finally { setSynthLoadingState(null); }
   }
 
   return (
@@ -394,6 +388,84 @@ function RightNow({ pinned }: { pinned: Task }) {
       {steps.length === 0 && (
         <div className="mt-3"><Button size="sm" variant="outline" onClick={finishTask} data-testid="button-finish-task"><Check className="w-4 h-4 mr-1" /> Just mark it done</Button></div>
       )}
+      {/* Milestone progress + synthesis panel for pinned task */}
+      {checkpoint && (
+        <div className="mt-3">
+          {checkpoint.totalMilestones > 0 && (
+            <p className="text-[11px] text-muted-foreground mb-1.5 font-medium">
+              {checkpoint.doneCount}/{checkpoint.totalMilestones} milestones done
+              {checkpoint.doneWhen && <span className="ml-1 font-normal">· Done when: {checkpoint.doneWhen}</span>}
+            </p>
+          )}
+          {checkpoint.milestoneType === "content" && checkpoint.scaffolding && (
+            <div className="rounded-lg border border-card-border bg-muted/30 px-3 py-2 mb-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">As you work, ask yourself</p>
+              <ul className="space-y-1">
+                {checkpoint.scaffolding.split(" | ").filter(Boolean).map((q, qi) => (
+                  <li key={qi} className="text-xs text-muted-foreground flex gap-1.5">
+                    <span className="shrink-0 text-muted-foreground/50 mt-0.5">›</span><span>{q}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(checkpoint.milestoneType === "synthesis" || checkpoint.milestoneType === "artifact") && (
+            <div className="rounded-lg border border-amber-200/60 bg-amber-50/40 dark:border-amber-800/40 dark:bg-amber-900/10 px-3 py-2.5 mb-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1">
+                {checkpoint.milestoneType === "artifact" ? "Draft your answer" : "Synthesise what you've learned"}
+              </p>
+              {checkpoint.completionNotes?.length > 0 && (
+                <div className="mb-2 rounded-md bg-amber-100/50 dark:bg-amber-800/20 px-2.5 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700/70 dark:text-amber-400/70 mb-1">What you noted before</p>
+                  <ul className="space-y-0.5">
+                    {checkpoint.completionNotes.map((note, ni) => (
+                      <li key={ni} className="text-xs text-amber-800/80 dark:text-amber-300/80 flex gap-1.5">
+                        <span className="shrink-0 mt-0.5">·</span><span>{note}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {checkpoint.scaffolding && (
+                <ul className="space-y-1 mb-2">
+                  {checkpoint.scaffolding.split(" | ").filter(Boolean).map((q, qi) => (
+                    <li key={qi} className="text-xs text-amber-800/80 dark:text-amber-300/80 flex gap-1.5">
+                      <span className="shrink-0 mt-0.5">›</span><span>{q}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <textarea
+                className="w-full min-h-[80px] text-xs rounded-md border border-amber-200 bg-white/70 dark:bg-amber-900/20 dark:border-amber-700/40 px-2.5 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+                placeholder={checkpoint.milestoneType === "artifact" ? "Write your draft here…" : "Write your synthesis here…"}
+                value={synthDraft}
+                onChange={(e) => setSynthDraft(e.target.value)}
+              />
+              <div className="flex gap-2 mt-1.5 flex-wrap">
+                <Button size="sm" variant="outline" className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-100"
+                  disabled={synthLoadingState === "starter"}
+                  onClick={getPinnedStarter}>
+                  {synthLoadingState === "starter" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                  Get a starter draft
+                </Button>
+                {synthDraft.trim() && (
+                  <Button size="sm" variant="outline" className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-100"
+                    disabled={synthLoadingState === "critique"}
+                    onClick={getPinnedCritique}>
+                    {synthLoadingState === "critique" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <MoveRight className="w-3 h-3 mr-1" />}
+                    Push back on this
+                  </Button>
+                )}
+              </div>
+              {synthCritique && (
+                <div className="mt-2 rounded-md bg-amber-100/60 dark:bg-amber-900/30 px-2.5 py-2 text-xs text-amber-900 dark:text-amber-200 whitespace-pre-wrap">
+                  {synthCritique}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <div className="mt-4 pt-3 border-t border-primary/15 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">Need a smaller next move?</span>
@@ -431,6 +503,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const today = tasks.filter((t) => t.list === "today" && !t.done);
   const doneToday = tasks.filter((t) => t.list === "today" && t.done);
   const pinned = today.find((t) => t.pinned);
+  const pinnedPlanItem = pinned ? planItems.find((it) => it.id === pinned.planItemId) || null : null;
 
   const [plan, setPlan] = useState<DayPlanT | null>(null);
   const [planItems, setPlanItems] = useState<PlanItemT[]>([]);
@@ -451,6 +524,37 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [synthDrafts, setSynthDrafts] = useState<Record<number, string>>({});
   const [synthCritiques, setSynthCritiques] = useState<Record<number, string>>({});
   const [synthLoading, setSynthLoading] = useState<Record<number, "starter" | "critique" | null>>({});
+
+  async function saveMilestoneCapture() {
+    if (!milestoneCapture || savingCapture) return;
+    setSavingCapture(true);
+    try {
+      if (captureNote.trim()) {
+        await mutateAndInvalidate("PATCH", `/api/recommendation-milestones/${milestoneCapture.milestoneId}`, { completionNote: captureNote.trim() }, []);
+      }
+    } finally {
+      setSavingCapture(false);
+      setMilestoneCapture(null);
+      setCaptureNote("");
+    }
+  }
+  async function getSynthesisStarter(itemId: number, milestoneId: number) {
+    setSynthLoading((s) => ({ ...s, [itemId]: "starter" }));
+    try {
+      const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${milestoneId}/synthesis-starter`, {}, []);
+      if (res?.draft) setSynthDrafts((d) => ({ ...d, [itemId]: res.draft }));
+    } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
+  }
+  async function getCritique(itemId: number, milestoneId: number) {
+    const draft = synthDrafts[itemId];
+    if (!draft?.trim()) return;
+    setSynthLoading((s) => ({ ...s, [itemId]: "critique" }));
+    try {
+      const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${milestoneId}/critique`, { draft }, []);
+      if (res?.critique) setSynthCritiques((c) => ({ ...c, [itemId]: res.critique }));
+    } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
+  }
+
   async function quickCapture() {
     const t = quickText.trim();
     if (!t || capturingQuick) return;
@@ -597,7 +701,11 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
       {/* HERO: either the active focus, or the day plan */}
       {pinned ? (
-        <RightNow pinned={pinned} />
+        <RightNow
+          pinned={pinned}
+          onMilestoneCompleted={(milestoneId, label, draft) => { setMilestoneCapture({ milestoneId, label }); setCaptureNote(draft || ""); }}
+          pinnedPlanItem={pinnedPlanItem}
+        />
       ) : (
         <div className="mb-6">
           {isLoading || loadingPlan ? (

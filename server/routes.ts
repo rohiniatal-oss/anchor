@@ -20,6 +20,7 @@ import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
+import { generateJobPrepArc } from "./learningCurriculum";
 import OpenAI from "openai";
 
 const acceptRecommendationSchema = z.object({
@@ -110,6 +111,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/tasks/:id", async (req, res) => {
     await storage.deleteTask(Number(req.params.id));
     res.json({ ok: true });
+  });
+  // Custom POST /api/jobs: same as crud but fires job prep arc generation.
+  app.post("/api/jobs", async (req, res) => {
+    const p = insertJobSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const job = await storage.createJob(p.data);
+    res.json(job);
+    generateJobPrepArc(job).catch(() => {
+      console.error(`job prep arc generation skipped for job ${job.id}`);
+    });
   });
   crud(app, "jobs", () => storage.getJobs(), insertJobSchema,
     (d) => storage.createJob(d), (id, d) => storage.updateJob(id, d), (id) => storage.deleteJob(id));

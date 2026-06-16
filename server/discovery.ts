@@ -112,10 +112,22 @@ function containsAny(text: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(text));
 }
 
+function inferCareerByNamedLane(text: string) {
+  const specificLaneMatch = CONCERN_TRACK_SEEDS
+    .filter((seed) => !seed.broad)
+    .some((seed) => seed.patterns.some((pattern) => pattern.test(text)));
+  if (specificLaneMatch) return true;
+
+  const comparisonFrame = containsAny(text, [/\b(torn between|split between|between|which fits better|fit better|which path|role type|paths?)\b/]);
+  const broadCareerLane = containsAny(text, [/\b(strategy|advisory|operations|policy)\b/]);
+  return comparisonFrame && broadCareerLane;
+}
+
 function inferDomain(concern: string, explicit?: DiscoveryDomain): DiscoveryDomain {
   if (explicit) return explicit;
   const text = concern.toLowerCase();
   if (containsAny(text, [/\b(job|career|role|interview|cv|resume|network|linkedin|application)\b/])) return "career";
+  if (inferCareerByNamedLane(text)) return "career";
   if (containsAny(text, [/\b(health|sleep|exercise|gym|diet|meal|walk|wellbeing)\b/])) return "health";
   if (containsAny(text, [/\b(write|writing|article|essay|memo|substack|publish)\b/])) return "writing";
   if (containsAny(text, [/\b(admin|paperwork|forms|tax|inbox|organise|organize)\b/])) return "admin";

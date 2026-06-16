@@ -37,6 +37,17 @@ test("discovery start prefers a lower-overwhelm comparison move when the user is
   assert.match(String(r.json.tinyNextAction.title || ""), /one role type/i);
 });
 
+test("discovery start treats named career lanes as career even without the word job", async () => {
+  const r = await api(h.base, "POST", "/api/discovery/start", {
+    concern: "I am split between AI strategy and chief of staff and need to work out which fits better.",
+  });
+
+  assert.equal(r.status, 200);
+  assert.equal(r.json.input.domain, "career");
+  assert.ok((r.json.trackDrafts || []).length >= 2);
+  assert.match(String(r.json.tinyNextAction.title || ""), /role|fit|save/i);
+});
+
 test("discovery commit creates tracks and execution-ready tasks from a career route", async () => {
   const started = await api(h.base, "POST", "/api/discovery/start", {
     concern: "I need to sort out my career and get a job soon",
@@ -151,6 +162,16 @@ test("discovery start supports a non-career concern without creating fake career
   assert.equal(r.json.recommendedRoute.key, "reduce-friction");
   assert.ok(r.json.routes.every((route: any) => route.key !== "broad-role-pursuit"));
   assert.match(r.json.tinyNextAction.title, /friction|health/i);
+});
+
+test("discovery start does not treat generic life strategy phrasing as career", async () => {
+  const r = await api(h.base, "POST", "/api/discovery/start", {
+    concern: "I need a better strategy for sleep and meals because my routine is chaotic.",
+  });
+
+  assert.equal(r.status, 200);
+  assert.equal(r.json.input.domain, "health");
+  assert.ok(r.json.routes.every((route: any) => route.key !== "broad-role-pursuit"));
 });
 
 test("discovery start keeps explicitly named career lanes visible on a blank system", async () => {

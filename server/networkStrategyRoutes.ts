@@ -11,6 +11,14 @@ import {
   ARCHETYPE_META,
 } from "./networkStrategy";
 
+function ymdFromMs(ms: number): string {
+  const d = new Date(ms);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export function registerNetworkStrategyRoutes(app: Express) {
   // GET /api/networking/gaps — all stored gaps (optionally filter by trackId)
   app.get("/api/networking/gaps", async (req, res) => {
@@ -235,15 +243,36 @@ export function registerNetworkStrategyRoutes(app: Express) {
 
     // Compute next action
     const nextAction = computeNextAction(type as any, archetype);
-    if (nextAction) {
-      await storage.updateContactNextAction(id, nextAction.type, nextAction.dueMs, nextAction.desc);
-    } else {
-      // Clear next action for declined
-      await storage.updateContactNextAction(id, "", 0, "");
+    const now = Date.now();
+    const contactPatch: Record<string, unknown> = {};
+
+    if (type === "outreach") {
+      contactPatch.status = "messaged";
+      contactPatch.outreachedAt = now;
+    } else if (type === "response") {
+      contactPatch.status = "replied";
+      contactPatch.repliedAt = now;
+    } else if (type === "meeting" || type === "intro" || type === "referral") {
+      contactPatch.status = "replied";
+      if (!(contact as any).repliedAt) contactPatch.repliedAt = now;
     }
 
-    const updatedContacts = await storage.getContacts();
-    const updatedContact = updatedContacts.find((c: any) => c.id === id);
+    if (nextAction) {
+      contactPatch.nextActionType = nextAction.type;
+      contactPatch.nextActionDue = nextAction.dueMs;
+      contactPatch.nextActionDesc = nextAction.desc;
+      contactPatch.nextFollowUpDate = ymdFromMs(nextAction.dueMs);
+    } else if (type === "declined") {
+      // Clear next action only when the thread is explicitly closed out
+      contactPatch.nextActionType = "";
+      contactPatch.nextActionDue = null;
+      contactPatch.nextActionDesc = "";
+      contactPatch.nextFollowUpDate = "";
+    }
+
+    const updatedContact = Object.keys(contactPatch).length > 0
+      ? await storage.updateContact(id, contactPatch as any)
+      : contact;
     res.json({ ok: true, interaction, contact: updatedContact });
   });
 

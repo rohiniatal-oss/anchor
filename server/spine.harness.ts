@@ -21,6 +21,7 @@ const TABLES = [
   "learn", "hustles", "wins", "contacts", "career_tracks",
   "discovery_sessions", "recommendations", "recommendation_subdivisions", "recommendation_milestones",
   "day_plans", "day_plan_items", "entity_links", "activity_log",
+  "network_gaps", "contact_classifications", "contact_interactions",
 ];
 
 // The suite shares one initialized harness/DB per process. Per-test isolation
@@ -43,6 +44,7 @@ export async function makeHarness(): Promise<Harness> {
   const { registerCandidateRoutes } = await import("./candidates");
   const { registerDiscoveryRoutes } = await import("./discovery");
   const { registerGoalStateRoutes } = await import("./goalState");
+  const { registerNetworkStrategyRoutes } = await import("./networkStrategyRoutes");
   const { registerTaskBreakdownRoutes } = await import("./taskBreakdownRoutes");
   const { registerRoutes } = await import("./routes");
   const { initStorage, storage } = await import("./storage");
@@ -60,6 +62,7 @@ export async function makeHarness(): Promise<Harness> {
   registerCandidateRoutes(app);
   registerDiscoveryRoutes(app);
   registerGoalStateRoutes(app);
+  registerNetworkStrategyRoutes(app);
   registerTaskBreakdownRoutes(app);
   await registerRoutes(httpServer, app);
 

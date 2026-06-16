@@ -308,6 +308,11 @@ export const contacts = sqliteTable("contacts", {
   referralPotential: text("referral_potential").notNull().default(""),
   warmthScore: integer("warmth_score"),
   relatedTrackId: integer("related_track_id"),
+  outreachedAt: integer("outreachedAt"),
+  repliedAt: integer("repliedAt"),
+  nextActionType: text("nextActionType").notNull().default(""),
+  nextActionDue: integer("nextActionDue"),
+  nextActionDesc: text("nextActionDesc").notNull().default(""),
   createdAt: integer("created_at").notNull(),
 });
 

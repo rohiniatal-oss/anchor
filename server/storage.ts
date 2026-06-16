@@ -331,8 +331,26 @@ export class DatabaseStorage implements IStorage {
   async deleteWin(id: number) { db.delete(wins).where(eq(wins.id, id)).run(); }
   async getContacts() { return db.select().from(contacts).orderBy(desc(contacts.id)).all(); }
   async createContact(ct: InsertContact) { return db.insert(contacts).values({ ...ct, createdAt: Date.now() }).returning().get(); }
-  async updateContact(id: number, patch: Partial<InsertContact>) { return db.update(contacts).set(patch).where(eq(contacts.id, id)).returning().get(); }
-  async deleteContact(id: number) { db.delete(contacts).where(eq(contacts.id, id)).run(); }
+  async updateContact(id: number, patch: Partial<InsertContact>) {
+    const existing = db.select().from(contacts).where(eq(contacts.id, id)).get();
+    if (!existing) return undefined;
+
+    const nextPatch: Partial<InsertContact> = { ...patch };
+    const now = Date.now();
+    if (nextPatch.status === "messaged" && existing.status !== "messaged" && existing.status !== "replied" && nextPatch.outreachedAt == null) {
+      nextPatch.outreachedAt = now;
+    }
+    if (nextPatch.status === "replied" && existing.status !== "replied" && nextPatch.repliedAt == null) {
+      nextPatch.repliedAt = now;
+    }
+
+    return db.update(contacts).set(nextPatch).where(eq(contacts.id, id)).returning().get();
+  }
+  async deleteContact(id: number) {
+    db.delete(contactInteractions).where(eq(contactInteractions.contactId, id)).run();
+    db.delete(contactClassifications).where(eq(contactClassifications.contactId, id)).run();
+    db.delete(contacts).where(eq(contacts.id, id)).run();
+  }
 
   async getPlanByDate(date: string) { return db.select().from(dayPlans).where(eq(dayPlans.date, date)).get(); }
   async getPlan(id: number) { return db.select().from(dayPlans).where(eq(dayPlans.id, id)).get(); }
@@ -495,7 +513,7 @@ export class DatabaseStorage implements IStorage {
     return db.insert(contactInteractions).values({ ...data, createdAt: now }).returning().get();
   }
   async updateContactNextAction(id: number, nextActionType: string, nextActionDue: number | null, nextActionDesc: string) {
-    return db.update(contacts).set({ nextActionType, nextActionDue, nextActionDesc } as any)
+    return db.update(contacts).set({ nextActionType, nextActionDue, nextActionDesc })
       .where(eq(contacts.id, id)).returning().get();
   }
 }

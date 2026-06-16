@@ -581,11 +581,24 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
 
       <div className="flex items-center gap-1 mt-2.5">
         {idx > 0 && <button onClick={() => onPatch(c, { status: OUTREACH_COLS[idx - 1].id })} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">←</button>}
-        {idx < OUTREACH_COLS.length - 1 && <button onClick={() => onPatch(c, { status: OUTREACH_COLS[idx + 1].id })} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">{OUTREACH_COLS[idx + 1].label} →</button>}
+        {idx < OUTREACH_COLS.length - 1 && (
+          <button
+            onClick={() => {
+              const nextStatus = OUTREACH_COLS[idx + 1].id;
+              if (nextStatus === "messaged") return handleLogInteraction("outreach");
+              if (nextStatus === "replied") return handleLogInteraction("response");
+              return onPatch(c, { status: nextStatus });
+            }}
+            className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate"
+          >
+            {OUTREACH_COLS[idx + 1].label} →
+          </button>
+        )}
       </div>
 
       <div className="flex gap-1.5 flex-wrap mt-2">
         {[
+          { type: "outreach", label: "Sent outreach", show: c.status === "to_contact" },
           { type: "response", label: "They replied", show: c.status === "messaged" },
           { type: "meeting", label: "Meeting had", show: c.status === "replied" },
           { type: "intro", label: "Got intro", show: true },
@@ -811,7 +824,7 @@ export function NetworkView() {
   async function logInteraction(contactId: number, type: string) {
     try {
       await mutateAndInvalidate("POST", `/api/contacts/${contactId}/log-interaction`, { type },
-        ["/api/contacts", `/api/contacts/${contactId}/interactions`, "/api/networking/analytics", ...GOAL_SPINE_QUERY_KEYS]);
+        ["/api/contacts", `/api/contacts/${contactId}/interactions`, "/api/networking/analytics", "/api/networking/best-move", ...GOAL_SPINE_QUERY_KEYS]);
       toast({ title: "Logged.", description: `${type.charAt(0).toUpperCase() + type.slice(1)} recorded — next action updated.` });
     } catch {
       toast({ title: "Couldn't log interaction", description: "Try again in a moment." });

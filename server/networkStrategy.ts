@@ -77,6 +77,33 @@ export type RecommendedMove = {
   riskLevel: "low" | "medium" | "high";
 };
 
+function normalizeText(value: string | null | undefined): string {
+  return String(value || "").trim().toLowerCase();
+}
+
+function liveJobsRelevantToContact(contact: Contact, track: CareerTrack | null, jobs: Job[]): Job[] {
+  const liveJobs = jobs.filter((j) => j.status === "wishlist" || j.status === "applied" || j.status === "interviewing");
+  if (liveJobs.length === 0) return [];
+
+  if (track) {
+    const trackJobs = liveJobs.filter((j) => j.relatedTrackId === track.id);
+    if (trackJobs.length > 0) return trackJobs;
+  }
+
+  const targetOrg = normalizeText(contact.targetOrg);
+  const targetRole = normalizeText(contact.targetRole);
+  const contactMatchedJobs = liveJobs.filter((job) => {
+    const company = normalizeText(job.company);
+    const title = normalizeText(job.title);
+    const archetype = normalizeText(job.roleArchetype);
+    return (!!targetOrg && company === targetOrg)
+      || (!!targetRole && (title.includes(targetRole) || archetype.includes(targetRole)));
+  });
+  if (contactMatchedJobs.length > 0) return contactMatchedJobs;
+
+  return track ? [] : liveJobs;
+}
+
 function safeParseArray<T>(raw: string, fallback: T[] = []): T[] {
   try {
     const parsed = JSON.parse(raw || "[]");
@@ -299,12 +326,12 @@ export async function computeRecommendedMove(
   }
 
   if (arch === "near_peer") {
-    const liveJobs = jobs.filter((j) => j.status === "wishlist" || j.status === "applied" || j.status === "interviewing");
-    if (liveJobs.length > 0 && (warmth === "warm" || warmth === "strong")) {
+    const relevantLiveJobs = liveJobsRelevantToContact(contact, track, jobs);
+    if (relevantLiveJobs.length > 0 && (warmth === "warm" || warmth === "strong")) {
       return {
         moveType: "referral",
         suggestedAsk: "Ask if they'd be willing to put in a word, given the role is a good fit.",
-        reason: "You have live applications and a warm relationship — this is the right moment for a referral.",
+        reason: "You have a live relevant role and a warm relationship — this is the right moment for a referral-style ask.",
         confidence: "medium",
         riskLevel: "medium",
       };

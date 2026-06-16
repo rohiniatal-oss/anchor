@@ -17,6 +17,7 @@ import { registerTrackSpineRoutes } from "./trackSpineRoutes";
 import { registerBrainSpineRoutes } from "./brainSpineRoutes";
 import { registerTaskBreakdownRoutes } from "./taskBreakdownRoutes";
 import { registerProfileRoutes } from "./profileRoutes";
+import { registerNetworkStrategyRoutes } from "./networkStrategyRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { serveStatic } from "./static";
 import { initStorage } from "./storage";
@@ -103,6 +104,7 @@ app.use((req, res, next) => {
   registerBrainSpineRoutes(app);
   registerTaskBreakdownRoutes(app);
   registerProfileRoutes(app);
+  registerNetworkStrategyRoutes(app);
   registerAnchorTodayRoutes(app);
   await registerRoutes(httpServer, app);
 

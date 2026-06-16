@@ -131,12 +131,24 @@ async function busyMinutesFor(day: string) {
   return busy;
 }
 
+async function buildLearnMilestoneProgress(learnItems: any[]): Promise<Map<number, { done: number; total: number }>> {
+  const map = new Map<number, { done: number; total: number }>();
+  for (const l of learnItems) {
+    if (l.sourceType !== "recommendation" || l.sourceId == null) continue;
+    const milestones = await storage.getRecommendationMilestones(l.sourceId).catch(() => []);
+    if (!milestones.length) continue;
+    map.set(l.id, { done: milestones.filter((m) => m.status === "done").length, total: milestones.length });
+  }
+  return map;
+}
+
 async function buildPlanTransactional(day: string, energy: Energy) {
   const [tasks, jobs, learn, hustles] = await Promise.all([
     storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(),
   ]);
   const busy = await busyMinutesFor(day);
-  const result = planDay(tasks, jobs, learn, hustles, energy, busy);
+  const learnMilestoneProgress = await buildLearnMilestoneProgress(learn);
+  const result = planDay(tasks, jobs, learn, hustles, energy, busy, [], [], learnMilestoneProgress);
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
 
   const plan = db.transaction((tx) => {

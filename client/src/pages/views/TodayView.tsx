@@ -664,9 +664,16 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                       )}
                       {showPreviewStep && nextStepText && (
                         <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
-                            {preShrunk ? "First tiny step" : "Smallest useful move"}
-                          </p>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                              {preShrunk ? "First tiny step" : "Smallest useful move"}
+                            </p>
+                            {it.explanation?.nextCheckpoint?.totalMilestones > 0 && (
+                              <span className="text-[10px] font-medium text-primary/60 shrink-0">
+                                {it.explanation.nextCheckpoint.doneCount}/{it.explanation.nextCheckpoint.totalMilestones} done
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-foreground mt-1">{nextStepText}</p>
                           {it.explanation?.nextCheckpoint?.doneWhen && (
                             <p className="text-[11px] text-primary/70 mt-1.5 border-t border-primary/10 pt-1.5">
@@ -695,6 +702,18 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1">
                             {it.explanation.nextCheckpoint.milestoneType === "artifact" ? "Draft your answer" : "Synthesise what you've learned"}
                           </p>
+                          {it.explanation.nextCheckpoint.completionNotes?.length > 0 && (
+                            <div className="mb-2 rounded-md bg-amber-100/50 dark:bg-amber-800/20 px-2.5 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700/70 dark:text-amber-400/70 mb-1">What you noted before</p>
+                              <ul className="space-y-0.5">
+                                {it.explanation.nextCheckpoint.completionNotes.map((note, ni) => (
+                                  <li key={ni} className="text-xs text-amber-800/80 dark:text-amber-300/80 flex gap-1.5">
+                                    <span className="shrink-0 mt-0.5">·</span><span>{note}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                           {it.explanation.nextCheckpoint.scaffolding && (
                             <ul className="space-y-1 mb-2">
                               {it.explanation.nextCheckpoint.scaffolding.split(" | ").filter(Boolean).map((q, qi) => (

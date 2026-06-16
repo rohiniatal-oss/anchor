@@ -96,6 +96,7 @@ export type Candidate = {
   targetRole?: string;
   followUpDate?: string;
   jobTruthAction?: JobTruthAction;
+  milestoneProgress?: { done: number; total: number };
 };
 
 type StrategicContext = {
@@ -858,7 +859,7 @@ function askTypeAlignment(c: Candidate, context: StrategicContext) {
 
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
-export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = []): Candidate[] {
+export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [], learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map()): Candidate[] {
   const out: Candidate[] = [];
 
   for (const t of tasks) {
@@ -925,6 +926,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
+        milestoneProgress: learnMilestoneProgress.get(l.id),
       });
     }
   }
@@ -1035,6 +1037,12 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (/application/i.test(context.bottleneck) && isApplicationLike(c)) { s += 30; trace.push("moves an application forward"); }
   if (/network/i.test(context.bottleneck) && isNetworkLike(c)) { s += 35; trace.push("moves a relationship path forward"); }
   if (/learning|development/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("converts learning/development into track leverage"); }
+  if (c.source === "learn" && c.milestoneProgress && c.milestoneProgress.total > 0) {
+    const ratio = c.milestoneProgress.done / c.milestoneProgress.total;
+    if (ratio >= 0.8) { s += 35; trace.push("nearly finished curriculum — close it out"); }
+    else if (ratio >= 0.5) { s += 22; trace.push("halfway through curriculum — keep momentum"); }
+    else if (ratio > 0) { s += 12; trace.push("curriculum has active progress"); }
+  }
   if (context.planningPosture === "capability") {
     if (isLearningLike(c)) {
       s += 22;
@@ -1298,6 +1306,7 @@ export function planDay(
   tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[],
   energy: Energy, capacity: CapacityInput = 0,
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
+  learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(),
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const priorityCandidates: Candidate[] = [];
@@ -1306,7 +1315,7 @@ export function planDay(
   } else if (needsBroadPursuitSupportGoalCandidate(context)) {
     priorityCandidates.push(...buildBroadPursuitSupportGoalCandidates(context));
   }
-  const all = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts)];
+  const all = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts, learnMilestoneProgress)];
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))
     .filter((x) => x.reason)

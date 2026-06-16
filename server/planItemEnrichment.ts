@@ -15,6 +15,10 @@ type ActiveMilestone = {
   doneWhen: string;
   scaffolding: string;
   milestoneType: string;
+  sequence: number;
+  totalMilestones: number;
+  doneCount: number;
+  completionNotes: string[];
 };
 
 async function activeMilestoneForLearnItem(
@@ -29,6 +33,7 @@ async function activeMilestoneForLearnItem(
     milestones.find((m) => m.status === "todo") ||
     null;
   if (!active || !active.suggestedTaskTitle) return null;
+  const done = milestones.filter((m) => m.status === "done");
   return {
     id: active.id,
     label: active.label,
@@ -36,6 +41,12 @@ async function activeMilestoneForLearnItem(
     doneWhen: active.doneWhen,
     scaffolding: (active as any).scaffolding || "",
     milestoneType: (active as any).milestoneType || "content",
+    sequence: active.sequence,
+    totalMilestones: milestones.length,
+    doneCount: done.length,
+    completionNotes: done
+      .map((m) => (m as any).completionNote as string || "")
+      .filter(Boolean),
   };
 }
 
@@ -67,6 +78,10 @@ export async function enrichPlanItems(items: any[]): Promise<any[]> {
                 doneWhen: milestone.doneWhen,
                 scaffolding: milestone.scaffolding,
                 milestoneType: milestone.milestoneType,
+                sequence: milestone.sequence,
+                totalMilestones: milestone.totalMilestones,
+                doneCount: milestone.doneCount,
+                completionNotes: milestone.completionNotes,
               },
             },
           };

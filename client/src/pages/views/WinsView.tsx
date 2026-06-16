@@ -87,7 +87,7 @@ export default function WinsView() {
         </div>
       )}
       <div className="flex flex-wrap gap-2 mb-3">
-        <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="What went well? Anything counts…" className="h-11 flex-1 min-w-[12rem]" data-testid="input-win" />
+        <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }} placeholder="What went well? A task done, a message sent, something you learned…" className="h-11 flex-1 min-w-[12rem]" data-testid="input-win" />
         <select value={category} onChange={(e) => setCategory(e.target.value as WinCategory)} data-testid="select-win-category"
           className="h-11 rounded-md border border-input bg-background px-3 text-sm">
           {WIN_CATEGORIES.map((c) => <option key={c} value={c}>{WIN_CATEGORY_LABEL[c]}</option>)}
@@ -95,7 +95,7 @@ export default function WinsView() {
         <Button className="h-11 px-4" onClick={add} data-testid="button-add-win"><Trophy className="w-4 h-4 mr-1" /> Log win</Button>
       </div>
       {isLoading ? <Loading /> : wins.length === 0 ? (
-        <Empty icon={Trophy} text="No wins logged yet. Start with one small thing you did today." />
+        <Empty icon={Trophy} text="No wins logged yet. A win can be a task finished, a message sent, or something you learned — anything counts." />
       ) : (
         <div className="space-y-6">
           {thisWeek.length > 0 && (<div><GroupLabel count={thisWeek.length}>This week</GroupLabel><div className="space-y-2">{thisWeek.map((w) => <Row key={w.id} w={w} />)}</div></div>)}

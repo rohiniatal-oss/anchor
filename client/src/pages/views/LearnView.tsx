@@ -197,7 +197,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
     <div className="mt-2.5 pt-2.5 border-t border-card-border" data-testid={`proofrail-${h.id}`}>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          <ListChecks className="w-3.5 h-3.5" /> Production rail
+          <ListChecks className="w-3.5 h-3.5" /> Steps
           {steps.length > 0 && <span className="tabular-nums opacity-70">{doneCount}/{steps.length}</span>}
         </div>
         {steps.length > 0 && (
@@ -507,7 +507,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
                     <>
                       {recommendationDetail?.subdivisions?.length > 0 && (
                         <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Subtopics</p>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">What's inside</p>
                           <div className="mt-2 space-y-2">
                             {recommendationDetail.subdivisions.map((subdivision) => {
                               const materials = parseSuggestedMaterials(subdivision.suggestedMaterials);

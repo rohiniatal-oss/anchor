@@ -353,6 +353,19 @@ export function goalMorningBrief(goal?: CareerGoalT | null): GoalMorningBriefT {
   };
 }
 
+export function opportunityPipelineMixLine(goal?: CareerGoalT | null) {
+  const pipeline = goal?.opportunityState?.pipeline;
+  if (!pipeline) return "";
+  const parts = [
+    pipeline.prepare > 0 ? `${pipeline.prepare} interview-prep role${pipeline.prepare === 1 ? "" : "s"}` : "",
+    pipeline.followUp > 0 ? `${pipeline.followUp} follow-up role${pipeline.followUp === 1 ? "" : "s"}` : "",
+    pipeline.apply > 0 ? `${pipeline.apply} ready-to-apply role${pipeline.apply === 1 ? "" : "s"}` : "",
+    pipeline.warm > 0 ? `${pipeline.warm} contact-first role${pipeline.warm === 1 ? "" : "s"}` : "",
+    pipeline.clarify > 0 ? `${pipeline.clarify} clarify-first role${pipeline.clarify === 1 ? "" : "s"}` : "",
+  ].filter(Boolean).slice(0, 3);
+  return parts.length > 0 ? `Role pipeline: ${parts.join("; ")}.` : "";
+}
+
 export function goalMorningBriefWithExecution(
   goal?: CareerGoalT | null,
   execution?: GoalMorningExecutionInputT,

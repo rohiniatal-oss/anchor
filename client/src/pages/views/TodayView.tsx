@@ -23,7 +23,7 @@ import type { Tab } from "@/lib/homeTypes";
 import {
   type PlanItemT, type DayPlanT, type CareerGoalT, type GoalsStateResponseT,
   SLOT_LABEL, deriveTodayExecutionState, getBroadPursuitCoverage, isPreShrunkPlanItem, isBroadPursuitGoalItem,
-  broadPursuitGapLines, broadPursuitPlanTitle, broadPursuitPrimarySummary, goalMorningBriefWithExecution, goalTodayIntroLine,
+  broadPursuitGapLines, broadPursuitPlanTitle, broadPursuitPrimarySummary, goalMorningBriefWithExecution, goalTodayIntroLine, opportunityPipelineMixLine,
 } from "@/lib/goalSpine";
 import { WIN_CATEGORY_LABEL, type WinCategory } from "@/lib/homeTypes";
 
@@ -532,11 +532,6 @@ function TodayBrief({
     interviews: number;
     activeConversations: number;
     dueFollowUps: number;
-    apply: number;
-    warm: number;
-    clarify: number;
-    followUp: number;
-    prepare: number;
   };
   showDetails: boolean;
   onToggleDetails: () => void;
@@ -605,44 +600,8 @@ function TodayBrief({
           </span>
         )}
       </div>
-      {(searchPicture.apply > 0 || searchPicture.warm > 0 || searchPicture.clarify > 0 || searchPicture.prepare > 0 || searchPicture.followUp > 0) && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          {searchPicture.apply > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
-              <Check className="w-3 h-3 text-primary" />
-              <span className="font-semibold text-foreground tabular-nums">{searchPicture.apply}</span>
-              {searchPicture.apply === 1 ? "ready to apply" : "ready to apply"}
-            </span>
-          )}
-          {searchPicture.warm > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
-              <Users className="w-3 h-3 text-primary" />
-              <span className="font-semibold text-foreground tabular-nums">{searchPicture.warm}</span>
-              {searchPicture.warm === 1 ? "contact-first role" : "contact-first roles"}
-            </span>
-          )}
-          {searchPicture.followUp > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
-              <MoveRight className="w-3 h-3 text-primary" />
-              <span className="font-semibold text-foreground tabular-nums">{searchPicture.followUp}</span>
-              {searchPicture.followUp === 1 ? "follow-up move" : "follow-up moves"}
-            </span>
-          )}
-          {searchPicture.clarify > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
-              <Target className="w-3 h-3 text-primary" />
-              <span className="font-semibold text-foreground tabular-nums">{searchPicture.clarify}</span>
-              {searchPicture.clarify === 1 ? "clarify-first role" : "clarify-first roles"}
-            </span>
-          )}
-          {searchPicture.prepare > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
-              <Sparkles className="w-3 h-3 text-primary" />
-              <span className="font-semibold text-foreground tabular-nums">{searchPicture.prepare}</span>
-              {searchPicture.prepare === 1 ? "interview-prep role" : "interview-prep roles"}
-            </span>
-          )}
-        </div>
+      {opportunityPipelineMixLine(goal) && (
+        <p className="mt-2 text-xs text-muted-foreground">{opportunityPipelineMixLine(goal)}</p>
       )}
       {brief.summary && (
         <p className="text-sm font-medium mt-3">{brief.summary}</p>
@@ -834,11 +793,6 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     interviews: pipeline?.interviews || 0,
     activeConversations: pipeline?.activeConversations || 0,
     dueFollowUps: pipeline?.dueFollowUps || 0,
-    apply: pipeline?.apply || 0,
-    warm: pipeline?.warm || 0,
-    clarify: pipeline?.clarify || 0,
-    followUp: pipeline?.followUp || 0,
-    prepare: pipeline?.prepare || 0,
   };
 
   return (

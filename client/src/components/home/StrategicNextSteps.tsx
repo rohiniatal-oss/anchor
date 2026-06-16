@@ -30,6 +30,21 @@ type NextStep = {
   onClick: () => void;
 };
 
+function visibleLearningRecommendationForTrack(
+  recs: Recommendation[],
+  trackId: number,
+  gapKey: string | null,
+) {
+  return (
+    recs.find((rec) =>
+      rec.linkedTrackId === trackId &&
+      rec.collection === "learning-corpus" &&
+      !["accepted", "rejected", "archived", "duplicate", "stale"].includes(rec.status) &&
+      (!gapKey || rec.linkedGapKey === gapKey)
+    ) || null
+  );
+}
+
 function buildSteps(
   tracks: TrackDiagnostic[],
   recs: Recommendation[],
@@ -50,39 +65,52 @@ function buildSteps(
       steps.push({
         icon: Briefcase,
         title: `Add a job or role for "${track.name}"`,
-        detail: "Even a wishlist role gives this track direction — the search can't move without one.",
+        detail: "Even a wishlist role gives this track direction - the search cannot move without one.",
         action: "Add a job",
         onClick: () => onOpenTab("jobs"),
       });
     } else if (b === "learning" || b === "readiness") {
       const domainLabel = track.learningGap?.topGapLabel || null;
       const domain = domainLabel || track.name;
+      const savedLearningRec = visibleLearningRecommendationForTrack(
+        recs,
+        track.id,
+        track.learningGap?.topGapDomain || null,
+      );
       steps.push({
         icon: GraduationCap,
-        title: domainLabel
-          ? `Start studying ${domainLabel} — needed for "${track.name}"`
-          : `Add a learning item for "${track.name}"`,
-        detail: domainLabel
-          ? `${domainLabel} is a required skill for this type of role and you haven't covered it yet.`
-          : "This track needs its first learning item before you can be ready to apply.",
-        action: "Start studying",
-        onClick: () => {
-          const draft = buildLearnStarterDraft({
-            subjectText: domain,
-            relatedTrackId: track.id,
-            noteIntro: `Needed for ${track.name}.`,
-            fallbackTitle: `Intro to ${domain}`,
-          });
-          queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
-          window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
-          onOpenTab("learn");
-        },
+        title: savedLearningRec
+          ? domainLabel
+            ? `Use the saved ${domainLabel} starter for "${track.name}"`
+            : `Use the saved learning starter for "${track.name}"`
+          : domainLabel
+            ? `Start studying ${domainLabel} for "${track.name}"`
+            : `Add a learning item for "${track.name}"`,
+        detail: savedLearningRec
+          ? `${savedLearningRec.title} is already waiting in Learn, so you can begin from that instead of setting one up from scratch.`
+          : domainLabel
+            ? `${domainLabel} is a real weak area for this role type, so Anchor should give you one clear way to begin.`
+            : "This track needs its first learning item before you can be ready to apply.",
+        action: savedLearningRec ? "Open starter" : "Use starter",
+        onClick: savedLearningRec
+          ? () => onOpenTab("learn")
+          : () => {
+              const draft = buildLearnStarterDraft({
+                subjectText: domain,
+                relatedTrackId: track.id,
+                noteIntro: `Needed for ${track.name}.`,
+                fallbackTitle: `Intro to ${domain}`,
+              });
+              queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
+              window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
+              onOpenTab("learn");
+            },
       });
     } else if (b === "warmth") {
       steps.push({
         icon: Users,
         title: `Add a contact for "${track.name}"`,
-        detail: `You have live jobs for this track but no one to reach out to. An advice call could open doors.`,
+        detail: `You have live jobs for this track but no one to reach out to yet. One advice conversation could open doors.`,
         action: "Add a contact",
         onClick: () => {
           const draft = {
@@ -102,7 +130,7 @@ function buildSteps(
       steps.push({
         icon: ListChecks,
         title: "Pick one task and finish it today",
-        detail: track.bottleneckLabel || "You have tasks ready to go — none have been started yet.",
+        detail: track.bottleneckLabel || "You have tasks ready to go - none have been started yet.",
         action: "See tasks",
         onClick: () => onOpenTab("braindump"),
       });
@@ -140,7 +168,7 @@ export function StrategicNextSteps({
     return (
       <div className="rounded-2xl border border-dashed border-border p-6 text-center" data-testid="strategic-next-steps-empty">
         <p className="text-sm text-muted-foreground mb-3">
-          Add a thought, a job, or something to learn — I'll shape a day from there.
+          Add a thought, a job, or something to learn - I will shape a day from there.
         </p>
         <Button size="sm" variant="outline" onClick={() => onOpenTab("braindump")}>
           Brain dump
@@ -160,7 +188,7 @@ export function StrategicNextSteps({
           <p className="text-xs text-muted-foreground mt-0.5">{top.detail}</p>
         </div>
         <Button size="sm" variant="outline" onClick={top.onClick} className="shrink-0 text-xs">
-          {top.action} →
+          {top.action}{" ->"}
         </Button>
       </div>
     );
@@ -188,14 +216,14 @@ export function StrategicNextSteps({
                 className="shrink-0 text-xs"
                 data-testid={`button-strategic-step-${i}`}
               >
-                {step.action} →
+                {step.action}{" ->"}
               </Button>
             </div>
           );
         })}
       </div>
       <p className="text-xs text-muted-foreground mt-3">
-        Add one or two of these — I'll shape a day plan from there.
+        Add one or two of these - I will shape a day plan from there.
       </p>
     </div>
   );

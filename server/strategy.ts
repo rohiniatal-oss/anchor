@@ -179,26 +179,26 @@ export function diagnoseTrack(
   if (directionGap > 0) {
     bottleneck = "direction";
     bottleneckLabel = "No live roles yet";
-    recommendedMove = "Add or activate a role or prep item on this track";
+    recommendedMove = "Add a role or prep item to get started on this track";
   } else if (warmthGap > 0 && tLiveJobs.length > 0) {
     const overdue = tContacts.filter(isContactOverdue).length;
     bottleneck = "warmth";
     bottleneckLabel = tContacts.length === 0
-      ? "Live roles, but no helpful contact yet"
-      : overdue > 0 ? `${overdue} contact${overdue > 1 ? "s" : ""} overdue for follow-up` : "Contacts exist, but none are likely to help yet";
+      ? "Live roles, but no one to reach out to yet"
+      : overdue > 0 ? `${overdue} contact${overdue > 1 ? "s" : ""} need${overdue === 1 ? "s" : ""} a follow-up` : "Contacts exist, but none are likely to help yet";
     recommendedMove = overdue > 0
-      ? "Follow up with the contacts that have gone cold"
+      ? "Follow up with the contacts that need a nudge"
       : "Reach out to the person most likely to help with these roles";
   } else if (readinessGap > 0) {
     bottleneck = "readiness";
-    bottleneckLabel = stuckTasks > 0 ? "Tasks blocked or need info" : "Applications not ready";
+    bottleneckLabel = stuckTasks > 0 ? "Something is stuck or needs more info" : "Applications aren't ready yet";
     recommendedMove = stuckTasks > 0
       ? "Create a task to unblock what's stuck"
       : "Create a task to tailor materials for your strongest role";
   } else if (executionGap > 0) {
     bottleneck = "execution";
-    bottleneckLabel = `${executionGap} ready tasks, none done`;
-    recommendedMove = "Pick the top ready task and finish one today";
+    bottleneckLabel = `${executionGap} task${executionGap > 1 ? "s" : ""} ready to go — none started yet`;
+    recommendedMove = "Pick the top ready task and get one done today";
   } else if (learningGap > 0 && lg) {
     // P5 — STRUCTURAL capability gap, reached only when no readiness/warmth/
     // execution blocker is louder. Names the top unmet domain and points at the
@@ -207,7 +207,7 @@ export function diagnoseTrack(
     const step = lg.sequence.find((s) => s.gapDomain === topGap.domain && s.learnId !== null);
     bottleneck = "learning";
     bottleneckLabel = learningGap === 1
-      ? `This role type still needs prep in ${topGap.label}`
+      ? `This track still needs prep in ${topGap.label}`
       : `${learningGap} prep areas still need coverage`;
     recommendedMove = step
       ? `Build ${topGap.label}: do the next step on "${step.title}"`
@@ -217,25 +217,25 @@ export function diagnoseTrack(
     // conversion blockers are quiet, and only for proof assets the user already
     // chose to keep live.
     bottleneck = "proof";
-    bottleneckLabel = "Active project or public-work item stalled";
-    recommendedMove = "Move the active project or public-work item one concrete step forward";
+    bottleneckLabel = "A project you started has stalled";
+    recommendedMove = "Move the active project one concrete step forward";
   } else if (learnProofGap > 0) {
     // LOWEST-PRIORITY, OPT-IN nudge: only reached when nothing structural is the
     // bottleneck. Stays "proof"-typed but is gentle — never the primary blocker.
     bottleneck = "proof";
     bottleneckLabel = learnProofGap === 1
-      ? "A learning item marked for a reusable result still has none yet"
-      : `${learnProofGap} learning items marked for reusable results still have none yet`;
-    recommendedMove = "If it would help later, turn one learning item into a reusable note, brief, or example";
+      ? "A study item could produce something concrete — it hasn't yet"
+      : `${learnProofGap} study items could each produce something concrete — none have yet`;
+    recommendedMove = "If it would help, turn one study item into a note or brief you could reuse later";
   } else if (evidenceGap > 0) {
     // P4.5 — SOFTEST nudge, reached only when every structural gap is clear: the
     // track has live work but nothing has shipped as evidence lately. Stays
     // "execution"-typed and calm — a gentle "log/ship one win", never an alarm.
     bottleneck = "execution";
-    bottleneckLabel = "Live work, no recent evidence";
+    bottleneckLabel = "In motion, but no wins logged recently";
     recommendedMove = liveProof > 0
-      ? "Ship one small reusable or public-facing piece and log it as a win"
-      : "Log a win for this track to show it's moving";
+      ? "Ship something small and log it as a win for this track"
+      : "Log a recent win so this track shows it's moving";
   }
 
   return {

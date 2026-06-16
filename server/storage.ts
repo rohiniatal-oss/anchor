@@ -2,6 +2,7 @@ import {
   tasks, events, jobs, learn, hustles, wins, contacts,
   dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps, proofAssetSteps, entityLinks,
   userProfile, discoverySessions, recommendations, recommendationSubdivisions, recommendationMilestones,
+  networkGaps, contactClassifications, contactInteractions,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
@@ -20,6 +21,9 @@ import {
   type Recommendation, type InsertRecommendation,
   type RecommendationSubdivision, type InsertRecommendationSubdivision,
   type RecommendationMilestone, type InsertRecommendationMilestone,
+  type NetworkGap, type InsertNetworkGap,
+  type ContactClassification, type InsertContactClassification,
+  type ContactInteraction, type InsertContactInteraction,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -186,6 +190,15 @@ export interface IStorage {
   // Profile
   getProfile(): Promise<UserProfile | null>;
   upsertProfile(patch: { cvText: string }): Promise<UserProfile>;
+  // Network Builder
+  getNetworkGaps(trackId?: number): Promise<NetworkGap[]>;
+  upsertNetworkGaps(trackId: number, gaps: InsertNetworkGap[]): Promise<NetworkGap[]>;
+  getContactClassifications(contactId?: number): Promise<ContactClassification[]>;
+  upsertContactClassifications(contactId: number, cls: InsertContactClassification[]): Promise<ContactClassification[]>;
+  deleteContactClassifications(contactId: number): Promise<void>;
+  getContactInteractions(contactId: number): Promise<ContactInteraction[]>;
+  createContactInteraction(data: Omit<InsertContactInteraction, 'createdAt'>): Promise<ContactInteraction>;
+  updateContactNextAction(id: number, nextActionType: string, nextActionDue: number | null, nextActionDesc: string): Promise<Contact | undefined>;
 }
 
 // Entities that carry a track link. Hustles store it in proofAssetForTrack;
@@ -446,6 +459,44 @@ export class DatabaseStorage implements IStorage {
         .where(eq(userProfile.id, existing.id)).returning().get();
     }
     return db.insert(userProfile).values({ cvText: patch.cvText, updatedAt: Date.now() }).returning().get();
+  }
+
+  // Network Builder
+  async getNetworkGaps(trackId?: number) {
+    if (trackId != null) return db.select().from(networkGaps).where(eq(networkGaps.trackId, trackId)).all();
+    return db.select().from(networkGaps).all();
+  }
+  async upsertNetworkGaps(trackId: number, gaps: InsertNetworkGap[]) {
+    db.delete(networkGaps).where(eq(networkGaps.trackId, trackId)).run();
+    const now = Date.now();
+    for (const g of gaps) db.insert(networkGaps).values({ ...g, trackId, createdAt: now }).run();
+    return this.getNetworkGaps(trackId);
+  }
+  async getContactClassifications(contactId?: number) {
+    if (contactId != null) return db.select().from(contactClassifications).where(eq(contactClassifications.contactId, contactId)).all();
+    return db.select().from(contactClassifications).all();
+  }
+  async upsertContactClassifications(contactId: number, cls: InsertContactClassification[]) {
+    db.delete(contactClassifications).where(eq(contactClassifications.contactId, contactId)).run();
+    const now = Date.now();
+    for (const c of cls) db.insert(contactClassifications).values({ ...c, contactId, createdAt: now }).run();
+    return this.getContactClassifications(contactId);
+  }
+  async deleteContactClassifications(contactId: number) {
+    db.delete(contactClassifications).where(eq(contactClassifications.contactId, contactId)).run();
+  }
+  async getContactInteractions(contactId: number) {
+    return db.select().from(contactInteractions)
+      .where(eq(contactInteractions.contactId, contactId))
+      .orderBy(desc(contactInteractions.createdAt)).all();
+  }
+  async createContactInteraction(data: Omit<InsertContactInteraction, 'createdAt'>) {
+    const now = Date.now();
+    return db.insert(contactInteractions).values({ ...data, createdAt: now }).returning().get();
+  }
+  async updateContactNextAction(id: number, nextActionType: string, nextActionDue: number | null, nextActionDesc: string) {
+    return db.update(contacts).set({ nextActionType, nextActionDue, nextActionDesc } as any)
+      .where(eq(contacts.id, id)).returning().get();
   }
 }
 

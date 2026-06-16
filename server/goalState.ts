@@ -244,7 +244,8 @@ function dominantOpportunityBlockerFor(input: {
     && applicationActionCounts.prepare === 0;
   if (onlyClarify) return "clarify";
 
-  if (applicationActionCounts.follow_up > 0 || applicationActionCounts.warm > 0) return "access";
+  if (applicationActionCounts.follow_up > 0) return "application";
+  if (applicationActionCounts.warm > 0) return "access";
   if (applicationActionCounts.apply > 0) return "application";
 
   const repeatedCapabilityPressure = applicationActionCounts.prove >= 2
@@ -664,39 +665,41 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     : networkStarted
       ? "early"
       : "not_started";
-  const networkBottleneck = !networkStarted
-    ? "few warm conversations created"
-    : snapshot.dueFollowUpCount > 0
-      ? `${snapshot.dueFollowUpCount} follow-up${snapshot.dueFollowUpCount > 1 ? "s are" : " is"} due or overdue`
-      : missingNetworkByLane.length > 0
-        ? `these live paths still lack networking support: ${missingNetworkByLane.join("; ")}`
-      : snapshot.networkContactsCount > 0 && snapshot.warmContactCount === 0
-        ? "contacts exist, but none are warm enough to create easy momentum yet"
-      : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
-        ? "live roles exist, but few contacts are tied to them yet"
-        : snapshot.activeConversationCount === 0
-          ? "contacts exist, but no active conversation is moving"
-          : "active conversations need sharper asks, replies, or role linkage";
-  const networkNextMoves = !networkStarted
-    ? ["find one warm-network person", "draft one reality-check message", "send or save one soft ask"]
-    : snapshot.dueFollowUpCount > 0
-      ? ["follow up with the warmest overdue contact", "send one concise nudge tied to the current role or ask", "schedule the next touch so the thread does not go cold again"]
-      : missingNetworkByLane.length > 0
-        ? [`add or link one contact to ${missingNetworkByLane[0]}`, "draft one advice, reconnect, or referral ask for that role type", "make sure each live path has at least one real person to reach out to"]
-      : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
-        ? ["tie one contact to the strongest live role", "identify who can warm the best current application", "draft one role-linked outreach message"]
-        : snapshot.activeConversationCount === 0
-          ? ["turn one draft into a sent message", "pick the warmest contact and send a concrete ask", "schedule one follow-up date"]
-          : ["move one active thread forward", "make the next ask more specific", "log the next follow-up date"];
+  const networkBottleneck = snapshot.dueFollowUpCount > 0
+    ? `${snapshot.dueFollowUpCount} follow-up${snapshot.dueFollowUpCount > 1 ? "s are" : " is"} due or overdue`
+    : missingNetworkByLane.length > 0
+      ? `these live paths still lack networking support: ${missingNetworkByLane.join("; ")}`
+    : !networkStarted
+      ? "few warm conversations created"
+    : snapshot.networkContactsCount > 0 && snapshot.warmContactCount === 0
+      ? "contacts exist, but none are warm enough to create easy momentum yet"
+    : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
+      ? "live roles exist, but few contacts are tied to them yet"
+      : snapshot.activeConversationCount === 0
+        ? "contacts exist, but no active conversation is moving"
+        : "active conversations need sharper asks, replies, or role linkage";
+  const networkNextMoves = snapshot.dueFollowUpCount > 0
+    ? ["follow up with the warmest overdue contact", "send one concise nudge tied to the current role or ask", "schedule the next touch so the thread does not go cold again"]
+    : missingNetworkByLane.length > 0
+      ? [`add or link one contact to ${missingNetworkByLane[0]}`, "draft one advice, reconnect, or referral ask for that role type", "make sure each live path has at least one real person to reach out to"]
+    : !networkStarted
+      ? ["find one warm-network person", "draft one reality-check message", "send or save one soft ask"]
+    : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
+      ? ["tie one contact to the strongest live role", "identify who can warm the best current application", "draft one role-linked outreach message"]
+      : snapshot.activeConversationCount === 0
+        ? ["turn one draft into a sent message", "pick the warmest contact and send a concrete ask", "schedule one follow-up date"]
+        : ["move one active thread forward", "make the next ask more specific", "log the next follow-up date"];
   const clarifyOnlyApplications = snapshot.viableApplicationCount > 0
     && snapshot.applicationActionCounts.clarify === snapshot.viableApplicationCount
     && snapshot.applicationActionCounts.apply === 0
     && snapshot.applicationActionCounts.warm === 0
     && snapshot.applicationActionCounts.follow_up === 0
     && snapshot.applicationActionCounts.prepare === 0;
+  const isBroadPursuitMissingLanes = broadSupportCoverage !== null && broadSupportCoverage.missing.length > 0;
   const applicationLead = snapshot.leadApplicationTruth;
   const applicationStatus: WorkstreamStatus = snapshot.viableApplicationCount === 0
     ? (snapshot.directionReady ? "underdeveloped" : "premature")
+    : isBroadPursuitMissingLanes && clarifyOnlyApplications ? "premature"
     : clarifyOnlyApplications ? "active"
     : applicationLead ? "active" : "underdeveloped";
   const applicationProgress: WorkstreamState["progress"] = clarifyOnlyApplications
@@ -944,6 +947,11 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
   const marketMap = workstreams.find((w) => w.name === GOAL_WORKSTREAM.MARKET_MAP);
   if ((phase === "role-targeting" || phase === "interview-prep") && network && network.status === "stale") return network;
   if (phase === "role-targeting") {
+    const broadCoverage = hasBroadParallelLanes(snapshot) ? buildBroadPursuitCoverage(snapshot) : null;
+    // All lanes covered + missing network support: Network wins unless a real apply move exists
+    if (broadCoverage && broadCoverage.missing.length === 0 && broadCoverage.missingNetworkSupport.length > 0
+        && snapshot.dominantOpportunityBlocker !== "application"
+        && network && network.nextMoveType !== "wait") return network;
     if (snapshot.dominantOpportunityBlocker === "access" && network && network.nextMoveType !== "wait") return network;
     if ((snapshot.dominantOpportunityBlocker === "clarify" || snapshot.dominantOpportunityBlocker === "application") && applications && applications.nextMoveType !== "wait") {
       return applications;
@@ -955,12 +963,8 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
       if (direction && direction.nextMoveType !== "wait") return direction;
       if (marketMap && marketMap.nextMoveType !== "wait") return marketMap;
     }
-    if (hasBroadParallelLanes(snapshot)) {
-      const coverage = buildBroadPursuitCoverage(snapshot);
-      if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length > 0 && network && network.nextMoveType !== "wait") return network;
-      if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingPrepSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
-        return capability;
-      }
+    if (broadCoverage && broadCoverage.missing.length === 0 && broadCoverage.missingNetworkSupport.length === 0 && broadCoverage.missingPrepSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
+      return capability;
     }
   }
 
@@ -1021,7 +1025,7 @@ function phaseObjective(phase: GoalPhase) {
 }
 
 function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot) {
-  if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
+  if (phase === "role-targeting" && hasBroadParallelLanes(snapshot) && focus.name !== GOAL_WORKSTREAM.PREP_UPSKILLING) {
     const coverage = buildBroadPursuitCoverage(snapshot);
     if (coverage.missing.length > 0) {
       return snapshot.savedJobs.length > 0
@@ -1109,6 +1113,14 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
       };
     }
     if (coverage.missingNetworkSupport.length > 0 || coverage.missingPrepSupport.length > 0) {
+      if (focus.name === GOAL_WORKSTREAM.APPLICATIONS) {
+        return {
+          mustDo: `Advance the strongest application move: ${snapshot.leadApplicationTruth?.nextMove || "push the most credible live role forward"}`,
+          next: "Keep the broad portfolio warm while you push this application",
+          optional: "Add one missing contact or prep starter for a parallel path when done",
+          stopRule: "Stop once the application move is done.",
+        };
+      }
       const hasNetworkGap = coverage.missingNetworkSupport.length > 0;
       const hasPrepGap = coverage.missingPrepSupport.length > 0;
       const supportNeedsAreMixed = hasNetworkGap && hasPrepGap;

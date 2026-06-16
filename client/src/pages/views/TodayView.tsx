@@ -1147,6 +1147,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           recommendations={recommendations}
           onOpenTab={onOpenTab}
           compact
+          modeFilter="setup-only"
         />
       )}
 

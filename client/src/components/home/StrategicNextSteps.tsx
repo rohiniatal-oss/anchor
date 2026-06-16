@@ -199,13 +199,18 @@ export function StrategicNextSteps({
   recommendations,
   onOpenTab,
   compact = false,
+  modeFilter = "all",
 }: {
   tracks: TrackDiagnostic[];
   recommendations: Recommendation[];
   onOpenTab: (t: Tab) => void;
   compact?: boolean;
+  modeFilter?: "all" | "setup-only";
 }) {
-  const steps = buildSteps(tracks, recommendations, onOpenTab);
+  const allSteps = buildSteps(tracks, recommendations, onOpenTab);
+  const steps = modeFilter === "setup-only"
+    ? allSteps.filter((step) => step.mode === "setup")
+    : allSteps;
 
   if (steps.length === 0) {
     if (compact) return null;

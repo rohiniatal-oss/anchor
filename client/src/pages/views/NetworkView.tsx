@@ -137,7 +137,7 @@ function ContactCard({ c, tracks, tasks, onPatch, onRemove }: { c: Contact; trac
   const tone = replied
     ? "border-emerald-300/60 bg-emerald-50/60 dark:border-emerald-800/60 dark:bg-emerald-950/30"
     : overdue
-      ? "border-amber-400/70 bg-amber-50/50 dark:border-amber-700/60 dark:bg-amber-950/20 animate-pulse"
+      ? "border-amber-400/70 bg-amber-50/50 dark:border-amber-700/60 dark:bg-amber-950/20"
       : "border-card-border bg-card";
 
   return (
@@ -329,7 +329,7 @@ export function NetworkView() {
               </div>
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Warmth</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Connection</p>
               <div className="flex flex-wrap gap-1.5">
                 {RELATIONSHIP_OPTIONS.map((option) => (
                   <button key={option.value} type="button" onClick={() => setForm({ ...form, relationshipStrength: option.value })}
@@ -347,7 +347,7 @@ export function NetworkView() {
           {showMoreContactFields && (
             <div className="grid gap-2 sm:grid-cols-2">
               <Input placeholder="Target role" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} data-testid="input-contact-target-role" />
-              <Input placeholder="Follow up date (YYYY-MM-DD)" value={form.nextFollowUpDate} onChange={(e) => setForm({ ...form, nextFollowUpDate: e.target.value })} data-testid="input-contact-follow-up" />
+              <Input type="date" value={form.nextFollowUpDate} onChange={(e) => setForm({ ...form, nextFollowUpDate: e.target.value })} data-testid="input-contact-follow-up" />
               <Input placeholder="Why this person matters" value={form.why} onChange={(e) => setForm({ ...form, why: e.target.value })} className="sm:col-span-2" data-testid="input-contact-why" />
               <Input placeholder="Network source / sector" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" data-testid="input-contact-source-network" />
               {tracks.length > 0 && (
@@ -393,7 +393,7 @@ export function NetworkView() {
       )}
 
       {isLoading ? <Loading /> : contacts.length === 0 ? (
-        <Empty icon={Users} text="No contacts yet. Add one real contact for a role type now." action={{ label: "Add a contact", onClick: () => setShowForm(true) }} />
+        <Empty icon={Users} text="No contacts yet. Add your first contact — someone you want to reach out to, or who could help." action={{ label: "Add a contact", onClick: () => setShowForm(true) }} />
       ) : (
         <div className="space-y-6">
           {(() => {

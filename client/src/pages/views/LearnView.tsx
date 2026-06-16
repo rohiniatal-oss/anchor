@@ -112,6 +112,9 @@ type RecommendationDetail = {
     suggestedTaskTitle: string;
     sequence: number;
     subdivisionKey: string;
+    milestoneType?: string;
+    scaffolding?: string;
+    completionNote?: string;
   }>;
 };
 
@@ -197,7 +200,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
     <div className="mt-2.5 pt-2.5 border-t border-card-border" data-testid={`proofrail-${h.id}`}>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          <ListChecks className="w-3.5 h-3.5" /> Production rail
+          <ListChecks className="w-3.5 h-3.5" /> Steps
           {steps.length > 0 && <span className="tabular-nums opacity-70">{doneCount}/{steps.length}</span>}
         </div>
         {steps.length > 0 && (
@@ -295,6 +298,7 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
 }
 
 export function ProofAssetsView() {
+  const { toast } = useToast();
   const { data: hustles = [], isLoading } = useQuery<Hustle[]>({ queryKey: ["/api/hustles"] });
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
@@ -303,6 +307,10 @@ export function ProofAssetsView() {
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/hustles", { ...form, stage: "idea" }, ["/api/hustles"]);
+    toast({
+      title: "Saved.",
+      description: "I also started a step-by-step arc for this so it is easier to move from idea to output.",
+    });
     setForm({ title: "", note: "", coreClaim: "", contentPillar: "" }); setShowForm(false);
   }
   async function move(h: Hustle, dir: 1 | -1) {
@@ -507,7 +515,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
                     <>
                       {recommendationDetail?.subdivisions?.length > 0 && (
                         <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Subtopics</p>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">What's inside</p>
                           <div className="mt-2 space-y-2">
                             {recommendationDetail.subdivisions.map((subdivision) => {
                               const materials = parseSuggestedMaterials(subdivision.suggestedMaterials);
@@ -533,18 +541,29 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
 
                       {recommendationDetail?.milestones?.length > 0 && (
                         <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Checkpoints</p>
+                          <div className="flex items-center justify-between">
+                            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Checkpoints</p>
+                            {(() => {
+                              const total = recommendationDetail.milestones.length;
+                              const done = recommendationDetail.milestones.filter((m: any) => m.status === "done").length;
+                              return total > 0 ? (
+                                <span className="text-[10px] text-muted-foreground">{done}/{total} done</span>
+                              ) : null;
+                            })()}
+                          </div>
                           <div className="mt-2 space-y-2">
-                            {recommendationDetail.milestones.map((milestone) => {
+                            {recommendationDetail.milestones.map((milestone: any) => {
                               const isDone = milestone.status === "done";
                               const isSkipped = milestone.status === "skipped";
                               const isActive = milestone.status === "active";
                               const isBlocked = milestone.status === "blocked";
                               const isClosed = isDone || isSkipped;
+                              const scaffoldingItems = milestone.scaffolding ? milestone.scaffolding.split(" | ").filter(Boolean) : [];
+                              const milestoneTypeBadge = milestone.milestoneType === "synthesis" ? "reflect" : milestone.milestoneType === "artifact" ? "produce" : null;
                               return (
-                                <div key={milestone.id} className="rounded-lg border border-card-border bg-card px-3 py-2.5">
+                                <div key={milestone.id} className={`rounded-lg border px-3 py-2.5 ${isDone ? "border-emerald-200/60 bg-emerald-50/30 dark:border-emerald-800/30 dark:bg-emerald-900/10" : "border-card-border bg-card"}`}>
                                   <div className="flex flex-wrap items-start justify-between gap-2">
-                                    <div className="min-w-0">
+                                    <div className="min-w-0 flex-1">
                                       <div className="flex flex-wrap items-center gap-1.5">
                                         <p className="text-xs font-medium leading-snug text-foreground">{milestone.label}</p>
                                         <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
@@ -552,13 +571,30 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
                                             : isSkipped ? "bg-slate-200 text-slate-600 dark:bg-slate-800/70 dark:text-slate-300"
                                               : isBlocked ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
                                               : isActive ? "bg-primary/10 text-primary"
-                                                : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                                : "bg-muted text-muted-foreground"
                                         }`}>
                                           {isDone ? "done" : isSkipped ? "skipped" : isBlocked ? "blocked" : isActive ? "next up" : "todo"}
                                         </span>
+                                        {milestoneTypeBadge && (
+                                          <span className="rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 px-1.5 py-0.5 text-[10px] font-medium">
+                                            {milestoneTypeBadge}
+                                          </span>
+                                        )}
                                       </div>
+                                      {milestone.suggestedTaskTitle && <p className="mt-1 text-[11px] leading-snug text-primary">{milestone.suggestedTaskTitle}</p>}
                                       {milestone.doneWhen && <p className="mt-1 text-[11px] leading-snug text-muted-foreground">Done when: {milestone.doneWhen}</p>}
-                                      {milestone.suggestedTaskTitle && <p className="mt-1 text-[11px] leading-snug text-primary">Suggested next move: {milestone.suggestedTaskTitle}</p>}
+                                      {scaffoldingItems.length > 0 && isActive && (
+                                        <ul className="mt-1.5 space-y-0.5">
+                                          {scaffoldingItems.map((q: string, qi: number) => (
+                                            <li key={qi} className="text-[11px] text-muted-foreground/80 flex gap-1">
+                                              <span className="shrink-0">›</span><span>{q}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                      {isDone && milestone.completionNote && (
+                                        <p className="mt-1.5 text-[11px] italic text-emerald-700 dark:text-emerald-300 border-l-2 border-emerald-300 pl-2">"{milestone.completionNote}"</p>
+                                      )}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-1.5">
                                       {!isActive && !isBlocked && !isClosed && (

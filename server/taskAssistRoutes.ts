@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { routeCapture, sortOpenCaptures } from "./capture";
 import { buildTaskIntakeDefaults } from "./taskIntakeInference";
 import { legacyCategoryToRoute } from "./captureCompatibility";
+import { USER_PROFILE } from "./userPromptProfile";
 
 export function registerTaskAssistRoutes(app: Express) {
   app.post("/api/unstick", async (req, res) => {
@@ -110,7 +111,7 @@ export function registerTaskAssistRoutes(app: Express) {
       const out = await client.responses.create({
         model: "gpt_5_1",
         input:
-          `You plan warm networking for Rohini (ex-Tony Blair Institute, Bain, Abraaj; LSR/Delhi Univ alum; targeting geopolitics, AI governance, advisory, chief-of-staff in London/UAE/remote).\n\n` +
+          `You plan warm networking for ${USER_PROFILE}\n\n` +
           `Given her TARGET ROLES below, suggest ONE specific *kind of person* to reach - tied to those exact orgs/sectors - that would most move her hunt. Reason strategically: which warm route (ex-TBI, ex-Bain, ex-Abraaj, LSR/Delhi alum, someone already at the target org or its sector) best unlocks these roles. Describe them by TYPE + WHERE (no invented names).\n\n` +
           `TARGET ROLES: ${JSON.stringify(targets)}\nALREADY TRACKED (don't repeat): ${JSON.stringify(alreadyTracked)}\nEXCLUDE: ${JSON.stringify(exclude)}\n\n` +
           `Return ONLY one JSON object: {"who":"<person type + where, e.g. 'ex-Bain colleague now in AI policy'>","sector":"<short sector tag>","why":"<one tight sentence on why this unlocks a target role>"}.`,

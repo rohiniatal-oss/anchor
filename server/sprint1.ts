@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { explainPersistedPlanItem, planDay } from "./brain";
+import { enrichPlanItems, buildLearnMilestoneProgress } from "./planItemEnrichment";
+import { completeRecommendationMilestone } from "./recommendationMilestoneProgress";
 import { classifyCapture, routeCapture, type CaptureRoute } from "./capture";
 import {
   dayPlans,
@@ -63,6 +65,28 @@ async function syncPlanItem(day: string, task: Task, patch: any) {
   if (item) await storage.updatePlanItem(item.id, patch);
 }
 
+// Returns the completed milestone id if one was advanced, so the client can show a capture prompt.
+async function advanceMilestoneForTask(task: Task): Promise<number | null> {
+  // Path 1: task was directly generated from a specific milestone (sourceStepType set).
+  if (task.sourceStepType === "recommendation_milestone" && task.sourceStepId) {
+    await completeRecommendationMilestone(task.sourceStepId);
+    return task.sourceStepId;
+  }
+  // Path 2: task is for a learn item that came from accepting a recommendation.
+  if (task.sourceType === "learn" && task.sourceId != null) {
+    const learnItem = await storage.getLearnItem(task.sourceId).catch(() => undefined);
+    if (learnItem?.sourceType === "recommendation" && learnItem.sourceId != null) {
+      const milestones = await storage.getRecommendationMilestones(learnItem.sourceId);
+      const active = milestones.find((m) => m.status === "active") || milestones.find((m) => m.status === "todo");
+      if (active) {
+        await completeRecommendationMilestone(active.id);
+        return active.id;
+      }
+    }
+  }
+  return null;
+}
+
 async function completeTask(task: Task, day: string, extraPatch: Partial<Task> = {}) {
   const completedAt = Date.now();
   const updated = await storage.updateTask(task.id, {
@@ -86,8 +110,9 @@ async function completeTask(task: Task, day: string, extraPatch: Partial<Task> =
     planItemId: task.planItemId ?? undefined,
   } as any);
   await syncPlanItem(day, task, { status: "completed", completedAt });
+  const completedMilestoneId = await advanceMilestoneForTask(task);
   await refreshDoneEnough(day);
-  return updated;
+  return { ...updated, completedMilestoneId };
 }
 
 async function busyMinutesFor(day: string) {
@@ -111,7 +136,8 @@ async function buildPlanTransactional(day: string, energy: Energy) {
     storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(),
   ]);
   const busy = await busyMinutesFor(day);
-  const result = planDay(tasks, jobs, learn, hustles, energy, busy);
+  const learnMilestoneProgress = await buildLearnMilestoneProgress(learn);
+  const result = planDay(tasks, jobs, learn, hustles, energy, busy, [], [], learnMilestoneProgress);
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
 
   const plan = db.transaction((tx) => {
@@ -182,10 +208,7 @@ async function buildPlanTransactional(day: string, energy: Energy) {
   const events = await storage.getEvents(day);
   return {
     plan,
-    items: items.map((item) => ({
-      ...item,
-      explanation: explainPersistedPlanItem(item),
-    })),
+    items: await enrichPlanItems(items),
     events,
     busyMinutes: busy,
   };
@@ -244,10 +267,7 @@ export function registerSprint1Routes(app: Express) {
     const events = await storage.getEvents(day);
     res.json({
       plan,
-      items: items.map((item) => ({
-        ...item,
-        explanation: explainPersistedPlanItem(item),
-      })),
+      items: await enrichPlanItems(items),
       events,
     });
   });

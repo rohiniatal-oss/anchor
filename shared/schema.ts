@@ -268,6 +268,9 @@ export const recommendationMilestones = sqliteTable("recommendation_milestones",
   sequence: integer("sequence").notNull().default(0),
   suggestedTaskTitle: text("suggested_task_title").notNull().default(""),
   subdivisionKey: text("subdivision_key").notNull().default(""),
+  milestoneType: text("milestone_type").notNull().default("content"), // content|synthesis|artifact
+  scaffolding: text("scaffolding").notNull().default(""),
+  completionNote: text("completion_note").notNull().default(""),
   createdAt: integer("created_at").notNull(),
   completedAt: integer("completed_at"),
 });

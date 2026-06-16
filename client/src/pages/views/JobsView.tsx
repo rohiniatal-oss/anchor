@@ -732,6 +732,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
 }
 
 export function JobsView() {
+  const { toast } = useToast();
   const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
   const { data: learns = [] } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
   const { data: truthStrips = [] } = useQuery<JobTruthStripT[]>({ queryKey: ["/api/jobs/truth-strips"] });
@@ -749,6 +750,10 @@ export function JobsView() {
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    toast({
+      title: "Role saved.",
+      description: "I also started a prep arc for it in Learn so you have structured interview prep ready.",
+    });
     setForm(EMPTY_JOB_FORM); setSelectedLane(""); setShowForm(false); setShowMoreJobFields(false);
   }
   function startBlankRole() {

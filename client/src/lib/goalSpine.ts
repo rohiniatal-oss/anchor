@@ -161,7 +161,7 @@ export function broadPursuitPlanTitle(goal?: CareerGoalT | null) {
 export function broadPursuitPrimarySummary(goal?: CareerGoalT | null) {
   if (!goal) return "";
   const coverage = getBroadPursuitCoverage(goal);
-  if (coverage.missing.length > 0) return "One real role per role type is enough to start learning what is viable.";
+  if (coverage.missing.length > 0) return "One real role per role type is enough to start seeing what is viable.";
   if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
     return "Keep the live role types moving while you add the missing contact or learning support.";
   }

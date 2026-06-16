@@ -11,10 +11,14 @@ beforeEach(() => { h.reset(); });
 
 test("career goal state prioritises Direction when no signal exists", () => {
   const state = buildCareerGoalState([], [], []);
+  const direction = state.workstreams.find((w) => w.name === "Direction")!;
+  const marketMap = state.workstreams.find((w) => w.name === "Market map")!;
   assert.equal(state.goal, "Find the right role, then become interview- and job-ready");
   assert.equal(state.phase, "fit-discovery");
   assert.equal(state.recommendedFocus, "Direction");
   assert.equal(state.dayType, "evidence-building");
+  assert.equal(direction.nextMoveType, "research");
+  assert.equal(marketMap.nextMoveType, "research");
   assert.match(state.reason, /Direction/);
   assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "premature"));
   assert.ok(state.trajectory.some((s) => s.key === "discover-fit" && s.status === "current"));
@@ -34,7 +38,10 @@ test("career goal state reflects saved roles and feedback", () => {
   ];
   const state = buildCareerGoalState([], jobs, log);
   const direction = state.workstreams.find((w) => w.name === "Direction")!;
+  const marketMap = state.workstreams.find((w) => w.name === "Market map")!;
   assert.equal(direction.progress, "developing");
+  assert.equal(direction.nextMoveType, "research");
+  assert.equal(marketMap.nextMoveType, "research");
   assert.ok(direction.evidence.some((e) => e.includes("open or saved roles")));
   assert.equal(state.phase, "role-targeting");
   assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "premature"));

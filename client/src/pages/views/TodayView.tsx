@@ -519,11 +519,13 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
 function TodayBrief({
   goal,
   brief,
+  searchPicture,
   showDetails,
   onToggleDetails,
 }: {
   goal: CareerGoalT;
   brief: ReturnType<typeof goalMorningBriefWithExecution>;
+  searchPicture: { activeTracks: number; roles: number; contacts: number; learn: number };
   showDetails: boolean;
   onToggleDetails: () => void;
 }) {
@@ -549,6 +551,28 @@ function TodayBrief({
         </span>
         <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold text-muted-foreground border border-card-border">
           <Sparkles className="w-3 h-3" /> {brief.blockerLabel}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
+          <Target className="w-3 h-3 text-primary" />
+          <span className="font-semibold text-foreground tabular-nums">{searchPicture.activeTracks}</span>
+          {searchPicture.activeTracks === 1 ? "role type" : "role types"}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
+          <Briefcase className="w-3 h-3 text-primary" />
+          <span className="font-semibold text-foreground tabular-nums">{searchPicture.roles}</span>
+          {searchPicture.roles === 1 ? "role" : "roles"}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
+          <Users className="w-3 h-3 text-primary" />
+          <span className="font-semibold text-foreground tabular-nums">{searchPicture.contacts}</span>
+          {searchPicture.contacts === 1 ? "contact" : "contacts"}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
+          <GraduationCap className="w-3 h-3 text-primary" />
+          <span className="font-semibold text-foreground tabular-nums">{searchPicture.learn}</span>
+          {searchPicture.learn === 1 ? "prep item" : "prep items"}
         </span>
       </div>
       {brief.summary && (
@@ -732,6 +756,14 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const activeGoal = goalState?.goals?.[0] || null;
   const introLine = goalTodayIntroLine(activeGoal);
   const todayBrief = goalMorningBriefWithExecution(activeGoal, executionState.briefInput);
+  const searchPicture = diagnosticTracks
+    .filter((track: any) => track.status === "active")
+    .reduce((totals: { activeTracks: number; roles: number; contacts: number; learn: number }, track: any) => ({
+      activeTracks: totals.activeTracks + 1,
+      roles: totals.roles + (track.counts?.jobs || 0),
+      contacts: totals.contacts + (track.counts?.contacts || 0),
+      learn: totals.learn + (track.counts?.learn || 0),
+    }), { activeTracks: 0, roles: 0, contacts: 0, learn: 0 });
 
   return (
     <div>
@@ -798,6 +830,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           <TodayBrief
             goal={activeGoal}
             brief={todayBrief}
+            searchPicture={searchPicture}
             showDetails={showCompass}
             onToggleDetails={() => setShowCompass((current) => !current)}
           />

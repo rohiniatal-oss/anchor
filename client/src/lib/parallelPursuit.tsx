@@ -5,7 +5,7 @@ import { GOAL_WORKSTREAM, goalWorkstreamLabel } from "@shared/goalWorkstreams";
 import type { CareerTrack } from "@shared/schema";
 import type { JobFormT } from "@/lib/jobsViewTypes";
 import type { LearnFormT } from "@/lib/learnShared";
-import { buildLearnStarterDraft } from "@/lib/learnStarter";
+import { buildPrepStarterDraft } from "@/lib/learnStarter";
 import {
   type CareerGoalT,
   displayCombinationLabel,
@@ -228,10 +228,10 @@ export function BroadPursuitParallelSupportKickoff({
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid={`${mode}-broad-pursuit-kickoff`}>
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {mode === "network" ? "Contacts to add" : "Support to add"}
+            {mode === "network" ? "Contacts to add" : "Prep starters to add"}
           </p>
           <p className="text-sm font-medium mt-1">
-            {mode === "network" ? "Add one contact for your weakest role types." : "Use one suggested starter for your weakest role types."}
+            {mode === "network" ? "Add one contact for your weakest role types." : "Set up one prep starter for your weakest role types."}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
             {mode === "network"
@@ -274,8 +274,8 @@ export function BroadPursuitParallelSupportKickoff({
               ? (support.hasRole ? "Add first contact" : "Add contact for this target")
               : "Add another contact"
             : supportMissing
-              ? (support.hasRole ? "Use first suggested starter" : "Use suggested starter for this target")
-              : "Use another suggested starter";
+              ? (support.hasRole ? "Set up first prep starter" : "Set up prep starter for this target")
+              : "Set up another prep starter";
           const showRoleStateBadge = !canStartWithoutRole;
           const showSupportDetail = !canStartWithoutRole;
           return (
@@ -410,7 +410,7 @@ export function contactPresetForLane(item: GoalPortfolioItemT, tracks: CareerTra
 
 export function learnPresetForLane(item: GoalPortfolioItemT, tracks: CareerTrack[]): Partial<LearnFormT> {
   const guide = laneGuideForCombination(item.combination);
-  return buildLearnStarterDraft({
+  return buildPrepStarterDraft({
     subjectText: item.combination,
     relatedTrackId: bestTrackForLane(item.combination, tracks),
     noteIntro: `Build familiarity with ${item.combination} while roles are still being added. ${guide.fitHint}`,

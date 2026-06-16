@@ -1,6 +1,6 @@
 import { ArrowUpRight, Briefcase, Compass, GraduationCap, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { buildLearnStarterDraft } from "@/lib/learnStarter";
+import { buildPrepStarterDraft } from "@/lib/learnStarter";
 import {
   buildPrefillHash,
   PENDING_CONTACT_DRAFT_KEY,
@@ -135,7 +135,7 @@ export function CareerCompassCard({
   }
 
   function openLearnDraftForCombination(combination: string) {
-    const draft = buildLearnStarterDraft({
+    const draft = buildPrepStarterDraft({
       subjectText: combination,
       relatedTrackId: null,
       noteIntro: `Make ${combination} easier to understand, explain, and prepare for.`,
@@ -266,7 +266,7 @@ export function CareerCompassCard({
             )}
             {firstMissingPrep && (
               <Button size="sm" variant="outline" onClick={() => openLearnDraftForCombination(firstMissingPrep)} data-testid="button-compass-add-prep">
-                <GraduationCap className="w-4 h-4 mr-1" /> Use suggestion
+                <GraduationCap className="w-4 h-4 mr-1" /> Set up prep starter
               </Button>
             )}
           </div>
@@ -283,7 +283,7 @@ export function CareerCompassCard({
             )}
             {firstMissingPrep && (
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> still needs one learning item if you want clearer interview or application support.
+                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> still needs one prep starter if you want clearer interview or application support.
               </p>
             )}
           </div>

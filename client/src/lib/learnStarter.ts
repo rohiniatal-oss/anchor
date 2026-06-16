@@ -11,6 +11,7 @@ export type LearnStarterPrefillT = Partial<LearnFormT> & {
   starterLabel?: string;
   starterWhy?: string;
 };
+export type PrepStarterPrefillT = LearnStarterPrefillT;
 
 type LearnStarterDraftArgsT = {
   subjectText: string;
@@ -57,7 +58,7 @@ function starterWhyText(
   return `Suggested as a simple first learning item for ${subjectText}.`;
 }
 
-export function buildLearnStarterDraft({
+export function buildPrepStarterDraft({
   subjectText,
   relatedTrackId = null,
   track = null,
@@ -65,7 +66,7 @@ export function buildLearnStarterDraft({
   explicitDomainLabel = null,
   noteIntro = "",
   fallbackTitle,
-}: LearnStarterDraftArgsT): LearnStarterPrefillT {
+}: LearnStarterDraftArgsT): PrepStarterPrefillT {
   const inferred = inferStarterDomain(subjectText, track);
   const domainKey = explicitDomainKey || inferred.domainKey;
   const label = explicitDomainLabel?.trim() || (domainKey ? domainLabel(domainKey) : "");
@@ -106,3 +107,5 @@ export function buildLearnStarterDraft({
     starterWhy: starterWhyText("fallback", "", subjectText),
   };
 }
+
+export const buildLearnStarterDraft = buildPrepStarterDraft;

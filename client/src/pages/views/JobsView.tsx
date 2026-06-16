@@ -25,7 +25,7 @@ import { ConstraintBadge } from "@/components/home/ConstraintBadge";
 import { CardActions } from "@/components/home/CardActions";
 import { ViewSpineCallout, BroadPursuitJobsKickoff } from "@/lib/parallelPursuit";
 import { laneGuideForCombination, lanePresetForJob, JOB_ARCHETYPE_OPTIONS } from "@/lib/parallelPursuit";
-import { buildLearnStarterDraft } from "@/lib/learnStarter";
+import { buildPrepStarterDraft } from "@/lib/learnStarter";
 import { displayCombinationLabel } from "@/lib/goalSpine";
 import { findOpenLinkedTask, useLinkedTaskCount } from "@/lib/homeHelpers";
 import { LEARN_OUTPUT_META, LEARN_STATUS_LABEL, learnTaskActionLabel, learnTaskCreatedLabel } from "@/lib/learnShared";
@@ -479,7 +479,7 @@ function JobCapabilitySupport({
   }
 
   function openLearnIntake() {
-    const draft = buildLearnStarterDraft({
+    const draft = buildPrepStarterDraft({
       subjectText: `${track?.name || ""} ${j.title} ${j.company || ""}`.trim(),
       relatedTrackId: trackId,
       track,
@@ -501,8 +501,8 @@ function JobCapabilitySupport({
             {savedLearningRec
               ? "Anchor already saved a useful prep starter for this track, so you can start from that instead of setting one up from scratch."
               : needsPrep
-                ? "This role may need clearer prep support. Add one suggested starter if you want more focused help here."
-                : "No prep item is linked to this role type yet. Add one suggested starter if you want extra support for this role or interview."}
+                ? "This role may need clearer prep support. Set up one prep starter if you want more focused help here."
+                : "No prep starter is linked to this role type yet. Set one up if you want extra support for this role or interview."}
           </p>
           {requiredDomains.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -520,7 +520,7 @@ function JobCapabilitySupport({
               className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
               data-testid={`button-use-saved-learn-from-job-${j.id}`}
             >
-              <GraduationCap className="w-3.5 h-3.5" /> Use saved suggestion
+              <GraduationCap className="w-3.5 h-3.5" /> Use saved prep starter
             </button>
           ) : (
             <button
@@ -529,7 +529,7 @@ function JobCapabilitySupport({
               className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
               data-testid={`button-open-learn-from-job-${j.id}`}
             >
-              <GraduationCap className="w-3.5 h-3.5" /> Use suggested starter
+              <GraduationCap className="w-3.5 h-3.5" /> Set up prep starter
             </button>
           )}
         </div>
@@ -635,7 +635,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
   }
 
   function openLearnIntake() {
-    const draft = buildLearnStarterDraft({
+    const draft = buildPrepStarterDraft({
       subjectText: `${track?.name || ""} ${j.title} ${j.company || ""}`.trim(),
       relatedTrackId: trackId,
       track,
@@ -675,7 +675,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
         ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
         : savedLearningRec
           ? { label: "Use saved starter", icon: GraduationCap, run: async () => onAcceptRecommendation(savedLearningRec) }
-          : { label: "Use suggested starter", icon: GraduationCap, run: async () => openLearnIntake() };
+          : { label: "Set up prep starter", icon: GraduationCap, run: async () => openLearnIntake() };
     }
     if (truth.action === "clarify") {
       return j.url

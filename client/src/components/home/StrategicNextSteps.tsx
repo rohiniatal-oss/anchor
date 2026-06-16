@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Briefcase, GraduationCap, Users, ListChecks, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { buildLearnStarterDraft } from "@/lib/learnStarter";
+import { buildPrepStarterDraft } from "@/lib/learnStarter";
 import {
   buildPrefillHash,
   PENDING_CONTACT_DRAFT_KEY,
@@ -100,22 +100,22 @@ function buildSteps(
         icon: GraduationCap,
         title: savedLearningRec
           ? domainLabel
-            ? `Use the saved ${domainLabel} starter for "${track.name}"`
-            : `Use the saved learning starter for "${track.name}"`
+            ? `Use the saved ${domainLabel} prep starter for "${track.name}"`
+            : `Use the saved prep starter for "${track.name}"`
           : domainLabel
-            ? `Start studying ${domainLabel} for "${track.name}"`
-            : `Add a learning item for "${track.name}"`,
+            ? `Set up a ${domainLabel} prep starter for "${track.name}"`
+            : `Set up a prep starter for "${track.name}"`,
         detail: savedLearningRec
           ? `${savedLearningRec.title} is already waiting in Learn, so you can begin from that instead of setting one up from scratch.`
           : domainLabel
             ? `${domainLabel} is a real weak area for this role type, so Anchor should give you one clear way to begin.`
-            : "This track needs its first learning item before you can be ready to apply.",
-        action: savedLearningRec ? "Open starter" : "Use starter",
+            : "This track needs its first prep starter before you can be ready to apply.",
+        action: savedLearningRec ? "Open prep starter" : "Set up prep starter",
         mode: savedLearningRec ? "do-now" : "setup",
         onClick: savedLearningRec
           ? () => onOpenTab("learn")
           : () => {
-              const draft = buildLearnStarterDraft({
+              const draft = buildPrepStarterDraft({
                 subjectText: domain,
                 relatedTrackId: track.id,
                 noteIntro: `Needed for ${track.name}.`,

@@ -303,6 +303,37 @@ CREATE TABLE IF NOT EXISTS recommendation_milestones (
   created_at INTEGER NOT NULL,
   completed_at INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS network_gaps (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  track_id INTEGER NOT NULL,
+  archetype TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'medium',
+  reason TEXT NOT NULL DEFAULT '',
+  why_it_matters TEXT NOT NULL DEFAULT '',
+  what_to_ask TEXT NOT NULL DEFAULT '',
+  suggested_searches TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS contact_classifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_id INTEGER NOT NULL,
+  track_id INTEGER NOT NULL,
+  archetype TEXT NOT NULL,
+  relevance_score INTEGER NOT NULL DEFAULT 0,
+  access_types TEXT NOT NULL DEFAULT '[]',
+  reasoning TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS contact_interactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_id INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL DEFAULT 0
+);
 `;
 
 // Migrations for columns added to existing tables after initial release.
@@ -318,4 +349,9 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE recommendation_milestones ADD COLUMN milestone_type TEXT NOT NULL DEFAULT 'content'`,
   `ALTER TABLE recommendation_milestones ADD COLUMN scaffolding TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE recommendation_milestones ADD COLUMN completion_note TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE contacts ADD COLUMN outreachedAt INTEGER`,
+  `ALTER TABLE contacts ADD COLUMN repliedAt INTEGER`,
+  `ALTER TABLE contacts ADD COLUMN nextActionType TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE contacts ADD COLUMN nextActionDue INTEGER`,
+  `ALTER TABLE contacts ADD COLUMN nextActionDesc TEXT NOT NULL DEFAULT ''`,
 ];

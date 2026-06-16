@@ -387,6 +387,46 @@ export const activityLog = sqliteTable("activity_log", {
   timestamp: integer("timestamp").notNull(),
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// NETWORK GAPS — AI-generated archetypes per career track the user needs to fill.
+// ─────────────────────────────────────────────────────────────────────────
+export const networkGaps = sqliteTable("network_gaps", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  trackId: integer("track_id").notNull(),
+  archetype: text("archetype").notNull(), // recent_switcher|near_peer|recruiter|senior_decision_maker|connector|domain_expert
+  priority: text("priority").notNull().default("medium"), // high|medium|low
+  reason: text("reason").notNull().default(""),
+  whyItMatters: text("why_it_matters").notNull().default(""),
+  whatToAsk: text("what_to_ask").notNull().default(""),
+  suggestedSearches: text("suggested_searches").notNull().default("[]"), // JSON string[]
+  createdAt: integer("created_at").notNull().default(0),
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// CONTACT CLASSIFICATIONS — AI-classified contacts across active career tracks.
+// ─────────────────────────────────────────────────────────────────────────
+export const contactClassifications = sqliteTable("contact_classifications", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  contactId: integer("contact_id").notNull(),
+  trackId: integer("track_id").notNull(),
+  archetype: text("archetype").notNull(),
+  relevanceScore: integer("relevance_score").notNull().default(0), // 1-5
+  accessTypes: text("access_types").notNull().default("[]"), // JSON string[]
+  reasoning: text("reasoning").notNull().default(""),
+  createdAt: integer("created_at").notNull().default(0),
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// CONTACT INTERACTIONS — append-only event log per contact.
+// ─────────────────────────────────────────────────────────────────────────
+export const contactInteractions = sqliteTable("contact_interactions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  contactId: integer("contact_id").notNull(),
+  type: text("type").notNull(), // outreach|response|meeting|intro|referral|declined|note
+  note: text("note").notNull().default(""),
+  createdAt: integer("created_at").notNull().default(0),
+});
+
 // ── Insert schemas ──────────────────────────────────────────────────────
 export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true });
 export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true });
@@ -407,6 +447,9 @@ export const insertDayPlanSchema = createInsertSchema(dayPlans).omit({ id: true,
 export const insertDayPlanItemSchema = createInsertSchema(dayPlanItems).omit({ id: true, createdAt: true });
 export const insertEntityLinkSchema = createInsertSchema(entityLinks).omit({ id: true, createdAt: true });
 export const insertActivityLogSchema = createInsertSchema(activityLog).omit({ id: true, timestamp: true });
+export const insertNetworkGapSchema = createInsertSchema(networkGaps).omit({ id: true, createdAt: true });
+export const insertContactClassificationSchema = createInsertSchema(contactClassifications).omit({ id: true, createdAt: true });
+export const insertContactInteractionSchema = createInsertSchema(contactInteractions).omit({ id: true, createdAt: true });
 
 // ── Types ───────────────────────────────────────────────────────────────
 export type InsertTask = z.infer<typeof insertTaskSchema>;
@@ -447,3 +490,9 @@ export type InsertRecommendationSubdivision = z.infer<typeof insertRecommendatio
 export type RecommendationSubdivision = typeof recommendationSubdivisions.$inferSelect;
 export type InsertRecommendationMilestone = z.infer<typeof insertRecommendationMilestoneSchema>;
 export type RecommendationMilestone = typeof recommendationMilestones.$inferSelect;
+export type InsertNetworkGap = z.infer<typeof insertNetworkGapSchema>;
+export type NetworkGap = typeof networkGaps.$inferSelect;
+export type InsertContactClassification = z.infer<typeof insertContactClassificationSchema>;
+export type ContactClassification = typeof contactClassifications.$inferSelect;
+export type InsertContactInteraction = z.infer<typeof insertContactInteractionSchema>;
+export type ContactInteraction = typeof contactInteractions.$inferSelect;

@@ -65,6 +65,12 @@ function defaultEnergyForNow() {
   return "low";
 }
 
+function energyModeLabel(energy: string) {
+  if (energy === "high") return "higher-energy";
+  if (energy === "low") return "lighter";
+  return "steady";
+}
+
 function nextVisibleStep(task?: Task | null) {
   if (!task) return null;
   const steps = parseSteps(task.steps || "[]");
@@ -586,6 +592,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [showSecondary, setShowSecondary] = useState<boolean | null>(null);
   const [showDoneList, setShowDoneList] = useState<boolean | null>(null);
   const [showUpcomingPlan, setShowUpcomingPlan] = useState<boolean | null>(null);
+  const [showEnergyControls, setShowEnergyControls] = useState(false);
   // Quick-capture: get a stray thought out of your head from Today, without
   // leaving the screen. Lands in the inbox (shows up in Brain dump to sort
   // later) — deliberately NOT onto today, so the plan below stays calm.
@@ -683,6 +690,13 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     } catch { toast({ title: "Couldn't shape the day", description: "Try again in a moment." }); }
     finally { setLoadingPlan(false); }
   }
+
+  async function retunePlan(e: string) {
+    setEnergy(e);
+    setShowEnergyControls(false);
+    await getPlan(e, true);
+  }
+
   // Start an item via the IDENTITY-PRESERVING endpoint: it reads the exact plan
   // item id, creates/reuses the backing task, links taskId both ways, derives the
   // block from the slot (no hardcoded "morning"), and preserves source/doneWhen.
@@ -868,13 +882,39 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
                   <Target className="w-4 h-4" /> Today, in order
                 </div>
-                <div className="flex items-center gap-1" aria-label="Energy level">
-                  {([["low", "Low"], ["medium", "Medium"], ["high", "High"]] as const).map(([v, l]) => (
-                    <button key={v} onClick={() => { setEnergy(v); getPlan(v, true); }} data-testid={`energy-${v}`}
-                      className={`px-2 py-1 rounded-full text-xs font-medium border transition-colors ${energy === v ? "border-primary bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{l}</button>
-                  ))}
+                <div className="flex items-center gap-2">
+                  <span className="hidden sm:inline text-[11px] text-muted-foreground">
+                    Auto-set for a {energyModeLabel(energy)} day
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowEnergyControls((current) => !current)}
+                    className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                    data-testid="button-toggle-energy-controls"
+                  >
+                    {showEnergyControls ? "Hide energy" : "Adjust energy"}
+                  </button>
                 </div>
               </div>
+              {showEnergyControls && (
+                <div className="mb-3 rounded-xl border border-card-border bg-card/75 px-3 py-2.5" aria-label="Energy level">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {([["low", "Low"], ["medium", "Medium"], ["high", "High"]] as const).map(([v, l]) => (
+                      <button
+                        key={v}
+                        onClick={() => retunePlan(v)}
+                        data-testid={`energy-${v}`}
+                        className={`px-2 py-1 rounded-full text-xs font-medium border transition-colors ${energy === v ? "border-primary bg-primary/10 text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                      >
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Only change this if the plan feels too heavy or too light.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 {activeItems.map((it, i) => {
                   if (i > 0 && !upcomingPlanOpen) return null;

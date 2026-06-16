@@ -83,7 +83,7 @@ export type GoalWorkstreamT = {
   status: "active" | "underdeveloped" | "premature" | "blocked" | "stale" | "sufficient_for_now";
   progress: "not_started" | "early" | "developing" | "ready";
   bottleneck: string;
-  nextMoveType: "learning" | "relationship" | "preparation" | "execution" | "maintenance" | "wait";
+  nextMoveType: "research" | "learning" | "relationship" | "preparation" | "execution" | "maintenance" | "wait";
   evidence: string[];
   nextMoves: string[];
 };

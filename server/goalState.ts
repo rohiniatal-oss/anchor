@@ -46,7 +46,7 @@ import {
 } from "./explorationCopy";
 
 type WorkstreamStatus = "active" | "underdeveloped" | "premature" | "blocked" | "stale" | "sufficient_for_now";
-type NextMoveType = "learning" | "relationship" | "preparation" | "execution" | "maintenance" | "wait";
+type NextMoveType = "research" | "learning" | "relationship" | "preparation" | "execution" | "maintenance" | "wait";
 type GoalPhase = "fit-discovery" | "lane-narrowing" | "role-targeting" | "interview-prep";
 type TrajectoryStatus = "complete" | "current" | "pending";
 type DecisionMode = "single-track" | "forced-comparison" | "parallel-exploration" | "broad-parallel-pursuit";
@@ -777,7 +777,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
           : snapshot.roleHypotheses.length >= 2
             ? "you still need live roles and application moves across the plausible paths"
             : snapshot.directionReady ? "you have options, but still need to narrow them into a clearer role path" : "not enough real evidence yet about which role type fits",
-      nextMoveType: "learning",
+      nextMoveType: "research",
       evidence: directionEvidence,
       nextMoves: hasBroadParallelLanes(snapshot)
         ? snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
@@ -796,7 +796,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       status: snapshot.savedJobs.length >= 10 ? "sufficient_for_now" : snapshot.savedJobs.length > 0 ? "active" : "underdeveloped",
       progress: snapshot.savedJobs.length >= 10 ? "ready" : snapshot.savedJobs.length > 0 ? "early" : "not_started",
       bottleneck: snapshot.savedJobs.length >= 10 ? "enough initial roles to pattern-match" : "not enough real role examples",
-      nextMoveType: snapshot.savedJobs.length >= 10 ? "wait" : "learning",
+      nextMoveType: snapshot.savedJobs.length >= 10 ? "wait" : "research",
       evidence: [`${snapshot.savedJobs.length} saved/open roles`],
       nextMoves: snapshot.savedJobs.length >= 10 ? ["summarise role patterns"] : ["save one role from an asset-backed search", "compare two role descriptions"],
     },
@@ -974,6 +974,7 @@ function dayTypeFor(focus: WorkstreamState) {
   if (focus.name === GOAL_WORKSTREAM.INTERVIEW_READINESS) return "interview-prep";
   if (focus.name === GOAL_WORKSTREAM.PREP_UPSKILLING || focus.name === GOAL_WORKSTREAM.PROJECTS_PUBLIC_WORK) return "capability-building";
   if (focus.name === GOAL_WORKSTREAM.ENERGY_STABILITY) return "stabilising";
+  if (focus.nextMoveType === "research") return "evidence-building";
   if (focus.nextMoveType === "relationship") return "network-building";
   if (focus.nextMoveType === "execution") return "conversion";
   return "evidence-building";
@@ -1139,7 +1140,9 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
     mustDo: focus.nextMoves[0] || candidateUniverse.recommended?.createsTaskTitle || "Convert one live role into the next concrete move",
     next: focus.nextMoves[1] || candidateUniverse.recommended?.activity || "Make one weak requirement easier to explain or back up",
     optional: focus.name === GOAL_WORKSTREAM.ENERGY_STABILITY ? "Stop after the minimum viable action" : "Do one small maintenance action so the day stays sustainable",
-    stopRule: focus.nextMoveType === "learning" ? "Stop after one useful data point or 20 minutes." : "Stop once the defined small action is complete.",
+    stopRule: focus.nextMoveType === "learning" || focus.nextMoveType === "research"
+      ? "Stop after one useful data point or 20 minutes."
+      : "Stop once the defined small action is complete.",
   };
 }
 

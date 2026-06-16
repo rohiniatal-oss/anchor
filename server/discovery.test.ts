@@ -8,6 +8,10 @@ before(async () => { h = await makeHarness(); });
 after(async () => { await h.close(); });
 beforeEach(() => { h.reset(); });
 
+function parseSteps(raw: string) {
+  return JSON.parse(raw || "[]") as Array<{ text: string; done: boolean; estimateMinutes?: number }>;
+}
+
 test("discovery start turns a vague career concern into a working goal draft and route", async () => {
   const r = await api(h.base, "POST", "/api/discovery/start", {
     concern: "I need to get a job but I do not know which role fits me best",
@@ -51,8 +55,8 @@ test("discovery commit creates tracks and execution-ready tasks from a career ro
   assert.equal(committed.json.todayAction.list, "today");
   assert.equal(committed.json.todayAction.sourceType, "discovery_session");
 
-  const steps = JSON.parse(committed.json.todayAction.steps || "[]");
-  assert.ok(steps.length >= 1);
+  const steps = parseSteps(committed.json.todayAction.steps || "[]");
+  assert.ok(steps.length >= 2);
   assert.ok(typeof steps[0].text === "string" && steps[0].text.length > 0);
 
   const session = await h.storage.getDiscoverySession(started.json.discoveryId);
@@ -61,6 +65,25 @@ test("discovery commit creates tracks and execution-ready tasks from a career ro
   const log = await h.storage.getActivityLog();
   assert.ok(log.some((entry) => entry.eventType === "discovery_started" && entry.sourceId === started.json.discoveryId));
   assert.ok(log.some((entry) => entry.eventType === "discovery_committed" && entry.sourceId === started.json.discoveryId));
+});
+
+test("discovery broad-role-pursuit commit creates track-specific starter steps", async () => {
+  const started = await api(h.base, "POST", "/api/discovery/start", {
+    concern: "I need a credible role soon, but I am split between AI strategy, geopolitics, and chief of staff paths.",
+  });
+  assert.equal(started.status, 200);
+
+  const committed = await api(h.base, "POST", `/api/discovery/${started.json.discoveryId}/commit`, {
+    routeKey: "broad-role-pursuit",
+  });
+
+  assert.equal(committed.status, 200);
+  const steps = parseSteps(committed.json.todayAction.steps || "[]").map((step) => step.text.toLowerCase());
+  assert.ok(steps.length >= 4);
+  assert.ok(steps.some((text) => text.includes("ai strategy") || text.includes("ai strategy / governance")));
+  assert.ok(steps.some((text) => text.includes("geopolitical") || text.includes("geopolitics")));
+  assert.ok(steps.some((text) => text.includes("chief of staff") || text.includes("strategic operations")));
+  assert.ok(steps.some((text) => text.includes("promising") || text.includes("draining") || text.includes("unclear")));
 });
 
 test("discovery commit uses the selected route rather than the originally recommended one", async () => {
@@ -98,6 +121,24 @@ test("discovery commit keeps support moves out of Today so the starting plan sta
   const inboxTasks = createdTasks.filter((task: any) => task.list === "inbox");
   assert.equal(todayTasks.length, 1);
   assert.ok(inboxTasks.length >= 1, "support move should stay out of Today");
+});
+
+test("discovery fit-clarification commit creates compare-and-judge starter steps", async () => {
+  const started = await api(h.base, "POST", "/api/discovery/start", {
+    concern: "I need to get a job and I am split between AI strategy and chief of staff and need to work out which fits better",
+  });
+  assert.equal(started.status, 200);
+
+  const committed = await api(h.base, "POST", `/api/discovery/${started.json.discoveryId}/commit`, {
+    routeKey: "fit-clarification",
+  });
+
+  assert.equal(committed.status, 200);
+  const steps = parseSteps(committed.json.todayAction.steps || "[]");
+  assert.ok(steps.length >= 4);
+  assert.match(String(steps[0]?.text || ""), /open one real/i);
+  assert.match(String(steps[1]?.text || ""), /promising|energising/i);
+  assert.match(String(steps[3]?.text || ""), /stronger|weaker|wrong/i);
 });
 
 test("discovery start supports a non-career concern without creating fake career routes", async () => {

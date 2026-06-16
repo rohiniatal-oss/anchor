@@ -36,6 +36,7 @@ type DiscoveryAction = {
   firstStep: string;
   category: string;
   size?: "quick" | "medium" | "deep";
+  starterSteps?: Array<{ text: string; estimateMinutes?: number }>;
 };
 
 type DiscoveryRoutePreview = {
@@ -190,6 +191,10 @@ function genericActions(domain: DiscoveryDomain, routeKey: DiscoveryRouteKey): {
         firstStep: "Write down the single thing making this harder than it needs to be, then remove the smallest part of it.",
         category: domain === "health" ? "health" : "admin",
         size: "quick",
+        starterSteps: [
+          { text: "Write down the single thing making this harder than it needs to be", estimateMinutes: 5 },
+          { text: "Remove the smallest part of that friction now", estimateMinutes: 10 },
+        ],
       },
       support: null,
     };
@@ -202,6 +207,11 @@ function genericActions(domain: DiscoveryDomain, routeKey: DiscoveryRouteKey): {
         firstStep: "Pick the smallest version of this that still counts and write when you will do it next.",
         category: domain === "writing" ? "substack" : domain === "health" ? "health" : "admin",
         size: "quick",
+        starterSteps: [
+          { text: "Pick the smallest version of this that still counts", estimateMinutes: 5 },
+          { text: "Write when you will do it next", estimateMinutes: 5 },
+          { text: "Remove one piece of setup friction before then", estimateMinutes: 5 },
+        ],
       },
       support: null,
     };
@@ -213,6 +223,11 @@ function genericActions(domain: DiscoveryDomain, routeKey: DiscoveryRouteKey): {
       firstStep: "Write one sentence: what would 'better in the next 2 weeks' look like here?",
       category: "admin",
       size: "quick",
+      starterSteps: [
+        { text: "Write one sentence: what would 'better in the next 2 weeks' look like here?", estimateMinutes: 5 },
+        { text: "Write the main thing making that outcome unclear", estimateMinutes: 5 },
+        { text: "Choose the next useful move that would reduce that uncertainty", estimateMinutes: 5 },
+      ],
     },
     support: null,
   };
@@ -347,16 +362,44 @@ function roleSearchPreview(trackDrafts: DiscoveryTrackDraft[]) {
   return `${names[0]}, ${names[1]}, and ${names[2]}`;
 }
 
+function searchLabelForTrack(track?: DiscoveryTrackDraft | null) {
+  return track?.targetRoleArchetype || track?.name || "the role type you want to test";
+}
+
+function broadRoleStarterSteps(trackDrafts: DiscoveryTrackDraft[], laneNames: string[]) {
+  if (laneNames.length > 1) {
+    return [
+      ...trackDrafts.slice(0, 3).map((track) => ({
+        text: `Open one search for ${searchLabelForTrack(track)} and save the first role worth testing`,
+        estimateMinutes: 10,
+      })),
+      { text: "Add one short note to each saved role: promising, draining, or unclear", estimateMinutes: 10 },
+    ];
+  }
+  const primary = trackDrafts[0];
+  return [
+    { text: `Search for ${searchLabelForTrack(primary)} and save the first role that seems worth testing`, estimateMinutes: 10 },
+    { text: "Write one line on why this role is worth testing", estimateMinutes: 5 },
+  ];
+}
+
 function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: string[]): Partial<Record<DiscoveryRouteKey, DiscoveryRoutePreview>> {
   const searchPreview = roleSearchPreview(trackDrafts.slice(0, 3));
+  const primary = trackDrafts[0];
   return {
     "fit-clarification": {
       tinyNextAction: {
         title: "Look closely at one role type and note what feels strong or wrong",
         doneWhen: "You can say why this role type feels stronger, weaker, or wrong for you",
-        firstStep: `Open one search for ${trackDrafts[0]?.targetRoleArchetype || "a role type you might test"} and write down one thing that feels promising or draining.`,
+        firstStep: `Open one real ${searchLabelForTrack(primary)} role and write down one thing that feels promising or draining.`,
         category: "job",
         size: "quick",
+        starterSteps: [
+          { text: `Open one real ${searchLabelForTrack(primary)} role`, estimateMinutes: 5 },
+          { text: "Write one thing that feels promising or energising", estimateMinutes: 5 },
+          { text: "Write one thing that feels draining, weak, or unclear", estimateMinutes: 5 },
+          { text: "Write whether this lane feels stronger, weaker, or wrong for now", estimateMinutes: 5 },
+        ],
       },
       supportAction: {
         title: "Write one rough sentence about the direction that feels strongest",
@@ -364,15 +407,24 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
         firstStep: "Write one sentence that connects your strongest experience to the kind of work you may want next.",
         category: "job",
         size: "quick",
+        starterSteps: [
+          { text: "Write one sentence connecting your strongest experience to the direction that feels best", estimateMinutes: 5 },
+          { text: "Write one sentence on what still needs testing", estimateMinutes: 5 },
+        ],
       },
     },
     "warm-path-build": {
       tinyNextAction: {
         title: "Find one person who could help you understand or access this path",
         doneWhen: "You have one real person to follow up with",
-        firstStep: `Look for one person linked to ${trackDrafts[0]?.name || "the path that seems strongest"} who could reality-check it or open a door.`,
+        firstStep: `Look for one person linked to ${primary?.name || "the path that seems strongest"} who could reality-check it or open a door.`,
         category: "job",
         size: "quick",
+        starterSteps: [
+          { text: `Look for one person linked to ${primary?.name || "the path that seems strongest"} who could reality-check it or open a door`, estimateMinutes: 10 },
+          { text: "Write why this person is useful and what you want to ask", estimateMinutes: 5 },
+          { text: "Save the contact or outreach target clearly", estimateMinutes: 5 },
+        ],
       },
       supportAction: {
         title: "Draft one short outreach message",
@@ -380,15 +432,25 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
         firstStep: "Write a 3-sentence ask focused on advice or role reality-check, not a broad life story.",
         category: "admin",
         size: "quick",
+        starterSteps: [
+          { text: "Write a short opener that makes the connection specific", estimateMinutes: 5 },
+          { text: "Write one clear advice or reality-check ask", estimateMinutes: 5 },
+          { text: "Trim it until it feels sendable", estimateMinutes: 5 },
+        ],
       },
     },
     "capability-ramp": {
       tinyNextAction: {
         title: "Find one job requirement that still feels weak today",
         doneWhen: "One weak requirement is named clearly",
-        firstStep: "Open one plausible role and highlight the requirement that would be hardest to back up today.",
+        firstStep: `Open one plausible ${searchLabelForTrack(primary)} role and highlight the requirement that would be hardest to back up today.`,
         category: "learning",
         size: "quick",
+        starterSteps: [
+          { text: `Open one plausible ${searchLabelForTrack(primary)} role`, estimateMinutes: 5 },
+          { text: "Highlight the requirement that would be hardest to back up today", estimateMinutes: 5 },
+          { text: "Write why that requirement is weak right now", estimateMinutes: 5 },
+        ],
       },
       supportAction: {
         title: "Pick one small prep step for that weak requirement",
@@ -396,6 +458,10 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
         firstStep: "Pick the smallest step that would make that requirement easier to talk about, show, or practise within a week.",
         category: "learning",
         size: "quick",
+        starterSteps: [
+          { text: "Pick the smallest prep move that would improve that weak area within a week", estimateMinutes: 5 },
+          { text: "Write what the output or evidence from that prep would look like", estimateMinutes: 5 },
+        ],
       },
     },
     "broad-role-pursuit": {
@@ -404,9 +470,10 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
         doneWhen: laneNames.length > 1 ? "You have at least one real role saved for each option you want to test" : "One real role is saved with a note on why it is worth testing",
         firstStep: laneNames.length > 1
           ? `Open your job sources and save one real role for ${searchPreview}.`
-          : `Search for ${trackDrafts[0]?.targetRoleArchetype || "one role type you want to test"} and save the first role that seems worth inspecting.`,
+          : `Search for ${searchLabelForTrack(primary)} and save the first role that seems worth inspecting.`,
         category: "job",
         size: laneNames.length > 1 ? "deep" : "quick",
+        starterSteps: broadRoleStarterSteps(trackDrafts, laneNames),
       },
       supportAction: {
         title: "Write one line on why each saved role is worth testing",
@@ -414,6 +481,10 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
         firstStep: "For each role you save, write one line: promising, draining, unclear, or needs support.",
         category: "job",
         size: "quick",
+        starterSteps: [
+          { text: "For each saved role, write one line: promising, draining, unclear, or needs support", estimateMinutes: 10 },
+          { text: "Mark the one role you would inspect first", estimateMinutes: 5 },
+        ],
       },
     },
   };
@@ -563,6 +634,17 @@ function taskSeedForRoute(routeKey: DiscoveryRouteKey, payload: DiscoveryPayload
   return tasks;
 }
 
+function buildDiscoveryTaskSteps(seed: DiscoveryAction) {
+  const steps = Array.isArray(seed.starterSteps) && seed.starterSteps.length > 0
+    ? seed.starterSteps
+    : [{ text: seed.firstStep, estimateMinutes: 5 }];
+  return JSON.stringify(steps.map((step) => ({
+    text: step.text,
+    done: false,
+    ...(step.estimateMinutes ? { estimateMinutes: step.estimateMinutes } : {}),
+  })));
+}
+
 async function ensureDiscoveryTracks(trackDrafts: DiscoveryTrackDraft[]) {
   if (!trackDrafts.length) return [];
   const existing = await storage.getCareerTracks();
@@ -652,7 +734,7 @@ export function registerDiscoveryRoutes(app: Express) {
       const task = await storage.createTask({
         ...enriched,
         list: seed.list,
-        steps: JSON.stringify([{ text: seed.firstStep, done: false, estimateMinutes: 5 }]),
+        steps: buildDiscoveryTaskSteps(seed),
         sourceType: "discovery_session",
         sourceId: session.id,
         sourceNote: seed.sourceNote,

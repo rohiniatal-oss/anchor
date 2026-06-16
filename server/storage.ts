@@ -125,6 +125,7 @@ export interface IStorage {
   deleteJobStep(stepId: number): Promise<void>;
   reorderJobSteps(jobId: number, orderedStepIds: number[]): Promise<JobPipelineStep[]>;
   getLearn(): Promise<Learn[]>;
+  getLearnItem(id: number): Promise<Learn | undefined>;
   createLearn(l: InsertLearn): Promise<Learn>;
   updateLearn(id: number, patch: Partial<InsertLearn>): Promise<Learn | undefined>;
   deleteLearn(id: number): Promise<void>;
@@ -251,6 +252,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getLearn() { return db.select().from(learn).orderBy(desc(learn.id)).all(); }
+  async getLearnItem(id: number) { return db.select().from(learn).where(eq(learn.id, id)).get(); }
   async createLearn(l: InsertLearn) { return db.insert(learn).values({ ...l, createdAt: Date.now() }).returning().get(); }
   async updateLearn(id: number, patch: Partial<InsertLearn>) { return db.update(learn).set(patch).where(eq(learn.id, id)).returning().get(); }
   async deleteLearn(id: number) { db.delete(learn).where(eq(learn.id, id)).run(); }

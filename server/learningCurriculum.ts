@@ -56,14 +56,27 @@ export async function generateContactArchetypes(
   const prompt =
     `You are a networking strategist for a job-search tool. ` +
     `User profile: ${USER_PROFILE}\n\n` +
-    `The user is pursuing a "${trackName}" role path (archetype: ${trackArchetype || "advisory/strategy"}) ` +
-    `and has live job roles saved but no contacts yet.\n\n` +
-    `Generate 2-3 specific person types they should reach out to. ` +
-    `For each: label (the person type, <70 chars, e.g. "Former civil servant turned tech policy advisor"), ` +
-    `whyItMatters (one sentence, <160 chars — why THIS person type would help), ` +
-    `suggestedMaterials (1-2 strings: a specific outreach angle or ask, e.g. "Ask how they made the transition from government to advisory work"). ` +
-    `Also generate 2-3 milestones: ` +
-    `label (<80 chars), doneWhen (one testable sentence), suggestedTaskTitle (starts with a verb, <80 chars), subdivisionKey (slug).\n\n` +
+    `Target role path: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
+    `The user has live job roles saved in this area but no contacts yet.\n\n` +
+    `STEP 1 — Generate 2-3 specific person types to reach out to:\n` +
+    `These must be SPECIFIC to ${trackName}, not generic networking advice. ` +
+    `Think: who specifically in this space could give a referral, reality-check the path, or make an introduction? ` +
+    `For each: label (the specific person type, <70 chars — e.g. "Former FCO diplomat now in AI governance advisory"), ` +
+    `whyItMatters (one sentence, <160 chars — exactly how this person type helps for ${trackName}, ` +
+    `not generic "they have connections"), ` +
+    `suggestedMaterials (1-2 specific outreach angles, e.g. "Ask specifically how they moved from government to advisory, ` +
+    `and whether their previous employer has a secondment programme").\n\n` +
+    `STEP 2 — Generate 3 milestones for building this network:\n` +
+    `Milestones should be a concrete progression: identify → message → conversation.\n` +
+    `• Milestone 1: find specific people matching the top archetype (LinkedIn search, alumni network, specific event)\n` +
+    `• Milestone 2: send a first message (suggest a specific hook or reason for reaching out given the user's background)\n` +
+    `• Milestone 3: have one real conversation and extract a specific insight or next step\n` +
+    `Each milestone: label (<80 chars), ` +
+    `doneWhen (testable — e.g. "Has identified 3 real people matching this description by name and employer"), ` +
+    `suggestedTaskTitle (action-verb start, <120 chars, specific — e.g. "Search LinkedIn for FCO alumni now in AI policy advisory roles"), ` +
+    `subdivisionKey (slug of the contact archetype this falls under).\n\n` +
+    `Also return topContactTitle (the single most useful person type, <80 chars), topContactWhy (<160 chars), ` +
+    `topAsk (the exact opening line to use in a cold message, <200 chars).\n\n` +
     `Return ONLY valid JSON:\n` +
     `{"subdivisions":[{"label":"...","whyItMatters":"...","suggestedMaterials":["..."]}],"milestones":[{"label":"...","doneWhen":"...","suggestedTaskTitle":"...","subdivisionKey":"..."}],"topContactTitle":"...","topContactWhy":"...","topAsk":"..."}`;
 
@@ -108,7 +121,7 @@ export async function generateContactArchetypes(
       milestoneKey: `m${i + 1}`,
       label,
       doneWhen: clean(m.doneWhen, 240),
-      suggestedTaskTitle: clean(m.suggestedTaskTitle, 120),
+      suggestedTaskTitle: clean(m.suggestedTaskTitle, 160),
       subdivisionKey,
       status: i === 0 ? "active" : "todo",
       sequence: i,
@@ -153,15 +166,32 @@ export async function generateLearningCurriculum(
 
   const client = new OpenAI();
   const prompt =
-    `You are a learning-path generator for a job-search tool. ` +
+    `You are a learning-path designer for a job-search tool. ` +
     `User profile: ${USER_PROFILE}\n\n` +
-    `The user needs to build capability in "${domainLabel}" for a "${trackName}" role path (archetype: ${trackArchetype || "advisory/strategy"}).\n\n` +
-    `Generate a practical study plan with:\n` +
-    `- 3 to 4 subtopics that cover this domain from the angle most useful for the role. ` +
-    `For each subtopic include: label (short, <60 chars), whyItMatters (<140 chars), suggestedMaterials (2-3 specific books, newsletters, courses, or podcasts by real name — no invented sources).\n` +
-    `- 4 to 6 ordered checkpoints the user can tick off to prove progression. ` +
-    `Each checkpoint: label (<80 chars), doneWhen (one specific, testable sentence — e.g. "Can explain X in 2 minutes without notes"), ` +
-    `suggestedTaskTitle (<80 chars, starts with a verb), subdivisionKey (slug matching a subtopic label, lowercase-hyphenated).\n\n` +
+    `Target role path: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
+    `Capability gap to close: "${domainLabel}".\n\n` +
+    `IMPORTANT CALIBRATION:\n` +
+    `- This user has strong strategy, analytical, and written-communication foundations from consulting and PE. ` +
+    `Do NOT assign checkpoints for skills they already have (slide-writing, stakeholder communication, logical structuring, business-case thinking).\n` +
+    `- Focus on what is GENUINELY NEW for someone with that background moving into ${trackName}: ` +
+    `domain-specific vocabulary, regulatory landscape, key actors/institutions, live policy debates, and how the field actually works in practice.\n\n` +
+    `STEP 1 — Generate 3 to 4 subtopics:\n` +
+    `Each subtopic covers a distinct slice of "${domainLabel}" relevant to ${trackArchetype || "advisory/strategy"} roles. ` +
+    `For each: label (<60 chars), whyItMatters (<140 chars — why this slice specifically matters for ${trackName}, not generically), ` +
+    `suggestedMaterials (2-3 specific items by real name — books, newsletters, courses, or podcasts that actually exist; ` +
+    `choose ones a busy practitioner would actually use, not entry-level Wikipedia alternatives).\n\n` +
+    `STEP 2 — Generate 5 to 7 ordered checkpoints tied to those subtopics:\n` +
+    `Each checkpoint advances the user through the materials above in a logical sequence. ` +
+    `Rules for checkpoints:\n` +
+    `• suggestedTaskTitle: name the specific source + what to extract from it. ` +
+    `E.g. "Read Prisoners of Geography ch. 1-3 — note which geographic constraints matter most for KSA advisory work", ` +
+    `"Listen to Lawfare podcast on AI governance — identify the 2 regulatory fault lines you'd need to know for a policy brief".\n` +
+    `• doneWhen: a testable comprehension or application condition — NOT completion or word count. ` +
+    `E.g. "Can name the three main governance frameworks and explain which one is most contested, without notes", ` +
+    `"Can describe how this domain intersects with [specific aspect of ${trackName}] in one clear sentence".\n` +
+    `• Bad doneWhen: "completed reading", "wrote a summary", "finished the course".\n` +
+    `• Each checkpoint: label (<80 chars), doneWhen (<200 chars, testable), suggestedTaskTitle (<120 chars, names a real source), ` +
+    `subdivisionKey (slug of the subtopic this falls under).\n\n` +
     `Return ONLY valid JSON:\n` +
     `{"subdivisions":[{"label":"...","whyItMatters":"...","suggestedMaterials":["..."]}],"milestones":[{"label":"...","doneWhen":"...","suggestedTaskTitle":"...","subdivisionKey":"..."}]}`;
 
@@ -208,7 +238,7 @@ export async function generateLearningCurriculum(
       milestoneKey: `m${i + 1}`,
       label,
       doneWhen: clean(m.doneWhen, 240),
-      suggestedTaskTitle: clean(m.suggestedTaskTitle, 120),
+      suggestedTaskTitle: clean(m.suggestedTaskTitle, 160),
       subdivisionKey,
       status: i === 0 ? "active" : "todo",
       sequence: i,

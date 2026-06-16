@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { eq } from "drizzle-orm";
 import { db, storage } from "./storage";
 import { explainPersistedPlanItem, planDay } from "./brain";
+import { enrichPlanItems } from "./planItemEnrichment";
 import { classifyCapture, routeCapture, type CaptureRoute } from "./capture";
 import {
   dayPlans,
@@ -182,10 +183,7 @@ async function buildPlanTransactional(day: string, energy: Energy) {
   const events = await storage.getEvents(day);
   return {
     plan,
-    items: items.map((item) => ({
-      ...item,
-      explanation: explainPersistedPlanItem(item),
-    })),
+    items: await enrichPlanItems(items),
     events,
     busyMinutes: busy,
   };
@@ -244,10 +242,7 @@ export function registerSprint1Routes(app: Express) {
     const events = await storage.getEvents(day);
     res.json({
       plan,
-      items: items.map((item) => ({
-        ...item,
-        explanation: explainPersistedPlanItem(item),
-      })),
+      items: await enrichPlanItems(items),
       events,
     });
   });

@@ -15,6 +15,7 @@ import { mutateAndInvalidate } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import { GOAL_SPINE_QUERY_KEYS, PENDING_LEARN_DRAFT_KEY, takeHashDraft, takeIntakeDraft } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { useRecommendations } from "@/hooks/useRecommendations";
 import { type LearnStarterPrefillT } from "@/lib/learnStarter";
 import { SectionHeading } from "@/components/home/SectionHeading";
 import { GroupLabel } from "@/components/home/GroupLabel";
@@ -117,6 +118,39 @@ type RecommendationDetail = {
     completionNote?: string;
   }>;
 };
+
+type LearnRecommendation = {
+  id: number;
+  collection: string;
+  kind: string;
+  status: string;
+  title: string;
+  whySuggested: string;
+  linkedTrackId?: number | null;
+  linkedGapKey?: string | null;
+  sourceLabel?: string | null;
+  sourceUrl?: string | null;
+  executionShape?: string | null;
+  acceptanceEntityType?: string | null;
+};
+
+const LEARN_RECOMMENDATION_STATUS_LABEL: Record<string, string> = {
+  new: "New",
+  ranked: "Ready now",
+  saved: "Saved for later",
+};
+
+function isLearnRecommendation(rec: LearnRecommendation) {
+  if (rec.acceptanceEntityType === "learn") return true;
+  return rec.collection === "learning-corpus" || rec.kind === "learning-resource" || rec.kind === "learning-theme";
+}
+
+function learnRecommendationShapeLabel(shape?: string | null) {
+  if (shape === "ongoing-program") return "Multi-session";
+  if (shape === "sequenced-item") return "Multi-step";
+  if (shape === "milestone-arc") return "Step-by-step";
+  return "Single starter";
+}
 
 function parseSuggestedMaterials(value: unknown): string[] {
   if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
@@ -778,7 +812,9 @@ export function LearnView() {
   const { data: items = [], isLoading } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: tracks = [] } = useCareerTracks();
+  const { data: recommendations = [] } = useRecommendations<LearnRecommendation[]>();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+  const { toast } = useToast();
   const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
@@ -819,10 +855,29 @@ export function LearnView() {
   async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
   async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/learn/${id}`, undefined, ["/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]); }
+  async function acceptRecommendation(rec: LearnRecommendation) {
+    await mutateAndInvalidate("POST", `/api/recommendations/${rec.id}/accept`, { entityType: "learn" }, [
+      "/api/recommendations",
+      "/api/learn",
+      "/api/strategy",
+      "/api/strategy/front-door",
+      "/api/strategy/diagnostics",
+      "/api/tasks",
+      ...GOAL_SPINE_QUERY_KEYS,
+    ]);
+    toast({ title: "Added to your learning list.", description: "You can keep it as-is, or tune it after it lands." });
+  }
+  async function updateRecommendationStatus(id: number, status: string) {
+    await mutateAndInvalidate("PATCH", `/api/recommendations/${id}`, { status }, ["/api/recommendations"]);
+  }
 
   const consumeItems = items.filter((l) => !isFellowshipLearnRow(l));
   const live = consumeItems.filter((l) => !l.done);
   const done = consumeItems.filter((l) => l.done);
+  const visibleSuggestions = recommendations.filter((rec) => isLearnRecommendation(rec) && !["accepted", "rejected", "archived", "duplicate", "stale"].includes(rec.status));
+  const readySuggestions = visibleSuggestions.filter((rec) => rec.status !== "saved");
+  const savedSuggestions = visibleSuggestions.filter((rec) => rec.status === "saved");
+  const trackNameById = new Map(tracks.map((track) => [track.id, track.name]));
 
   const byDomain = new Map<string, Learn[]>(CAPABILITY_DOMAIN_KEYS.map((k) => [k, []]));
   const flat: Learn[] = [];
@@ -835,6 +890,68 @@ export function LearnView() {
 
   function CardList({ list }: { list: Learn[] }) {
     return <div className="space-y-2">{list.map((l) => <LearnCard key={l.id} l={l} tracks={tracks} tasks={tasks} onToggle={() => toggle(l)} onToggleActive={() => toggleActive(l)} onRemove={() => remove(l.id)} />)}</div>;
+  }
+
+  function SuggestedStarterList({ list, title }: { list: LearnRecommendation[]; title: string }) {
+    if (list.length === 0) return null;
+    return (
+      <div>
+        <GroupLabel count={list.length}>
+          <BookOpen className="w-4 h-4 text-slate-600 dark:text-slate-400" /> {title}
+        </GroupLabel>
+        <div className="space-y-2">
+          {list.map((rec) => {
+            const linkedTrackName = rec.linkedTrackId ? trackNameById.get(rec.linkedTrackId) : "";
+            return (
+              <div key={rec.id} className="rounded-xl border border-card-border bg-card p-4" data-testid={`learn-recommendation-${rec.id}`}>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {LEARN_RECOMMENDATION_STATUS_LABEL[rec.status] && (
+                    <span className="inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                      {LEARN_RECOMMENDATION_STATUS_LABEL[rec.status]}
+                    </span>
+                  )}
+                  <span className="inline-flex rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {learnRecommendationShapeLabel(rec.executionShape)}
+                  </span>
+                  {linkedTrackName && (
+                    <span className="inline-flex rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                      {linkedTrackName}
+                    </span>
+                  )}
+                  {rec.sourceLabel && (
+                    <span className="inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-700">
+                      {rec.sourceLabel}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-sm font-medium leading-snug text-foreground">{rec.title}</p>
+                <p className="mt-1 text-xs leading-snug text-muted-foreground">{rec.whySuggested}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => acceptRecommendation(rec)} data-testid={`button-accept-learn-recommendation-${rec.id}`}>
+                    <GraduationCap className="mr-1 h-4 w-4" /> Use suggestion
+                  </Button>
+                  {rec.status !== "saved" && (
+                    <Button size="sm" variant="outline" onClick={() => updateRecommendationStatus(rec.id, "saved")} data-testid={`button-save-learn-recommendation-${rec.id}`}>
+                      Save for later
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => updateRecommendationStatus(rec.id, "archived")} data-testid={`button-archive-learn-recommendation-${rec.id}`}>
+                    Not now
+                  </Button>
+                  {rec.sourceUrl && (
+                    <Button size="sm" variant="ghost" asChild>
+                      <a href={rec.sourceUrl} target="_blank" rel="noreferrer">
+                        <ArrowUpRight className="mr-1 h-4 w-4" /> Source
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
   }
 
   const activeNow = live.filter((l) => l.active);
@@ -855,6 +972,16 @@ export function LearnView() {
       </div>
       {activeGoal && !(live.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="learn" goal={activeGoal} />}
       {activeGoal && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="learn" onStartLane={startLaneLearn} />}
+      {visibleSuggestions.length > 0 && (
+        <div className="mb-5 space-y-3">
+          <div className="rounded-xl border border-card-border bg-card p-4">
+            <p className="text-sm font-medium">Suggested starters</p>
+            <p className="mt-1 text-xs text-muted-foreground">Anchor has already found these learning starters from your active role types and current gaps. Use one, save it for later, or hide it.</p>
+          </div>
+          <SuggestedStarterList list={readySuggestions} title="Ready now" />
+          <SuggestedStarterList list={savedSuggestions} title="Saved for later" />
+        </div>
+      )}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3">
           {selectedLane && (

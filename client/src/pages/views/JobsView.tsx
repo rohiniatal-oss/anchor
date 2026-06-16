@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Plus, Trash2, ExternalLink, CalendarDays, ChevronDown, ChevronRight,
+  Plus, Trash2, ExternalLink, CalendarDays, ChevronDown, ChevronUp, ChevronRight,
   Loader2, Check, Compass, Lock, ListChecks, Pencil,
   ArrowUp, ArrowDown, Ban, CheckCircle2, RefreshCw,
   Flame, Users, Hammer, GraduationCap, FileText, MessageSquare,
@@ -584,6 +584,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
   const openJobTask = findOpenLinkedTask(tasks, "job", j.id);
   const [open, setOpen] = useState(false);
   const [primaryBusy, setPrimaryBusy] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
 
   const gated = j.eligibilityRisk === "likely_ineligible";
   const windowClosed = j.applicationWindowStatus === "closed" || j.status === "closed";
@@ -779,9 +780,21 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
                 {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">← back</button>}
                 {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">Move to {JOB_COLS[idx + 1].label} →</button>}
               </div>
-              <JobStepRail j={j} />
-              <JobWarmPath j={j} trackId={trackId} contacts={contacts} savedContactRec={savedContactRec} onAcceptRecommendation={onAcceptRecommendation} />
-              <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} truth={truth} savedLearningRec={savedLearningRec} onAcceptRecommendation={onAcceptRecommendation} />
+              <button
+                onClick={() => setShowDetails((v) => !v)}
+                className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mt-1"
+                data-testid={`button-job-details-${j.id}`}
+              >
+                {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                {showDetails ? "Hide details" : "See steps, contacts & prep"}
+              </button>
+              {showDetails && (
+                <>
+                  <JobStepRail j={j} />
+                  <JobWarmPath j={j} trackId={trackId} contacts={contacts} savedContactRec={savedContactRec} onAcceptRecommendation={onAcceptRecommendation} />
+                  <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} truth={truth} savedLearningRec={savedLearningRec} onAcceptRecommendation={onAcceptRecommendation} />
+                </>
+              )}
               <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
                 nextTaskHint={taskPreviewHint(nextJobTaskTitle(j), openJobTask?.title)}
                 onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />

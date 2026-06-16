@@ -430,10 +430,10 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       `Note which live path still lacks outreach support after this`,
     ];
     if (goalNeedsPrepSupport(text)) return [
-      `Open Learn and add one prep item, note, or resource for this live role path`,
+      `Use Jobs or Learn to set up one prep starter, note, or resource for this live role path`,
       `Pick the one note, brief, or example that would help this path most`,
       `Write a short note on how you would use that prep later`,
-      `Note which live path still lacks role-specific prep after this`,
+      `Note which live path still lacks focused prep support after this`,
     ];
     if (currentStage === "Define target") return [
       `Open Jobs and find which path still has no saved role`,

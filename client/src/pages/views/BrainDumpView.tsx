@@ -94,6 +94,14 @@ export default function BrainDumpView() {
     toast({ title: label });
   }
 
+  async function acceptAll() {
+    const actionable = inbox.filter((t) => triage[t.id] && triage[t.id].route !== "keep");
+    if (!actionable.length) return;
+    await Promise.all(actionable.map((t) => mutateAndInvalidate("POST", `/api/capture/${t.id}/route`, { route: triage[t.id].route }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current"])));
+    setTriage({});
+    toast({ title: `Filed ${actionable.length} item${actionable.length > 1 ? "s" : ""}`, description: "Brain dump cleared of sorted items." });
+  }
+
   return (
     <div>
       <SectionHeading title="Brain dump" sub="Empty your head now. Sort it later." />
@@ -123,14 +131,22 @@ export default function BrainDumpView() {
         </div>
       </div>
       {inbox.length > 0 && (
-        <div className="mb-5">
-          <Button variant="outline" onClick={sortAll} disabled={sorting} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
-            {sorting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-            {sorting ? "Sorting..." : "Sort these for me"}
-          </Button>
-          <p className="text-xs text-muted-foreground mt-1.5">
-            I'll work out what each one probably is: something to do today, a learning item, part of something you're already on, an idea, or just a note.
-          </p>
+        <div className="mb-5 flex flex-wrap items-start gap-3">
+          <div>
+            <Button variant="outline" onClick={sortAll} disabled={sorting} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
+              {sorting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+              {sorting ? "Sorting..." : "Sort these for me"}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              I'll work out what each one probably is: something to do today, a learning item, part of something you're already on, an idea, or just a note.
+            </p>
+          </div>
+          {Object.keys(triage).length > 0 && inbox.some((t) => triage[t.id] && triage[t.id].route !== "keep") && (
+            <Button variant="default" size="sm" onClick={acceptAll} data-testid="button-accept-all-braindump" className="inline-flex items-center gap-1.5 mt-0.5">
+              <ArrowRight className="w-4 h-4" />
+              Accept all suggestions
+            </Button>
+          )}
         </div>
       )}
       {isLoading ? <Loading /> : inbox.length === 0 ? (

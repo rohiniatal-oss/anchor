@@ -163,6 +163,14 @@ type OpportunityStateSummary = {
   state: OpportunityStateKind;
   dominantBlocker: OpportunityBlocker;
   summary: string;
+  pipeline: {
+    savedRoles: number;
+    viableRoles: number;
+    liveProcesses: number;
+    interviews: number;
+    activeConversations: number;
+    dueFollowUps: number;
+  };
 };
 
 const HYPOTHESIS_LABELS = {
@@ -1322,6 +1330,14 @@ function buildOpportunityStateSummary(snapshot: GoalSnapshot): OpportunityStateS
     state: snapshot.opportunityStateKind,
     dominantBlocker: snapshot.dominantOpportunityBlocker,
     summary: "",
+    pipeline: {
+      savedRoles: snapshot.savedJobs.length,
+      viableRoles: snapshot.viableApplicationCount,
+      liveProcesses: snapshot.activeOpportunityCount,
+      interviews: snapshot.interviewingJobs,
+      activeConversations: snapshot.activeConversationCount,
+      dueFollowUps: snapshot.dueFollowUpCount,
+    },
   };
   summary.summary = describeOpportunityState(summary, snapshot);
   return summary;

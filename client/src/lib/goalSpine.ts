@@ -91,6 +91,14 @@ export type OpportunityStateT = {
   state: "empty" | "researching" | "converting" | "interviewing";
   dominantBlocker: "targeting" | "clarify" | "access" | "application" | "capability" | "assessment" | "none";
   summary: string;
+  pipeline?: {
+    savedRoles: number;
+    viableRoles: number;
+    liveProcesses: number;
+    interviews: number;
+    activeConversations: number;
+    dueFollowUps: number;
+  };
 };
 export type CareerGoalT = {
   goal: string;

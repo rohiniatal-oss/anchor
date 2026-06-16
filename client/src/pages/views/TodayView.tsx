@@ -525,7 +525,14 @@ function TodayBrief({
 }: {
   goal: CareerGoalT;
   brief: ReturnType<typeof goalMorningBriefWithExecution>;
-  searchPicture: { activeTracks: number; roles: number; contacts: number; learn: number };
+  searchPicture: {
+    activeTracks: number;
+    rolesInView: number;
+    liveProcesses: number;
+    interviews: number;
+    activeConversations: number;
+    dueFollowUps: number;
+  };
   showDetails: boolean;
   onToggleDetails: () => void;
 }) {
@@ -561,19 +568,37 @@ function TodayBrief({
         </span>
         <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
           <Briefcase className="w-3 h-3 text-primary" />
-          <span className="font-semibold text-foreground tabular-nums">{searchPicture.roles}</span>
-          {searchPicture.roles === 1 ? "role" : "roles"}
+          <span className="font-semibold text-foreground tabular-nums">{searchPicture.rolesInView}</span>
+          {searchPicture.rolesInView === 1 ? "role in view" : "roles in view"}
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
-          <Users className="w-3 h-3 text-primary" />
-          <span className="font-semibold text-foreground tabular-nums">{searchPicture.contacts}</span>
-          {searchPicture.contacts === 1 ? "contact" : "contacts"}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
-          <GraduationCap className="w-3 h-3 text-primary" />
-          <span className="font-semibold text-foreground tabular-nums">{searchPicture.learn}</span>
-          {searchPicture.learn === 1 ? "prep item" : "prep items"}
-        </span>
+        {searchPicture.liveProcesses > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
+            <Check className="w-3 h-3 text-primary" />
+            <span className="font-semibold text-foreground tabular-nums">{searchPicture.liveProcesses}</span>
+            {searchPicture.liveProcesses === 1 ? "live process" : "live processes"}
+          </span>
+        )}
+        {searchPicture.interviews > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
+            <Sparkles className="w-3 h-3 text-primary" />
+            <span className="font-semibold text-foreground tabular-nums">{searchPicture.interviews}</span>
+            {searchPicture.interviews === 1 ? "interview" : "interviews"}
+          </span>
+        )}
+        {searchPicture.activeConversations > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
+            <Users className="w-3 h-3 text-primary" />
+            <span className="font-semibold text-foreground tabular-nums">{searchPicture.activeConversations}</span>
+            {searchPicture.activeConversations === 1 ? "conversation moving" : "conversations moving"}
+          </span>
+        )}
+        {searchPicture.dueFollowUps > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-1 border border-card-border">
+            <CalendarDays className="w-3 h-3 text-primary" />
+            <span className="font-semibold text-foreground tabular-nums">{searchPicture.dueFollowUps}</span>
+            {searchPicture.dueFollowUps === 1 ? "follow-up due" : "follow-ups due"}
+          </span>
+        )}
       </div>
       {brief.summary && (
         <p className="text-sm font-medium mt-3">{brief.summary}</p>
@@ -756,14 +781,16 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const activeGoal = goalState?.goals?.[0] || null;
   const introLine = goalTodayIntroLine(activeGoal);
   const todayBrief = goalMorningBriefWithExecution(activeGoal, executionState.briefInput);
-  const searchPicture = diagnosticTracks
-    .filter((track: any) => track.status === "active")
-    .reduce((totals: { activeTracks: number; roles: number; contacts: number; learn: number }, track: any) => ({
-      activeTracks: totals.activeTracks + 1,
-      roles: totals.roles + (track.counts?.jobs || 0),
-      contacts: totals.contacts + (track.counts?.contacts || 0),
-      learn: totals.learn + (track.counts?.learn || 0),
-    }), { activeTracks: 0, roles: 0, contacts: 0, learn: 0 });
+  const activeTrackCount = diagnosticTracks.filter((track: any) => track.status === "active").length;
+  const pipeline = activeGoal?.opportunityState?.pipeline;
+  const searchPicture = {
+    activeTracks: activeTrackCount,
+    rolesInView: pipeline?.viableRoles || pipeline?.savedRoles || 0,
+    liveProcesses: pipeline?.liveProcesses || 0,
+    interviews: pipeline?.interviews || 0,
+    activeConversations: pipeline?.activeConversations || 0,
+    dueFollowUps: pipeline?.dueFollowUps || 0,
+  };
 
   return (
     <div>

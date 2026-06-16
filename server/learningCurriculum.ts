@@ -146,13 +146,16 @@ export async function generateContactArchetypes(
     if (!label) continue;
     const rawSubKey = clean(m.subdivisionKey, 80);
     const subdivisionKey = [...subdivisionKeyMap.values()].find((v) => v === rawSubKey) || rawSubKey;
+    const milestoneType = ["content", "synthesis", "artifact"].includes(String(m.milestoneType))
+      ? String(m.milestoneType) as "content" | "synthesis" | "artifact"
+      : "content";
     await storage.createRecommendationMilestone({
       recommendationId,
       milestoneKey: `m${i + 1}`,
       label,
       doneWhen: clean(m.doneWhen, 240),
       suggestedTaskTitle: clean(m.suggestedTaskTitle, 160),
-      milestoneType: "content",
+      milestoneType,
       scaffolding: scaffoldingText(m.scaffolding),
       subdivisionKey,
       status: i === 0 ? "active" : "todo",

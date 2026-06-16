@@ -59,8 +59,11 @@ export async function generateContactArchetypes(
   trackName: string,
   trackArchetype: string,
 ): Promise<void> {
-  const existing = await storage.getRecommendationSubdivisions(recommendationId);
-  if (existing.length > 0) return;
+  const [existingSubs, existingMilestones] = await Promise.all([
+    storage.getRecommendationSubdivisions(recommendationId),
+    storage.getRecommendationMilestones(recommendationId),
+  ]);
+  if (existingSubs.length > 0 || existingMilestones.length > 0) return;
 
   const client = new OpenAI();
   const prompt =
@@ -200,8 +203,11 @@ export async function generateLearningCurriculum(
   trackName: string,
   trackArchetype: string,
 ): Promise<void> {
-  const existing = await storage.getRecommendationSubdivisions(recommendationId);
-  if (existing.length > 0) return;
+  const [existingSubs, existingMilestones] = await Promise.all([
+    storage.getRecommendationSubdivisions(recommendationId),
+    storage.getRecommendationMilestones(recommendationId),
+  ]);
+  if (existingSubs.length > 0 || existingMilestones.length > 0) return;
 
   const client = new OpenAI();
   const prompt =

@@ -426,16 +426,20 @@ export function registerPlanningRoutes(app: Express) {
     if (!task) return res.status(404).json({ error: "Not found" });
     await storage.updateTask(id, { done: true, status: "done", pinned: false } as any);
     let completedMilestoneId: number | null = null;
-    if (task.sourceStepType === "recommendation_milestone" && task.sourceStepId) {
-      await completeRecommendationMilestone(task.sourceStepId);
-      completedMilestoneId = task.sourceStepId;
-    } else if (task.sourceType === "learn" && task.sourceId != null) {
-      const learnItem = await storage.getLearnItem(task.sourceId).catch(() => undefined);
-      if (learnItem?.sourceType === "recommendation" && learnItem.sourceId != null) {
-        const milestones = await storage.getRecommendationMilestones(learnItem.sourceId);
-        const active = milestones.find((m) => m.status === "active") || milestones.find((m) => m.status === "todo");
-        if (active) { await completeRecommendationMilestone(active.id); completedMilestoneId = active.id; }
+    try {
+      if (task.sourceStepType === "recommendation_milestone" && task.sourceStepId) {
+        await completeRecommendationMilestone(task.sourceStepId);
+        completedMilestoneId = task.sourceStepId;
+      } else if (task.sourceType === "learn" && task.sourceId != null) {
+        const learnItem = await storage.getLearnItem(task.sourceId).catch(() => undefined);
+        if (learnItem?.sourceType === "recommendation" && learnItem.sourceId != null) {
+          const milestones = await storage.getRecommendationMilestones(learnItem.sourceId);
+          const active = milestones.find((m) => m.status === "active") || milestones.find((m) => m.status === "todo");
+          if (active) { await completeRecommendationMilestone(active.id); completedMilestoneId = active.id; }
+        }
       }
+    } catch (err) {
+      console.error("milestone completion failed during task completion", { taskId: id, err });
     }
     const winCategory =
       task.category === "job" || task.category === "interview" ? "job_progress"

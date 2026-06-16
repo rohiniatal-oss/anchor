@@ -548,10 +548,12 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       if (captureNote.trim()) {
         await mutateAndInvalidate("PATCH", `/api/recommendation-milestones/${milestoneCapture.milestoneId}`, { completionNote: captureNote.trim() }, []);
       }
-    } finally {
-      setSavingCapture(false);
       setMilestoneCapture(null);
       setCaptureNote("");
+    } catch {
+      toast({ title: "Couldn't save note", description: "Your note is still here — try again." });
+    } finally {
+      setSavingCapture(false);
     }
   }
   async function getSynthesisStarter(itemId: number, milestoneId: number) {

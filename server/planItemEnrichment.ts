@@ -1,16 +1,26 @@
 /**
  * Enriches plan items for learn items that have LLM-generated curriculum
  * milestones. Replaces the generic "Open the learning item and capture a note"
- * first-step with the actual active checkpoint title from the curriculum.
+ * first-step with the actual active checkpoint from the curriculum, including
+ * scaffolding questions and milestone type.
  */
 
 import { storage } from "./storage";
 import { explainPersistedPlanItem } from "./brain";
 
+type ActiveMilestone = {
+  id: number;
+  label: string;
+  suggestedTaskTitle: string;
+  doneWhen: string;
+  scaffolding: string;
+  milestoneType: string;
+};
+
 async function activeMilestoneForLearnItem(
   learnSourceType: string | null | undefined,
   learnSourceId: number | null | undefined,
-): Promise<{ label: string; suggestedTaskTitle: string; doneWhen: string } | null> {
+): Promise<ActiveMilestone | null> {
   if (learnSourceType !== "recommendation" || learnSourceId == null) return null;
   const milestones = await storage.getRecommendationMilestones(learnSourceId);
   if (!milestones.length) return null;
@@ -19,12 +29,17 @@ async function activeMilestoneForLearnItem(
     milestones.find((m) => m.status === "todo") ||
     null;
   if (!active || !active.suggestedTaskTitle) return null;
-  return { label: active.label, suggestedTaskTitle: active.suggestedTaskTitle, doneWhen: active.doneWhen };
+  return {
+    id: active.id,
+    label: active.label,
+    suggestedTaskTitle: active.suggestedTaskTitle,
+    doneWhen: active.doneWhen,
+    scaffolding: (active as any).scaffolding || "",
+    milestoneType: (active as any).milestoneType || "content",
+  };
 }
 
 export async function enrichPlanItems(items: any[]): Promise<any[]> {
-  // Pre-fetch learn items for any plan item backed by a learn source to avoid
-  // repeated DB calls in the loop.
   const learnSourceIds = [...new Set(
     items.filter((i) => i.sourceType === "learn" && i.sourceId != null).map((i) => i.sourceId as number),
   )];
@@ -46,7 +61,13 @@ export async function enrichPlanItems(items: any[]): Promise<any[]> {
             explanation: {
               ...explanation,
               firstStep: milestone.suggestedTaskTitle,
-              nextCheckpoint: { label: milestone.label, doneWhen: milestone.doneWhen },
+              nextCheckpoint: {
+                id: milestone.id,
+                label: milestone.label,
+                doneWhen: milestone.doneWhen,
+                scaffolding: milestone.scaffolding,
+                milestoneType: milestone.milestoneType,
+              },
             },
           };
         }

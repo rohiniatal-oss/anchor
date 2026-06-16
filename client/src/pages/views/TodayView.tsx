@@ -201,8 +201,13 @@ function RightNow({ pinned }: { pinned: Task }) {
   // Completion goes through the real endpoint: marks done, logs a win, updates the
   // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
-    await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
+    const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
     toast({ title: "Done - and logged as a win", description: "That's momentum. Pick your next thing when ready." });
+    if (res?.completedMilestoneId) {
+      const milestone = pinned.title;
+      setMilestoneCapture({ milestoneId: res.completedMilestoneId, label: milestone });
+      setCaptureNote("");
+    }
   }
   async function unstick() {
     setUnsticking(true);
@@ -228,6 +233,38 @@ function RightNow({ pinned }: { pinned: Task }) {
   async function block() {
     await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/block`, { day: todayKey(), reason: "Marked blocked from Today" }, ["/api/tasks"]);
     toast({ title: "Marked blocked.", description: "I'll stop surfacing it until it's unblocked." });
+  }
+
+  async function saveMilestoneCapture() {
+    if (!milestoneCapture || savingCapture) return;
+    setSavingCapture(true);
+    try {
+      if (captureNote.trim()) {
+        await mutateAndInvalidate("PATCH", `/api/recommendation-milestones/${milestoneCapture.milestoneId}`, { completionNote: captureNote.trim() }, []);
+      }
+    } finally {
+      setSavingCapture(false);
+      setMilestoneCapture(null);
+      setCaptureNote("");
+    }
+  }
+
+  async function getSynthesisStarter(itemId: number, milestoneId: number) {
+    setSynthLoading((s) => ({ ...s, [itemId]: "starter" }));
+    try {
+      const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${milestoneId}/synthesis-starter`, {}, []);
+      if (res?.draft) setSynthDrafts((d) => ({ ...d, [itemId]: res.draft }));
+    } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
+  }
+
+  async function getCritique(itemId: number, milestoneId: number) {
+    const draft = synthDrafts[itemId];
+    if (!draft?.trim()) return;
+    setSynthLoading((s) => ({ ...s, [itemId]: "critique" }));
+    try {
+      const res = await mutateAndInvalidate("POST", `/api/recommendation-milestones/${milestoneId}/critique`, { draft }, []);
+      if (res?.critique) setSynthCritiques((c) => ({ ...c, [itemId]: res.critique }));
+    } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
   }
 
   return (
@@ -406,6 +443,14 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [quickText, setQuickText] = useState("");
   const [capturingQuick, setCapturingQuick] = useState(false);
   const [quickCaptureNote, setQuickCaptureNote] = useState("");
+  // Milestone completion capture — shown after a task is done that advanced a milestone
+  const [milestoneCapture, setMilestoneCapture] = useState<{ milestoneId: number; label: string } | null>(null);
+  const [captureNote, setCaptureNote] = useState("");
+  const [savingCapture, setSavingCapture] = useState(false);
+  // Synthesis/artifact panel state — keyed by plan item id
+  const [synthDrafts, setSynthDrafts] = useState<Record<number, string>>({});
+  const [synthCritiques, setSynthCritiques] = useState<Record<number, string>>({});
+  const [synthLoading, setSynthLoading] = useState<Record<number, "starter" | "critique" | null>>({});
   async function quickCapture() {
     const t = quickText.trim();
     if (!t || capturingQuick) return;
@@ -470,6 +515,30 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   return (
     <div>
+      {/* Milestone completion capture modal */}
+      {milestoneCapture && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-card border border-card-border p-5 shadow-xl">
+            <p className="text-sm font-semibold mb-1">Nice — milestone done.</p>
+            <p className="text-xs text-muted-foreground mb-3">
+              What's the one thing you'll actually carry from this? (Optional — but it builds your prep notes over time.)
+            </p>
+            <textarea
+              autoFocus
+              className="w-full min-h-[70px] text-sm rounded-lg border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="e.g. The EU AI Act creates risk tiers — high-risk systems face pre-market approval, unlike the US voluntary approach"
+              value={captureNote}
+              onChange={(e) => setCaptureNote(e.target.value)}
+            />
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" className="flex-1" onClick={saveMilestoneCapture} disabled={savingCapture}>
+                {savingCapture ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Check className="w-3 h-3 mr-1" />} Save
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setMilestoneCapture(null)}>Skip</Button>
+            </div>
+          </div>
+        </div>
+      )}
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
       <p className="text-sm text-muted-foreground mt-1 mb-3">Here's your day. Start at the top - you don't have to decide.</p>
 
@@ -603,6 +672,64 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                             <p className="text-[11px] text-primary/70 mt-1.5 border-t border-primary/10 pt-1.5">
                               <span className="font-semibold">Done when:</span> {it.explanation.nextCheckpoint.doneWhen}
                             </p>
+                          )}
+                        </div>
+                      )}
+                      {/* Scaffolding questions for content milestones */}
+                      {it.explanation?.nextCheckpoint?.scaffolding && it.explanation.nextCheckpoint.milestoneType === "content" && (
+                        <div className="mt-2 rounded-lg border border-card-border bg-muted/30 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">As you go, ask yourself</p>
+                          <ul className="space-y-1">
+                            {it.explanation.nextCheckpoint.scaffolding.split(" | ").filter(Boolean).map((q, qi) => (
+                              <li key={qi} className="text-xs text-muted-foreground flex gap-1.5">
+                                <span className="shrink-0 text-muted-foreground/50 mt-0.5">›</span>
+                                <span>{q}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {/* Synthesis / artifact panel — interactive drafting workspace */}
+                      {it.explanation?.nextCheckpoint && (it.explanation.nextCheckpoint.milestoneType === "synthesis" || it.explanation.nextCheckpoint.milestoneType === "artifact") && (
+                        <div className="mt-2 rounded-lg border border-amber-200/60 bg-amber-50/40 dark:border-amber-800/40 dark:bg-amber-900/10 px-3 py-2.5">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1">
+                            {it.explanation.nextCheckpoint.milestoneType === "artifact" ? "Draft your answer" : "Synthesise what you've learned"}
+                          </p>
+                          {it.explanation.nextCheckpoint.scaffolding && (
+                            <ul className="space-y-1 mb-2">
+                              {it.explanation.nextCheckpoint.scaffolding.split(" | ").filter(Boolean).map((q, qi) => (
+                                <li key={qi} className="text-xs text-amber-800/80 dark:text-amber-300/80 flex gap-1.5">
+                                  <span className="shrink-0 mt-0.5">›</span><span>{q}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          <textarea
+                            className="w-full min-h-[80px] text-xs rounded-md border border-amber-200 bg-white/70 dark:bg-amber-900/20 dark:border-amber-700/40 px-2.5 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            placeholder={it.explanation.nextCheckpoint.milestoneType === "artifact" ? "Write your draft here…" : "Write your synthesis here…"}
+                            value={synthDrafts[it.id] || ""}
+                            onChange={(e) => setSynthDrafts((d) => ({ ...d, [it.id]: e.target.value }))}
+                          />
+                          <div className="flex gap-2 mt-1.5 flex-wrap">
+                            <Button size="sm" variant="outline" className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-100"
+                              disabled={synthLoading[it.id] === "starter"}
+                              onClick={() => getSynthesisStarter(it.id, it.explanation!.nextCheckpoint!.id)}>
+                              {synthLoading[it.id] === "starter" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                              Get a starter draft
+                            </Button>
+                            {synthDrafts[it.id]?.trim() && (
+                              <Button size="sm" variant="outline" className="text-xs h-7 border-amber-300 text-amber-700 hover:bg-amber-100"
+                                disabled={synthLoading[it.id] === "critique"}
+                                onClick={() => getCritique(it.id, it.explanation!.nextCheckpoint!.id)}>
+                                {synthLoading[it.id] === "critique" ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <MoveRight className="w-3 h-3 mr-1" />}
+                                Push back on this
+                              </Button>
+                            )}
+                          </div>
+                          {synthCritiques[it.id] && (
+                            <div className="mt-2 rounded-md bg-amber-100/60 dark:bg-amber-900/30 px-2.5 py-2 text-xs text-amber-900 dark:text-amber-200 whitespace-pre-wrap">
+                              {synthCritiques[it.id]}
+                            </div>
                           )}
                         </div>
                       )}

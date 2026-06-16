@@ -297,6 +297,9 @@ CREATE TABLE IF NOT EXISTS recommendation_milestones (
   sequence INTEGER NOT NULL DEFAULT 0,
   suggested_task_title TEXT NOT NULL DEFAULT '',
   subdivision_key TEXT NOT NULL DEFAULT '',
+  milestone_type TEXT NOT NULL DEFAULT 'content',
+  scaffolding TEXT NOT NULL DEFAULT '',
+  completion_note TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,
   completed_at INTEGER
 );
@@ -312,4 +315,7 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE learn ADD COLUMN source_id INTEGER`,
   `ALTER TABLE tasks ADD COLUMN source_step_type TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE tasks ADD COLUMN source_step_id INTEGER`,
+  `ALTER TABLE recommendation_milestones ADD COLUMN milestone_type TEXT NOT NULL DEFAULT 'content'`,
+  `ALTER TABLE recommendation_milestones ADD COLUMN scaffolding TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE recommendation_milestones ADD COLUMN completion_note TEXT NOT NULL DEFAULT ''`,
 ];

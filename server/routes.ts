@@ -20,6 +20,7 @@ import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
+import OpenAI from "openai";
 
 const acceptRecommendationSchema = z.object({
   entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
@@ -205,6 +206,90 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
     res.json(updated || existing);
   });
+  // Generate a starter draft for a synthesis or artifact milestone.
+  // Summarises completed milestones so the user has something concrete to edit.
+  app.post("/api/recommendation-milestones/:id/synthesis-starter", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+      const milestone = await storage.getRecommendationMilestone(id);
+      if (!milestone) return res.status(404).json({ error: "Not found" });
+
+      const rec = await storage.getRecommendation(milestone.recommendationId);
+      const allMilestones = await storage.getRecommendationMilestones(milestone.recommendationId);
+      const completed = allMilestones.filter((m) => m.status === "done");
+
+      const milestoneType = (milestone as any).milestoneType || "synthesis";
+      const scaffolding = (milestone as any).scaffolding || "";
+
+      const completedSummary = completed.map((m, i) =>
+        `${i + 1}. ${m.label} — "${m.suggestedTaskTitle}"${(m as any).completionNote ? ` (note: ${(m as any).completionNote})` : ""}`
+      ).join("\n");
+
+      const prompt = milestoneType === "artifact"
+        ? `You are a job-search coach helping a candidate prepare a concrete piece of writing.\n` +
+          `User profile: ex-Bain consultant, ex-Tony Blair Institute, Abraaj PE, KSA/Africa work. ` +
+          `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
+          `They are working on: "${rec?.title || milestone.label}".\n` +
+          `The task: ${milestone.suggestedTaskTitle}\n` +
+          `Guidance: ${scaffolding}\n\n` +
+          `Milestones they've already completed:\n${completedSummary || "(none yet)"}\n\n` +
+          `Write a concrete first draft they can edit — not a template with [BRACKETS], an actual specific attempt. ` +
+          `Keep it tight (under 120 words). Make it specific to their background.\n` +
+          `Return ONLY the draft text, no explanation.`
+        : `You are a learning coach helping a candidate synthesise what they've learned.\n` +
+          `User profile: ex-Bain consultant, ex-Tony Blair Institute, Abraaj PE, KSA/Africa work. ` +
+          `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
+          `They are working on: "${rec?.title || milestone.label}".\n` +
+          `The synthesis task: ${milestone.suggestedTaskTitle}\n` +
+          `Prompts to address: ${scaffolding}\n\n` +
+          `Milestones they've already completed:\n${completedSummary || "(none yet — write based on the domain)"}\n\n` +
+          `Write a concrete starter synthesis — 3-4 bullet points connecting what they've learned to their background. ` +
+          `Make it specific: name the domain, name a concept they encountered, and connect it to their PE/consulting work. ` +
+          `Write it AS IF you are them, in first person, so they can edit it directly.\n` +
+          `Return ONLY the bullet points, no preamble.`;
+
+      const client = new OpenAI();
+      const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
+      const draft = (r.output_text || "").trim();
+      res.json({ draft });
+    } catch (err) { next(err); }
+  });
+
+  // Critique a draft synthesis or artifact — push back, suggest what's missing.
+  app.post("/api/recommendation-milestones/:id/critique", async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+      const draft = String(req.body?.draft || "").trim();
+      if (!draft) return res.status(400).json({ error: "No draft provided" });
+
+      const milestone = await storage.getRecommendationMilestone(id);
+      if (!milestone) return res.status(404).json({ error: "Not found" });
+      const rec = await storage.getRecommendation(milestone.recommendationId);
+      const milestoneType = (milestone as any).milestoneType || "synthesis";
+
+      const prompt =
+        `You are a demanding but constructive coach reviewing a candidate's draft.\n` +
+        `User profile: ex-Bain consultant, ex-Tony Blair Institute, Abraaj PE. Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
+        `Task they completed: ${milestone.suggestedTaskTitle}\n` +
+        `Done-when criteria: ${milestone.doneWhen}\n\n` +
+        `Their draft:\n"""\n${draft}\n"""\n\n` +
+        `Give a crisp critique in 3 parts:\n` +
+        `1. WHAT'S WORKING (1-2 sentences max — be specific)\n` +
+        `2. WHAT'S MISSING OR WEAK (the most important gap — 1-2 sentences, be direct)\n` +
+        (milestoneType === "artifact"
+          ? `3. REWRITE SUGGESTION (rewrite the weakest sentence or phrase to show what "stronger" looks like)\n`
+          : `3. PUSH FURTHER (one question that would make them go deeper or be more specific)\n`) +
+        `Be direct. Don't be encouraging for its own sake — only praise what's actually good. Under 150 words total.\n` +
+        `Return plain text, no markdown headers.`;
+
+      const client = new OpenAI();
+      const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
+      res.json({ critique: (r.output_text || "").trim() });
+    } catch (err) { next(err); }
+  });
+
   app.delete("/api/recommendation-milestones/:id", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });

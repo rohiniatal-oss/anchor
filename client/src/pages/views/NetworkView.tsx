@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { mutateAndInvalidate } from "@/lib/api";
 import { GOAL_SPINE_QUERY_KEYS, PENDING_CONTACT_DRAFT_KEY, queueIntakeDraft, buildPrefillHash, formatDeadline, deadlineTone, takeHashDraft, takeIntakeDraft } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { useRecommendations } from "@/hooks/useRecommendations";
 import { SectionHeading } from "@/components/home/SectionHeading";
 import { Loading } from "@/components/home/Loading";
 import { Empty } from "@/components/home/Empty";
@@ -84,6 +85,37 @@ const EMPTY_CONTACT_FORM: ContactFormT = {
   status: "to_contact",
   messageDraft: "",
 };
+
+type NetworkRecommendation = {
+  id: number;
+  collection: string;
+  kind: string;
+  status: string;
+  title: string;
+  whySuggested: string;
+  linkedTrackId?: number | null;
+  sourceLabel?: string | null;
+  sourceUrl?: string | null;
+  executionShape?: string | null;
+  acceptanceEntityType?: string | null;
+};
+
+const NETWORK_RECOMMENDATION_STATUS_LABEL: Record<string, string> = {
+  new: "New",
+  ranked: "Ready now",
+  saved: "Saved for later",
+};
+
+function isNetworkRecommendation(rec: NetworkRecommendation) {
+  if (rec.acceptanceEntityType === "contact") return true;
+  return rec.collection === "network-targets" || rec.kind === "contact-person-type" || rec.kind === "contact-actual-person";
+}
+
+function networkRecommendationShapeLabel(shape?: string | null) {
+  if (shape === "ongoing-program") return "Multi-step";
+  if (shape === "sequenced-item") return "Sequenced";
+  return "Single contact";
+}
 
 function isFollowUpOverdue(c: Contact): boolean {
   if (!c.nextFollowUpDate) return false;
@@ -210,6 +242,7 @@ export function NetworkView() {
   const { data: contacts = [], isLoading } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: tracks = [] } = useCareerTracks();
+  const { data: recommendations = [] } = useRecommendations<NetworkRecommendation[]>();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { toast } = useToast();
   const activeGoal = goalState?.goals?.[0] || null;
@@ -283,6 +316,21 @@ export function NetworkView() {
     await mutateAndInvalidate("PATCH", `/api/contacts/${c.id}`, body, ["/api/contacts", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
   }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/contacts/${id}`, undefined, ["/api/contacts", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]); }
+  async function acceptRecommendation(rec: NetworkRecommendation) {
+    await mutateAndInvalidate("POST", `/api/recommendations/${rec.id}/accept`, { entityType: "contact" }, [
+      "/api/recommendations",
+      "/api/contacts",
+      "/api/tasks",
+      "/api/strategy",
+      "/api/strategy/front-door",
+      "/api/strategy/diagnostics",
+      ...GOAL_SPINE_QUERY_KEYS,
+    ]);
+    toast({ title: "Added to your network.", description: "This suggestion is now a contact card you can act on." });
+  }
+  async function updateRecommendationStatus(id: number, status: string) {
+    await mutateAndInvalidate("PATCH", `/api/recommendations/${id}`, { status }, ["/api/recommendations"]);
+  }
 
   const byLane = new Map<string, Contact[]>(ALL_LANE_KEYS.map((k) => [k, []]));
   for (const c of contacts) byLane.get(laneForSourceNetwork(c.sourceNetwork))!.push(c);
@@ -290,6 +338,73 @@ export function NetworkView() {
   const quietLaneKeys = NETWORK_LANES
     .map((lane) => lane.key)
     .filter((key) => byLane.get(key)!.length === 0);
+  const visibleSuggestions = recommendations.filter((rec) => isNetworkRecommendation(rec) && !["accepted", "rejected", "archived", "duplicate", "stale"].includes(rec.status));
+  const readySuggestions = visibleSuggestions.filter((rec) => rec.status !== "saved");
+  const savedSuggestions = visibleSuggestions.filter((rec) => rec.status === "saved");
+  const trackNameById = new Map(tracks.map((track) => [track.id, track.name]));
+
+  function SuggestionList({ list, title }: { list: NetworkRecommendation[]; title: string }) {
+    if (list.length === 0) return null;
+    return (
+      <div>
+        <div className="flex items-center gap-2 mb-2.5">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</span>
+          <span className="text-xs text-muted-foreground tabular-nums">({list.length})</span>
+        </div>
+        <div className="space-y-2">
+          {list.map((rec) => {
+            const linkedTrackName = rec.linkedTrackId ? trackNameById.get(rec.linkedTrackId) : "";
+            return (
+              <div key={rec.id} className="rounded-xl border border-card-border bg-card p-4" data-testid={`network-recommendation-${rec.id}`}>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {NETWORK_RECOMMENDATION_STATUS_LABEL[rec.status] && (
+                    <span className="inline-flex rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                      {NETWORK_RECOMMENDATION_STATUS_LABEL[rec.status]}
+                    </span>
+                  )}
+                  <span className="inline-flex rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {networkRecommendationShapeLabel(rec.executionShape)}
+                  </span>
+                  {linkedTrackName && (
+                    <span className="inline-flex rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                      {linkedTrackName}
+                    </span>
+                  )}
+                  {rec.sourceLabel && (
+                    <span className="inline-flex rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-700">
+                      {rec.sourceLabel}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-2 text-sm font-medium leading-snug text-foreground">{rec.title}</p>
+                <p className="mt-1 text-xs leading-snug text-muted-foreground">{rec.whySuggested}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => acceptRecommendation(rec)} data-testid={`button-accept-network-recommendation-${rec.id}`}>
+                    <Users className="mr-1 h-4 w-4" /> Use suggestion
+                  </Button>
+                  {rec.status !== "saved" && (
+                    <Button size="sm" variant="outline" onClick={() => updateRecommendationStatus(rec.id, "saved")} data-testid={`button-save-network-recommendation-${rec.id}`}>
+                      Save for later
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => updateRecommendationStatus(rec.id, "archived")} data-testid={`button-archive-network-recommendation-${rec.id}`}>
+                    Not now
+                  </Button>
+                  {rec.sourceUrl && (
+                    <Button size="sm" variant="ghost" asChild>
+                      <a href={rec.sourceUrl} target="_blank" rel="noreferrer">
+                        <MessageSquare className="mr-1 h-4 w-4" /> Source
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -299,6 +414,17 @@ export function NetworkView() {
       </div>
       {activeGoal && !(contacts.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="network" goal={activeGoal} />}
       {activeGoal && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="network" onStartLane={startLaneContact} />}
+
+      {visibleSuggestions.length > 0 && (
+        <div className="mb-6 space-y-3">
+          <div className="rounded-xl border border-card-border bg-card p-4">
+            <p className="text-sm font-medium">Suggested contacts</p>
+            <p className="mt-1 text-xs text-muted-foreground">Anchor has already identified useful people types or outreach targets from your live role types. Use one directly, save it for later, or hide it.</p>
+          </div>
+          <SuggestionList list={readySuggestions} title="Ready now" />
+          <SuggestionList list={savedSuggestions} title="Saved for later" />
+        </div>
+      )}
 
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3" data-testid="contact-intake-form">

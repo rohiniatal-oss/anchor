@@ -16,6 +16,7 @@ import { mutateAndInvalidate } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import { GOAL_SPINE_QUERY_KEYS, PENDING_CONTACT_DRAFT_KEY, PENDING_LEARN_DRAFT_KEY, queueIntakeDraft, buildPrefillHash, daysUntil, formatDeadline, deadlineTone } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { useRecommendations } from "@/hooks/useRecommendations";
 import { SectionHeading } from "@/components/home/SectionHeading";
 import { GroupLabel } from "@/components/home/GroupLabel";
 import { Loading } from "@/components/home/Loading";
@@ -43,6 +44,18 @@ const JOB_COLS = [
   { id: "wishlist", label: "Want to apply" }, { id: "applied", label: "Applied" },
   { id: "interviewing", label: "Interviewing" }, { id: "closed", label: "Closed" },
 ] as const;
+
+type RecommendationItem = {
+  id: number;
+  collection: string;
+  kind: string;
+  status: string;
+  title: string;
+  whySuggested: string;
+  linkedTrackId?: number | null;
+  linkedGapKey?: string | null;
+  acceptanceEntityType?: string | null;
+};
 
 function sortJobs(a: Job, b: Job): number {
   const da = daysUntil(a.deadline), db = daysUntil(b.deadline);
@@ -308,8 +321,21 @@ function getJobWarmSupport(trackId: number | null, contacts: Contact[]) {
   return { trackContacts, warmTrackContacts, weak, candidates };
 }
 
+function visibleTrackRecommendation(
+  recommendations: RecommendationItem[],
+  input: { trackId: number | null; collection: string; gapKey?: string | null },
+) {
+  if (input.trackId == null) return null;
+  return recommendations.find((rec) =>
+    rec.linkedTrackId === input.trackId &&
+    rec.collection === input.collection &&
+    !["accepted", "rejected", "archived", "duplicate", "stale"].includes(rec.status) &&
+    (!input.gapKey || rec.linkedGapKey === input.gapKey)
+  ) || null;
+}
+
 const LOW_WARM_PATH = 40;
-function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null; contacts: Contact[] }) {
+function JobWarmPath({ j, trackId, contacts, savedContactRec, onAcceptRecommendation }: { j: Job; trackId: number | null; contacts: Contact[]; savedContactRec: RecommendationItem | null; onAcceptRecommendation: (rec: RecommendationItem) => Promise<void> }) {
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<number | null>(null);
   if (j.status === "closed") return null;
@@ -355,15 +381,28 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
       </div>
       {candidates.length === 0 ? (
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">No contacts linked to this role yet. Add someone in Network.</p>
-          <button
-            type="button"
-            onClick={openNetworkIntake}
-            className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
-            data-testid={`button-open-network-from-job-${j.id}`}
-          >
-            <Users className="w-3.5 h-3.5" /> Add contact for this role
-          </button>
+          <p className="text-xs text-muted-foreground">
+            {savedContactRec ? "No contacts are linked to this role yet, but Anchor already saved a useful contact suggestion for this track." : "No contacts linked to this role yet. Add someone in Network."}
+          </p>
+          {savedContactRec ? (
+            <button
+              type="button"
+              onClick={() => onAcceptRecommendation(savedContactRec)}
+              className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
+              data-testid={`button-use-saved-network-from-job-${j.id}`}
+            >
+              <Users className="w-3.5 h-3.5" /> Use saved suggestion
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={openNetworkIntake}
+              className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
+              data-testid={`button-open-network-from-job-${j.id}`}
+            >
+              <Users className="w-3.5 h-3.5" /> Add contact for this role
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-1">
@@ -388,12 +427,16 @@ function JobCapabilitySupport({
   tracks,
   learns,
   truth,
+  savedLearningRec,
+  onAcceptRecommendation,
 }: {
   j: Job;
   trackId: number | null;
   tracks: CareerTrack[];
   learns: Learn[];
   truth: JobTruthStripT | null;
+  savedLearningRec: RecommendationItem | null;
+  onAcceptRecommendation: (rec: RecommendationItem) => Promise<void>;
 }) {
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -455,9 +498,11 @@ function JobCapabilitySupport({
       {supportItems.length === 0 ? (
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
-            {needsPrep
-              ? "This role may need clearer learning support. Add one suggested starter if you want more focused help here."
-              : "No learning item is linked to this role type yet. Add one suggested starter if you want extra support for this role or interview."}
+            {savedLearningRec
+              ? "Anchor already saved a useful prep starter for this track, so you can start from that instead of setting one up from scratch."
+              : needsPrep
+                ? "This role may need clearer learning support. Add one suggested starter if you want more focused help here."
+                : "No learning item is linked to this role type yet. Add one suggested starter if you want extra support for this role or interview."}
           </p>
           {requiredDomains.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -468,14 +513,25 @@ function JobCapabilitySupport({
               ))}
             </div>
           )}
-          <button
-            type="button"
-            onClick={openLearnIntake}
-            className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
-            data-testid={`button-open-learn-from-job-${j.id}`}
-          >
-            <GraduationCap className="w-3.5 h-3.5" /> Use suggested starter
-          </button>
+          {savedLearningRec ? (
+            <button
+              type="button"
+              onClick={() => onAcceptRecommendation(savedLearningRec)}
+              className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
+              data-testid={`button-use-saved-learn-from-job-${j.id}`}
+            >
+              <GraduationCap className="w-3.5 h-3.5" /> Use saved suggestion
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={openLearnIntake}
+              className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
+              data-testid={`button-open-learn-from-job-${j.id}`}
+            >
+              <GraduationCap className="w-3.5 h-3.5" /> Use suggested starter
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
@@ -519,7 +575,7 @@ function JobCapabilitySupport({
   );
 }
 
-function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }: { j: Job; truth: JobTruthStripT | null; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
+function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, onAcceptRecommendation, onMove, onRemove }: { j: Job; truth: JobTruthStripT | null; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; recommendations: RecommendationItem[]; onAcceptRecommendation: (rec: RecommendationItem) => Promise<void>; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
   const trackId = getTrackId("jobs", j);
@@ -534,6 +590,8 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
   const warmSupport = getJobWarmSupport(trackId, contacts);
   const supportItems = getJobCapabilitySupportItems(trackId, learns);
   const requiredDomains = track ? requiredDomainsForTrack(track) : [];
+  const savedContactRec = visibleTrackRecommendation(recommendations, { trackId, collection: "network-targets" });
+  const savedLearningRec = visibleTrackRecommendation(recommendations, { trackId, collection: "learning-corpus" });
 
   async function createJobNextTask() {
     const r = await mutateAndInvalidate("POST", `/api/jobs/${j.id}/create-next-task`, {}, ["/api/tasks", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
@@ -608,12 +666,16 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
     if (truth.action === "warm") {
       return warmSupport.candidates[0]
         ? { label: "Warm this role", icon: Flame, run: async () => createOutreachTask(warmSupport.candidates[0]) }
-        : { label: "Add warm contact", icon: Users, run: async () => openNetworkIntake() };
+        : savedContactRec
+          ? { label: "Use saved contact", icon: Users, run: async () => onAcceptRecommendation(savedContactRec) }
+          : { label: "Add warm contact", icon: Users, run: async () => openNetworkIntake() };
     }
     if (truth.action === "prove") {
       return supportItems[0]
         ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
-        : { label: "Use suggested starter", icon: GraduationCap, run: async () => openLearnIntake() };
+        : savedLearningRec
+          ? { label: "Use saved starter", icon: GraduationCap, run: async () => onAcceptRecommendation(savedLearningRec) }
+          : { label: "Use suggested starter", icon: GraduationCap, run: async () => openLearnIntake() };
     }
     if (truth.action === "clarify") {
       return j.url
@@ -718,8 +780,8 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
                 {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">Move to {JOB_COLS[idx + 1].label} →</button>}
               </div>
               <JobStepRail j={j} />
-              <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
-              <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} truth={truth} />
+              <JobWarmPath j={j} trackId={trackId} contacts={contacts} savedContactRec={savedContactRec} onAcceptRecommendation={onAcceptRecommendation} />
+              <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} truth={truth} savedLearningRec={savedLearningRec} onAcceptRecommendation={onAcceptRecommendation} />
               <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
                 nextTaskHint={taskPreviewHint(nextJobTaskTitle(j), openJobTask?.title)}
                 onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />
@@ -735,6 +797,7 @@ export function JobsView() {
   const { toast } = useToast();
   const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
   const { data: learns = [] } = useQuery<Learn[]>({ queryKey: ["/api/learn"] });
+  const { data: recommendations = [] } = useRecommendations<RecommendationItem[]>();
   const { data: truthStrips = [] } = useQuery<JobTruthStripT[]>({ queryKey: ["/api/jobs/truth-strips"] });
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
   const { data: tracks = [] } = useCareerTracks();
@@ -776,6 +839,24 @@ export function JobsView() {
     if (next) await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { status: next.id }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
   }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/jobs/${id}`, undefined, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]); }
+  async function acceptRecommendation(rec: RecommendationItem) {
+    const entityType = rec.collection === "network-targets" ? "contact" : "learn";
+    await mutateAndInvalidate("POST", `/api/recommendations/${rec.id}/accept`, { entityType }, [
+      "/api/recommendations",
+      "/api/contacts",
+      "/api/learn",
+      "/api/tasks",
+      "/api/jobs",
+      "/api/strategy",
+      "/api/strategy/front-door",
+      "/api/strategy/diagnostics",
+      ...GOAL_SPINE_QUERY_KEYS,
+    ]);
+    toast({
+      title: entityType === "contact" ? "Added to your network." : "Added to your learning list.",
+      description: entityType === "contact" ? "This should make it easier to move the role with a real person path." : "This gives the role a concrete prep path instead of a blank starter.",
+    });
+  }
 
   const fellowships = jobs.filter(isFellowship).sort(sortJobs);
   const roles = jobs.filter((j) => !isFellowship(j));
@@ -883,7 +964,7 @@ export function JobsView() {
                       {items.length > 0 && <span className="text-xs text-muted-foreground tabular-nums">({items.length})</span>}
                     </div>
                     <div className="space-y-2">
-                      {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                      {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
                       {items.length === 0 && col.id === "wishlist" && (
                         <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
                           <p className="text-sm text-muted-foreground">No roles yet - add one above or start from one of the suggested role types.</p>

@@ -3,8 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 
 export function useRecommendations<T = unknown[]>() {
+  return useQuery<T>({ queryKey: ["/api/recommendations"] });
+}
+
+export function useSyncRecommendationsOnMount() {
   const queryClient = useQueryClient();
-  const query = useQuery<T>({ queryKey: ["/api/recommendations"] });
 
   useEffect(() => {
     let cancelled = false;
@@ -22,6 +25,4 @@ export function useRecommendations<T = unknown[]>() {
       cancelled = true;
     };
   }, [queryClient]);
-
-  return query;
 }

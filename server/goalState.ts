@@ -93,19 +93,23 @@ type BroadPursuitCoverage = {
   covered: string[];
   missing: string[];
   networkSupported: string[];
+  prepSupported: string[];
   learningSupported: string[];
   exampleProjectSupported: string[];
   missingNetworkSupport: string[];
+  missingPrepSupport: string[];
   missingLearningSupport: string[];
   fullySupported: string[];
   laneStates: Array<{
     combination: string;
     roleCount: number;
     contactCount: number;
+    prepSupportCount: number;
     learningItemCount: number;
     exampleProjectItemCount: number;
     hasRole: boolean;
     hasNetworkSupport: boolean;
+    hasPrepSupport: boolean;
     hasLearningSupport: boolean;
     hasExampleProjectSupport: boolean;
   }>;
@@ -750,7 +754,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
   : snapshot.liveProofAssetCount > 0
       ? ["produce the next concrete output on the live project or public-work item", "capture one existing result in a way you can point to later", "turn it into something publishable or shippable enough to point to later"]
       : ["turn one project or public-work idea into something real", "pick one output format you can sustain", "connect it to a learning goal, not a single role"];
-  const missingLearningByLane = broadSupportCoverage?.missing.length === 0 ? (broadSupportCoverage?.missingLearningSupport || []) : [];
+  const missingLearningByLane = broadSupportCoverage?.missing.length === 0 ? ((broadSupportCoverage?.missingPrepSupport || broadSupportCoverage?.missingLearningSupport) || []) : [];
   const capabilityStatus: WorkstreamStatus = snapshot.directionReady || snapshot.interviewingJobs > 0
     ? missingLearningByLane.length > 0
       ? "underdeveloped"
@@ -914,7 +918,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         snapshot.evidencedLearnCount ? `${snapshot.evidencedLearnCount} learning item(s) with notes or an output linked` : "no linked learning outputs yet",
         snapshot.learningOutputGapCount ? `${snapshot.learningOutputGapCount} learning item(s) still need notes or an output` : "learning outputs are in better shape",
         broadSupportCoverage && broadSupportCoverage.missing.length === 0
-          ? `${broadSupportCoverage.learningSupported.length} live path${broadSupportCoverage.learningSupported.length === 1 ? "" : "s"} with prep in place`
+          ? `${(broadSupportCoverage.prepSupported || broadSupportCoverage.learningSupported).length} live path${(broadSupportCoverage.prepSupported || broadSupportCoverage.learningSupported).length === 1 ? "" : "s"} with prep in place`
           : "role coverage still comes before support for each role type",
         `${snapshot.proofSupportDemandCount} role${snapshot.proofSupportDemandCount === 1 ? "" : "s"} that could benefit from clearer examples or practice`,
       ],
@@ -954,7 +958,7 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
     if (hasBroadParallelLanes(snapshot)) {
       const coverage = buildBroadPursuitCoverage(snapshot);
       if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length > 0 && network && network.nextMoveType !== "wait") return network;
-      if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingLearningSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
+      if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingPrepSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
         return capability;
       }
     }
@@ -1024,10 +1028,10 @@ function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSna
         ? broadPursuitMissingRolesContextReason(coverage.missing, "keep multiple plausible paths open while converting the most credible live roles")
         : broadPursuitMissingRolesContextReason(coverage.missing, "open multiple plausible paths in parallel and turn them into live roles");
     }
-    if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
+    if (coverage.missingNetworkSupport.length > 0 || coverage.missingPrepSupport.length > 0) {
       return broadPursuitMissingSupportContextReason(
         coverage.missingNetworkSupport,
-        coverage.missingLearningSupport,
+        coverage.missingPrepSupport,
       );
     }
     return snapshot.savedJobs.length > 0
@@ -1053,10 +1057,10 @@ function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
     if (coverage.missing.length > 0) {
       return broadPursuitMissingRolesDecisionQuestion(coverage.missing);
     }
-    if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
+    if (coverage.missingNetworkSupport.length > 0 || coverage.missingPrepSupport.length > 0) {
       return broadPursuitMissingSupportDecisionQuestion(
         coverage.missingNetworkSupport,
-        coverage.missingLearningSupport,
+        coverage.missingPrepSupport,
       );
     }
     return snapshot.savedJobs.length > 0
@@ -1104,24 +1108,24 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
         stopRule: broadPursuitNextMissingRoleStopRule(coverage.missing),
       };
     }
-    if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
+    if (coverage.missingNetworkSupport.length > 0 || coverage.missingPrepSupport.length > 0) {
       const focusNetwork = focus.name === GOAL_WORKSTREAM.NETWORK && coverage.missingNetworkSupport.length > 0;
-      const focusPrep = focus.name === GOAL_WORKSTREAM.PREP_UPSKILLING && coverage.missingLearningSupport.length > 0;
+      const focusPrep = focus.name === GOAL_WORKSTREAM.PREP_UPSKILLING && coverage.missingPrepSupport.length > 0;
       return {
         mustDo: focusNetwork
           ? broadPursuitNextMissingContactTodayMustDo(coverage.missingNetworkSupport)
           : focusPrep
-            ? broadPursuitNextMissingPrepTodayMustDo(coverage.missingLearningSupport)
+            ? broadPursuitNextMissingPrepTodayMustDo(coverage.missingPrepSupport)
             : broadPursuitMissingSupportTodayMustDo(
               coverage.missingNetworkSupport,
-              coverage.missingLearningSupport,
+              coverage.missingPrepSupport,
             ),
         next: "Keep live roles moving while you add the missing contact or prep starter.",
         optional: "If useful, add one optional example/project idea that could help more than one role in the same path.",
         stopRule: focusNetwork
           ? broadPursuitNextMissingContactStopRule(coverage.missingNetworkSupport)
           : focusPrep
-            ? broadPursuitNextMissingPrepStopRule(coverage.missingLearningSupport)
+            ? broadPursuitNextMissingPrepStopRule(coverage.missingPrepSupport)
             : broadPursuitMissingSupportStopRule(),
       };
     }
@@ -1311,24 +1315,30 @@ function buildBroadPursuitCoverage(snapshot: GoalSnapshot): BroadPursuitCoverage
   );
   const covered = combinations.filter((combination) => coveredSet.has(combination));
   const networkSupported = combinations.filter((combination) => networkSupportedSet.has(combination));
-  const learningSupported = combinations.filter((combination) => prepSupportedSet.has(combination));
+  const prepSupported = combinations.filter((combination) => prepSupportedSet.has(combination));
+  const learningSupported = prepSupported;
   const exampleProjectSupported = combinations.filter((combination) => exampleProjectSupportedSet.has(combination));
   const missing = combinations.filter((combination) => !covered.includes(combination));
   const missingNetworkSupport = combinations.filter((combination) => coveredSet.has(combination) && !networkSupportedSet.has(combination));
-  const missingLearningSupport = combinations.filter((combination) => coveredSet.has(combination) && !prepSupportedSet.has(combination));
+  const missingPrepSupport = combinations.filter((combination) => coveredSet.has(combination) && !prepSupportedSet.has(combination));
+  const missingLearningSupport = missingPrepSupport;
   const fullySupported = combinations.filter((combination) => coveredSet.has(combination) && networkSupportedSet.has(combination) && prepSupportedSet.has(combination));
   const laneStates = combinations.map((combination) => ({
     combination,
     roleCount: snapshot.savedJobs.filter((job) => jobCombination(job, combinations) === combination).length,
     contactCount: snapshot.openContacts.filter((contact) => contactCombination(contact, snapshot.activeTracks, combinations) === combination).length,
+    prepSupportCount:
+      snapshot.savedJobs.filter((job) => jobHasPrepSupport(job) && jobCombination(job, combinations) === combination).length
+      + snapshot.activeLearnItems.filter((item) => learnCombination(item, snapshot.activeTracks, combinations) === combination).length,
     learningItemCount: snapshot.activeLearnItems.filter((item) => learnCombination(item, snapshot.activeTracks, combinations) === combination).length,
     exampleProjectItemCount: snapshot.activeHustleItems.filter((item) => hustleCombination(item, snapshot.activeTracks, combinations) === combination).length,
     hasRole: covered.includes(combination),
     hasNetworkSupport: networkSupported.includes(combination),
+    hasPrepSupport: prepSupported.includes(combination),
     hasLearningSupport: learningSupported.includes(combination),
     hasExampleProjectSupport: exampleProjectSupported.includes(combination),
   }));
-  return { combinations, covered, missing, networkSupported, learningSupported, exampleProjectSupported, missingNetworkSupport, missingLearningSupport, fullySupported, laneStates };
+  return { combinations, covered, missing, networkSupported, prepSupported, learningSupported, exampleProjectSupported, missingNetworkSupport, missingPrepSupport, missingLearningSupport, fullySupported, laneStates };
 }
 
 function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamState[]) {
@@ -1418,9 +1428,11 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     covered: [],
     missing: [],
     networkSupported: [],
+    prepSupported: [],
     learningSupported: [],
     exampleProjectSupported: [],
     missingNetworkSupport: [],
+    missingPrepSupport: [],
     missingLearningSupport: [],
     fullySupported: [],
     laneStates: [],

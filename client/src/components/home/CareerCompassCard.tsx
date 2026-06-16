@@ -108,7 +108,7 @@ export function CareerCompassCard({
   const supportGapLines = gapLines.filter((line) => line.key !== "roles" && line.key !== "covered");
   const firstMissingRole = coverage.missing[0] || null;
   const firstMissingNetwork = coverage.missingNetworkSupport[0] || null;
-  const firstMissingPrep = coverage.missingLearningSupport[0] || null;
+  const firstMissingPrep = (coverage.missingPrepSupport || coverage.missingLearningSupport)[0] || null;
   const compassSummary = goalCompassSummary(goal);
   const focusSupportLine = goalFocusSupportLine(goal);
   const comparisonLines = goalFocusComparisonLines(goal);

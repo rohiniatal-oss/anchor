@@ -207,19 +207,19 @@ export function BroadPursuitParallelSupportKickoff({
   const portfolio = goal.pursuitPortfolio || [];
   if (goal.decisionMode !== "broad-parallel-pursuit" || portfolio.length === 0) return null;
   const coverage = getBroadPursuitCoverage(goal);
-  const missingSupport = mode === "network" ? coverage.missingNetworkSupport : coverage.missingLearningSupport;
+  const missingSupport = mode === "network" ? coverage.missingNetworkSupport : (coverage.missingPrepSupport || coverage.missingLearningSupport);
   const orderedPortfolio = [...portfolio].sort((a, b) => {
     const left = combinationSupportState(goal, a.combination);
     const right = combinationSupportState(goal, b.combination);
-    const leftMissing = mode === "network" ? !left.hasNetworkSupport : !left.hasLearningSupport;
-    const rightMissing = mode === "network" ? !right.hasNetworkSupport : !right.hasLearningSupport;
+    const leftMissing = mode === "network" ? !left.hasNetworkSupport : !left.hasPrepSupport;
+    const rightMissing = mode === "network" ? !right.hasNetworkSupport : !right.hasPrepSupport;
     const leftPriority = left.hasRole && leftMissing ? 0 : leftMissing ? 1 : 2;
     const rightPriority = right.hasRole && rightMissing ? 0 : rightMissing ? 1 : 2;
     return leftPriority - rightPriority;
   });
   const visiblePortfolio = orderedPortfolio.filter((item) => {
     const support = combinationSupportState(goal, item.combination);
-    return mode === "network" ? !support.hasNetworkSupport : !support.hasLearningSupport;
+    return mode === "network" ? !support.hasNetworkSupport : !support.hasPrepSupport;
   });
   const allVisibleWithoutRoles = visiblePortfolio.length > 0 && visiblePortfolio.every((item) => !combinationSupportState(goal, item.combination).hasRole);
   const canStartWithoutRole = allVisibleWithoutRoles;
@@ -236,7 +236,7 @@ export function BroadPursuitParallelSupportKickoff({
           <p className="text-xs text-muted-foreground mt-1">
             {mode === "network"
               ? `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a contact.`
-              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a prep item.`}
+              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a prep starter.`}
           </p>
           {canStartWithoutRole && (
             <p className="text-xs text-muted-foreground mt-1">
@@ -263,7 +263,7 @@ export function BroadPursuitParallelSupportKickoff({
                   tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
                 }
             : gap;
-          const supportMissing = mode === "network" ? !support.hasNetworkSupport : !support.hasLearningSupport;
+          const supportMissing = mode === "network" ? !support.hasNetworkSupport : !support.hasPrepSupport;
           const tone = state === "covered"
             ? "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/10"
             : state === "missing"

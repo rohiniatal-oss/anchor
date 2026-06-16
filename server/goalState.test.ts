@@ -199,7 +199,7 @@ test("broad parallel pursuit tracks missing network and learning support after l
   assert.ok(state.broadPursuitCoverage.networkSupported.includes("AI / technology strategy x Strategy / advisory"));
   assert.ok(state.broadPursuitCoverage.networkSupported.includes("Geopolitics / geopolitical advisory x Ops / chief of staff"));
   assert.ok(state.broadPursuitCoverage.missingNetworkSupport.includes("AI / technology strategy x Ops / chief of staff"));
-  assert.ok(state.broadPursuitCoverage.missingLearningSupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
+  assert.ok(state.broadPursuitCoverage.missingPrepSupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
   assert.match(state.decisionQuestion, /need outreach, more focused prep support, or both next/i);
   assert.match(state.todayPlan.mustDo, /Add the next useful contact or outreach path/i);
   assert.match(state.todayPlan.mustDo, /AI \/ technology strategy x Ops \/ chief of staff/i);
@@ -255,9 +255,9 @@ test("job-side prep signals count as prep support even without a Learn item", ()
     "Geopolitics / geopolitical advisory x Strategy / advisory",
     "Geopolitics / geopolitical advisory x Ops / chief of staff",
   ]);
-  assert.ok(state.broadPursuitCoverage.learningSupported.includes("AI / technology strategy x Strategy / advisory"));
-  assert.ok(state.broadPursuitCoverage.learningSupported.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
-  assert.deepEqual(state.broadPursuitCoverage.missingLearningSupport.sort(), [
+  assert.ok(state.broadPursuitCoverage.prepSupported.includes("AI / technology strategy x Strategy / advisory"));
+  assert.ok(state.broadPursuitCoverage.prepSupported.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
+  assert.deepEqual(state.broadPursuitCoverage.missingPrepSupport.sort(), [
     "AI / technology strategy x Ops / chief of staff",
     "Geopolitics / geopolitical advisory x Ops / chief of staff",
   ].sort());
@@ -289,7 +289,7 @@ test("broad parallel pursuit support ordering follows portfolio order, not save 
     "AI / technology strategy x Ops / chief of staff",
     "Geopolitics / geopolitical advisory x Strategy / advisory",
   ]);
-  assert.deepEqual(state.broadPursuitCoverage.missingLearningSupport, [
+  assert.deepEqual(state.broadPursuitCoverage.missingPrepSupport, [
     "AI / technology strategy x Strategy / advisory",
     "AI / technology strategy x Ops / chief of staff",
     "Geopolitics / geopolitical advisory x Ops / chief of staff",

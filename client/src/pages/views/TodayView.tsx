@@ -885,6 +885,8 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                   const broadPursuitSummary = broadPursuitItem ? broadPursuitPrimarySummary(activeGoal) : "";
                   const compactSummary = primaryPlanReason(it, broadPursuitSummary);
                   const extraReasons = secondaryPlanReasons(it, compactSummary, broadPursuitSummary);
+                  const visibleReasons = i === 0 ? extraReasons.slice(0, 2) : [];
+                  const hiddenReasons = i === 0 ? extraReasons.slice(2) : extraReasons;
                   return (
                   <div key={it.id} data-testid={`plan-item-${i}`} data-plan-rank={String(i)}
                     className={`group w-full flex items-start gap-3 rounded-xl bg-card border p-3.5 transition-colors ${isMVD(it) ? "border-primary/40" : "border-card-border"}`}>
@@ -905,6 +907,18 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                         {preShrunk && <span className="shrink-0 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
                       </div>
                       {compactSummary && <p className="text-xs text-muted-foreground mt-0.5">{compactSummary}</p>}
+                      {visibleReasons.length > 0 && (
+                        <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Why this is first</p>
+                          <div className="mt-1.5 space-y-1">
+                            {visibleReasons.map((reason, reasonIndex) => (
+                              <p key={`${it.id}-visible-reason-${reasonIndex}`} className="text-xs text-muted-foreground">
+                                {reason}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {broadPursuitCoverage && (
                         <div className="mt-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Still needs coverage</p>
@@ -1013,13 +1027,13 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                           )}
                         </div>
                       )}
-                      {extraReasons.length > 0 && (
+                      {hiddenReasons.length > 0 && (
                         <details className="mt-2">
                           <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground list-none">
                             Why this is on your list
                           </summary>
                           <div className="mt-2 space-y-1.5 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                            {extraReasons.map((reason, reasonIndex) => (
+                            {hiddenReasons.map((reason, reasonIndex) => (
                               <p key={`${it.id}-reason-${reasonIndex}`} className="text-xs text-muted-foreground">
                                 {reason}
                               </p>

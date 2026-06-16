@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { diagnoseTrack } from "./strategy";
+import { deriveInsights, diagnoseTrack } from "./strategy";
 
 function track(overrides: Record<string, any> = {}) {
   return {
@@ -104,4 +104,37 @@ test("only a stalled active proof asset surfaces as low-priority proof support",
   assert.equal(diagnostic.bottleneck, "proof");
   assert.equal(diagnostic.bottleneckLabel, "A project you started has stalled");
   assert.equal(diagnostic.recommendedMove, "Move the active project one concrete step forward");
+});
+
+test("warmth insight reflects follow-through when contacts already exist", () => {
+  const insights = deriveInsights([{
+    id: 1,
+    slug: "ai-strategy",
+    name: "AI Strategy",
+    status: "active",
+    priority: 80,
+    whyItFits: "Good fit",
+    counts: { jobs: 2, learn: 0, contacts: 2, hustles: 0, tasks: 0 },
+    signals: {
+      directionGap: 0,
+      readinessGap: 0,
+      proofGap: 0,
+      warmthGap: 1,
+      executionGap: 0,
+      learningGap: 0,
+      learnProofGap: 0,
+      evidenceGap: 0,
+    },
+    evidence: emptyEvidence(),
+    learningGap: null,
+    bottleneck: "warmth",
+    bottleneckLabel: "2 contacts need a follow-up",
+    recommendedMove: "Follow up with the contacts that need a nudge",
+  }] as any);
+
+  const warmth = insights.find((item) => item.kind === "warmth");
+  assert.ok(warmth);
+  assert.match(warmth!.text, /already has people linked/i);
+  assert.match(warmth!.text, /follow up with the contacts that need a nudge/i);
+  assert.doesNotMatch(warmth!.text, /no useful person to reach out to yet/i);
 });

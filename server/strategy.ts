@@ -368,7 +368,7 @@ export type StrategyFrontDoor = {
 
 // Cross-cutting insights READ OFF the diagnostics (single engine). Highest-signal
 // first, capped at 3, calm and never fabricated.
-function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
+export function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
   const out: StrategyInsight[] = [];
   const active = tracks.filter((t) => t.status === "active");
 
@@ -377,8 +377,15 @@ function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
     out.push({ kind: "readiness", text: `For ${readinessTrack.name}, the issue is not more saved roles. It is getting one ready. ${readinessTrack.recommendedMove}.` });
 
   const warmthTrack = active.find((t) => t.bottleneck === "warmth");
-  if (warmthTrack)
-    out.push({ kind: "warmth", text: `${warmthTrack.name} has live roles, but no useful person to reach out to yet. A referral or warm intro would help more than saving another role.` });
+  if (warmthTrack) {
+    const hasContacts = warmthTrack.counts.contacts > 0;
+    out.push({
+      kind: "warmth",
+      text: hasContacts
+        ? `${warmthTrack.name} already has people linked to it, so the next gain is better follow-through or a clearer ask. ${warmthTrack.recommendedMove}.`
+        : `${warmthTrack.name} has live roles, but no useful person to reach out to yet. A referral or warm intro would help more than saving another role.`,
+    });
+  }
 
   const proofTrack = active.find((t) => t.bottleneck === "proof");
   if (proofTrack)

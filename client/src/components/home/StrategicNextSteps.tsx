@@ -62,11 +62,16 @@ function buildSteps(
     seen.add(key);
 
     if (b === "direction") {
+      const hasSavedRole = track.counts.jobs > 0;
       steps.push({
         icon: Briefcase,
-        title: `Add a job or role for "${track.name}"`,
-        detail: "Even a wishlist role gives this track direction - the search cannot move without one.",
-        action: "Add a job",
+        title: hasSavedRole
+          ? `Review the strongest role for "${track.name}"`
+          : `Add a job or role for "${track.name}"`,
+        detail: hasSavedRole
+          ? track.recommendedMove || track.bottleneckLabel || "You already have roles here, so the next move is to sharpen which one is worth pursuing."
+          : "Even a wishlist role gives this track direction - the search cannot move without one.",
+        action: hasSavedRole ? "Open jobs" : "Add a job",
         onClick: () => onOpenTab("jobs"),
       });
     } else if (b === "learning") {

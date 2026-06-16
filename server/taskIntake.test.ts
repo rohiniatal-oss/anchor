@@ -59,3 +59,26 @@ test("task intake logs created activity with estimate metadata", async () => {
   assert.ok(created);
   assert.match(created!.metadata || "", /estimateMinutes/);
 });
+
+test("task intake comparison tasks arrive with step-level substeps", async () => {
+  const r = await api(h.base, "POST", "/api/tasks", {
+    title: "Compare AI strategy vs chief of staff roles",
+    list: "today",
+  });
+  assert.equal(r.status, 200);
+  const steps = JSON.parse(r.json.steps || "[]");
+  assert.equal(steps.length, 3);
+  assert.match(String(steps[0]?.text || ""), /options you are comparing/i);
+  assert.match(String(steps[1]?.text || ""), /criteria/i);
+  assert.deepEqual(steps.map((step: any) => step.estimateMinutes), [5, 5, 10]);
+});
+
+test("task intake infers waiting readiness from title-only waiting tasks", async () => {
+  const r = await api(h.base, "POST", "/api/tasks", {
+    title: "Waiting for Sarah to send the org chart",
+    list: "today",
+  });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.readiness, "waiting");
+  assert.match(r.json.doneWhen, /blocker and next unblock action/i);
+});

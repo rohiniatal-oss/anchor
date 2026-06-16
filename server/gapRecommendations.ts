@@ -3,6 +3,7 @@ import { computeLearningGaps } from "./learningStrategy";
 import { learningGapPrepStarter } from "@shared/learningGapSuggestions";
 import { domainLabel } from "@shared/capabilityDomains";
 import type { CapabilityDomainKey } from "@shared/capabilityTargets";
+import { generateLearningCurriculum, generateContactArchetypes } from "./learningCurriculum";
 
 // Statuses that can be staled when a gap closes. Terminal statuses (accepted /
 // rejected / archived / duplicate / stale) are never touched by the sync.
@@ -67,7 +68,11 @@ export async function syncGapRecommendations(): Promise<void> {
   // Reload after staling so dedup below sees the updated state.
   const freshRecs = await storage.getRecommendations();
 
+  const trackById = new Map(tracks.map((t) => [t.id, t]));
+
   // ── Step 2: create learning-theme recs for open gaps with no existing coverage ──
+  const newLearningRecs: Array<{ id: number; domain: string; label: string; trackId: number }> = [];
+
   for (const lg of learningGapsResult.tracks) {
     if (lg.status !== "active") continue;
     for (const domain of lg.gapDomains) {
@@ -83,7 +88,7 @@ export async function syncGapRecommendations(): Promise<void> {
       const label = domainLabel(domain as CapabilityDomainKey);
       const starter = learningGapPrepStarter(domain as CapabilityDomainKey, label);
 
-      await storage.createRecommendation({
+      const created = await storage.createRecommendation({
         collection: "learning-corpus",
         kind: "learning-theme",
         status: "new",
@@ -112,6 +117,19 @@ export async function syncGapRecommendations(): Promise<void> {
         confidenceScore: null,
         duplicateOfId: null,
       });
+
+      newLearningRecs.push({ id: created.id, domain, label, trackId: lg.trackId });
+    }
+  }
+
+  // Fire-and-forget: generate full study curricula for new learning-theme recs.
+  // Does not block the sync — if the LLM call fails, the rec still exists.
+  for (const { id, label, trackId } of newLearningRecs) {
+    const track = trackById.get(trackId);
+    if (track) {
+      generateLearningCurriculum(id, label, track.name, track.targetRoleArchetype || "advisory").catch(() => {
+        console.error(`curriculum generation skipped for rec ${id}`);
+      });
     }
   }
 
@@ -129,7 +147,7 @@ export async function syncGapRecommendations(): Promise<void> {
     );
     if (covered) continue;
 
-    await storage.createRecommendation({
+    const created = await storage.createRecommendation({
       collection: "network-targets",
       kind: "contact-person-type",
       status: "new",
@@ -149,6 +167,7 @@ export async function syncGapRecommendations(): Promise<void> {
       acceptanceDraft: JSON.stringify({
         sector: track.name,
         targetRole: track.name,
+        who: `Someone working in ${track.name.toLowerCase()}`,
         why: `Could help you reality-check or open doors for ${track.name}.`,
         relatedTrackId: track.id,
         askType: "advice",
@@ -157,6 +176,11 @@ export async function syncGapRecommendations(): Promise<void> {
       }),
       confidenceScore: null,
       duplicateOfId: null,
+    });
+
+    // Fire-and-forget: generate specific contact archetypes with LLM
+    generateContactArchetypes(created.id, track.name, track.targetRoleArchetype || "advisory").catch(() => {
+      console.error(`contact archetype generation skipped for rec ${created.id}`);
     });
   }
 }

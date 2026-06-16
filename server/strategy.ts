@@ -4,6 +4,7 @@ import {
   isContactWarm, isProofLive, isTaskDone, getTaskReadiness, getTrackId,
   getLearnOutputState, type WinCategory,
 } from "@shared/domainState";
+import { learningGapRecommendedMove } from "@shared/learningGapSuggestions";
 import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evidence";
 import { computeLearningGaps, topLearningGapSignal, type TrackLearningGap, type LearningGapSignal } from "./learningStrategy";
@@ -52,6 +53,7 @@ export type TrackDiagnostic = {
     requiredCount: number;
     evidencedCount: number;
     gapCount: number;
+    topGapDomain: string | null;
     topGapLabel: string | null;     // highest-ranked unmet domain, null if none
     topGapHasResource: boolean;     // a live Learn item already addresses the top gap
     recommendedMove: string | null; // deterministic move, null when no gap
@@ -171,22 +173,22 @@ export function diagnoseTrack(
 
   // ── Primary bottleneck (deterministic priority order) + recommended move ──
   let bottleneck: BottleneckType = "none";
-  let bottleneckLabel = "Moving well — keep the drumbeat";
+  let bottleneckLabel = "Moving well - keep going";
   let recommendedMove = "Advance the next live item on this track";
 
   if (directionGap > 0) {
     bottleneck = "direction";
-    bottleneckLabel = "No live opportunities yet";
-    recommendedMove = "Add or activate a role, learning item, or proof asset on this track";
+    bottleneckLabel = "No live roles yet";
+    recommendedMove = "Add or activate a role or prep item on this track";
   } else if (warmthGap > 0 && tLiveJobs.length > 0) {
     const overdue = tContacts.filter(isContactOverdue).length;
     bottleneck = "warmth";
     bottleneckLabel = tContacts.length === 0
-      ? "Roles but no warm contact"
-      : overdue > 0 ? `${overdue} contact${overdue > 1 ? "s" : ""} overdue for follow-up` : "Contacts are cold";
+      ? "Live roles, but no helpful contact yet"
+      : overdue > 0 ? `${overdue} contact${overdue > 1 ? "s" : ""} overdue for follow-up` : "Contacts exist, but none are likely to help yet";
     recommendedMove = overdue > 0
       ? "Follow up with the contacts that have gone cold"
-      : "Create an outreach task to warm a path to these roles";
+      : "Reach out to the person most likely to help with these roles";
   } else if (readinessGap > 0) {
     bottleneck = "readiness";
     bottleneckLabel = stuckTasks > 0 ? "Tasks blocked or need info" : "Applications not ready";
@@ -205,26 +207,26 @@ export function diagnoseTrack(
     const step = lg.sequence.find((s) => s.gapDomain === topGap.domain && s.learnId !== null);
     bottleneck = "learning";
     bottleneckLabel = learningGap === 1
-      ? `Missing a required capability: ${topGap.label}`
-      : `${learningGap} required capabilities not yet evidenced`;
+      ? `This role type still needs prep in ${topGap.label}`
+      : `${learningGap} prep areas still need coverage`;
     recommendedMove = step
       ? `Build ${topGap.label}: do the next step on "${step.title}"`
-      : `No resource yet for ${topGap.label} — find one`;
+      : learningGapRecommendedMove(topGap.domain, topGap.label);
   } else if (proofGap > 0 && liveProof > 0) {
     // Optional, low-priority capability support: only surfaces once the main
     // conversion blockers are quiet, and only for proof assets the user already
     // chose to keep live.
     bottleneck = "proof";
-    bottleneckLabel = "Active proof asset stalled";
-    recommendedMove = "Produce one reusable output from the active proof asset";
+    bottleneckLabel = "Active project or public-work item stalled";
+    recommendedMove = "Move the active project or public-work item one concrete step forward";
   } else if (learnProofGap > 0) {
     // LOWEST-PRIORITY, OPT-IN nudge: only reached when nothing structural is the
     // bottleneck. Stays "proof"-typed but is gentle — never the primary blocker.
     bottleneck = "proof";
     bottleneckLabel = learnProofGap === 1
-      ? "A proof-building learning item has no output yet"
-      : `${learnProofGap} proof-building learning items have no output yet`;
-    recommendedMove = "When you're ready, give one an output so it becomes reusable evidence";
+      ? "A learning item marked for a reusable result still has none yet"
+      : `${learnProofGap} learning items marked for reusable results still have none yet`;
+    recommendedMove = "If it would help later, turn one learning item into a reusable note, brief, or example";
   } else if (evidenceGap > 0) {
     // P4.5 — SOFTEST nudge, reached only when every structural gap is clear: the
     // track has live work but nothing has shipped as evidence lately. Stays
@@ -232,7 +234,7 @@ export function diagnoseTrack(
     bottleneck = "execution";
     bottleneckLabel = "Live work, no recent evidence";
     recommendedMove = liveProof > 0
-      ? "Ship one proof output and log it as a win"
+      ? "Ship one small reusable or public-facing piece and log it as a win"
       : "Log a win for this track to show it's moving";
   }
 
@@ -263,12 +265,13 @@ function buildLearningGapRead(lg: TrackLearningGap | undefined): TrackDiagnostic
     topGapHasResource = !!step;
     recommendedMove = step
       ? `Build ${topGap.label}: do the next step on "${step.title}"`
-      : `No resource yet for ${topGap.label} — find one`;
+      : learningGapRecommendedMove(topGap.domain, topGap.label);
   }
   return {
     requiredCount: lg.requiredDomains.length,
     evidencedCount: lg.evidencedDomains.length,
     gapCount: lg.gapDomains.length,
+    topGapDomain: topGap ? topGap.domain : null,
     topGapLabel: topGap ? topGap.label : null,
     topGapHasResource,
     recommendedMove,
@@ -371,15 +374,15 @@ function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
 
   const readinessTrack = active.find((t) => t.bottleneck === "readiness");
   if (readinessTrack)
-    out.push({ kind: "readiness", text: `Your bottleneck on ${readinessTrack.name} isn't more roles — it's getting one ready. ${readinessTrack.recommendedMove}.` });
+    out.push({ kind: "readiness", text: `For ${readinessTrack.name}, the issue is not more saved roles. It is getting one ready. ${readinessTrack.recommendedMove}.` });
 
   const warmthTrack = active.find((t) => t.bottleneck === "warmth");
   if (warmthTrack)
-    out.push({ kind: "warmth", text: `${warmthTrack.name} has live roles but no warm path — a referral would unlock more than another saved role.` });
+    out.push({ kind: "warmth", text: `${warmthTrack.name} has live roles, but no useful person to reach out to yet. A referral or warm intro would help more than saving another role.` });
 
   const proofTrack = active.find((t) => t.bottleneck === "proof");
   if (proofTrack)
-    out.push({ kind: "proof", text: `${proofTrack.name}: ${proofTrack.bottleneckLabel.toLowerCase()}. Ship one reusable output if it will compound the lane.` });
+    out.push({ kind: "proof", text: `${proofTrack.name}: ${proofTrack.bottleneckLabel.toLowerCase()}. Only do this if it would genuinely help you learn, explain your fit, or build your brand.` });
 
   // P5 — structural capability gap, surfaced calmly and ranked below the above.
   const learningTrack = active.find((t) => t.bottleneck === "learning" && t.learningGap);
@@ -387,7 +390,7 @@ function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
     out.push({ kind: "learning", text: `${learningTrack.name}: ${learningTrack.learningGap.recommendedMove}.` });
 
   if (out.length === 0 && active.length)
-    out.push({ kind: "focus", text: `Most focus is on ${active[0].name}. That's your spine — keep it moving and let the rest stay light.` });
+    out.push({ kind: "focus", text: `Most of the focus is on ${active[0].name}. Keep that moving and let the rest stay light.` });
 
   return out.slice(0, 3);
 }
@@ -422,3 +425,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
   for (const it of items) counts[it.entity]++;
   return { items, counts };
 }
+
+
+
+

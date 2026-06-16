@@ -52,8 +52,8 @@ const WORKFLOWS: Record<WorkObject, string[]> = {
   Problem: ["Define symptom", "Diagnose cause", "Choose fix options", "Test", "Implement", "Verify"],
 };
 
-const APPLICATION_WORKFLOW = ["Understand role", "Map evidence", "Handle gaps", "Build materials", "Submit", "Follow up"];
-const PROOF_WORKFLOW = ["Define claim", "Choose audience", "Gather evidence", "Draft fragment", "Save for reuse"];
+const APPLICATION_WORKFLOW = ["Understand role", "Match examples", "Handle gaps", "Build materials", "Submit", "Follow up"];
+const PROOF_WORKFLOW = ["Define claim", "Choose audience", "Collect examples", "Draft fragment", "Save useful version"];
 
 function compact(value: unknown, max = 90) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -86,8 +86,8 @@ function nextStage(workflow: string[], currentStage: string, kind: WorkflowKind)
   return kind === "continuous" ? workflow[0] : "Complete";
 }
 function defaultCriteria(stageOutput: string, currentStage: string) {
-  const output = stageOutput || "The stage output exists";
-  if (/map evidence/i.test(currentStage)) return ["Critical requirements are listed", "At least one credible example is mapped to each critical requirement"];
+  const output = stageOutput || "The stage result exists";
+  if (/match examples|map evidence/i.test(currentStage)) return ["Critical requirements are listed", "At least one concrete example is matched to each critical requirement"];
   if (/build materials|draft|structure/i.test(currentStage)) return [output, "One missing gap or next edit is recorded"];
   if (/follow up|execute next batch/i.test(currentStage)) return [output, "The action is sent or logged"];
   return [output];
@@ -106,7 +106,7 @@ function makeWorkflowState(input: {
   const kind = workflowKindFor(input.workObject, input.sourceKind);
   const workflow = input.workflow.length ? input.workflow : WORKFLOWS[input.workObject as WorkObject] || WORKFLOWS.Artifact;
   const currentStage = input.currentStage || workflow[0];
-  const stageOutput = input.stageOutput || "One concrete stage output exists";
+  const stageOutput = input.stageOutput || "One concrete next-step result exists";
   const completionCriteria = input.completionCriteria?.length ? input.completionCriteria : defaultCriteria(stageOutput, currentStage);
   const next = nextStage(workflow, currentStage, kind);
   return {
@@ -214,6 +214,14 @@ function laneSpecificSearchMove(text: string) {
   return null;
 }
 
+function goalNeedsNetworkSupport(text: string) {
+  return /\b(contact|outreach|reach out|network|message|referral|advice ask|reconnect)\b/i.test(text);
+}
+
+function goalNeedsPrepSupport(text: string) {
+  return /\b(prep item|prep support|learning support|learn|learning|study|read|resource)\b/i.test(text);
+}
+
 function looksMetaStep(text: string) {
   return /^(use the|locate the|define this stage output|check completion criteria|break this stage into actions|execute until|identify the stage|review the workflow)/i.test(text.trim());
 }
@@ -222,17 +230,27 @@ function looksActionable(text: string) {
   return /^(open|write|draft|list|choose|mark|highlight|copy|paste|find|send|ask|save|start|set|create|name|pick|read|scan|skim|note|pull|collect|gather|match|rewrite|outline|reply|message|email|book|review|map|flag|compare|decide|record|log|paste|extract|inspect)\b/i.test(text.trim());
 }
 
+function sharpenLegacyTaskTitle(task: Task) {
+  const title = String(task.title || "").trim();
+  if (task.sourceType === "goal" && /^review\b/i.test(title) && /\brole/.test(title.toLowerCase())) {
+    return title.replace(/^review\b/i, "Inspect");
+  }
+  return title;
+}
+
 function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: WorkflowState) {
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
   if (bundle.sourceKind === "goal") {
-    if (workflowState?.currentStage === "Define target") return "Open Jobs and look at the first still-empty lane";
-    if (workflowState?.currentStage === "Build list") return laneSpecificSearchMove(text) || "Open Jobs and save the first credible role for one still-empty lane";
+    if (goalNeedsNetworkSupport(text)) return "Open Network and add one person you could realistically reach out to for this path";
+    if (goalNeedsPrepSupport(text)) return "Open Learn and add one prep item, note, or resource for this path";
+    if (workflowState?.currentStage === "Define target") return "Open Jobs and look at the first path that still has no saved role";
+    if (workflowState?.currentStage === "Build list") return laneSpecificSearchMove(text) || "Open Jobs and save the first real role for one path that is still missing one";
     if (workflowState?.currentStage === "Execute next batch") return "Open the saved role and take the next concrete pipeline action";
-    return laneSpecificSearchMove(text) || "Open Jobs and save the first credible role for one still-empty lane";
+    return laneSpecificSearchMove(text) || "Open Jobs and save the first real role for one path that is still missing one";
   }
   if (bundle.sourceKind === "job") {
     if (workflowState?.currentStage === "Understand role") return "Open the role posting and highlight the first must-have requirement";
-    if (workflowState?.currentStage === "Map evidence") return "Open a blank note and list the top 3 role requirements";
+    if (workflowState?.currentStage === "Match examples" || workflowState?.currentStage === "Map evidence") return "Open a blank note and list the top 3 role requirements";
     if (workflowState?.currentStage === "Handle gaps") return "Write down the single biggest gap in one sentence";
     if (workflowState?.currentStage === "Build materials") {
       const j = jobSource(bundle);
@@ -247,11 +265,11 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
   }
   if (bundle.sourceKind === "learn") {
     if (workflowState?.workObject === "Capability" || keyword(text, /practice|drill|mock/)) return "Open a blank practice note and do one 5-minute attempt";
-    if (task.sourceUrl) return "Open the resource and read only the first heading";
-    return "Open the resource note and write one useful takeaway";
+    if (task.sourceUrl) return "Open the prep item and read only the first heading";
+    return "Open the learning note and write one useful note, brief, or practice result";
   }
   if (bundle.sourceKind === "hustle") {
-    if (workflowState?.currentStage === "Gather evidence") return "Open a note and paste the 3 strongest proof points";
+    if (workflowState?.currentStage === "Collect examples" || workflowState?.currentStage === "Gather evidence") return "Open a note and paste the 3 strongest examples or proof points";
     return "Open a blank draft and write the one claim this piece should make";
   }
   if (workflowState?.workObject === "Decision") return "Open a note and write the decision question in one line";
@@ -279,11 +297,11 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       `Note the biggest gap or risk and how you would handle it`,
       `Write one sentence on your angle for this specific role${hasNarrative ? ` (your narrative: ${j!.narrativeAngle})` : ""}`,
     ];
-    if (currentStage === "Map evidence") return [
+    if (currentStage === "Match examples" || currentStage === "Map evidence") return [
       `List the top 3 requirements for ${roleLabel}`,
       `Write one concrete example from your background for each requirement`,
       `Mark the weakest match and decide: explain, reframe, or offset`,
-      `Note any missing evidence you still need to pull together`,
+      `Note any missing example, practice, or fact you still need to pull together`,
     ];
     if (currentStage === "Handle gaps") return [
       `Write the main eligibility or fit concern for ${roleLabel} in one sentence`,
@@ -312,7 +330,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
         `Note which remaining questions still need answers`,
       ];
       if (readiness === "questions") return [
-        `Check whether ${roleLabel} asks for a work sample or portfolio piece`,
+        `Check whether ${roleLabel} asks for a writing sample, public post, or portfolio piece`,
         `If yes: identify the strongest existing piece and confirm it fits their format`,
         `If no: review all materials for completeness before submitting`,
         `Confirm everything required is ready`,
@@ -331,7 +349,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
         `Note what is still missing`,
       ] : [
         `Open the application for ${roleLabel} and draft your answer to the first prompt`,
-        `Write the key evidence you will use in the cover note or answer`,
+        `Write the key example or point you will use in the cover note or answer`,
         `Check the required format and any word limits`,
         `Note what still needs work`,
       ];
@@ -353,20 +371,20 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   // ── Learning / capability ──────────────────────────────────────────────────
   if (bundle.sourceKind === "learn") {
     const l = learnSource(bundle);
-    const resourceLabel = l?.title || "the resource";
+    const prepLabel = l?.title || "this prep item";
     const requiredOutput = l?.requiredOutput?.trim();
     const capabilityBuilt = l?.capabilityBuilt?.trim();
 
     if (object === "Capability") return [
-      `Start a practice attempt: open a blank doc and work through one example of ${capabilityBuilt || resourceLabel}`,
+      `Start a practice attempt: open a blank doc and work through one example of ${capabilityBuilt || prepLabel}`,
       `Note the weakest part of that attempt`,
       `Write an improved version of just the weakest part`,
-      requiredOutput ? `Write the required output: ${requiredOutput}` : `Write one concrete output from this session that you can keep and reuse`,
+      requiredOutput ? `Draft the useful output you planned: ${requiredOutput}` : `Write one useful note or practice result from this session`,
     ];
     return [
-      l?.url ? `Open ${resourceLabel} and read the most relevant section` : `Read your notes on ${resourceLabel} and find the most relevant part`,
+      l?.url ? `Open ${prepLabel} and read the most relevant section` : `Read your notes on ${prepLabel} and find the most relevant part`,
       `Write the key insight in your own words`,
-      requiredOutput ? `Draft: ${requiredOutput}` : `Draft a short summary or note you can reuse`,
+      requiredOutput ? `Draft: ${requiredOutput}` : `Draft a short summary, note, or interview prep note`,
       `Note what you still need or what to do with this next`,
     ];
   }
@@ -374,7 +392,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   // ── Proof asset / hustle ───────────────────────────────────────────────────
   if (bundle.sourceKind === "hustle") {
     const h = hustleSource(bundle);
-    const assetLabel = h?.title || "this proof asset";
+    const assetLabel = h?.title || "this project or public-work item";
     const coreClaim = h?.coreClaim?.trim();
     const nextStepNote = h?.nextStep?.trim();
 
@@ -387,12 +405,12 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     if (currentStage === "Define claim") return [
       `Write the one claim ${assetLabel} should prove, in one sentence`,
       `Name the specific audience this is for`,
-      `List 3 pieces of evidence that support the claim`,
+      `List 3 concrete examples or proof points that support the claim`,
     ];
-    if (currentStage === "Gather evidence") return [
-      `List the 3 strongest proof points for: ${coreClaim || assetLabel}`,
-      `Note the source for each proof point`,
-      `Flag any gap in the evidence`,
+    if (currentStage === "Collect examples" || currentStage === "Gather evidence") return [
+      `List the 3 strongest examples or proof points for: ${coreClaim || assetLabel}`,
+      `Note where each one comes from`,
+      `Flag anything you still need to support the claim`,
     ];
     return [
       `Open the draft for ${assetLabel}`,
@@ -405,21 +423,33 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   // ── Goal / pipeline ────────────────────────────────────────────────────────
   if (bundle.sourceKind === "goal") {
     const laneSpecific = laneSpecificSearchMove(text);
+    if (goalNeedsNetworkSupport(text)) return [
+      `Open Network and add one useful contact or outreach path for this live role path`,
+      `Write the exact ask: advice, referral, reconnect, or warm intro`,
+      `Draft the message or save who you should contact next`,
+      `Note which live path still lacks outreach support after this`,
+    ];
+    if (goalNeedsPrepSupport(text)) return [
+      `Open Learn and add one prep item, note, or resource for this live role path`,
+      `Pick the one note, brief, or example that would help this path most`,
+      `Write a short note on how you would use that prep later`,
+      `Note which live path still lacks prep support after this`,
+    ];
     if (currentStage === "Define target") return [
-      `Open Jobs and look at which lane is still empty`,
-      `Name the lane and write what a credible role looks like for it`,
-      `Save one candidate role to fill that lane`,
+      `Open Jobs and find which path still has no saved role`,
+      `Name that path and write what a credible role looks like for it`,
+      `Save one role to fill that gap`,
     ];
     if (currentStage === "Build list") return [
-      laneSpecific || `Find one credible role for the most important still-empty lane`,
-      `Save it and mark the next action: apply, warm path, or clarify`,
-      `Note if any other lanes still need a first role`,
+      laneSpecific || `Find one real role for the most important path that is still missing one`,
+      `Save it and mark the next action: apply, reach out first, or clarify`,
+      `Note if any other paths still need a first role`,
     ];
     return [
       `Open the most promising saved role and take the next concrete action`,
       `Draft the application move, outreach message, or clarification note`,
       `Send it or save it ready to send`,
-      `Log which lane still needs movement next`,
+      `Log which path still needs movement next`,
     ];
   }
 
@@ -439,7 +469,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   if (object === "Knowledge") return [
     task.sourceUrl ? `Open the source and read the most relevant section` : `Read your notes or open the source`,
     `Write the key insight in your own words`,
-    `Draft one concrete output or decision this learning supports`,
+    `Draft one concrete output or decision this learning helps with`,
     `Note what you still need or what to do with this next`,
   ];
   if (object === "Capability") return [
@@ -509,6 +539,7 @@ export async function normalizeExistingTaskBreakdown(task: Task) {
     changed: true as const,
     steps,
     minimumOutcome: fallback.workflowState.stageOutput || task.minimumOutcome,
+    title: sharpenLegacyTaskTitle(task),
   };
 }
 
@@ -537,16 +568,16 @@ export function parentWorkflowFor(task: Task, bundle: SourceBundle): WorkflowSta
         ? "Build materials"
       : keyword(text, /cv|cover|answer|question|material|sample|draft|tailor|submit/) ? "Build materials"
       : keyword(text, /gap|eligibility|visa|constraint/) ? "Handle gaps"
-      : keyword(text, /evidence|story|experience|proof/) ? "Map evidence"
+      : keyword(text, /evidence|story|experience|proof/) ? "Match examples"
       : "Understand role";
     // Stage output is specific to what materials still need doing.
     const stageOutput = currentStage === "Understand role" ? "Role requirements and hidden asks are captured"
-      : currentStage === "Map evidence" ? "Requirements are matched to credible evidence"
+      : currentStage === "Match examples" ? "Requirements are matched to concrete examples"
       : currentStage === "Handle gaps" ? "Gaps and constraints have mitigation lines"
       : currentStage === "Build materials"
         ? (readiness === "cv" ? "Cover letter is drafted and matches the role's language"
-          : readiness === "cover" ? "Application questions are answered with concrete evidence"
-          : readiness === "questions" ? "Work sample or remaining materials are ready"
+          : readiness === "cover" ? "Application questions are answered with concrete examples"
+          : readiness === "questions" ? "Writing sample or remaining materials are ready"
           : "The next application material is drafted or improved")
       : currentStage === "Submit" ? "Application is submitted with required materials"
       : "Follow-up action is sent or logged";
@@ -556,24 +587,24 @@ export function parentWorkflowFor(task: Task, bundle: SourceBundle): WorkflowSta
     const source = learnSource(bundle);
     const workObject: WorkObject = keyword(text, /practice|drill|mock/) ? "Capability" : "Knowledge";
     const currentStage = workObject === "Capability" ? "Practise" : "Orient";
-    const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "One practice output exists" : "One useful slice and output are chosen");
+    const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "One short practice attempt exists" : "One useful slice is chosen and one note is captured");
     return makeWorkflowState({ workObject, workflow: WORKFLOWS[workObject], currentStage, stageOutput, inheritedFrom: `learn:${source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "learn" });
   }
   if (bundle.sourceKind === "hustle") {
     const source = hustleSource(bundle);
-    const currentStage = source?.coreClaim ? "Gather evidence" : "Define claim";
-    const stageOutput = currentStage === "Define claim" ? "One clear proof claim exists" : "Evidence for the proof claim is selected";
+    const currentStage = source?.coreClaim ? "Collect examples" : "Define claim";
+    const stageOutput = currentStage === "Define claim" ? "One clear claim exists" : "The strongest examples for the claim are selected";
     return makeWorkflowState({ workObject: "Artifact", workflow: PROOF_WORKFLOW, currentStage, stageOutput, inheritedFrom: `hustle:${source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "hustle" });
   }
   if (bundle.sourceKind === "goal") {
-    const currentStage = keyword(text, /still-empty combination|still-empty lane|credible role|plausible lane|fill the lane/) ? "Build list"
+    const currentStage = keyword(text, /still-empty combination|still-empty lane|credible role|plausible lane|plausible role type|fill the lane|missing path|missing role type|real role/) ? "Build list"
       : keyword(text, /saved role|application move|live role|pipeline action/) ? "Execute next batch"
       : keyword(text, /lane|pipeline/) ? "Build list"
       : "Define target";
     const stageOutput = currentStage === "Define target"
-      ? "The next still-empty lane is chosen"
+      ? "The next missing path is chosen"
       : currentStage === "Build list"
-        ? "One credible role exists for at least one still-empty combination"
+        ? "One real role exists for at least one missing path"
         : "One concrete pipeline action has been taken on a saved role";
     return makeWorkflowState({
       workObject: "Pipeline",
@@ -593,7 +624,7 @@ function fallbackStagePlan(task: Task, bundle: SourceBundle): { workflowState: W
   const object = (inherited?.workObject as WorkObject) || classifyWorkObject(task, bundle);
   const workflow = inherited?.workflow || WORKFLOWS[object];
   const currentStage = inherited?.currentStage || workflow[0];
-  const stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "One concrete stage output exists";
+  const stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "One concrete next-step result exists";
   const workflowState = inherited || makeWorkflowState({ workObject: object, workflow, currentStage, stageOutput, confidence: "fallback", sourceKind: bundle.sourceKind });
   const steps = coerceTaskBreakdownSteps(task, bundle, workflowState, stageActions(task, bundle, workflowState).map((text) => ({ text, done: false as const })));
   return { workflowState, steps };
@@ -608,8 +639,8 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
     sourceKind = "goal";
     const tracks = await storage.getCareerTracks();
     const activeTrackNames = tracks.filter((track) => track.status !== "archived").map((track) => track.name).slice(0, 6);
-    sourceContext = `This is a STRATEGIC GOAL / broad-pursuit item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one real lane-opening move exists"}. ${task.sourceNote ? "Goal note: " + task.sourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
-    playbook = "Use the parent pipeline workflow first. The goal is not abstract comparison; it is to turn each plausible lane into one real role or application move. Prefer lane-filling and concrete pipeline actions over reflection.";
+    sourceContext = `This is a STRATEGIC GOAL / broad-pursuit item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one real role-opening move exists"}. ${task.sourceNote ? "Goal note: " + task.sourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
+    playbook = "Use the parent pipeline workflow first. The goal is not abstract comparison; it is to turn each plausible path into one real role or application move. Prefer filling missing paths with concrete pipeline actions over reflection.";
   } else if (task.sourceType === "job" && task.sourceId) {
     const j = (await storage.getJobs()).find((x) => x.id === task.sourceId);
     if (j) {
@@ -623,8 +654,8 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
     if (l) {
       source = l;
       sourceKind = "learn";
-      sourceContext = `This is a LEARNING / DEVELOPMENT item. Title: ${l.title}. Type: ${l.type}. ${l.url ? "URL: " + l.url + ". " : ""}${l.note ? "Notes: " + l.note + ". " : ""}${l.capabilityBuilt ? "Capability: " + l.capabilityBuilt + ". " : ""}Required output: ${l.requiredOutput || "a concrete reusable output"}.`;
-      playbook = "Use the parent learning/capability workflow first. Do not just read; locate the stage and produce a reusable output. Never auto-change learnStatus.";
+      sourceContext = `This is a LEARNING / DEVELOPMENT item. Title: ${l.title}. Type: ${l.type}. ${l.url ? "URL: " + l.url + ". " : ""}${l.note ? "Notes: " + l.note + ". " : ""}${l.capabilityBuilt ? "Capability: " + l.capabilityBuilt + ". " : ""}Optional useful result: ${l.requiredOutput || "none defined yet"}.`;
+      playbook = "Use the parent learning/capability workflow first. Do not just read; locate the stage and produce a useful note, practice step, or useful output if one is defined. Never auto-change learnStatus.";
     }
   } else if (task.sourceType === "hustle" && task.sourceId) {
     const h = (await storage.getHustles()).find((x) => x.id === task.sourceId);
@@ -632,7 +663,7 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
       source = h;
       sourceKind = "hustle";
       sourceContext = `This is a PROOF-ASSET / project step. Title: ${h.title}. Stage: ${h.stage}. Content pillar: ${h.contentPillar || "unset"}. Core claim: ${h.coreClaim || "unset"}. ${h.note ? "Notes: " + h.note : ""}`;
-      playbook = "Use the parent proof workflow first: claim → audience → evidence → draft → reuse. Never auto-change proof asset stage.";
+      playbook = "Use the parent output workflow first: claim -> audience -> examples -> draft -> save. Never auto-change the stage automatically.";
     }
   } else if (task.sourceUrl || task.sourceNote) {
     sourceContext = `${task.sourceNote ? "Context: " + task.sourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;

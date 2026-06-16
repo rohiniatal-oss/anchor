@@ -77,8 +77,8 @@ test("plan-item start turns a broad-pursuit goal item into a concrete role-pipel
     sourceType: "goal",
     sourceId: 1,
     taskId: null,
-    title: "Add or apply to one credible role in each plausible lane that still looks real",
-    doneWhen: "One concrete role or application move exists in each active lane",
+    title: "Add or apply to one credible role in each plausible role type that still looks real",
+    doneWhen: "One concrete role or application move exists in each active role type",
     slot: "now",
   });
 
@@ -87,10 +87,46 @@ test("plan-item start turns a broad-pursuit goal item into a concrete role-pipel
   assert.equal(started.json.task.category, "job");
   const steps = JSON.parse(started.json.task.steps || "[]");
   assert.ok(steps.length >= 1, "goal-derived strategic tasks should get concrete steps");
-  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action|find one credible role|still-empty lane/i);
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first real role|saved role|pipeline action|find one real role|missing path|still missing one/i);
 });
 
-test("broad-pursuit adaptive plan names still-empty combinations when some lanes already have live roles", async () => {
+test("plan-item start keeps broad-pursuit contact-support goal items as admin/network tasks", async () => {
+  const { item } = await makePlanWithItem({
+    sourceType: "goal",
+    sourceId: 2,
+    taskId: null,
+    title: "Add one useful contact for AI / technology strategy x Strategy / advisory",
+    doneWhen: "One useful contact or outreach path exists for AI / technology strategy x Strategy / advisory",
+    slot: "now",
+  });
+
+  const started = await api(h.base, "POST", `/api/plan-items/${item.id}/start`, { day: DAY });
+  assert.equal(started.status, 200);
+  assert.equal(started.json.task.category, "admin");
+  const steps = JSON.parse(started.json.task.steps || "[]");
+  assert.ok(steps.length >= 1, "contact-support goal tasks should get concrete steps");
+  assert.match(String(steps[0]?.text || ""), /network|contact|message|reach out/i);
+});
+
+test("plan-item start keeps broad-pursuit prep-support goal items as learning tasks", async () => {
+  const { item } = await makePlanWithItem({
+    sourceType: "goal",
+    sourceId: 3,
+    taskId: null,
+    title: "Add one prep item for AI / technology strategy x Ops / chief of staff",
+    doneWhen: "One prep item exists for AI / technology strategy x Ops / chief of staff",
+    slot: "now",
+  });
+
+  const started = await api(h.base, "POST", `/api/plan-items/${item.id}/start`, { day: DAY });
+  assert.equal(started.status, 200);
+  assert.equal(started.json.task.category, "learning");
+  const steps = JSON.parse(started.json.task.steps || "[]");
+  assert.ok(steps.length >= 1, "prep-support goal tasks should get concrete steps");
+  assert.match(String(steps[0]?.text || ""), /learn|prep|note|read|open/i);
+});
+
+test("broad-pursuit adaptive plan names missing paths when some lanes already have live roles", async () => {
   await h.storage.createCareerTrack({
     name: "AI strategy",
     slug: "ai-strategy",
@@ -137,8 +173,8 @@ test("broad-pursuit adaptive plan names still-empty combinations when some lanes
   assert.equal(recompute.status, 200);
   const current = await api(h.base, "GET", `/api/plan/current?day=${DAY}`);
   assert.equal(current.status, 200);
-  assert.match(current.json.plan.note, /still-empty lane/i);
+  assert.match(current.json.plan.note, /missing path/i);
   assert.match(current.json.plan.note, /Geopolitics \/ geopolitical advisory/i);
-  assert.match(current.json.items[0].title, /still-empty lane/i);
-  assert.match(current.json.items[0].doneWhen, /still-empty lane/i);
+  assert.match(current.json.items[0].title, /missing path|real role/i);
+  assert.match(current.json.items[0].doneWhen, /missing path/i);
 });

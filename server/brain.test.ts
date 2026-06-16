@@ -112,6 +112,52 @@ test("planner favours direction signal before premature application work", () =>
   assert.match(result.plan[0].why, /Direction|direction|bottleneck/i);
 });
 
+test("planner prefers the easier-start move when two options are otherwise close", () => {
+  const tasks = [
+    task({
+      id: 101,
+      title: "Inspect one role family and note useful attributes",
+      category: "learning",
+      size: "deep",
+      doneWhen: "One plausible role family is clearer",
+    }),
+    task({
+      id: 102,
+      title: "Inspect one role family and note useful attributes",
+      category: "learning",
+      size: "quick",
+      doneWhen: "One plausible role family is clearer",
+    }),
+  ];
+
+  const result = planDay(tasks, [], [], [], "medium", { remainingMinutes: 240 });
+  assert.equal(result.plan[0].candidate.sourceId, 102);
+});
+
+test("planner prefers a concrete task over a vague task when both are otherwise plausible", () => {
+  const tasks = [
+    task({
+      id: 111,
+      title: "Work on career research",
+      category: "learning",
+      size: "quick",
+      doneWhen: "The smallest useful outcome is complete",
+      sourceNote: "",
+    }),
+    task({
+      id: 112,
+      title: "Inspect one AI strategy role and note one requirement",
+      category: "learning",
+      size: "quick",
+      doneWhen: "One requirement is captured in notes",
+      sourceNote: "Role shortlist",
+    }),
+  ];
+
+  const result = planDay(tasks, [], [], [], "medium", { remainingMinutes: 240 });
+  assert.equal(result.plan[0].candidate.sourceId, 112);
+});
+
 test("planner collapses to one item when the remaining day is small", () => {
   const tasks = [
     task({ id: 1, title: "Inspect one role family", category: "learning", size: "quick" }),
@@ -164,13 +210,13 @@ test("brain prefers the more gettable role across flexible target locations", ()
   const result = recommend([], jobs, [], [], "medium");
   assert.equal(result.pick?.source, "job");
   assert.equal(result.pick?.sourceId, 2);
-  assert.ok(result.trace?.some((line: string) => /location|warm path|submittable/i.test(line)));
-  assert.match(result.explanation.summary, /strongest conversion move|Applications|bottleneck/i);
+  assert.ok(result.trace?.some((line: string) => /location|reach out|submittable|useful person/i.test(line)));
+  assert.match(result.explanation.summary, /strongest next move|Applications|bottleneck|role/i);
   assert.ok(Array.isArray(result.explanation.supportingReasons) && result.explanation.supportingReasons.length >= 2);
   assert.match(result.explanation.firstStep, /Open the role|application materials/i);
 });
 
-test("job recommendations use recruiting truth for warm-path roles", () => {
+test("job recommendations use recruiting truth for contact-route roles", () => {
   const jobs = [
     job({
       id: 70,
@@ -188,9 +234,9 @@ test("job recommendations use recruiting truth for warm-path roles", () => {
   const result = recommend([], jobs, [], [], "medium");
   assert.equal(result.pick?.source, "job");
   assert.equal(result.pick?.jobTruthAction, "warm");
-  assert.match(result.pick?.title || "", /warm-path message|referral ask/i);
-  assert.match(result.explanation.summary, /warm path/i);
-  assert.match(result.explanation.firstStep, /warm-path message|referral ask/i);
+  assert.match(result.pick?.title || "", /message to someone useful|helpful contact|referral ask/i);
+  assert.match(result.explanation.summary, /reach out to someone useful/i);
+  assert.match(result.explanation.firstStep, /message to someone who could help|refer you/i);
 });
 
 test("job recommendations use recruiting truth for prove-fit roles", () => {
@@ -213,9 +259,9 @@ test("job recommendations use recruiting truth for prove-fit roles", () => {
   const result = recommend([], jobs, [], [], "medium");
   assert.equal(result.pick?.source, "job");
   assert.equal(result.pick?.jobTruthAction, "prove");
-  assert.match(result.pick?.title || "", /capability signal/i);
-  assert.match(result.explanation.summary, /capability evidence/i);
-  assert.match(result.explanation.firstStep, /learning or proof asset|capability signal/i);
+  assert.match(result.pick?.title || "", /requirement.*feels weak today/i);
+  assert.match(result.explanation.summary, /clearer example|reusable example/i);
+  assert.match(result.explanation.firstStep, /learning item|reusable example|back up/i);
 });
 
 test("planner surfaces the still-empty broad-pursuit combinations when some lanes already have live roles", () => {
@@ -267,10 +313,114 @@ test("planner surfaces the still-empty broad-pursuit combinations when some lane
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, [], tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /still-empty lane/i);
+  assert.match(result.plan[0].candidate.title, /missing path|real role/i);
   assert.match(result.plan[0].candidate.sourceNote || "", /Geopolitics \/ geopolitical advisory/i);
-  assert.match(result.note, /Broad pursuit is active/i);
+  assert.match(result.note, /testing several paths in parallel/i);
   assert.match(result.plan[0].explanation.firstStep, /Open your job sources/i);
+});
+
+test("planner surfaces missing broad-pursuit contact support once live role types exist", () => {
+  const jobs = [
+    job({
+      id: 90,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+      relatedTrackId: 1,
+    }),
+    job({
+      id: 91,
+      title: "AI Chief of Staff",
+      company: "Model Lab",
+      location: "Remote",
+      roleArchetype: "chief of staff / operations",
+      relatedTrackId: 2,
+    }),
+    job({
+      id: 92,
+      title: "Geopolitical Advisory Associate",
+      company: "Risk Desk",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+      relatedTrackId: 3,
+    }),
+    job({
+      id: 93,
+      title: "Geopolitics Chief of Staff",
+      company: "Policy Lab",
+      location: "Remote",
+      roleArchetype: "chief of staff / operations",
+      relatedTrackId: 4,
+    }),
+  ];
+  const tracks = [
+    { id: 1, name: "AI strategy", slug: "ai-strategy", status: "active", targetRoleArchetype: "AI strategy / advisory", whyItFits: "Technology strategy and advisory fit", description: "Explore AI strategy roles in parallel" },
+    { id: 2, name: "AI operations", slug: "ai-operations", status: "active", targetRoleArchetype: "chief of staff / operations", whyItFits: "Operating roles are plausible", description: "Parallel operating lane" },
+    { id: 3, name: "Geopolitical advisory", slug: "geopolitical-advisory", status: "active", targetRoleArchetype: "geopolitical advisory", whyItFits: "Strong geopolitical and advisory fit", description: "Parallel geopolitical advisory lane" },
+    { id: 4, name: "Geopolitics operations", slug: "geopolitics-operations", status: "active", targetRoleArchetype: "geopolitics chief of staff operations", whyItFits: "Geopolitical operating roles are plausible", description: "Parallel geopolitical operating lane" },
+  ] as any;
+
+  const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, [], tracks);
+  assert.equal(result.plan[0].candidate.source, "goal");
+  assert.match(result.plan[0].candidate.title, /contact/i);
+  assert.match(result.plan[0].explanation.firstStep, /Open Network/i);
+  assert.match(result.note, /someone useful to reach out to/i);
+});
+
+test("planner surfaces missing broad-pursuit prep support after contact support exists", () => {
+  const jobs = [
+    job({
+      id: 100,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+      relatedTrackId: 1,
+    }),
+    job({
+      id: 101,
+      title: "AI Chief of Staff",
+      company: "Model Lab",
+      location: "Remote",
+      roleArchetype: "chief of staff / operations",
+      relatedTrackId: 2,
+    }),
+    job({
+      id: 102,
+      title: "Geopolitical Advisory Associate",
+      company: "Risk Desk",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+      relatedTrackId: 3,
+    }),
+    job({
+      id: 103,
+      title: "Geopolitics Chief of Staff",
+      company: "Policy Lab",
+      location: "Remote",
+      roleArchetype: "chief of staff / operations",
+      relatedTrackId: 4,
+    }),
+  ];
+  const contacts = [
+    contact({ id: 10, who: "AI strategy operator", relatedTrackId: 1, askType: "advice", status: "to_contact" }),
+    contact({ id: 11, who: "Chief of staff operator", relatedTrackId: 2, askType: "advice", status: "to_contact" }),
+    contact({ id: 12, who: "Geopolitical advisory operator", relatedTrackId: 3, askType: "advice", status: "to_contact" }),
+    contact({ id: 13, who: "Geopolitics chief of staff operator", relatedTrackId: 4, askType: "advice", status: "to_contact" }),
+  ];
+  const tracks = [
+    { id: 1, name: "AI strategy", slug: "ai-strategy", status: "active", targetRoleArchetype: "AI strategy / advisory", whyItFits: "Technology strategy and advisory fit", description: "Explore AI strategy roles in parallel" },
+    { id: 2, name: "AI operations", slug: "ai-operations", status: "active", targetRoleArchetype: "chief of staff / operations", whyItFits: "Operating roles are plausible", description: "Parallel operating lane" },
+    { id: 3, name: "Geopolitical advisory", slug: "geopolitical-advisory", status: "active", targetRoleArchetype: "geopolitical advisory", whyItFits: "Strong geopolitical and advisory fit", description: "Parallel geopolitical advisory lane" },
+    { id: 4, name: "Geopolitics operations", slug: "geopolitics-operations", status: "active", targetRoleArchetype: "geopolitics chief of staff operations", whyItFits: "Geopolitical operating roles are plausible", description: "Parallel geopolitical operating lane" },
+  ] as any;
+
+  const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, contacts as any, tracks);
+  assert.equal(result.plan[0].candidate.source, "goal");
+  assert.match(result.plan[0].candidate.title, /prep item/i);
+  assert.match(result.plan[0].explanation.firstStep, /Open Learn/i);
+  assert.match(result.note, /prep support/i);
 });
 
 test("planner keeps job pursuit and capability-building in parallel when time allows", () => {
@@ -403,7 +553,7 @@ test("brain prioritizes contacts tied to a live role over unrelated good contact
   assert.equal(result.pick?.source, "contact");
   assert.equal(result.pick?.sourceId, 23);
   assert.ok(result.trace?.some((line: string) => /live role|target org/i.test(line)));
-  assert.match(result.explanation.summary, /converting a live role/i);
+  assert.match(result.explanation.summary, /help with a live role/i);
   assert.match(result.explanation.firstStep, /advances the live role/i);
   assert.match(result.explanation.stopRule, /live-role message/i);
 });
@@ -469,9 +619,9 @@ test("brain explains exploratory networking as market discovery when no live rol
 
   const result = recommend([], [], [], [], "medium", contacts);
   assert.equal(result.pick?.source, "contact");
-  assert.match(result.explanation.summary, /reducing role uncertainty/i);
-  assert.match(result.explanation.firstStep, /market reality-check/i);
-  assert.match(result.explanation.stopRule, /market signal/i);
+  assert.match(result.explanation.summary, /get clearer on which roles make sense/i);
+  assert.match(result.explanation.firstStep, /reality-check on the role or market/i);
+  assert.match(result.explanation.stopRule, /reality-check on the role or market/i);
 });
 
 test("exploration posture prefers advice over referral when the lane is still unclear", () => {
@@ -502,7 +652,7 @@ test("exploration posture prefers advice over referral when the lane is still un
   const result = recommend([], [], [], [], "medium", contacts);
   assert.equal(result.pick?.source, "contact");
   assert.equal(result.pick?.sourceId, 28);
-  assert.ok(result.trace?.some((line: string) => /right ask while narrowing lanes/i.test(line)));
+  assert.ok(result.trace?.some((line: string) => /right ask while narrowing options/i.test(line)));
 });
 
 test("fit-discovery keeps exploratory networking ahead of pure capability drills", () => {
@@ -536,7 +686,7 @@ test("fit-discovery keeps exploratory networking ahead of pure capability drills
   const result = recommend([], [], learn, [], "medium", contacts);
   assert.equal(result.pick?.source, "contact");
   assert.equal(result.pick?.sourceId, 30);
-  assert.match(result.explanation.summary, /reducing role uncertainty/i);
+  assert.match(result.explanation.summary, /get clearer on which roles make sense/i);
 });
 
 test("track-linked reference learning does not surface as a strategic candidate by itself", () => {
@@ -591,10 +741,10 @@ test("planner can keep job pursuit and networking in parallel when both are live
   assert.ok(result.plan.some((item) => item.candidate.source === "contact"), "networking stays in parallel");
   const contactItem = result.plan.find((item) => item.candidate.source === "contact");
   assert.ok(contactItem, "contact move exists in the plan");
-  assert.match(contactItem!.explanation.summary, /Network is why this slot exists/i);
+  assert.match(contactItem!.explanation.summary, /Main focus: networking/i);
 });
 
-test("planner balances applications, networking, and learning when the day has room", () => {
+test("planner keeps room for applications, networking, and learning/prep when the day has room", () => {
   const today = new Date().toISOString().slice(0, 10);
   const jobs = [
     job({
@@ -649,7 +799,10 @@ test("planner balances applications, networking, and learning when the day has r
   const sources = new Set(result.plan.map((item) => item.candidate.source));
   assert.ok(sources.has("job"), "applications lane is present");
   assert.ok(sources.has("contact"), "network lane is present");
-  assert.ok(sources.has("learn"), "learning lane is present");
+  assert.ok(
+    result.plan.some((item) => item.candidate.source === "learn" || item.candidate.jobTruthAction === "prove"),
+    "learning/prep lane is present",
+  );
   assert.equal(result.plan.length, 3);
 });
 

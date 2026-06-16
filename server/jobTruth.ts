@@ -46,10 +46,10 @@ function fitLabel(score: number | null | undefined) {
 }
 
 function warmLabel(score: number | null | undefined) {
-  if (score == null) return "Warm path unknown";
-  if (score >= 70) return "Warm path available";
-  if (score >= 40) return "Some warm path";
-  return "Cold path";
+  if (score == null) return "Contact help unclear";
+  if (score >= 70) return "Helpful contact available";
+  if (score >= 40) return "Some contact help";
+  return "No contact help yet";
 }
 
 function readinessLevel(value: string): TruthLevel {
@@ -64,8 +64,8 @@ function readinessLabel(value: string) {
   if (value === "cv") return "CV needed";
   if (value === "cover") return "Cover letter needed";
   if (value === "questions") return "Questions needed";
-  if (value === "sample") return "Sample needed";
-  if (value === "referral") return "Referral needed";
+  if (value === "sample") return "Extra material needed";
+  if (value === "referral") return "Referral or intro needed";
   if (value === "follow_up") return "Follow-up needed";
   return "Not application-ready";
 }
@@ -104,20 +104,20 @@ function proofLevel(job: Job): TruthLevel {
 }
 
 function proofLabel(level: TruthLevel) {
-  if (level === "strong") return "Narrative angle exists";
-  if (level === "medium") return "Proof/narrative gap";
-  if (level === "weak") return "Credibility unclear";
-  return "Proof unknown";
+  if (level === "strong") return "Your angle is clear";
+  if (level === "medium") return "Needs a clearer example or angle";
+  if (level === "weak") return "Needs a clearer fit story";
+  return "Fit story unclear";
 }
 
 function actionLabel(action: JobTruthAction) {
   return action === "apply" ? "Apply"
-    : action === "warm" ? "Warm path"
-    : action === "prove" ? "Prove fit"
-    : action === "reject" ? "Reject"
+    : action === "warm" ? "Reach out first"
+    : action === "prove" ? "Prep first"
+    : action === "reject" ? "Skip for now"
     : action === "prepare" ? "Prepare"
     : action === "follow_up" ? "Follow up"
-    : "Clarify";
+    : "Check first";
 }
 
 export function computeJobTruthStrip(job: Job): JobTruthStrip {
@@ -141,7 +141,7 @@ export function computeJobTruthStrip(job: Job): JobTruthStrip {
 
   let action: JobTruthAction = "clarify";
   let nextMove = "Open the posting and note exactly what it asks for";
-  let headline = "Clarify before investing more time";
+  let headline = "Check the basics before investing more time";
 
   const closed = job.status === "closed" || job.applicationWindowStatus === "closed";
   const likelyIneligible = job.eligibilityRisk === "likely_ineligible";
@@ -160,26 +160,26 @@ export function computeJobTruthStrip(job: Job): JobTruthStrip {
   } else if (job.status === "applied" || readiness.value === "submitted" || readiness.value === "follow_up") {
     action = "follow_up";
     headline = "This has moved from applying to follow-up";
-    nextMove = "Send one polite follow-up or identify a warm nudge";
+    nextMove = "Send one polite follow-up or identify one person who could nudge it along";
   } else if (job.eligibilityRisk || !hasBasicRoleFacts(job) || !job.deadlineConfidence) {
     action = "clarify";
-    headline = "Clarify the facts before spending effort";
+    headline = "Check the facts before spending more effort";
     nextMove = job.eligibilityRisk ? "Check the eligibility requirement first" : "Open the source and confirm deadline, materials, and fit";
   } else if ((warmPath.score ?? 0) >= 60 && readiness.value !== "referral") {
     action = "warm";
-    headline = "Use the warm path before applying cold";
-    nextMove = "Send one warm-path message or referral ask";
+    headline = "Reach out to someone useful before applying cold";
+    nextMove = "Send one message to someone useful or ask for a referral";
   } else if (proof.level !== "strong" && ((fit.score ?? 0) >= 70 || (job.strategicValue ?? 0) >= 70)) {
     action = "prove";
-    headline = "Strong enough to pursue, but the lane still needs stronger reusable capability evidence";
-    nextMove = "Strengthen one reusable capability signal for this lane";
+    headline = "Worth pursuing, but you still need one clearer example or a bit of practice first";
+    nextMove = "Pick one requirement for this role that feels weak today, then make it easier to explain or back up";
   } else if (readiness.level === "weak") {
     action = "clarify";
-    headline = "Turn this from saved role into application requirements";
+    headline = "Turn this from a saved role into a real application plan";
     nextMove = "List the exact materials needed to apply";
   } else {
     action = "apply";
-    headline = "Good enough to move into application mode";
+    headline = "Ready enough to start the application";
     nextMove = readiness.value === "cv" ? "Tailor the CV for this role"
       : readiness.value === "cover" ? "Draft the cover letter skeleton"
       : readiness.value === "questions" ? "Draft answers to the application questions"

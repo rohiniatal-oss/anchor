@@ -12,10 +12,19 @@ export type BroadPursuitCoverageT = {
   covered: string[];
   missing: string[];
   networkSupported: string[];
-  capabilitySupported: string[];
+  learningSupported: string[];
+  exampleProjectSupported: string[];
   missingNetworkSupport: string[];
-  missingCapabilitySupport: string[];
+  missingLearningSupport: string[];
   fullySupported: string[];
+  capabilitySupported?: string[];
+  missingCapabilitySupport?: string[];
+};
+export type BroadPursuitGapLineT = {
+  key: "roles" | "contacts" | "prep" | "covered";
+  label: string;
+  tone: string;
+  text: string;
 };
 export type GoalWorkstreamT = {
   name: string;
@@ -48,15 +57,15 @@ export type GoalsStateResponseT = { goals: CareerGoalT[] };
 export const SLOT_LABEL: Record<string, string> = { now: "Now", next: "Next", later: "Later", bonus: "Bonus" };
 export const PHASE_LABEL: Record<CareerGoalT["phase"], string> = {
   "fit-discovery": "Discover fit",
-  "lane-narrowing": "Narrow focus",
+  "lane-narrowing": "Narrow role types",
   "role-targeting": "Target roles",
   "interview-prep": "Interview prep",
 };
 export const DECISION_MODE_LABEL: Record<CareerGoalT["decisionMode"], string> = {
-  "single-track": "One path",
-  "forced-comparison": "Comparing options",
-  "parallel-exploration": "Exploring options",
-  "broad-parallel-pursuit": "Multiple targets",
+  "single-track": "One role type",
+  "forced-comparison": "Comparing role types",
+  "parallel-exploration": "Exploring role types",
+  "broad-parallel-pursuit": "Several role types",
 };
 const PRE_SHRUNK_RE = /pre-shrunk|made smaller|pre-split|easier execution steps|easier start/i;
 
@@ -85,9 +94,37 @@ export function isBroadPursuitGoalItem(item: PlanItemT, goal?: CareerGoalT | nul
 export function broadPursuitPlanTitle(goal?: CareerGoalT | null) {
   if (!goal) return null;
   const coverage = getBroadPursuitCoverage(goal);
-  if (coverage.missing.length === 0) return "Keep your active targets moving";
-  if (coverage.missing.length === 1) return "Add a role for the last target";
-  return `Add roles for ${coverage.missing.length} targets`;
+  if (coverage.missing.length === 0) return "Keep your active role types moving";
+  if (coverage.missing.length === 1) return "Add a role for the last role type";
+  return `Add roles for ${coverage.missing.length} role types`;
+}
+
+export function broadPursuitPrimarySummary(goal?: CareerGoalT | null) {
+  if (!goal) return "";
+  const coverage = getBroadPursuitCoverage(goal);
+  if (coverage.missing.length > 0) return "One real role per role type is enough to start learning what is viable.";
+  if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
+    return "Keep the live role types moving while you add the missing contact or prep support.";
+  }
+  return "Keep the strongest live role moving without dropping the other active paths.";
+}
+
+function displayTopicLabel(topic: string) {
+  if (/^AI \/ technology strategy$/i.test(topic)) return "AI strategy";
+  if (/^Geopolitics \/ geopolitical advisory$/i.test(topic)) return "Geopolitics";
+  return topic;
+}
+
+function displayShapeLabel(shape: string) {
+  if (/^Strategy \/ advisory$/i.test(shape)) return "Strategy / advisory";
+  if (/^Ops \/ chief of staff$/i.test(shape)) return "Ops / chief of staff";
+  return shape;
+}
+
+export function displayCombinationLabel(combination: string) {
+  const parts = combination.split(/\s+x\s+/i);
+  if (parts.length !== 2) return combination;
+  return `${displayTopicLabel(parts[0] || "")} + ${displayShapeLabel(parts[1] || "")}`;
 }
 
 export function getBroadPursuitCoverage(goal: CareerGoalT): BroadPursuitCoverageT {
@@ -99,9 +136,10 @@ export function getBroadPursuitCoverage(goal: CareerGoalT): BroadPursuitCoverage
       covered: [],
       missing: fallbackCombinations,
       networkSupported: [],
-      capabilitySupported: [],
+      learningSupported: [],
+      exampleProjectSupported: [],
       missingNetworkSupport: [],
-      missingCapabilitySupport: [],
+      missingLearningSupport: [],
       fullySupported: [],
     };
   }
@@ -111,24 +149,28 @@ export function getBroadPursuitCoverage(goal: CareerGoalT): BroadPursuitCoverage
     ? raw.missing
     : combinations.filter((combination) => !covered.includes(combination));
   const networkSupported = raw.networkSupported || [];
-  const capabilitySupported = raw.capabilitySupported || [];
+  const learningSupported = raw.learningSupported || raw.capabilitySupported || [];
+  const exampleProjectSupported = raw.exampleProjectSupported || [];
   const missingNetworkSupport = raw.missingNetworkSupport?.length
     ? raw.missingNetworkSupport
     : covered.filter((combination) => !networkSupported.includes(combination));
-  const missingCapabilitySupport = raw.missingCapabilitySupport?.length
+  const missingLearningSupport = raw.missingLearningSupport?.length
+    ? raw.missingLearningSupport
+    : raw.missingCapabilitySupport?.length
     ? raw.missingCapabilitySupport
-    : covered.filter((combination) => !capabilitySupported.includes(combination));
+    : covered.filter((combination) => !learningSupported.includes(combination));
   const fullySupported = raw.fullySupported?.length
     ? raw.fullySupported
-    : covered.filter((combination) => networkSupported.includes(combination) && capabilitySupported.includes(combination));
+    : covered.filter((combination) => networkSupported.includes(combination) && learningSupported.includes(combination));
   return {
     combinations,
     covered,
     missing,
     networkSupported,
-    capabilitySupported,
+    learningSupported,
+    exampleProjectSupported,
     missingNetworkSupport,
-    missingCapabilitySupport,
+    missingLearningSupport,
     fullySupported,
   };
 }
@@ -145,7 +187,8 @@ export function combinationSupportState(goal: CareerGoalT, combination: string) 
   return {
     hasRole: coverage.covered.includes(combination),
     hasNetworkSupport: coverage.networkSupported.includes(combination),
-    hasCapabilitySupport: coverage.capabilitySupported.includes(combination),
+    hasLearningSupport: coverage.learningSupported.includes(combination),
+    hasExampleProjectSupport: coverage.exampleProjectSupported.includes(combination),
     fullySupported: coverage.fullySupported.includes(combination),
   };
 }
@@ -166,23 +209,62 @@ export function nextLaneGap(goal: CareerGoalT, combination: string) {
       tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
     };
   }
-  if (!support.hasCapabilitySupport) {
+  if (!support.hasLearningSupport) {
     return {
-      label: "Needs learning support",
-      detail: "Add one learning item for this target.",
+      label: "Needs prep item",
+      detail: "Use one prep starter for this target.",
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
     };
   }
   return {
     label: "Well supported",
-    detail: "This target has a role, a contact, and learning support.",
+    detail: support.hasExampleProjectSupport
+      ? "This target has a role, a contact, a prep item, and an optional writing/project idea."
+      : "This target has a role, a contact, and a prep item. Optional writing or project ideas can compound later.",
     tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   };
 }
 
 export function compactLanePreview(items: string[], fallback: string, limit = 2) {
   if (items.length === 0) return fallback;
-  const shown = items.slice(0, limit);
+  const shown = items.slice(0, limit).map(displayCombinationLabel);
   const remainder = items.length - shown.length;
   return `${shown.join("; ")}${remainder > 0 ? ` +${remainder} more` : ""}`;
+}
+
+export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPursuitGapLineT[] {
+  const lines: BroadPursuitGapLineT[] = [];
+  if (coverage.missing.length > 0) {
+    lines.push({
+      key: "roles",
+      label: "Need roles",
+      tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
+      text: compactLanePreview(coverage.missing, "Every active role type has a real role."),
+    });
+  }
+  if (coverage.missingNetworkSupport.length > 0) {
+    lines.push({
+      key: "contacts",
+      label: "Need contacts",
+      tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+      text: compactLanePreview(coverage.missingNetworkSupport, "Every active role type has someone useful to reach out to."),
+    });
+  }
+  if (coverage.missingLearningSupport.length > 0) {
+    lines.push({
+      key: "prep",
+      label: "Need prep",
+      tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
+      text: compactLanePreview(coverage.missingLearningSupport, "Every active role type has a prep item."),
+    });
+  }
+  if (lines.length === 0) {
+    lines.push({
+      key: "covered",
+      label: "Covered",
+      tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
+      text: "Each active role type has a real role, someone useful to reach out to, and prep support.",
+    });
+  }
+  return lines;
 }

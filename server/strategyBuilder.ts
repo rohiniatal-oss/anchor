@@ -29,7 +29,7 @@ export type ResourceRecommendation = {
   linkedArchetype: string;
 };
 
-export type CapabilitySupportRecommendation = {
+export type ExampleProjectRecommendation = {
   need: string;
   asset: string;
   doneWhen: string;
@@ -48,7 +48,7 @@ export type StrategyBuild = {
   roleArchetypes: RoleArchetypeRecommendation[];
   peopleMap: PeopleRecommendation[];
   resourceMap: ResourceRecommendation[];
-  capabilitySupport: CapabilitySupportRecommendation[];
+  exampleProjectIdeas: ExampleProjectRecommendation[];
   planShifts: PlanShift[];
   weeklyShape: { direction: number; proof: number; network: number; applications: number; learning: number; stability: number };
   nextSystemMoves: string[];
@@ -61,19 +61,19 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     archetype: "AI governance strategy and implementation",
     priority: "explore",
     fitLogic: "Combines public-sector strategy, geopolitical judgement, implementation, and frontier-tech interest.",
-    credibilityGap: "Needs visible AI governance judgement beyond generic interest.",
-    capabilitySignal: "One reusable AI governance judgement note, memo fragment, or interview example.",
+    credibilityGap: "Still needs a clearer AI governance example beyond general interest.",
+    capabilitySignal: "One short AI governance note, brief, or interview example you could reuse later.",
     peopleToFind: ["AI governance strategy operator", "policy-to-implementation lead", "frontier AI safety/governance programme manager"],
     resourceNeed: "A current AI governance landscape primer plus one implementation case study.",
-    nextExperiment: "Inspect three AI governance strategy roles and capture repeated requirements.",
+    nextExperiment: "Review three AI governance strategy roles and note the requirements that keep coming up.",
     source: "fallback",
   },
   {
     archetype: "Geopolitical and strategic advisory",
     priority: "explore",
     fitLogic: "Strong fit with TBI, Bain-style strategy, government advisory, and cross-border investment work.",
-    credibilityGap: "Needs sharper sector/thematic wedge so it does not read as broad generalist advisory.",
-    capabilitySignal: "One reusable geopolitical-commercial analysis note, briefing fragment, or interview example.",
+    credibilityGap: "Still needs a clearer sector or theme so it does not read as broad generalist advisory.",
+    capabilitySignal: "One short geopolitical-commercial note, brief, or interview example you could reuse later.",
     peopleToFind: ["geopolitical advisory principal", "commercial diplomacy operator", "sovereign advisory recruiter"],
     resourceNeed: "A recent market/geopolitical risk briefing source and one sample advisory memo format.",
     nextExperiment: "Compare three geopolitical advisory roles and identify the strongest wedge.",
@@ -83,8 +83,8 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     archetype: "Chief of staff or founder office in mission-driven tech",
     priority: "watch",
     fitLogic: "Uses structured problem-solving, executive leverage, stakeholder management, and operating cadence.",
-    credibilityGap: "Needs evidence of operator ownership, not only advisory work.",
-    capabilitySignal: "One reusable operating memo, cadence note, or decision example.",
+    credibilityGap: "Still needs clearer evidence of operator ownership, not only advisory work.",
+    capabilitySignal: "One operating memo, cadence note, or decision example you could reuse later.",
     peopleToFind: ["current chief of staff", "founder-office operator", "startup talent partner"],
     resourceNeed: "Founder-office case studies and role scorecards.",
     nextExperiment: "Interview one chief of staff type to test what actually gets hired.",
@@ -94,8 +94,8 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     archetype: "Global development and philanthropy strategy",
     priority: "watch",
     fitLogic: "Connects government advisory, development themes, capital allocation, and strategy background.",
-    credibilityGap: "Needs clarity on whether this is energising or simply familiar.",
-    capabilitySignal: "One reusable strategy note, framing paragraph, or interview example for a funder or public-sector priority area.",
+    credibilityGap: "Still needs clarity on whether this feels energising or simply familiar.",
+    capabilitySignal: "One short strategy note or interview example for a funder or public-sector priority area.",
     peopleToFind: ["foundation strategy lead", "development finance operator", "programme strategy director"],
     resourceNeed: "A funder landscape or development finance strategy primer.",
     nextExperiment: "Compare two philanthropy strategy roles with two AI governance roles for energy and fit.",
@@ -121,12 +121,12 @@ function sanitizeRole(raw: any): RoleArchetypeRecommendation | null {
   return {
     archetype: String(raw.archetype).slice(0, 140),
     priority,
-    fitLogic: String(raw.fitLogic || "Market-grounded role lane that appears adjacent to the profile.").slice(0, 320),
+    fitLogic: String(raw.fitLogic || "Market-grounded role path that appears adjacent to the profile.").slice(0, 320),
     credibilityGap: String(raw.credibilityGap || "Needs stronger evidence before conversion.").slice(0, 240),
-    capabilitySignal: String(raw.capabilitySignal || raw.proofNeeded || "One reusable capability signal tied to this lane.").slice(0, 220),
+    capabilitySignal: String(raw.capabilitySignal || raw.proofNeeded || "One example, note, or answer you could reuse for this path.").slice(0, 220),
     peopleToFind: Array.isArray(raw.peopleToFind) ? raw.peopleToFind.slice(0, 4).map((x: any) => String(x).slice(0, 90)) : ["role insider", "hiring manager or talent partner"],
     resourceNeed: String(raw.resourceNeed || "One current market/resource primer with a concrete output.").slice(0, 220),
-    nextExperiment: String(raw.nextExperiment || `Inspect three ${raw.archetype} roles and capture repeated requirements.`).slice(0, 220),
+    nextExperiment: String(raw.nextExperiment || `Review three ${raw.archetype} roles and note the requirements that keep coming up.`).slice(0, 220),
     marketSignal: String(raw.marketSignal || "").slice(0, 280),
     source: "market",
   };
@@ -191,7 +191,7 @@ function buildPeopleMap(roleArchetypes: RoleArchetypeRecommendation[], contacts:
           category: personType,
           linkedArchetype: r.archetype,
           why: `Needed to test whether ${r.archetype} is real fit and what profiles get hired.`,
-          ask: "Ask for a 15-minute reality check on what actually gets hired and which capability signals matter.",
+          ask: "Ask for a 15-minute reality check on what actually gets hired and which requirements matter most.",
         });
       }
     }
@@ -208,12 +208,12 @@ function buildResourceMap(roleArchetypes: RoleArchetypeRecommendation[], learn: 
     .map((r) => ({
       category: r.resourceNeed,
       linkedArchetype: r.archetype,
-      why: `This closes the current credibility or judgement gap for ${r.archetype}.${r.marketSignal ? " Market signal: " + r.marketSignal : ""}`,
-      output: "A one-page note, reusable paragraph, or interview example that can be reused in outreach/applications.",
+      why: `This closes the current credibility or judgement gap for ${r.archetype}.${r.marketSignal ? " Why it exists now: " + r.marketSignal : ""}`,
+      output: "A short note, reusable paragraph, or interview example you can use again in outreach or applications.",
     }));
 }
 
-function buildCapabilitySupport(roleArchetypes: RoleArchetypeRecommendation[], hustles: Hustle[], learn: Learn[]): CapabilitySupportRecommendation[] {
+function buildExampleProjectIdeas(roleArchetypes: RoleArchetypeRecommendation[], hustles: Hustle[], learn: Learn[]): ExampleProjectRecommendation[] {
   const existingProof = [...hustles.map((h) => `${h.title} ${h.coreClaim} ${h.note}`), ...learn.map((l) => `${l.requiredOutput} ${l.outputEvidenceUrl}`)].join(" ").toLowerCase();
   return roleArchetypes
     .filter((r) => r.priority === "explore" || r.priority === "convert")
@@ -222,7 +222,7 @@ function buildCapabilitySupport(roleArchetypes: RoleArchetypeRecommendation[], h
     .map((r) => ({
       need: r.credibilityGap,
       asset: r.capabilitySignal,
-      doneWhen: "There is a reusable paragraph, link, bullet, or interview example that strengthens the lane.",
+      doneWhen: "There is a reusable paragraph, link, bullet, or interview example that makes this path easier to explain.",
       linkedArchetype: r.archetype,
     }));
 }
@@ -234,12 +234,12 @@ function buildPlanShifts(laneModel: LaneOperatingModel, roleArchetypes: RoleArch
   const proof = laneModel.lanes.find((l) => l.name === "Proof assets");
   const network = laneModel.lanes.find((l) => l.name === "Network");
   const learning = laneModel.lanes.find((l) => l.name === "Learning");
-  if (applications?.stage === "premature") shifts.push({ action: "pause", target: "mass applications", reason: "Applications are premature until direction and capability support are clearer." });
-  if (direction && ["empty", "exploring", "narrowing"].includes(direction.stage)) shifts.push({ action: "start", target: "role-family signal gathering", reason: direction.bottleneck });
-  if (proof && ["empty", "idea", "outlined"].includes(proof.stage)) shifts.push({ action: "start", target: "one reusable capability-support asset", reason: proof.bottleneck });
+  if (applications?.stage === "premature") shifts.push({ action: "pause", target: "mass applications", reason: "Applications are premature until direction and prep are clearer." });
+  if (direction && ["empty", "exploring", "narrowing"].includes(direction.stage)) shifts.push({ action: "start", target: "real role gathering", reason: direction.bottleneck });
+  if (proof && ["empty", "idea", "outlined"].includes(proof.stage)) shifts.push({ action: "start", target: "one optional writing or project example", reason: proof.bottleneck });
   if (network && network.stage === "empty") shifts.push({ action: "start", target: "targeted people map", reason: network.bottleneck });
-  if (learning && learning.stage === "output_missing") shifts.push({ action: "convert", target: "learning into reusable evidence", reason: learning.bottleneck });
-  for (const r of roleArchetypes.filter((x) => x.priority === "convert").slice(0, 2)) shifts.push({ action: "convert", target: r.archetype, reason: "There is enough signal to move from exploration to selective conversion." });
+  if (learning && learning.stage === "output_missing") shifts.push({ action: "convert", target: "learning into notes, a brief, or a reusable example", reason: learning.bottleneck });
+  for (const r of roleArchetypes.filter((x) => x.priority === "convert").slice(0, 2)) shifts.push({ action: "convert", target: r.archetype, reason: "There is enough real evidence to move from exploration to selective conversion." });
   return shifts.slice(0, 6);
 }
 
@@ -257,20 +257,20 @@ function weeklyShape(laneModel: LaneOperatingModel) {
 function buildFromArchetypes(roleArchetypes: RoleArchetypeRecommendation[], laneModel: LaneOperatingModel, learn: Learn[], hustles: Hustle[], contacts: Contact[], status: "fresh" | "fallback"): StrategyBuild {
   const peopleMap = buildPeopleMap(roleArchetypes, contacts);
   const resourceMap = buildResourceMap(roleArchetypes, learn);
-  const capabilitySupport = buildCapabilitySupport(roleArchetypes, hustles, learn);
+  const exampleProjectIdeas = buildExampleProjectIdeas(roleArchetypes, hustles, learn);
   const planShifts = buildPlanShifts(laneModel, roleArchetypes);
   const nextSystemMoves = [
     ...roleArchetypes.filter((r) => r.priority === "explore" || r.priority === "convert").slice(0, 2).map((r) => r.nextExperiment),
     ...peopleMap.slice(0, 2).map((p) => `Find: ${p.category}`),
-    ...capabilitySupport.slice(0, 1).map((p) => `Strengthen capability: ${p.asset}`),
+    ...exampleProjectIdeas.slice(0, 1).map((p) => `Optional example/project: ${p.asset}`),
   ].slice(0, 5);
   return {
-    headline: `${laneModel.bottleneckLane.name} is the strategic bottleneck; the system should ${laneModel.bottleneckLane.unlockMove.toLowerCase()}.`,
+    headline: `Main thing to fix next: ${laneModel.bottleneckLane.unlockMove}.`,
     laneModel,
     roleArchetypes,
     peopleMap,
     resourceMap,
-    capabilitySupport,
+    exampleProjectIdeas,
     planShifts,
     weeklyShape: weeklyShape(laneModel),
     nextSystemMoves,

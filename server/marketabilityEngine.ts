@@ -54,7 +54,7 @@ function hasDevelopmentSignal(tasks: Task[], track: CareerTrack) {
 }
 function hasTooMuchLearning(learn: Learn[], tasks: Task[], track: CareerTrack) {
   const openLearn = trackLearn(track, learn).filter((l) => !l.done && l.learnStatus !== "closed").length;
-  const openLearningTasks = tasks.filter((task) => !task.done && task.relatedTrackId === track.id && /learn|read|course|resource|study/i.test(t(task.title, task.sourceNote))).length;
+  const openLearningTasks = tasks.filter((task) => !task.done && task.relatedTrackId === track.id && /learn|read|course|resource|prep|study/i.test(t(task.title, task.sourceNote))).length;
   return openLearn + openLearningTasks >= 3;
 }
 
@@ -84,7 +84,7 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
         kind: "network", lane: "Network", priority: mode === "signal_building" ? 92 : 72, trackId: track.id, trackName: name,
         title: `Find one ${name} insider and draft a reality-check ask`,
         doneWhen: "One person type or named person is saved with a clear ask",
-        reason: "Networking should create market signal or access, not generic activity.",
+        reason: "Networking should create real role evidence or access, not generic activity.",
         outputType: "message",
       });
     }
@@ -104,15 +104,15 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
     if (tooMuchLearning) {
       moves.push({
         kind: "cleanup", lane: "Stability", priority: 84, trackId: track.id, trackName: name,
-        title: `Reduce ${name} learning to one active resource with one output`,
-        doneWhen: "Only one learning item remains active for this track; others are parked",
+        title: `Reduce ${name} prep to one active item with one useful result`,
+        doneWhen: "Only one prep item remains active for this track; others are parked",
         reason: "Too many learning items usually creates avoidance and weakens execution focus.",
         outputType: "cleanup",
       });
-    } else if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done) && !hasOpenTask(input.tasks, /convert .*resource|useful note|learning item|produce/i, track)) {
+    } else if (learn.length > 0 && !learn.some((l) => l.outputEvidenceUrl || l.done) && !hasOpenTask(input.tasks, /convert .*resource|convert .*prep|useful note|learning item|prep item|produce/i, track)) {
       moves.push({
         kind: "upskill", lane: "Learning", priority: mode === "role_active" ? 38 : 56, trackId: track.id, trackName: name,
-        title: `Convert one ${name} resource into five usable application or interview bullets`,
+        title: `Turn one ${name} prep item into five usable application or interview bullets`,
         doneWhen: "Five reusable bullets exist; no more consumption is needed today",
         reason: "Learning should produce near-term application/interview leverage.",
         outputType: "note",
@@ -122,8 +122,8 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
     if (!hasDevelopmentSignal(input.tasks, track)) {
       moves.push({
         kind: "development", lane: "Development", priority: mode === "interview_active" ? 82 : mode === "role_active" ? 52 : 68, trackId: track.id, trackName: name,
-        title: `Do one ${name} skill drill that produces a reusable example`,
-        doneWhen: "One practice output exists: answer, mini-case, memo outline, or story draft",
+        title: `Do one ${name} practice drill that gives you a reusable example`,
+        doneWhen: "One short practice attempt exists: answer, mini-case, memo outline, or story draft",
         reason: "Development should build skill through practice, not only reading.",
         outputType: "practice",
       });
@@ -132,9 +132,9 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
     if (proof.length === 0 && !hasOpenTask(input.tasks, /proof asset|proof idea|memo fragment|case example/i, track)) {
       moves.push({
         kind: "proof", lane: "Proof assets", priority: mode === "role_active" ? 36 : 54, trackId: track.id, trackName: name,
-        title: `Define one lightweight proof idea for ${name}`,
-        doneWhen: "A small proof idea exists that could later become a paragraph, memo, story, or writing sample",
-        reason: "Proof compounds credibility over time but should not block applications.",
+        title: `Define one lightweight writing or project idea for ${name}`,
+        doneWhen: "A small writing or project idea exists that could later become a paragraph, memo, story, or writing sample",
+        reason: "Writing or project ideas can build credibility over time, but they should not block applications.",
         outputType: "proof_asset",
       });
     }
@@ -142,8 +142,8 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
     if (roleCount === 0 && !hasOpenTask(input.tasks, /inspect three|role examples|requirements/i, track)) {
       moves.push({
         kind: "asset", lane: "Direction", priority: 82, trackId: track.id, trackName: name,
-        title: `Inspect three ${name} role examples and extract repeated requirements`,
-        doneWhen: "Three role examples are captured with repeated requirements",
+        title: `Review three ${name} role examples and note the requirements that keep coming up`,
+        doneWhen: "Three role examples are saved with the main requirements they share",
         reason: "Without role examples, general prep can drift away from the market.",
         outputType: "note",
       });

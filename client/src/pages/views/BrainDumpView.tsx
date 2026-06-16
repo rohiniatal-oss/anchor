@@ -13,23 +13,47 @@ import type { Task } from "@shared/schema";
 
 type CaptureSug = { id: number; route: string; label: string; reason: string; confidence: string; question?: string };
 const ROUTE_ACTION_LABEL: Record<string, string> = {
-  today: "Do today", task: "Keep as task", job: "File under Jobs", learn: "File under Learn",
-  network: "File under Network", proof: "File as Work sample", decision: "Needs a decision", keep: "Keep here",
+  today: "Do today",
+  task: "Keep as task",
+  job: "File under Jobs",
+  learn: "File under Learn / prep",
+  network: "File under Network",
+  proof: "File under Projects and public work",
+  decision: "Needs a decision",
+  keep: "Keep here",
+};
+const CONFIDENCE_LABEL: Record<string, string> = {
+  high: "clear match",
+  medium: "probably right",
+  low: "needs a quick check",
 };
 
 export default function BrainDumpView() {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const [text, setText] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [captureNote, setCaptureNote] = useState("");
   const [sorting, setSorting] = useState(false);
   const [triage, setTriage] = useState<Record<number, CaptureSug>>({});
   const { toast } = useToast();
   const inbox = tasks.filter((t) => t.list === "inbox");
 
   async function add() {
-    if (!text.trim()) return;
-    const created = await mutateAndInvalidate("POST", "/api/tasks", { title: text.trim(), list: "inbox", done: false }, ["/api/tasks"]);
+    const value = text.trim();
+    if (!value || adding) return;
+    setAdding(true);
+    setCaptureNote("");
     setText("");
-    if (created?.id) mutateAndInvalidate("POST", `/api/tasks/${created.id}/enrich`, {}, ["/api/tasks"]).catch(() => {});
+    try {
+      await mutateAndInvalidate("POST", "/api/tasks", { title: value, list: "inbox", done: false }, ["/api/tasks"]);
+      setCaptureNote("Saved to Brain dump. You can leave it here until you're ready to sort it.");
+      toast({ title: "Captured.", description: "It's out of your head. You can sort it later." });
+    } catch {
+      setText(value);
+      toast({ title: "Couldn't capture that", description: "Try again in a moment." });
+    } finally {
+      setAdding(false);
+    }
   }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/tasks/${id}`, undefined, ["/api/tasks"]); }
 
@@ -41,8 +65,11 @@ export default function BrainDumpView() {
       const map: Record<number, CaptureSug> = {};
       (data?.suggestions || []).forEach((sg: CaptureSug) => { map[sg.id] = sg; });
       setTriage(map);
-    } catch { toast({ title: "Couldn't sort right now", description: "Give it another go in a moment." }); }
-    finally { setSorting(false); }
+    } catch {
+      toast({ title: "Couldn't sort right now", description: "Give it another go in a moment." });
+    } finally {
+      setSorting(false);
+    }
   }
 
   async function applyRoute(t: Task, route: string, label = "Done") {
@@ -54,18 +81,40 @@ export default function BrainDumpView() {
   return (
     <div>
       <SectionHeading title="Brain dump" sub="Empty your head now. Sort it later." />
-      <div className="flex gap-2 mb-3">
-        <Input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") add(); }}
-          placeholder="Type anything and hit Enter…" className="h-11" data-testid="input-braindump" />
-        <Button className="h-11 px-4" onClick={add} data-testid="button-add-braindump"><Plus className="w-4 h-4 mr-1" /> Add</Button>
+      <div className="mb-4 rounded-xl border border-card-border bg-card p-3.5">
+        <div className="flex gap-2">
+          <Input
+            value={text}
+            onChange={(e) => { setText(e.target.value); if (captureNote) setCaptureNote(""); }}
+            onKeyDown={(e) => { if (e.key === "Enter") add(); }}
+            placeholder="Get a thought out of your head..."
+            className="h-11"
+            data-testid="input-braindump"
+            disabled={adding}
+          />
+          <Button className="h-11 px-4" onClick={add} data-testid="button-add-braindump" disabled={adding || !text.trim()}>
+            {adding ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
+            {adding ? "Saving..." : "Capture"}
+          </Button>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            This is a holding area. Nothing here lands on today's plan unless you choose it.
+          </p>
+          {captureNote ? (
+            <span className="text-xs text-primary" data-testid="text-braindump-capture-note">{captureNote}</span>
+          ) : null}
+        </div>
       </div>
       {inbox.length > 0 && (
         <div className="mb-5">
-          <Button variant="outline" onClick={sortAll} disabled={sorting} data-testid="button-sort-braindump"
-            className="inline-flex items-center gap-1.5">
-            {sorting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}{sorting ? "Sorting…" : "Sort these for me"}
+          <Button variant="outline" onClick={sortAll} disabled={sorting} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
+            {sorting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+            {sorting ? "Sorting..." : "Sort these for me"}
           </Button>
-          <p className="text-xs text-muted-foreground mt-1.5">I'll work out what each one is — a task for today, part of something you're already on, an idea, or just a note.</p>
+          <p className="text-xs text-muted-foreground mt-1.5">
+            I'll work out what each one probably is: something to do today, a prep item, part of something you're already on, an idea, or just a note.
+          </p>
         </div>
       )}
       {isLoading ? <Loading /> : inbox.length === 0 ? (
@@ -84,18 +133,34 @@ export default function BrainDumpView() {
                   </div>
                 </div>
                 {tr && (
-                  <div className="mt-2 pt-2 border-t border-card-border flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-muted-foreground">{tr.reason || tr.label}</span>
-                    {tr.route !== "keep" && (
-                      <button onClick={() => applyRoute(t, tr.route, `${ROUTE_ACTION_LABEL[tr.route] || "Filed"}`)} data-testid={`button-triage-accept-${t.id}`}
-                        className="text-xs font-medium text-primary inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 hover-elevate">
-                        <ArrowRight className="w-3 h-3" /> {ROUTE_ACTION_LABEL[tr.route] || "File it"}
-                      </button>
+                  <div className="mt-2 pt-2 border-t border-card-border">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        {tr.label}
+                      </span>
+                      <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                        {CONFIDENCE_LABEL[tr.confidence] || tr.confidence}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1.5">{tr.reason || tr.label}</p>
+                    {tr.question && (
+                      <p className="text-xs text-foreground/80 mt-1">{tr.question}</p>
                     )}
-                    {tr.route !== "today" && (
-                      <button onClick={() => applyRoute(t, "today", "Added to today")} data-testid={`button-triage-today-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">or just do today</button>
-                    )}
-                    <button onClick={() => setTriage((s) => { const n = { ...s }; delete n[t.id]; return n; })} data-testid={`button-triage-dismiss-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">keep here</button>
+                    <div className="flex items-center gap-2 flex-wrap mt-2">
+                      {tr.route !== "keep" && (
+                        <button
+                          onClick={() => applyRoute(t, tr.route, `${ROUTE_ACTION_LABEL[tr.route] || "Filed"}`)}
+                          data-testid={`button-triage-accept-${t.id}`}
+                          className="text-xs font-medium text-primary inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 hover-elevate"
+                        >
+                          <ArrowRight className="w-3 h-3" /> {ROUTE_ACTION_LABEL[tr.route] || "File it"}
+                        </button>
+                      )}
+                      {tr.route !== "today" && (
+                        <button onClick={() => applyRoute(t, "today", "Added to today")} data-testid={`button-triage-today-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">or put it on today's plan</button>
+                      )}
+                      <button onClick={() => setTriage((s) => { const n = { ...s }; delete n[t.id]; return n; })} data-testid={`button-triage-dismiss-${t.id}`} className="text-xs text-muted-foreground hover:text-foreground">leave it here for now</button>
+                    </div>
                   </div>
                 )}
               </div>

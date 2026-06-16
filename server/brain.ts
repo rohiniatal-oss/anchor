@@ -1,8 +1,42 @@
 import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { getLearnOutputState, isOpportunityActionable } from "@shared/domainState";
+import { GOAL_WORKSTREAM } from "@shared/goalWorkstreams";
 import { buildTrackSpine } from "./trackSpine";
+import {
+  broadPursuitMissingContactsContextReason,
+  broadPursuitMissingContactsDoneWhen,
+  broadPursuitMissingContactsFirstStep,
+  broadPursuitNextMissingContactPlanNote,
+  broadPursuitMissingContactsSourceFrame,
+  broadPursuitMissingContactsSourceNote,
+  broadPursuitMissingContactsStopRule,
+  broadPursuitMissingContactsTitle,
+  broadPursuitMissingContactsUnlockMove,
+  broadPursuitMissingContactsWhyNow,
+  broadPursuitMissingPrepContextReason,
+  broadPursuitMissingPrepDoneWhen,
+  broadPursuitMissingPrepFirstStep,
+  broadPursuitNextMissingPrepPlanNote,
+  broadPursuitMissingPrepSourceFrame,
+  broadPursuitMissingPrepSourceNote,
+  broadPursuitMissingPrepStopRule,
+  broadPursuitMissingPrepTitle,
+  broadPursuitMissingPrepUnlockMove,
+  broadPursuitMissingPrepWhyNow,
+  broadPursuitMissingRolesContextReason,
+  broadPursuitMissingRolesDoneWhen,
+  broadPursuitMissingRolesFirstStep,
+  broadPursuitNextMissingRolePlanNote,
+  broadPursuitMissingRolesPlanNote,
+  broadPursuitMissingRolesSourceFrame,
+  broadPursuitMissingRolesSourceNote,
+  broadPursuitMissingRolesStopRule,
+  broadPursuitMissingRolesTitle,
+  broadPursuitMissingRolesUnlockMove,
+  broadPursuitMissingRolesWhyNow,
+} from "./broadPursuitCopy";
 import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
-import type { CanonicalLaneName } from "./lanes";
+import { LANE_NAME, laneFocusAreaLabel, type CanonicalLaneName } from "./lanes";
 import { computeJobTruthStrip, type JobTruthAction } from "./jobTruth";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -77,6 +111,8 @@ type StrategicContext = {
   liveJobTargets: Array<{ title: string; company: string; roleArchetype?: string }>;
   broadPursuitMissingCombinations: string[];
   broadPursuitCoveredCombinations: string[];
+  broadPursuitMissingNetworkSupport: string[];
+  broadPursuitMissingLearningSupport: string[];
   goalPhase: ReturnType<typeof deriveCareerGoalFrame>["phase"];
   goalDayType: ReturnType<typeof deriveCareerGoalFrame>["dayType"];
   decisionMode: ReturnType<typeof deriveCareerGoalFrame>["decisionMode"];
@@ -89,13 +125,15 @@ const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
   applicationsPremature: false,
   recommendedExploration: "",
   laneModel: { trace: [] },
-  bottleneckLane: "Stability",
+  bottleneckLane: LANE_NAME.STABILITY,
   laneStage: "steady",
   laneUnlockMove: "",
   activeTrackName: "",
   liveJobTargets: [],
   broadPursuitMissingCombinations: [],
   broadPursuitCoveredCombinations: [],
+  broadPursuitMissingNetworkSupport: [],
+  broadPursuitMissingLearningSupport: [],
   goalPhase: "fit-discovery",
   goalDayType: "exploration",
   decisionMode: "parallel-exploration",
@@ -178,13 +216,61 @@ function isLearningLike(c: Candidate) {
 }
 
 function candidateMatchesLane(c: Candidate, lane: CanonicalLaneName) {
-  if (lane === "Direction") return isDirectionSignal(c);
-  if (lane === "Applications") return isApplicationLike(c);
-  if (lane === "Network") return isNetworkLike(c);
-  if (lane === "Proof assets") return isProofAsset(c);
-  if (lane === "Learning and development") return isLearningLike(c);
-  if (lane === "Stability") return c.blocked || c.category === "admin" || c.category === "health";
+  if (lane === LANE_NAME.DIRECTION) return isDirectionSignal(c);
+  if (lane === LANE_NAME.APPLICATIONS) return isApplicationLike(c);
+  if (lane === LANE_NAME.NETWORK) return isNetworkLike(c);
+  if (lane === LANE_NAME.PROOF_ASSETS) return isProofAsset(c);
+  if (lane === LANE_NAME.LEARNING_DEVELOPMENT) return isLearningLike(c);
+  if (lane === LANE_NAME.STABILITY) return c.blocked || c.category === "admin" || c.category === "health";
   return false;
+}
+
+function genericDoneWhen(text: string) {
+  const normalized = normalizeText(text);
+  return !normalized
+    || normalized === "the smallest useful outcome is complete"
+    || normalized === "that step is done"
+    || normalized === "you ve made real progress"
+    || normalized === "the task s next visible outcome is complete";
+}
+
+function taskStillNeedsClarifying(c: Candidate) {
+  if (c.source !== "task") return false;
+  const broadTitle = /\b(figure out|look into|sort out|work on|make progress|career|jobs?|research|explore)\b/i.test(c.title || "");
+  const noConcreteAnchor = !(c.sourceUrl && c.sourceUrl.trim()) && !(c.sourceNote && c.sourceNote.trim());
+  return broadTitle && noConcreteAnchor && genericDoneWhen(c.doneWhen || "");
+}
+
+function startabilityMomentum(c: Candidate) {
+  let score = 0;
+  const trace: string[] = [];
+
+  if (c.source !== "goal" && c.size === "quick") {
+    score += 8;
+    trace.push("easy to start in one sitting");
+  } else if (c.source !== "goal" && c.size === "medium") {
+    score += 2;
+  } else if (c.source !== "goal" && c.size === "deep") {
+    score -= 3;
+    trace.push("heavier start-up cost");
+  }
+
+  if (c.source === "task" && c.status === "in_progress") {
+    score += 8;
+    trace.push("already in motion");
+  }
+
+  if ((c.source === "task" || c.source === "learn") && c.sourceUrl && c.sourceUrl.trim()) {
+    score += 4;
+    trace.push("source is already saved and easy to open");
+  }
+
+  if (c.source === "task" && taskStillNeedsClarifying(c)) {
+    score -= 14;
+    trace.push("still needs a clearer first step before it should lead");
+  }
+
+  return { score, trace };
 }
 
 function planningPostureFromGoalFrame(
@@ -194,12 +280,12 @@ function planningPostureFromGoalFrame(
 ): StrategicContext["planningPosture"] {
   if (goalFrame.phase === "interview-prep") return "interview";
   if (goalFrame.phase === "fit-discovery" || goalFrame.phase === "lane-narrowing") return "exploration";
-  if (goalFrame.recommendedFocus === "Capability ramp" || goalFrame.recommendedFocus === "Proof") return "capability";
-  if (goalFrame.recommendedFocus === "Applications" || goalFrame.recommendedFocus === "Network" || goalFrame.recommendedFocus === "Positioning") {
+  if (goalFrame.recommendedFocus === GOAL_WORKSTREAM.PREP_UPSKILLING || goalFrame.recommendedFocus === GOAL_WORKSTREAM.PROJECTS_PUBLIC_WORK) return "capability";
+  if (goalFrame.recommendedFocus === GOAL_WORKSTREAM.APPLICATIONS || goalFrame.recommendedFocus === GOAL_WORKSTREAM.NETWORK || goalFrame.recommendedFocus === GOAL_WORKSTREAM.POSITIONING) {
     return "conversion";
   }
   if (goalFrame.decisionMode === "broad-parallel-pursuit") return "conversion";
-  if (bottleneckLane === "Learning and development" || bottleneckLane === "Proof assets" || hasActiveLearning) return "capability";
+  if (bottleneckLane === LANE_NAME.LEARNING_DEVELOPMENT || bottleneckLane === LANE_NAME.PROOF_ASSETS || hasActiveLearning) return "capability";
   if (goalFrame.dayType === "interview-prep") return "interview";
   if (goalFrame.dayType === "capability-building") return "capability";
   if (goalFrame.dayType === "conversion") return "conversion";
@@ -207,10 +293,10 @@ function planningPostureFromGoalFrame(
 }
 
 function desiredLaneOrder(posture: StrategicContext["planningPosture"]): CanonicalLaneName[] {
-  if (posture === "interview") return ["Applications", "Network", "Learning and development", "Proof assets", "Direction", "Stability"];
-  if (posture === "conversion") return ["Applications", "Network", "Learning and development", "Proof assets", "Direction", "Stability"];
-  if (posture === "capability") return ["Learning and development", "Proof assets", "Network", "Applications", "Direction", "Stability"];
-  return ["Direction", "Network", "Learning and development", "Applications", "Proof assets", "Stability"];
+  if (posture === "interview") return [LANE_NAME.APPLICATIONS, LANE_NAME.NETWORK, LANE_NAME.LEARNING_DEVELOPMENT, LANE_NAME.PROOF_ASSETS, LANE_NAME.DIRECTION, LANE_NAME.STABILITY];
+  if (posture === "conversion") return [LANE_NAME.APPLICATIONS, LANE_NAME.NETWORK, LANE_NAME.LEARNING_DEVELOPMENT, LANE_NAME.PROOF_ASSETS, LANE_NAME.DIRECTION, LANE_NAME.STABILITY];
+  if (posture === "capability") return [LANE_NAME.LEARNING_DEVELOPMENT, LANE_NAME.PROOF_ASSETS, LANE_NAME.NETWORK, LANE_NAME.APPLICATIONS, LANE_NAME.DIRECTION, LANE_NAME.STABILITY];
+  return [LANE_NAME.DIRECTION, LANE_NAME.NETWORK, LANE_NAME.LEARNING_DEVELOPMENT, LANE_NAME.APPLICATIONS, LANE_NAME.PROOF_ASSETS, LANE_NAME.STABILITY];
 }
 
 function laneBalanceWindow(posture: StrategicContext["planningPosture"]) {
@@ -239,24 +325,52 @@ function buildStrategicContext(
   );
   const liveJobTargets = jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" }));
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
-  const missingCombinationText = broadPursuitCoverage.missing.slice(0, 4).join("; ");
+  const broadPursuitNeedsNetworkSupport = goalFrame.decisionMode === "broad-parallel-pursuit"
+    && broadPursuitCoverage.missing.length === 0
+    && broadPursuitCoverage.missingNetworkSupport.length > 0;
+  const broadPursuitNeedsLearningSupport = goalFrame.decisionMode === "broad-parallel-pursuit"
+    && broadPursuitCoverage.missing.length === 0
+    && broadPursuitCoverage.missingNetworkSupport.length === 0
+    && broadPursuitCoverage.missingLearningSupport.length > 0;
   return {
-    bottleneck: broadPursuitNeedsRealRoles ? "Applications" : spine.bestMove.lane,
+    bottleneck: broadPursuitNeedsRealRoles
+      ? LANE_NAME.APPLICATIONS
+      : broadPursuitNeedsNetworkSupport
+        ? LANE_NAME.NETWORK
+        : broadPursuitNeedsLearningSupport
+          ? LANE_NAME.LEARNING_DEVELOPMENT
+          : spine.bestMove.lane,
     reason: broadPursuitNeedsRealRoles
-      ? `Broad pursuit is active across plausible lanes, but some combinations still need live actionable roles: ${missingCombinationText}. Turn each missing combination into one real pipeline move before doing narrower comparison work.${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase} (${goalFrame.decisionMode}).`
-      : `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Active track: ${spine.bestMove.trackName}.` : ""} Goal frame: ${goalFrame.phase}${goalFrame.decisionMode === "single-track" ? "" : ` (${goalFrame.decisionMode})`}.`,
+      ? broadPursuitMissingRolesContextReason(broadPursuitCoverage.missing, spine.bestMove.trackName || undefined)
+      : broadPursuitNeedsNetworkSupport
+        ? broadPursuitMissingContactsContextReason(broadPursuitCoverage.missingNetworkSupport)
+        : broadPursuitNeedsLearningSupport
+          ? broadPursuitMissingPrepContextReason(broadPursuitCoverage.missingLearningSupport)
+      : `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Current focus: ${spine.bestMove.trackName}.` : ""}`,
     applicationsPremature: false,
     recommendedExploration: spine.bestMove.trackName || spine.activeTrack?.name || "",
     laneModel: { trace: spine.trace },
-    bottleneckLane: broadPursuitNeedsRealRoles ? "Applications" : spine.bestMove.lane,
-    laneStage: broadPursuitNeedsRealRoles ? "active" : lane?.stage || "active",
+    bottleneckLane: broadPursuitNeedsRealRoles
+      ? LANE_NAME.APPLICATIONS
+      : broadPursuitNeedsNetworkSupport
+        ? LANE_NAME.NETWORK
+        : broadPursuitNeedsLearningSupport
+          ? LANE_NAME.LEARNING_DEVELOPMENT
+          : spine.bestMove.lane,
+    laneStage: broadPursuitNeedsRealRoles || broadPursuitNeedsNetworkSupport || broadPursuitNeedsLearningSupport ? "active" : lane?.stage || "active",
     laneUnlockMove: broadPursuitNeedsRealRoles
-      ? "Fill the still-empty lanes with one real role or application move each."
+      ? broadPursuitMissingRolesUnlockMove()
+      : broadPursuitNeedsNetworkSupport
+        ? broadPursuitMissingContactsUnlockMove()
+        : broadPursuitNeedsLearningSupport
+          ? broadPursuitMissingPrepUnlockMove()
       : spine.bestMove.title,
     activeTrackName: spine.bestMove.trackName || spine.activeTrack?.name || "",
     liveJobTargets,
     broadPursuitMissingCombinations: broadPursuitCoverage.missing,
     broadPursuitCoveredCombinations: broadPursuitCoverage.covered,
+    broadPursuitMissingNetworkSupport: broadPursuitCoverage.missingNetworkSupport,
+    broadPursuitMissingLearningSupport: broadPursuitCoverage.missingLearningSupport,
     goalPhase: goalFrame.phase,
     goalDayType: goalFrame.dayType,
     decisionMode: goalFrame.decisionMode,
@@ -268,25 +382,36 @@ function needsBroadPursuitGoalCandidate(context: StrategicContext) {
   return context.decisionMode === "broad-parallel-pursuit" && context.broadPursuitMissingCombinations.length > 0;
 }
 
+function needsBroadPursuitSupportGoalCandidate(context: StrategicContext) {
+  return context.decisionMode === "broad-parallel-pursuit"
+    && context.broadPursuitMissingCombinations.length === 0
+    && (context.broadPursuitMissingNetworkSupport.length > 0 || context.broadPursuitMissingLearningSupport.length > 0);
+}
+
 function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
-  const missingText = context?.broadPursuitMissingCombinations?.length
-    ? context.broadPursuitMissingCombinations.join("; ")
-    : "each plausible lane that still looks real";
+  const combinations = context?.broadPursuitMissingCombinations || [];
+  const combination = combinations.length ? combinations[combinations.length - 1] : "";
   return {
     source: "goal",
     sourceId: 1,
     taskId: null,
-    title: "Fill the still-empty lanes with one real role each",
+    title: combination ? `Add one real role for ${combination}` : broadPursuitMissingRolesTitle(),
     category: "job",
     size: "deep",
     deadline: "",
     status: "not_started",
     skipped: 0,
     sourceUrl: "",
-    sourceNote: `Broad pursuit is active. Missing lanes: ${missingText}. Create one real pipeline move in each empty lane instead of narrowing abstractly.`,
+    sourceNote: combination
+      ? `This path still needs a real role: ${combination}. Add one real role or application move for it next.`
+      : broadPursuitMissingRolesSourceNote(context?.broadPursuitMissingCombinations || []),
     sourceStatus: "broad_parallel_pursuit",
-    doneWhen: "One concrete role or application move exists in each still-empty lane",
-    whyNow: "the strategy is to pursue all plausible lanes in parallel until the market gives clearer signal",
+    doneWhen: combination
+      ? `One concrete role or application move exists for the missing path: ${combination}`
+      : broadPursuitMissingRolesDoneWhen(),
+    whyNow: combination
+      ? `the ${combination} path still needs a real opening`
+      : broadPursuitMissingRolesWhyNow(),
     fitScore: null,
     blocked: false,
     blockerReason: "",
@@ -303,9 +428,90 @@ function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
     messageDraft: "",
     sourceNetwork: "",
     targetOrg: "",
-    targetRole: "",
+    targetRole: combination,
     followUpDate: "",
   };
+}
+
+function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Candidate[] {
+  const out: Candidate[] = [];
+  if (context?.broadPursuitMissingNetworkSupport?.length) {
+    for (const [index, combination] of context.broadPursuitMissingNetworkSupport.entries()) {
+      out.push({
+        source: "goal",
+        sourceId: 200 + index,
+        taskId: null,
+        title: `Add one useful contact for ${combination}`,
+        category: "admin",
+        size: "medium",
+        deadline: "",
+        status: "not_started",
+        skipped: 0,
+        sourceUrl: "",
+        sourceNote: `This live role type still needs someone useful to reach out to: ${combination}. Add one contact or outreach path for it next.`,
+        sourceStatus: "broad_parallel_pursuit_network_support",
+        doneWhen: `One useful contact or outreach path exists for ${combination}`,
+        whyNow: `the ${combination} path still needs someone useful to reach out to`,
+        fitScore: null,
+        blocked: false,
+        blockerReason: "",
+        eligibilityRisk: "",
+        location: "",
+        warmPathScore: null,
+        strategicValue: null,
+        frictionScore: null,
+        applicationReadiness: "",
+        deadlineConfidence: "",
+        narrativeAngle: "",
+        relationshipStrength: "",
+        askType: "advice",
+        messageDraft: "",
+        sourceNetwork: "",
+        targetOrg: "",
+        targetRole: combination,
+        followUpDate: "",
+      });
+    }
+  }
+  if (context?.broadPursuitMissingLearningSupport?.length) {
+    for (const [index, combination] of context.broadPursuitMissingLearningSupport.entries()) {
+      out.push({
+        source: "goal",
+        sourceId: 300 + index,
+        taskId: null,
+        title: `Add one prep item for ${combination}`,
+        category: "learning",
+        size: "medium",
+        deadline: "",
+        status: "not_started",
+        skipped: 0,
+        sourceUrl: "",
+        sourceNote: `This live role type still needs prep support: ${combination}. Add one prep item for it next.`,
+        sourceStatus: "broad_parallel_pursuit_learning_support",
+        doneWhen: `One prep item exists for ${combination}`,
+        whyNow: `the ${combination} path still needs prep support`,
+        fitScore: null,
+        blocked: false,
+        blockerReason: "",
+        eligibilityRisk: "",
+        location: "",
+        warmPathScore: null,
+        strategicValue: null,
+        frictionScore: null,
+        applicationReadiness: "",
+        deadlineConfidence: "",
+        narrativeAngle: "",
+        relationshipStrength: "",
+        askType: "",
+        messageDraft: "",
+        sourceNetwork: "",
+        targetOrg: "",
+        targetRole: combination,
+        followUpDate: "",
+      });
+    }
+  }
+  return out;
 }
 
 function jobMoveSize(action: JobTruthAction) {
@@ -314,8 +520,8 @@ function jobMoveSize(action: JobTruthAction) {
 }
 
 function jobDoneWhen(action: JobTruthAction) {
-  if (action === "warm") return "A warm-path message or referral ask is sent";
-  if (action === "prove") return "One stronger reusable capability signal exists";
+  if (action === "warm") return "A message to a helpful contact is sent";
+  if (action === "prove") return "One weak requirement is now easier to back up";
   if (action === "clarify") return "The missing facts are confirmed";
   if (action === "follow_up") return "A follow-up or warm nudge is sent";
   if (action === "prepare") return "The interview stories or prep packet are stronger";
@@ -344,7 +550,7 @@ function readinessMomentum(readiness: string) {
     case "cover": return { score: 14, reason: "application materials are partly underway" };
     case "questions": return { score: 18, reason: "application is close to submittable" };
     case "sample": return { score: 18, reason: "sample requirement is identified" };
-    case "referral": return { score: 20, reason: "warm-path/referral path is live" };
+    case "referral": return { score: 20, reason: "a referral path is already live" };
     case "submitted": return { score: 16, reason: "already submitted, so follow-through matters" };
     case "follow_up": return { score: 16, reason: "already in follow-up mode" };
     default: return { score: 0, reason: "" };
@@ -378,7 +584,7 @@ function jobMomentum(c: Candidate) {
   if (c.warmPathScore != null) {
     const warmBoost = Math.round((c.warmPathScore / 100) * 22);
     s += warmBoost;
-    if (warmBoost >= 10) trace.push("warm path improves landing odds");
+    if (warmBoost >= 10) trace.push("a useful person to reach out to improves landing odds");
   }
 
   if (c.strategicValue != null) {
@@ -574,7 +780,7 @@ function classifyContactArchetype(c: Candidate) {
     return { key: "shared-institution", score: 14, reason: "shared institution gives you a natural opener" };
   }
   if (/\b(recruiter|talent|founder|advisor|adviser|analyst|researcher|operator|principal|partner)\b/.test(text)) {
-    return { key: "market-guide", score: 10, reason: "can provide a useful market or process signal" };
+    return { key: "market-guide", score: 10, reason: "can provide a useful reality-check on the market or process" };
   }
   return { key: "exploratory", score: 4, reason: "exploratory networking contact" };
 }
@@ -591,18 +797,18 @@ function isActionableContact(c: Contact) {
 }
 
 function candidateStrategicLane(c: Candidate, context: StrategicContext): CanonicalLaneName {
-  if (c.source === "goal") return "Applications";
+  if (c.source === "goal") return LANE_NAME.APPLICATIONS;
   if (c.source === "job") {
-    if (c.jobTruthAction === "warm") return "Network";
-    if (c.jobTruthAction === "prove") return "Learning and development";
-    return "Applications";
+    if (c.jobTruthAction === "warm") return LANE_NAME.NETWORK;
+    if (c.jobTruthAction === "prove") return LANE_NAME.LEARNING_DEVELOPMENT;
+    return LANE_NAME.APPLICATIONS;
   }
-  if (c.source === "contact") return "Network";
-  if (c.source === "learn") return "Learning and development";
-  if (c.source === "hustle") return "Proof assets";
+  if (c.source === "contact") return LANE_NAME.NETWORK;
+  if (c.source === "learn") return LANE_NAME.LEARNING_DEVELOPMENT;
+  if (c.source === "hustle") return LANE_NAME.PROOF_ASSETS;
   if (candidateMatchesLane(c, context.bottleneckLane)) return context.bottleneckLane;
-  const order: CanonicalLaneName[] = ["Applications", "Network", "Learning and development", "Proof assets", "Direction", "Stability"];
-  return order.find((lane) => candidateMatchesLane(c, lane)) || "Stability";
+  const order: CanonicalLaneName[] = [LANE_NAME.APPLICATIONS, LANE_NAME.NETWORK, LANE_NAME.LEARNING_DEVELOPMENT, LANE_NAME.PROOF_ASSETS, LANE_NAME.DIRECTION, LANE_NAME.STABILITY];
+  return order.find((lane) => candidateMatchesLane(c, lane)) || LANE_NAME.STABILITY;
 }
 
 function contactIntent(c: Candidate, context: StrategicContext): NetworkingIntent {
@@ -636,18 +842,18 @@ function askTypeAlignment(c: Candidate, context: StrategicContext) {
     return { score: 4, reason: "soft outreach helps, but the process needs a clearer ask" };
   }
   if (intent === "capability") {
-    if (ask === "advice") return { score: 16, reason: "advice can target the current capability gap" };
+    if (ask === "advice") return { score: 16, reason: "advice can target the current skill gap or thin area" };
     if (ask === "follow_up") return { score: 10, reason: "follow-up can turn prior context into capability feedback" };
-    if (ask === "reconnect") return { score: 8, reason: "reconnect can reopen useful capability signal" };
-    if (ask === "referral") return { score: 2, reason: "referral is weaker than feedback while capability is the bottleneck" };
-    return { score: 6, reason: "soft outreach can surface capability signal with low friction" };
+    if (ask === "reconnect") return { score: 8, reason: "reconnect can reopen useful feedback on the requirement gap" };
+    if (ask === "referral") return { score: 2, reason: "referral is weaker than feedback while the requirement gap is the bottleneck" };
+    return { score: 6, reason: "soft outreach can surface useful feedback with low friction" };
   }
-  if (ask === "advice") return { score: 18, reason: "advice is the right ask while narrowing lanes" };
-  if (ask === "reconnect") return { score: 12, reason: "reconnect can reopen exploratory market signal" };
+  if (ask === "advice") return { score: 18, reason: "advice is the right ask while narrowing options" };
+  if (ask === "reconnect") return { score: 12, reason: "reconnect can reopen exploratory market feedback" };
   if (ask === "soft") return { score: 8, reason: "low-friction outreach is enough while exploring options" };
-  if (ask === "follow_up") return { score: 6, reason: "follow-up helps, but this phase needs fresh market signal" };
-  if (ask === "referral") return { score: 1, reason: "referral is premature before the target lane is clearer" };
-  return { score: 6, reason: "this ask still creates some useful exploratory signal" };
+  if (ask === "follow_up") return { score: 6, reason: "follow-up helps, but this phase needs fresh outside feedback" };
+  if (ask === "referral") return { score: 1, reason: "referral is premature before the target role type is clearer" };
+  return { score: 6, reason: "this ask still creates some useful exploratory feedback" };
 }
 
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
@@ -715,7 +921,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: "learning", size: guessSize(l.title),
         deadline: dl, status: "not_started", skipped: 0,
         sourceUrl: l.url || "", sourceNote: l.note || "", sourceStatus: l.learnStatus || "active",
-        doneWhen: l.requiredOutput || "You've made real progress", whyNow: "builds a capability your tracks need",
+        doneWhen: l.requiredOutput || "You've made real progress", whyNow: "strengthens an area your target roles keep asking for",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
@@ -748,7 +954,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: cat, size: guessSize(h.nextStep),
         deadline: "", status: "not_started", skipped: 0,
         sourceUrl: "", sourceNote: h.note || "", sourceStatus: h.stage,
-        doneWhen: "That step is done", whyNow: "proof of your judgement — builds credibility over time",
+        doneWhen: "That step is done", whyNow: "keeps this project or public work moving and can build credibility over time",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
       });
@@ -810,14 +1016,16 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   }
   if (c.source === "goal") {
     s += 42;
-    trace.push("broad pursuit needs real roles across all plausible lanes");
+    if (c.sourceStatus === "broad_parallel_pursuit_network_support") trace.push("some live role paths still need someone useful to reach out to");
+    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") trace.push("some live role paths still need prep support");
+    else trace.push("several role paths still need a real role before you narrow");
   }
 
   s += (8 - (CATEGORY_RANK[c.category] ?? 7)) * 6;
 
   if (candidateMatchesLane(c, context.bottleneckLane)) {
     s += 78;
-    trace.push(`unlocks ${context.bottleneckLane} lane`);
+    trace.push(`unlocks ${context.bottleneckLane} focus area`);
   }
   if (context.laneUnlockMove && `${c.title} ${c.whyNow} ${c.sourceNote}`.toLowerCase().includes(context.laneUnlockMove.toLowerCase().slice(0, 18))) {
     s += 25;
@@ -825,33 +1033,37 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   }
   if (/direction/i.test(context.bottleneck) && isDirectionSignal(c)) { s += 35; trace.push("matches direction bottleneck"); }
   if (/application/i.test(context.bottleneck) && isApplicationLike(c)) { s += 30; trace.push("moves an application forward"); }
-  if (/network/i.test(context.bottleneck) && isNetworkLike(c)) { s += 35; trace.push("moves a relationship lane forward"); }
+  if (/network/i.test(context.bottleneck) && isNetworkLike(c)) { s += 35; trace.push("moves a relationship path forward"); }
   if (/learning|development/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("converts learning/development into track leverage"); }
   if (context.planningPosture === "capability") {
     if (isLearningLike(c)) {
       s += 22;
-      trace.push("capability posture favors reusable learning output");
+      trace.push("capability posture favors learning that turns into reusable notes or practice");
     }
     if (isProofAsset(c) && c.sourceStatus === "testing") {
       s += 10;
-      trace.push("live proof asset can package capability into reusable evidence");
+      trace.push("a live project or public-work item can package capability into something you can point to later");
     } else if (isProofAsset(c)) {
       s -= 10;
-      trace.push("idea-stage proof stays secondary to learning output");
+      trace.push("idea-stage projects or public work stay secondary to learning output");
     }
   } else if (isProofAsset(c)) {
     if (context.planningPosture === "conversion") {
       s -= 14;
-      trace.push("proof stays secondary while live conversion moves exist");
+      trace.push("projects or public work stay secondary while live conversion moves exist");
     } else if (context.planningPosture === "exploration") {
       s -= 18;
-      trace.push("proof is deferred while lane uncertainty is still high");
+      trace.push("projects or public work stay deferred while role uncertainty is still high");
     }
   }
   if (context.recommendedExploration && `${c.title} ${c.sourceNote}`.toLowerCase().includes(context.recommendedExploration.toLowerCase().slice(0, 20))) {
     s += 30;
     trace.push("matches active track from spine");
   }
+
+  const startability = startabilityMomentum(c);
+  s += startability.score;
+  trace.push(...startability.trace);
 
   if (mode === "low" || energy === "low") {
     if (c.size === "quick") { s += 25; trace.push("fits a low-energy day"); }
@@ -891,25 +1103,40 @@ function capacityMinutes(input: CapacityInput = 0): number {
   return Math.max(0, remainingDayMinutes(input.now) - Math.max(0, input.busyMinutes || 0));
 }
 
+function focusAreaLabel(lane: CanonicalLaneName): string {
+  return laneFocusAreaLabel(lane);
+}
+
 function whyLine(r: RankedCandidate, context: StrategicContext) {
   const lane = candidateStrategicLane(r.c, context);
   const top = r.trace.filter(Boolean).slice(0, 2).join("; ");
-  if (r.c.source === "goal" && needsBroadPursuitGoalCandidate(context)) {
-    return `Broad pursuit. ${top || context.laneUnlockMove || "Best available next move"}.`;
+  if (r.c.source === "goal" && (needsBroadPursuitGoalCandidate(context) || needsBroadPursuitSupportGoalCandidate(context))) {
+    return `You are testing several paths in parallel. ${top || context.laneUnlockMove || "Best available next move"}.`;
   }
-  return `${lane} lane. ${top || context.laneUnlockMove || "Best available next move"}.`;
+  return `This helps with ${focusAreaLabel(lane)}. ${top || context.laneUnlockMove || "Best available next move"}.`;
 }
 
 function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
-    if (context?.broadPursuitMissingCombinations?.length) {
-      return `Open your job sources and fill one real role in each still-empty lane: ${context.broadPursuitMissingCombinations.join("; ")}.`;
+    if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
+      return `Open your job sources and add one real role for ${candidate.targetRole}.`;
     }
-    return "Open your job sources and add or apply to one credible role in each active lane before doing narrower comparison work.";
+    if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
+      if (candidate?.targetRole) return `Open Network and add one person you could realistically reach out to for ${candidate.targetRole}.`;
+      return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
+    }
+    if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
+      if (candidate?.targetRole) return `Open Learn and add one prep item for ${candidate.targetRole}.`;
+      return broadPursuitMissingPrepFirstStep(context?.broadPursuitMissingLearningSupport || []);
+    }
+    if (context?.broadPursuitMissingCombinations?.length) {
+      return broadPursuitMissingRolesFirstStep(context.broadPursuitMissingCombinations);
+    }
+    return "Open your job sources and add or apply to one real role in each active path before doing narrower comparison work.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "Open the role and write the shortest warm-path message or referral ask.";
-    if (candidate?.jobTruthAction === "prove") return "Open your strongest learning or proof asset and turn it into one reusable capability signal.";
+    if (candidate?.jobTruthAction === "warm") return "Open the role and draft the shortest message to someone who could help or refer you.";
+    if (candidate?.jobTruthAction === "prove") return "Open your strongest learning item or reusable example and make one weak requirement easier to back up.";
     if (candidate?.jobTruthAction === "clarify") return "Open the role and confirm the missing facts before spending more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "Open the role and send the polite follow-up or warm nudge.";
     if (candidate?.jobTruthAction === "prepare") return "Open the role and draft the strongest interview stories or prep notes.";
@@ -919,24 +1146,35 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
     if (intent === "conversion") return "Open the thread and write the shortest message that advances the live role right now.";
     if (intent === "interview") return "Open the thread and ask the one question that sharpens the interview or active process.";
-    if (intent === "capability") return "Open the thread and ask for one concrete steer on the skill or capability gap.";
-    return "Open the thread and write a short message asking for one concrete market reality-check.";
+    if (intent === "capability") return "Open the thread and ask for one concrete steer on the skill gap or missing area.";
+    return "Open the thread and write a short message asking for one concrete reality-check on the role or market.";
   }
-  if (source === "learn") return "Open the resource or a blank note and produce the smallest useful output.";
-  if (source === "hustle") return "Open the proof asset and make the smallest publishable or reusable fragment.";
-  return "Open the task and do the first visible action, not the whole project.";
+  if (source === "learn") return "Open the learning item or a blank note and capture one useful note, brief, or practice result.";
+  if (source === "hustle") return "Open the project or public-work item and make the smallest publishable or reusable fragment.";
+  return "Open the task and do the first small visible step, not the whole project.";
 }
 
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
-    if (context?.broadPursuitMissingCombinations?.length) {
-      return "Stop after one concrete role or application move exists in each still-empty lane.";
+    if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
+      return `Stop after ${candidate.targetRole} has one concrete role or application move.`;
     }
-    return "Stop after one concrete role or application move exists in each active lane.";
+    if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
+      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one useful contact or outreach path.`;
+      return broadPursuitMissingContactsStopRule();
+    }
+    if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
+      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one prep item.`;
+      return broadPursuitMissingPrepStopRule();
+    }
+    if (context?.broadPursuitMissingCombinations?.length) {
+      return broadPursuitMissingRolesStopRule();
+    }
+    return "Stop after one concrete role or application move exists in each active path.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "Stop after one warm-path message or referral ask is drafted, sent, or scheduled.";
-    if (candidate?.jobTruthAction === "prove") return "Stop after one reusable capability signal is clearer or more reusable than it was before.";
+    if (candidate?.jobTruthAction === "warm") return "Stop after one message to someone useful is drafted, sent, or scheduled.";
+    if (candidate?.jobTruthAction === "prove") return "Stop after one weak requirement is easier to back up than it was before.";
     if (candidate?.jobTruthAction === "clarify") return "Stop after the key missing facts are confirmed.";
     if (candidate?.jobTruthAction === "follow_up") return "Stop after one follow-up or warm nudge is sent.";
     if (candidate?.jobTruthAction === "prepare") return "Stop after one interview-prep artifact is stronger than it was before.";
@@ -946,38 +1184,49 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
     if (intent === "conversion") return "Stop after the live-role message is drafted, sent, or clearly scheduled.";
     if (intent === "interview") return "Stop after the interview question or prep ask is sent or clearly scheduled.";
-    if (intent === "capability") return "Stop after the message asks for one concrete steer on the capability gap.";
-    return "Stop after the message asks for one concrete market signal and is drafted, sent, or scheduled.";
+    if (intent === "capability") return "Stop after the message asks for one concrete steer on the skill gap or missing area.";
+    return "Stop after the message asks for one concrete reality-check on the role or market and is drafted, sent, or scheduled.";
   }
-  if (source === "learn") return "Stop after one reusable learning output exists.";
-  if (source === "hustle") return "Stop after one proof fragment or next asset step exists.";
+  if (source === "learn") return "Stop after one useful note, brief, practice result, or reusable example exists.";
+  if (source === "hustle") return "Stop after one reusable or publishable piece exists, or the next concrete step is finished.";
   return "Stop after one concrete move changes the state of the work.";
 }
 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
-    if (context?.broadPursuitMissingCombinations?.length) {
-      return `Broad parallel pursuit is the live strategy, so the best move is to turn these still-empty lanes into real role or application signal: ${context.broadPursuitMissingCombinations.join("; ")}.`;
+    if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
+      return `${candidate.targetRole} still needs a real role or application move, so that is the best next move now.`;
     }
-    return "Broad parallel pursuit is the live strategy, so the best move is to turn each plausible lane into a real role or application signal.";
+    if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
+      if (candidate?.targetRole) return `${candidate.targetRole} still needs someone useful to reach out to, so the best move is to add one contact path for it now.`;
+      return broadPursuitMissingContactsSourceFrame(context?.broadPursuitMissingNetworkSupport || []);
+    }
+    if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
+      if (candidate?.targetRole) return `${candidate.targetRole} still needs prep support, so the best move is to add one prep item for it now.`;
+      return broadPursuitMissingPrepSourceFrame(context?.broadPursuitMissingLearningSupport || []);
+    }
+    if (context?.broadPursuitMissingCombinations?.length) {
+      return broadPursuitMissingRolesSourceFrame(context.broadPursuitMissingCombinations);
+    }
+    return "You are testing several paths in parallel, so the best move is to turn each one into a real role or application move.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "This role is still one of the strongest conversion moves right now, but the best next step is to use a warm path before going cold.";
-    if (candidate?.jobTruthAction === "prove") return "This role is promising, but the lane needs stronger reusable capability evidence before pushing harder.";
+    if (candidate?.jobTruthAction === "warm") return "This role looks promising, but the best next step is to reach out to someone useful before going in cold.";
+    if (candidate?.jobTruthAction === "prove") return "This role looks promising, but you still need one clearer example you can point to before pushing harder.";
     if (candidate?.jobTruthAction === "clarify") return "This role needs one clarification pass before it deserves more effort.";
-    if (candidate?.jobTruthAction === "follow_up") return "This role has already moved into the pipeline, so follow-through matters most right now.";
-    if (candidate?.jobTruthAction === "prepare") return "This role is live, so preparation is the value driver right now.";
-    return "This role is the strongest conversion move right now.";
+    if (candidate?.jobTruthAction === "follow_up") return "This role is already moving, so follow-through matters most right now.";
+    if (candidate?.jobTruthAction === "prepare") return "This role is live, so preparation matters most right now.";
+    return "This role is one of the strongest next moves right now.";
   }
   if (source === "contact") {
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
-    if (intent === "conversion") return "This person is the highest-leverage contact for converting a live role right now.";
+    if (intent === "conversion") return "This person is most likely to help with a live role right now.";
     if (intent === "interview") return "This person is the best networking move for sharpening an active interview or process right now.";
-    if (intent === "capability") return "This person can turn capability-building into better market signal right now.";
-    return "This person is the strongest contact for reducing role uncertainty right now.";
+    if (intent === "capability") return "This person can help you close a real requirement gap right now.";
+    return "This person can help you get clearer on which roles make sense right now.";
   }
-  if (source === "learn") return "This upskilling move compounds your profile without blocking applications.";
-  if (source === "hustle") return "This proof move packages learning into reusable credibility over time.";
+  if (source === "learn") return "This learning move helps you get stronger without stopping applications.";
+  if (source === "hustle") return "This writing, project, or public-work move turns learning into something reusable later.";
   return "This is the best already-live move in the system right now.";
 }
 
@@ -989,14 +1238,15 @@ function explainRecommendation(
   const top = ranked[0];
   const second = ranked[1];
   const lane = candidateStrategicLane(pick, context);
+  const focusArea = focusAreaLabel(lane);
   const supportingReasons = top.trace.filter(Boolean).slice(0, 4);
   const whyNow = supportingReasons[0] || context.reason || "This is the strongest available move right now.";
   const whyThis = second
-    ? `It beats the next option because it has stronger immediate leverage on ${lane.toLowerCase()} right now.`
-    : `It is the clearest available move on the ${lane.toLowerCase()} lane right now.`;
+    ? `It beats the next option because it helps more with ${focusArea} right now.`
+    : `It is the clearest available move in ${focusArea} right now.`;
 
   return {
-    summary: `${sourceFrame(pick.source, pick, context)} ${lane} is the active lane for this move${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
+    summary: `${sourceFrame(pick.source, pick, context)} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
     whyNow,
     whyThis,
     supportingReasons,
@@ -1013,13 +1263,14 @@ function explainRankedPlanItem(
   const current = ranked[index];
   const next = ranked[index + 1];
   const lane = candidateStrategicLane(current.c, context);
+  const focusArea = focusAreaLabel(lane);
   const supportingReasons = current.trace.filter(Boolean).slice(0, 4);
   return {
-    summary: `${sourceFrame(current.c.source, current.c, context)} ${lane} is why this slot exists${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
+    summary: `${sourceFrame(current.c.source, current.c, context)} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
     whyNow: supportingReasons[0] || current.c.whyNow || context.reason,
     whyThis: next
-      ? `It outranks the next option because it has stronger immediate leverage on ${lane.toLowerCase()} right now.`
-      : `It remains in the plan because it is still a useful move on the ${lane.toLowerCase()} lane.`,
+      ? `It outranks the next option because it helps more with ${focusArea} right now.`
+      : `It remains in the plan because it is still a useful move in ${focusArea}.`,
     supportingReasons,
     firstStep: firstStepForSource(current.c.source, current.c, context),
     stopRule: stopRuleForSource(current.c.source, current.c, context),
@@ -1035,8 +1286,8 @@ export function explainPersistedPlanItem(item: {
   const why = (item.whySelected || "").trim();
   return {
     summary: why || sourceFrame(source),
-    whyNow: why || "This move remains in today's plan because it supports the current sequencing.",
-    whyThis: "It has already been selected into the persisted plan as one of today's highest-leverage moves.",
+    whyNow: why || "This move is still in today's plan.",
+    whyThis: "It was already chosen as one of today's most useful moves.",
     supportingReasons: why ? [why] : [],
     firstStep: firstStepForSource(source),
     stopRule: item.doneWhen?.trim() ? `Stop when: ${item.doneWhen.trim()}` : stopRuleForSource(source),
@@ -1049,10 +1300,13 @@ export function planDay(
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
-  const all = gatherCandidates(tasks, jobs, learn, hustles, contacts);
+  const priorityCandidates: Candidate[] = [];
   if (needsBroadPursuitGoalCandidate(context)) {
-    all.unshift(buildBroadPursuitGoalCandidate(context));
+    priorityCandidates.push(buildBroadPursuitGoalCandidate(context));
+  } else if (needsBroadPursuitSupportGoalCandidate(context)) {
+    priorityCandidates.push(...buildBroadPursuitSupportGoalCandidates(context));
   }
+  const all = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts)];
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))
     .filter((x) => x.reason)
@@ -1138,8 +1392,10 @@ export function planDay(
     : budget < 45 ? "Very little day left. One tiny useful application or track move is enough."
     : budget < 90 ? "One useful application or track move is enough for the time left today."
     : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
-    : mode === "strategy" && needsBroadPursuitGoalCandidate(context) ? "Broad pursuit is active. Turn each plausible lane into one real role or application move before narrowing anything."
-    : mode === "strategy" ? `${context.bottleneckLane} is the bottleneck. Anchor is choosing the next move from the Tracks × Lanes spine.`
+    : mode === "strategy" && needsBroadPursuitGoalCandidate(context) ? broadPursuitNextMissingRolePlanNote(context.broadPursuitMissingCombinations)
+    : mode === "strategy" && context.broadPursuitMissingNetworkSupport.length > 0 && context.broadPursuitMissingCombinations.length === 0 ? broadPursuitNextMissingContactPlanNote(context.broadPursuitMissingNetworkSupport)
+    : mode === "strategy" && context.broadPursuitMissingLearningSupport.length > 0 && context.broadPursuitMissingCombinations.length === 0 ? broadPursuitNextMissingPrepPlanNote(context.broadPursuitMissingLearningSupport)
+    : mode === "strategy" ? `The main constraint right now is ${focusAreaLabel(context.bottleneckLane)}. Anchor picked the next move to unblock it.`
     : fits ? "Start at the top. Finish the first one and today already counts."
     : "Full plate for the time you've got. Just do the first one and call it a win.";
 
@@ -1164,7 +1420,13 @@ export function recommend(
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
 ) {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
-  const cands = gatherCandidates(tasks, jobs, learn, hustles, contacts).filter((c) => passesGates(c, context));
+  const priorityCandidates: Candidate[] = [];
+  if (needsBroadPursuitGoalCandidate(context)) {
+    priorityCandidates.push(buildBroadPursuitGoalCandidate(context));
+  } else if (needsBroadPursuitSupportGoalCandidate(context)) {
+    priorityCandidates.push(...buildBroadPursuitSupportGoalCandidates(context));
+  }
+  const cands = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts)].filter((c) => passesGates(c, context));
   const mode = pickDayMode(cands, energy, context);
   if (cands.length === 0) return { mode, pick: null, alternative: null };
   const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s);

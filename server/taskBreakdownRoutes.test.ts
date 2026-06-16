@@ -23,7 +23,7 @@ test("coerceTaskBreakdownSteps turns workflow/meta steps into tiny actionable ta
   } as any;
   const workflowState = {
     workObject: "Artifact",
-    workflow: ["Understand role", "Map evidence", "Build materials"],
+    workflow: ["Understand role", "Match examples", "Build materials"],
     workflowKind: "finite",
     currentStage: "Build materials",
     stageOutput: "The next application material is drafted or improved",
@@ -42,17 +42,17 @@ test("coerceTaskBreakdownSteps turns workflow/meta steps into tiny actionable ta
   assert.ok(steps.every((step) => !/use the|locate the|define this stage output|check completion criteria|break this stage into actions/i.test(step.text)));
 });
 
-test("goal-source breakdown turns broad pursuit into concrete lane-filling steps", async () => {
+test("goal-source breakdown turns broad pursuit into concrete role-type coverage steps", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
   const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
 
   const task = {
-    title: "Add or apply to one credible role in each plausible lane that still looks real",
+    title: "Add or apply to one credible role in each plausible role type that still looks real",
     category: "job",
     sourceType: "goal",
     sourceId: 1,
-    sourceNote: "Broad pursuit is active across all plausible lanes.",
-    doneWhen: "One concrete role or application move exists in each active lane",
+    sourceNote: "Broad pursuit is active across all plausible role types.",
+    doneWhen: "One concrete role or application move exists in each active role type",
     minimumOutcome: "",
     sourceUrl: "",
   } as any;
@@ -62,7 +62,7 @@ test("goal-source breakdown turns broad pursuit into concrete lane-filling steps
   assert.equal(workflowState.workObject, "Pipeline");
   assert.match(workflowState.currentStage, /Define target|Build list|Execute next batch/);
   assert.ok(steps.length >= 1);
-  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|saved role|pipeline action|find one credible role|still-empty lane/i);
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first real role|saved role|pipeline action|find one real role|still missing one|first path/i);
 });
 
 test("goal-source breakdown sharpens the first role-search move for a specific missing combination", async () => {
@@ -91,7 +91,7 @@ test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct
   const { normalizeExistingTaskBreakdown } = await import("./taskBreakdownRoutes");
 
   const task = {
-    title: "Inspect three AI governance strategy roles and capture repeated requirements.",
+    title: "Review three AI governance strategy roles and note the requirements that keep coming up.",
     category: "learning",
     sourceType: "goal",
     sourceId: 1,
@@ -116,5 +116,5 @@ test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct
     steps.map((step: any) => String(step.text || "")).join(" | "),
     /use the|locate the|define this stage output|check completion criteria|break this stage into actions/i,
   );
-  assert.match(String(steps[0]?.text || ""), /open jobs|save the first credible role|open the saved role|pipeline action|find one credible role|still-empty lane|most promising saved role/i);
+  assert.match(String(steps[0]?.text || ""), /open jobs|save the first real role|open the saved role|pipeline action|find one real role|still missing one|first path|most promising saved role/i);
 });

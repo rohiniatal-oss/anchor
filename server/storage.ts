@@ -1,7 +1,7 @@
 import {
   tasks, events, jobs, learn, hustles, wins, contacts,
   dayPlans, dayPlanItems, activityLog, careerTracks, jobPipelineSteps, proofAssetSteps, entityLinks,
-  userProfile, discoverySessions,
+  userProfile, discoverySessions, recommendations, recommendationSubdivisions, recommendationMilestones,
   type Task, type InsertTask,
   type Event, type InsertEvent,
   type Job, type InsertJob,
@@ -17,6 +17,9 @@ import {
   type CareerTrack, type InsertCareerTrack,
   type UserProfile,
   type DiscoverySession, type InsertDiscoverySession,
+  type Recommendation, type InsertRecommendation,
+  type RecommendationSubdivision, type InsertRecommendationSubdivision,
+  type RecommendationMilestone, type InsertRecommendationMilestone,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -158,6 +161,20 @@ export interface IStorage {
   getDiscoverySession(id: number): Promise<DiscoverySession | undefined>;
   createDiscoverySession(session: InsertDiscoverySession): Promise<DiscoverySession>;
   updateDiscoverySession(id: number, patch: Partial<InsertDiscoverySession>): Promise<DiscoverySession | undefined>;
+  getRecommendations(): Promise<Recommendation[]>;
+  getRecommendation(id: number): Promise<Recommendation | undefined>;
+  createRecommendation(item: InsertRecommendation): Promise<Recommendation>;
+  updateRecommendation(id: number, patch: Partial<InsertRecommendation>): Promise<Recommendation | undefined>;
+  deleteRecommendation(id: number): Promise<void>;
+  getRecommendationSubdivisions(recommendationId: number): Promise<RecommendationSubdivision[]>;
+  createRecommendationSubdivision(item: InsertRecommendationSubdivision): Promise<RecommendationSubdivision>;
+  updateRecommendationSubdivision(id: number, patch: Partial<InsertRecommendationSubdivision>): Promise<RecommendationSubdivision | undefined>;
+  deleteRecommendationSubdivision(id: number): Promise<void>;
+  getRecommendationMilestones(recommendationId: number): Promise<RecommendationMilestone[]>;
+  getRecommendationMilestone(id: number): Promise<RecommendationMilestone | undefined>;
+  createRecommendationMilestone(item: InsertRecommendationMilestone): Promise<RecommendationMilestone>;
+  updateRecommendationMilestone(id: number, patch: Partial<InsertRecommendationMilestone>): Promise<RecommendationMilestone | undefined>;
+  deleteRecommendationMilestone(id: number): Promise<void>;
   linkTrack(entity: TrackEntity, id: number, trackId: number | null): Promise<any | undefined>;
   // P4.4 — learn proof-building
   markLearnEvidenced(id: number, outputEvidenceUrl: string, proofToId?: number | null): Promise<Learn | undefined>;
@@ -316,6 +333,58 @@ export class DatabaseStorage implements IStorage {
   }
   async updateDiscoverySession(id: number, patch: Partial<InsertDiscoverySession>) {
     return db.update(discoverySessions).set({ ...patch, updatedAt: Date.now() }).where(eq(discoverySessions.id, id)).returning().get();
+  }
+  async getRecommendations() {
+    return db.select().from(recommendations)
+      .orderBy(desc(recommendations.rankScore), desc(recommendations.createdAt), desc(recommendations.id)).all();
+  }
+  async getRecommendation(id: number) {
+    return db.select().from(recommendations).where(eq(recommendations.id, id)).get();
+  }
+  async createRecommendation(item: InsertRecommendation) {
+    return db.insert(recommendations).values({ ...item, createdAt: Date.now() }).returning().get();
+  }
+  async updateRecommendation(id: number, patch: Partial<InsertRecommendation>) {
+    return db.update(recommendations).set(patch).where(eq(recommendations.id, id)).returning().get();
+  }
+  async deleteRecommendation(id: number) {
+    db.delete(recommendationSubdivisions).where(eq(recommendationSubdivisions.recommendationId, id)).run();
+    db.delete(recommendationMilestones).where(eq(recommendationMilestones.recommendationId, id)).run();
+    db.delete(recommendations).where(eq(recommendations.id, id)).run();
+  }
+  async getRecommendationSubdivisions(recommendationId: number) {
+    return db.select().from(recommendationSubdivisions)
+      .where(eq(recommendationSubdivisions.recommendationId, recommendationId))
+      .orderBy(asc(recommendationSubdivisions.sequence), asc(recommendationSubdivisions.id)).all();
+  }
+  async createRecommendationSubdivision(item: InsertRecommendationSubdivision) {
+    return db.insert(recommendationSubdivisions).values({ ...item, createdAt: Date.now() }).returning().get();
+  }
+  async updateRecommendationSubdivision(id: number, patch: Partial<InsertRecommendationSubdivision>) {
+    return db.update(recommendationSubdivisions).set(patch)
+      .where(eq(recommendationSubdivisions.id, id)).returning().get();
+  }
+  async deleteRecommendationSubdivision(id: number) {
+    db.delete(recommendationSubdivisions).where(eq(recommendationSubdivisions.id, id)).run();
+  }
+  async getRecommendationMilestones(recommendationId: number) {
+    return db.select().from(recommendationMilestones)
+      .where(eq(recommendationMilestones.recommendationId, recommendationId))
+      .orderBy(asc(recommendationMilestones.sequence), asc(recommendationMilestones.id)).all();
+  }
+  async getRecommendationMilestone(id: number) {
+    return db.select().from(recommendationMilestones)
+      .where(eq(recommendationMilestones.id, id)).get();
+  }
+  async createRecommendationMilestone(item: InsertRecommendationMilestone) {
+    return db.insert(recommendationMilestones).values({ ...item, createdAt: Date.now() }).returning().get();
+  }
+  async updateRecommendationMilestone(id: number, patch: Partial<InsertRecommendationMilestone>) {
+    return db.update(recommendationMilestones).set(patch)
+      .where(eq(recommendationMilestones.id, id)).returning().get();
+  }
+  async deleteRecommendationMilestone(id: number) {
+    db.delete(recommendationMilestones).where(eq(recommendationMilestones.id, id)).run();
   }
   async linkTrack(entity: TrackEntity, id: number, trackId: number | null) {
     const table = TRACK_TABLES[entity];

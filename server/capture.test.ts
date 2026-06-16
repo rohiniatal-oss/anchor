@@ -24,7 +24,7 @@ test("capture classifier routes books and courses to Learn", () => {
   const book = classifyCapture(1, "Read Superforecasting");
   assert.equal(book.route, "learn");
   assert.equal(book.confidence, "high");
-  assert.match(book.reason, /resource|study|consume/i);
+  assert.match(book.reason, /study|practise|prep/i);
 
   const course = classifyCapture(2, "Study the GovAI course");
   assert.equal(course.route, "learn");
@@ -115,6 +115,8 @@ test("routing a decision keeps it as an actionable inbox task", async () => {
   assert.equal(task.list, "inbox");
   assert.equal(task.category, "admin");
   assert.match(task.doneWhen, /decision|next action/i);
+  assert.match(task.steps, /exact question/i);
+  assert.equal(task.minimumOutcome, task.doneWhen);
   assert.match(task.sourceStatus, /routed:decision:task/);
 });
 
@@ -128,7 +130,23 @@ test("routing to Today moves the task to the today list without a hardcoded bloc
   assert.equal(task.list, "today");
   // Phase 4.6a: never fabricate a time block. No slot context => block stays null.
   assert.equal(task.block, null, "today route must not hardcode a morning/afternoon block");
+  assert.match(task.steps, /first concrete change/i);
+  assert.equal(task.minimumOutcome, task.doneWhen);
   assert.match(task.sourceStatus, /routed:today:task/);
+});
+
+test("routing a blocker makes the capture blocked and gives it an unblock-oriented starter", async () => {
+  const cap = await h.storage.createTask({ title: "Blocked waiting on Farah for the org chart", list: "inbox", done: false } as any);
+  const r = await api(h.base, "POST", `/api/capture/${cap.id}/route`, { route: "blocker" });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.moved, "blocker");
+
+  const task = (await h.storage.getTasks()).find((t) => t.id === cap.id)!;
+  assert.equal(task.readiness, "blocked");
+  assert.match(task.blockerReason || "", /farah/i);
+  assert.match(task.steps, /what is blocked and what would unblock it/i);
+  assert.equal(task.minimumOutcome, task.doneWhen);
+  assert.match(task.sourceStatus, /blocker_update/);
 });
 
 test("legacy proof category alias still works while preserving capture", async () => {

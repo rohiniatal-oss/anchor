@@ -3,15 +3,13 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { careerAssetsFromActivity, generateCandidateUniverse, attributeFeedbackFromActivity } from "./candidates";
 import { enrichTaskInput } from "./sprint2";
+import { recommendCareerDiscoveryRoute, type CareerDiscoveryRouteKey } from "./discoveryRecommendation";
 
 type DiscoveryDomain = "career" | "health" | "writing" | "admin" | "relationships" | "life";
 type DiscoveryStatus = "draft" | "committed" | "abandoned";
 
 type DiscoveryRouteKey =
-  | "broad-role-pursuit"
-  | "fit-clarification"
-  | "warm-path-build"
-  | "capability-ramp"
+  | CareerDiscoveryRouteKey
   | "clarify-outcome"
   | "reduce-friction"
   | "start-small-routine";
@@ -126,28 +124,28 @@ function inferDomain(concern: string, explicit?: DiscoveryDomain): DiscoveryDoma
 
 function careerRouteSet(concern: string, candidateLanes: string[]): DiscoveryRoute[] {
   const broadLabel = candidateLanes.length
-    ? "Turn plausible lanes into live roles"
-    : "Turn one plausible lane into a live role";
+    ? "Test real roles across your options"
+    : "Test one real role now";
   return [
     {
       key: "broad-role-pursuit",
       label: broadLabel,
-      why: "Best when the market can provide signal quickly and landing a role soon matters.",
+      why: "Best when real openings will teach you fastest and landing a role soon matters.",
     },
     {
       key: "fit-clarification",
-      label: "Clarify role families before going wider",
+      label: "Compare role types before applying widely",
       why: "Best when the role target is still too vague for useful applications.",
     },
     {
       key: "warm-path-build",
-      label: "Build a warm-path pipeline",
+      label: "Talk to people who can reality-check or open doors",
       why: "Best when access, referrals, or insider context are the main bottleneck.",
     },
     {
       key: "capability-ramp",
-      label: "Strengthen one repeated capability signal",
-      why: "Best when the likely roles are real but one recurring capability gap is holding you back.",
+      label: "Strengthen one weak requirement first",
+      why: "Best when the likely roles are real but the same requirement keeps showing up as a weakness.",
     },
   ];
 }
@@ -170,27 +168,6 @@ function genericRouteSet(domain: DiscoveryDomain): DiscoveryRoute[] {
       why: "Best when consistency matters more than one heroic push.",
     },
   ];
-}
-
-function chooseCareerRoute(concern: string): { key: DiscoveryRouteKey; reason: string } {
-  const text = concern.toLowerCase();
-  const urgentJob = containsAny(text, [/\b(job|need work|need a role|income|employment)\b/]);
-  const networking = containsAny(text, [/\b(network|referral|reach out|contact|linkedin|intro)\b/]);
-  const capability = containsAny(text, [/\b(interview|cv|resume|skill|skills|upskill|prepare)\b/]);
-  const uncertainty = containsAny(text, [/\b(don'?t know|do not know|figure out|sort out|stuck|unclear|what kind)\b/]);
-  if (networking) {
-    return { key: "warm-path-build", reason: "You are already thinking about people and access, so the fastest next signal is to build a warm path instead of staying abstract." };
-  }
-  if (capability && !urgentJob) {
-    return { key: "capability-ramp", reason: "Your concern is mainly about readiness, so the cleanest first move is to strengthen one signal you need to show clearly." };
-  }
-  if (urgentJob) {
-    return { key: "broad-role-pursuit", reason: "You need a credible role soon, so the best next signal is to put real roles into the plausible lanes before narrowing too early." };
-  }
-  if (uncertainty) {
-    return { key: "fit-clarification", reason: "The target is still fuzzy enough that clarifying the role families will create better signal than going wide immediately." };
-  }
-  return { key: "broad-role-pursuit", reason: "A few live roles will teach you more than another round of abstract comparison." };
 }
 
 function chooseGenericRoute(domain: DiscoveryDomain, concern: string): { key: DiscoveryRouteKey; reason: string } {
@@ -273,7 +250,7 @@ const CONCERN_TRACK_SEEDS: ConcernTrackSeed[] = [
     key: "ai-strategy",
     name: "AI strategy, governance, and policy",
     targetRoleArchetype: "AI strategy / governance",
-    whyItFits: "You explicitly mentioned AI strategy, so Anchor should keep this lane visible while you test real roles.",
+    whyItFits: "You explicitly mentioned AI strategy, so Anchor should keep this path visible while you test real roles.",
     patterns: [/\bai strategy\b/, /\bai governance\b/, /\bartificial intelligence\b/, /\bfrontier ai\b/, /\bai policy\b/],
     priority: 80,
   },
@@ -281,7 +258,7 @@ const CONCERN_TRACK_SEEDS: ConcernTrackSeed[] = [
     key: "geopolitics",
     name: "Geopolitics and strategic advisory",
     targetRoleArchetype: "geopolitical advisory / strategy",
-    whyItFits: "You explicitly mentioned geopolitics, so this should stay live as a real lane rather than getting folded into a generic strategy bucket.",
+    whyItFits: "You explicitly mentioned geopolitics, so this should stay live as a real path rather than getting folded into a generic strategy bucket.",
     patterns: [/\bgeopolitic/, /\bgeopolitical\b/, /\bforeign policy\b/, /\bpolicy advisory\b/, /\bstrategic advisory\b/],
     priority: 76,
   },
@@ -289,7 +266,7 @@ const CONCERN_TRACK_SEEDS: ConcernTrackSeed[] = [
     key: "chief-of-staff",
     name: "Chief of staff and strategic operations",
     targetRoleArchetype: "chief of staff / strategic operations",
-    whyItFits: "You explicitly mentioned chief of staff, so Anchor should keep an operating lane in play rather than treating everything as pure advisory work.",
+    whyItFits: "You explicitly mentioned chief of staff, so Anchor should keep an operating path in play rather than treating everything as pure advisory work.",
     patterns: [/\bchief of staff\b/, /\bcos\b/, /\bstrategy and operations\b/, /\bstrategic operations\b/, /\boperations\b/],
     priority: 72,
   },
@@ -297,7 +274,7 @@ const CONCERN_TRACK_SEEDS: ConcernTrackSeed[] = [
     key: "strategy",
     name: "General strategy and advisory",
     targetRoleArchetype: "strategy / advisory",
-    whyItFits: "You mentioned strategy work broadly, so a general strategy lane is still worth keeping live if no more specific lane is already doing that job.",
+    whyItFits: "You mentioned strategy work broadly, so a general strategy path is still worth keeping live if no more specific path is already doing that job.",
     patterns: [/\bstrategy\b/, /\badvisory\b/, /\bstrategist\b/],
     priority: 68,
     broad: true,
@@ -364,7 +341,7 @@ function mergeTrackDrafts(args: {
 
 function roleSearchPreview(trackDrafts: DiscoveryTrackDraft[]) {
   const names = trackDrafts.map((track) => track.targetRoleArchetype || track.name).filter(Boolean);
-  if (names.length === 0) return "one plausible role family";
+  if (names.length === 0) return "one role type to test";
   if (names.length === 1) return names[0];
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names[0]}, ${names[1]}, and ${names[2]}`;
@@ -375,14 +352,14 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
   return {
     "fit-clarification": {
       tinyNextAction: {
-        title: "Inspect one plausible role family and capture one useful signal",
-        doneWhen: "One role family feels more credible, energising, or clearly wrong",
-        firstStep: `Open one role search for ${trackDrafts[0]?.targetRoleArchetype || "a plausible role family"} and note one thing that feels credible or draining.`,
+        title: "Look closely at one role type and note what feels strong or wrong",
+        doneWhen: "You can say why this role type feels stronger, weaker, or wrong for you",
+        firstStep: `Open one search for ${trackDrafts[0]?.targetRoleArchetype || "a role type you might test"} and write down one thing that feels promising or draining.`,
         category: "job",
         size: "quick",
       },
       supportAction: {
-        title: "Write one working direction sentence from real experience",
+        title: "Write one rough sentence about the direction that feels strongest",
         doneWhen: "One rough direction sentence exists",
         firstStep: "Write one sentence that connects your strongest experience to the kind of work you may want next.",
         category: "job",
@@ -391,14 +368,14 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
     },
     "warm-path-build": {
       tinyNextAction: {
-        title: "Find one warm contact path into a plausible role lane",
-        doneWhen: "One real person or network path is identified",
-        firstStep: `Look for one person linked to ${trackDrafts[0]?.name || "your most plausible lane"} who could reality-check or unblock access.`,
+        title: "Find one person who could help you understand or access this path",
+        doneWhen: "You have one real person to follow up with",
+        firstStep: `Look for one person linked to ${trackDrafts[0]?.name || "the path that seems strongest"} who could reality-check it or open a door.`,
         category: "job",
         size: "quick",
       },
       supportAction: {
-        title: "Draft one short outreach ask",
+        title: "Draft one short outreach message",
         doneWhen: "One message outline exists",
         firstStep: "Write a 3-sentence ask focused on advice or role reality-check, not a broad life story.",
         category: "admin",
@@ -407,34 +384,34 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
     },
     "capability-ramp": {
       tinyNextAction: {
-        title: "Identify one repeated capability signal to strengthen",
-        doneWhen: "One capability gap is named clearly enough to work on",
-        firstStep: "Open one plausible role and highlight the requirement you least clearly prove today.",
+        title: "Find one job requirement that still feels weak today",
+        doneWhen: "One weak requirement is named clearly",
+        firstStep: "Open one plausible role and highlight the requirement that would be hardest to back up today.",
         category: "learning",
         size: "quick",
       },
       supportAction: {
-        title: "Choose one support item that could strengthen that signal",
-        doneWhen: "One concrete learning or work-sample move is chosen",
-        firstStep: "Pick the smallest support move that could improve the signal within a week.",
+        title: "Pick one small prep step for that weak requirement",
+        doneWhen: "One concrete prep step is chosen",
+        firstStep: "Pick the smallest step that would make that requirement easier to talk about, show, or practise within a week.",
         category: "learning",
         size: "quick",
       },
     },
     "broad-role-pursuit": {
       tinyNextAction: {
-        title: laneNames.length > 1 ? "Save one credible role in each plausible lane" : "Save one credible role that looks real right now",
-        doneWhen: laneNames.length > 1 ? "At least one real role exists in each plausible lane" : "One real role is saved with a note on why it is plausible",
+        title: laneNames.length > 1 ? "Save one real role for each option you want to test" : "Save one real role that seems worth testing",
+        doneWhen: laneNames.length > 1 ? "You have at least one real role saved for each option you want to test" : "One real role is saved with a note on why it is worth testing",
         firstStep: laneNames.length > 1
-          ? `Open your job sources and save one credible role for ${searchPreview}.`
-          : `Search for ${trackDrafts[0]?.targetRoleArchetype || "one plausible role"} and save the first role that feels credible enough to inspect.`,
+          ? `Open your job sources and save one real role for ${searchPreview}.`
+          : `Search for ${trackDrafts[0]?.targetRoleArchetype || "one role type you want to test"} and save the first role that seems worth inspecting.`,
         category: "job",
         size: laneNames.length > 1 ? "deep" : "quick",
       },
       supportAction: {
-        title: "Note what each saved role suggests about fit and urgency",
-        doneWhen: "Each saved role has one sentence on why it is credible or unclear",
-        firstStep: "For each role you save, write one line: credible, energising, unclear, or needs support.",
+        title: "Write one line on why each saved role is worth testing",
+        doneWhen: "Each saved role has one short note on fit, energy, or questions",
+        firstStep: "For each role you save, write one line: promising, draining, unclear, or needs support.",
         category: "job",
         size: "quick",
       },
@@ -501,44 +478,44 @@ async function buildDiscoveryPayload(input: z.infer<typeof startDiscoverySchema>
     limit: 3,
   });
   const laneNames = trackDrafts.map((d) => d.name);
-  const recommendedRoute = chooseCareerRoute(concern);
   const routes = careerRouteSet(concern, laneNames);
+  const routePreviews = careerRoutePreviews(trackDrafts, laneNames);
+  const recommendedRoute = recommendCareerDiscoveryRoute(concern, routePreviews);
   const existingSignals = [
     tracks.length > 0 ? `${tracks.length} active track${tracks.length === 1 ? "" : "s"}` : "",
     jobs.length > 0 ? `${jobs.length} saved role${jobs.length === 1 ? "" : "s"}` : "",
   ].filter(Boolean);
-  const routePreviews = careerRoutePreviews(trackDrafts, laneNames);
   const selectedPreview = routePreviews[recommendedRoute.key]!;
 
   return {
     domain,
     concern,
     workingGoalDraft: {
-      title: "Land a credible next role while narrowing the right lane",
+      title: "Land a credible next role while working out which path fits best",
       whyNow: "You need movement on work and direction without waiting for perfect certainty.",
-      desiredOutcome: "A live role pipeline with clearer signal about which lane is most plausible",
+      desiredOutcome: "A live role pipeline with clearer evidence about which path looks most plausible",
       timeHorizon,
-      successCondition: "At least one credible role process is moving and the best lane is clearer from real evidence",
+      successCondition: "At least one credible role process is moving and the best path is clearer from real evidence",
       uncertainty: [
-        "Which role family is the strongest fit",
-        "Which lane is most gettable soon",
+        "Which role type is the strongest fit",
+        "Which path is most gettable soon",
       ],
-      firstDecisionNeeded: "Whether to create market signal through live roles first or clarify fit first",
+      firstDecisionNeeded: "Whether to learn from real roles first or clarify fit first",
     },
     knowns: [
       "The user wants career movement, not just reflection.",
       ...(concernTrackDrafts.length > 0
-        ? [`You explicitly named these lanes: ${concernTrackDrafts.map((draft) => draft.name).join("; ")}.`]
+        ? [`You explicitly named these role types: ${concernTrackDrafts.map((draft) => draft.name).join("; ")}.`]
         : []),
-      ...(existingSignals.length ? existingSignals : ["Existing pipeline signal is still thin."]),
+      ...(existingSignals.length ? existingSignals : ["Existing pipeline evidence is still thin."]),
     ],
     unknowns: [
-      "Which role family is strongest in fit and realism",
+      "Which role type is strongest in fit and realism",
       "Which path can land soonest without feeling wrong",
     ],
     assumptions: [
-      "A working direction is enough; perfect certainty is not required before acting.",
-      "Real market signal is more useful than abstract overthinking at this stage.",
+      "A rough starting point is enough; perfect certainty is not required before acting.",
+      "Real openings and conversations will teach you more than abstract overthinking at this stage.",
     ],
     routes,
     recommendedRoute,
@@ -579,8 +556,8 @@ function taskSeedForRoute(routeKey: DiscoveryRouteKey, payload: DiscoveryPayload
   if (support) {
     tasks.push({
       ...support,
-      list: routeKey === "fit-clarification" ? "today" : "inbox",
-      sourceNote: `Supports discovery route ${routeKey}.`,
+      list: "inbox",
+      sourceNote: `Helpful next move for discovery route ${routeKey}.`,
     });
   }
   return tasks;

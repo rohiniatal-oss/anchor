@@ -2,7 +2,7 @@ import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/sch
 import { buildLaneOperatingModel, type LaneState } from "./laneState";
 import { buildAllTrackPlans } from "./trackPlanner";
 import { buildMarketabilityPlan } from "./marketabilityEngine";
-import { normalizeLaneName, type CanonicalLaneName } from "./lanes";
+import { LANE_NAME, normalizeLaneName, type CanonicalLaneName } from "./lanes";
 
 export type TrackSpineLane = {
   name: CanonicalLaneName;
@@ -65,10 +65,10 @@ function toSpineLane(lane: LaneState): TrackSpineLane {
 }
 
 function firstStepFor(title: string, lane: CanonicalLaneName) {
-  if (lane === "Applications") return "Open the role, CV, or application material.";
-  if (lane === "Network") return "Open the contact list or draft message.";
-  if (lane === "Learning and development") return "Open the resource or a blank note for the practice output.";
-  if (lane === "Proof assets") return "Open a blank note and write the smallest reusable proof fragment.";
+  if (lane === LANE_NAME.APPLICATIONS) return "Open the role, CV, or application material.";
+  if (lane === LANE_NAME.NETWORK) return "Open the contact list or draft message.";
+  if (lane === LANE_NAME.LEARNING_DEVELOPMENT) return "Open the learning item or a blank note for one short practice attempt or useful note.";
+  if (lane === LANE_NAME.PROOF_ASSETS) return "Open a blank note and create the smallest useful or publishable piece.";
   if (/role|inspect|requirements/i.test(title)) return "Open LinkedIn or a saved role.";
   return "Open the task and do the smallest visible first step.";
 }
@@ -119,7 +119,7 @@ export function buildTrackSpine(input: {
     title: activeTrack.primaryMove,
     firstStep: firstStepFor(activeTrack.primaryMove, activeTrack.primaryLane),
     doneWhen: activeTrack.doneWhen,
-    stopWhen: activeTrack.primaryLane === "Applications" ? "Stop after one concrete application/material step." : "Stop after one useful output exists.",
+    stopWhen: activeTrack.primaryLane === LANE_NAME.APPLICATIONS ? "Stop after one concrete application/material step." : "Stop after one useful result exists.",
     source: "track_spine" as const,
     trackId: activeTrack.id,
     trackName: activeTrack.name,
@@ -127,18 +127,18 @@ export function buildTrackSpine(input: {
     reason: activeTrack.reason,
   } : marketMove ? {
     title: marketMove.title,
-    firstStep: firstStepFor(marketMove.title, marketMove.lane === "Learning" ? "Learning and development" : normalizeLaneName(marketMove.lane)),
+    firstStep: firstStepFor(marketMove.title, normalizeLaneName(marketMove.lane)),
     doneWhen: marketMove.doneWhen,
-    stopWhen: "Stop once the required output exists.",
+    stopWhen: "Stop once the required result exists.",
     source: "marketability" as const,
     trackId: marketMove.trackId,
     trackName: marketMove.trackName,
-    lane: marketMove.lane === "Learning" ? "Learning and development" as const : normalizeLaneName(marketMove.lane),
+    lane: normalizeLaneName(marketMove.lane),
     reason: marketMove.reason,
   } : {
     title: laneModel.bottleneckLane.unlockMove,
     firstStep: firstStepFor(laneModel.bottleneckLane.unlockMove, bottleneckLane),
-    doneWhen: "One useful signal or output exists.",
+    doneWhen: "One useful signal or result exists.",
     stopWhen: laneModel.bottleneckLane.stopRule,
     source: "fallback" as const,
     lane: bottleneckLane,
@@ -156,7 +156,7 @@ export function buildTrackSpine(input: {
     trace: [
       "Built canonical Tracks × Lanes spine.",
       activeTrack ? `Active track is ${activeTrack.name}.` : "No active track plan found.",
-      `Primary lane is ${bottleneckLane}.`,
+      `Primary focus area is ${bottleneckLane}.`,
       `Best move source is ${bestMove.source}.`,
     ],
   };

@@ -15,6 +15,7 @@ import { mutateAndInvalidate } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import { GOAL_SPINE_QUERY_KEYS, PENDING_LEARN_DRAFT_KEY, takeHashDraft, takeIntakeDraft } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
+import { type LearnStarterPrefillT } from "@/lib/learnStarter";
 import { SectionHeading } from "@/components/home/SectionHeading";
 import { GroupLabel } from "@/components/home/GroupLabel";
 import { Loading } from "@/components/home/Loading";
@@ -23,13 +24,16 @@ import { TrackChip } from "@/components/home/TrackChip";
 import { ConstraintBadge } from "@/components/home/ConstraintBadge";
 import { CardActions } from "@/components/home/CardActions";
 import { ViewSpineCallout, BroadPursuitParallelSupportKickoff, learnPresetForLane, laneGuideForCombination } from "@/lib/parallelPursuit";
-import { useLinkedTaskCount } from "@/lib/homeHelpers";
-import { LEARN_OUTPUT_META, LEARN_STATUS_LABEL, parseIdList } from "@/lib/learnShared";
+import { findOpenLinkedTask, useLinkedTaskCount } from "@/lib/homeHelpers";
+import { LEARN_OUTPUT_META, LEARN_STATUS_LABEL, learnTaskActionLabel, learnTaskCreatedLabel, parseIdList } from "@/lib/learnShared";
+import { noLinkedTasksHelp, taskActionLabelForEntity, taskPreviewHint, taskToastDescription } from "@/lib/taskActionCopy";
 import type { LearnFormT } from "@/lib/learnShared";
 import { EMPTY_LEARN_FORM } from "@/lib/learnShared";
 import { STEP_STATUS_TONE } from "@/lib/stepRailShared";
 import type { Learn, Hustle, Task, CareerTrack, ProofAssetStep } from "@shared/schema";
+import { nextHustleTaskTitle, nextLearnTaskTitle } from "@shared/taskPreview";
 import type { GoalPortfolioItemT, GoalsStateResponseT } from "@/lib/goalSpine";
+import { displayCombinationLabel } from "@/lib/goalSpine";
 import { getTrackId, getLearnOutputState, learnNeedsOutputNudge, getLearnStatus, type LearnStatus } from "@shared/domainState";
 import { CAPABILITY_DOMAIN_KEYS, domainForLearn, domainLabel } from "@shared/capabilityDomains";
 import { requiredDomainsForTrack } from "@shared/capabilityTargets";
@@ -39,7 +43,7 @@ import { isFellowshipLearnRow } from "@shared/fellowshipLane";
 const HUSTLE_STAGES = [
   { id: "idea", label: "Idea", hint: "Not yet producing" },
   { id: "testing", label: "Producing", hint: "Output going out" },
-  { id: "earning", label: "Established", hint: "Recognised proof" },
+  { id: "earning", label: "Established", hint: "Recognised body of work" },
 ] as const;
 
 const PROOF_KIND_ICON: Record<ProofAssetKind, typeof BookOpen> = {
@@ -88,6 +92,40 @@ function ProofAssetBody({ h, kind }: { h: Hustle; kind: ProofAssetKind }) {
   );
 }
 
+type RecommendationDetail = {
+  id: number;
+  title: string;
+  kind: string;
+  executionShape: string;
+  subdivisions: Array<{
+    id: number;
+    label: string;
+    whyItMatters: string;
+    suggestedMaterials: string;
+    sequence: number;
+  }>;
+  milestones: Array<{
+    id: number;
+    label: string;
+    doneWhen: string;
+    status: string;
+    suggestedTaskTitle: string;
+    sequence: number;
+    subdivisionKey: string;
+  }>;
+};
+
+function parseSuggestedMaterials(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 function ProofStepRail({ h }: { h: Hustle }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -106,7 +144,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
     try {
       await mutateAndInvalidate("POST", `/api/hustles/${h.id}/steps/seed`, {}, ["/api/strategy/diagnostics"]);
       await reloadInto();
-      toast({ title: "Steps generated.", description: "From this asset's workflow — edit them to fit." });
+      toast({ title: "Steps generated.", description: "Based on this workflow. Edit them to fit." });
     } catch { toast({ title: "Couldn't generate steps", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
@@ -115,7 +153,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
     try {
       const r = await mutateAndInvalidate("POST", `/api/proof-steps/${s.id}/materialize`, {}, ["/api/tasks", "/api/strategy/diagnostics"]);
       await reloadInto();
-      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this asset." : "Find it in Brain dump, or in Today if it gets planned." });
+      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: taskToastDescription(r, "There's already an open task for this asset.") });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
@@ -126,7 +164,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
   async function block(s: ProofAssetStep) {
     await mutateAndInvalidate("POST", `/api/proof-steps/${s.id}/block`, { reason: "Blocked from the rail" }, ["/api/tasks", "/api/strategy/diagnostics"]);
     await reloadInto();
-    toast({ title: "Marked blocked.", description: "Noted on the step — unblock it when ready." });
+    toast({ title: "Marked blocked.", description: "Noted on the step. Unblock it when ready." });
   }
   async function rename(s: ProofAssetStep, stepLabel: string) {
     if (!stepLabel.trim() || stepLabel === s.stepLabel) return;
@@ -170,7 +208,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
       </div>
 
       {isLoading ? (
-        <p className="text-xs text-muted-foreground/60 py-1">Loading steps…</p>
+        <p className="text-xs text-muted-foreground/60 py-1">Loading steps...</p>
       ) : steps.length === 0 ? (
         <button onClick={seed} disabled={busy} data-testid={`button-seed-proof-steps-${h.id}`}
           className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
@@ -214,7 +252,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
           {editing && (
             <div className="flex items-center gap-1.5 pt-1">
               <Input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addStep(); }}
-                placeholder="Add a step…" className="h-7 text-xs" data-testid={`input-add-proof-step-${h.id}`} />
+                placeholder="Add a step..." className="h-7 text-xs" data-testid={`input-add-proof-step-${h.id}`} />
               <Button size="sm" variant="outline" className="h-7 px-2" onClick={addStep} data-testid={`button-add-proof-step-${h.id}`}><Plus className="w-3.5 h-3.5" /></Button>
             </div>
           )}
@@ -230,6 +268,7 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
   const trackId = getTrackId("hustles", h);
   const linked = useLinkedTaskCount(tasks, "hustle", h.id);
   const kind = classifyProofAsset(h);
+  const openHustleTask = findOpenLinkedTask(tasks, "hustle", h.id);
   return (
     <div className="group rounded-lg border border-card-border bg-card p-3" data-testid={`hustle-${h.id}`}>
       <div className="flex items-start justify-between gap-2">
@@ -244,12 +283,13 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
       <ProofAssetBody h={h} kind={kind} />
       {h.nextStep && <p className="text-xs mt-2 inline-flex items-center gap-1 rounded-md bg-accent text-accent-foreground px-1.5 py-0.5"><ArrowUpRight className="w-3 h-3" /> {h.nextStep}</p>}
       <div className="flex items-center gap-1 mt-2.5">
-        {idx > 0 && <button onClick={() => onMove(h, -1)} data-testid={`button-hustle-back-${h.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">←</button>}
-        {idx < HUSTLE_STAGES.length - 1 && <button onClick={() => onMove(h, 1)} data-testid={`button-hustle-fwd-${h.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">{HUSTLE_STAGES[idx + 1].label} →</button>}
+        {idx > 0 && <button onClick={() => onMove(h, -1)} data-testid={`button-hustle-back-${h.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate"><span aria-hidden="true">&larr;</span></button>}
+        {idx < HUSTLE_STAGES.length - 1 && <button onClick={() => onMove(h, 1)} data-testid={`button-hustle-fwd-${h.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">{HUSTLE_STAGES[idx + 1].label} <span aria-hidden="true">&rarr;</span></button>}
       </div>
       <ProofStepRail h={h} />
       <CardActions entity="hustles" id={h.id} trackId={trackId} tracks={tracks}
-        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} />
+        nextTaskHint={taskPreviewHint(nextHustleTaskTitle(h), openHustleTask?.title)}
+        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("hustles")) })} />
     </div>
   );
 }
@@ -279,20 +319,20 @@ export function ProofAssetsView() {
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Work samples" sub="What you're building — work that shows your thinking and capabilities." />
-        <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-hustle-form"><Plus className="w-4 h-4 mr-1" /> Add work sample</Button>
+        <SectionHeading title="Writing, Projects, and Brand" sub="Optional posts, memos, and projects that help you think in public, build your brand, or make progress on something you care about." />
+        <Button onClick={() => setShowForm((s) => !s)} className="shrink-0" data-testid="button-toggle-hustle-form"><Plus className="w-4 h-4 mr-1" /> Add writing or project</Button>
       </div>
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 grid gap-2">
           <Input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-hustle-title" />
-          <Input placeholder="Core claim / what it proves" value={form.coreClaim} onChange={(e) => setForm({ ...form, coreClaim: e.target.value })} data-testid="input-hustle-claim" />
+          <Input placeholder="Core idea / what it's about" value={form.coreClaim} onChange={(e) => setForm({ ...form, coreClaim: e.target.value })} data-testid="input-hustle-claim" />
           <Input placeholder="Content pillar (e.g. geopolitics)" value={form.contentPillar} onChange={(e) => setForm({ ...form, contentPillar: e.target.value })} data-testid="input-hustle-pillar" />
           <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} data-testid="input-hustle-note" />
           <div className="flex gap-2 justify-end"><Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button><Button onClick={add} data-testid="button-save-hustle">Save</Button></div>
         </div>
       )}
       {isLoading ? <Loading /> : hustles.length === 0 ? (
-        <Empty icon={Rocket} text="No work samples yet. Add a memo, article, or anything that shows your thinking." action={{ label: "Add a work sample", onClick: () => setShowForm(true) }} />
+        <Empty icon={Rocket} text="No writing or projects yet. Add a memo, article, post, or side project if you want a place to track brand-building or public thinking." action={{ label: "Add writing or project", onClick: () => setShowForm(true) }} />
       ) : (
         <>
           <div className={`grid gap-4 ${active.length > 1 ? "sm:grid-cols-2" : ""}`}>
@@ -303,7 +343,7 @@ export function ProofAssetsView() {
               </div>
             ))}
           </div>
-          {empty.length > 0 && <p className="mt-3 text-xs text-muted-foreground">Other stages: {empty.map((g) => g.stage.label).join(" · ")} — assets move here as they become real.</p>}
+          {empty.length > 0 && <p className="mt-3 text-xs text-muted-foreground">Other stages: {empty.map((g) => g.stage.label).join(" | ")} - items move here as they become real.</p>}
         </>
       )}
     </div>
@@ -312,8 +352,10 @@ export function ProofAssetsView() {
 
 function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l: Learn; tracks: CareerTrack[]; tasks: Task[]; onToggle: () => void; onToggleActive: () => void; onRemove: () => void }) {
   const { toast } = useToast();
+  const qc = useQueryClient();
   const trackId = getTrackId("learn", l);
   const linked = useLinkedTaskCount(tasks, "learn", l.id);
+  const openLearnTask = findOpenLinkedTask(tasks, "learn", l.id);
   const outputState = getLearnOutputState(l);
   const needsNudge = learnNeedsOutputNudge(l);
   const meta = LEARN_OUTPUT_META[outputState];
@@ -325,9 +367,25 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
   const [titleDraft, setTitleDraft] = useState(l.outputTitle || "");
   const [evidencing, setEvidencing] = useState(false);
   const [evidenceDraft, setEvidenceDraft] = useState("");
+  const [showCurriculum, setShowCurriculum] = useState(false);
 
   const prereqIds = parseIdList(l.prerequisites);
   const unlockIds = parseIdList(l.unlocks);
+  const recommendationSourceId = l.sourceType === "recommendation" && l.sourceId ? l.sourceId : null;
+  const { data: recommendationDetail, isLoading: isLoadingCurriculum } = useQuery<RecommendationDetail>({
+    queryKey: [`/api/recommendations/${recommendationSourceId}`],
+    enabled: !!recommendationSourceId,
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/recommendations/${recommendationSourceId}`);
+      return await r.json();
+    },
+  });
+  const nextCurriculumMilestone = recommendationDetail?.milestones?.find((milestone) => milestone.status === "active")
+    || recommendationDetail?.milestones?.find((milestone) => milestone.status === "blocked")
+    || recommendationDetail?.milestones?.find((milestone) => milestone.status === "todo")
+    || null;
+  const nextCurriculumTaskTitle = nextCurriculumMilestone?.suggestedTaskTitle?.trim() || "";
+  const nextTaskPreviewTitle = nextCurriculumTaskTitle || nextLearnTaskTitle(l);
 
   async function saveOutputTitle() {
     const v = titleDraft.trim();
@@ -341,14 +399,14 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
     setBusy(true);
     try {
       const r = await mutateAndInvalidate("POST", `/api/learn/${l.id}/create-output-task`, {}, ["/api/tasks", ...GOAL_SPINE_QUERY_KEYS]);
-      toast({ title: r?.reused ? "Already on your list." : "Output task created.", description: r?.reused ? "There's already an open task for this." : "Find it in Brain dump, or in Today if it gets planned." });
+      toast({ title: r?.reused ? "Already on your list." : learnTaskCreatedLabel("producing"), description: taskToastDescription(r, "There's already an open task for this.") });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
   async function toggleProofIntent() {
     const next = !l.proofIntent;
     await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { proofIntent: next }, ["/api/learn", "/api/strategy/diagnostics", "/api/strategy/front-door", "/api/strategy/learning-gaps", ...GOAL_SPINE_QUERY_KEYS]);
-    if (next) toast({ title: "Flagged as proof-building.", description: "This now sits in the building lane. Give it an output when you're ready — no rush." });
+    if (next) toast({ title: "Marked as learning with optional saved notes.", description: "This stays a learning item. If it leaves you with notes worth keeping, you can save them here." });
   }
   async function markEvidenced() {
     const v = evidenceDraft.trim();
@@ -357,9 +415,49 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
     try {
       await mutateAndInvalidate("POST", `/api/learn/${l.id}/mark-evidenced`, { outputEvidenceUrl: v }, ["/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       setEvidencing(false); setEvidenceDraft("");
-      toast({ title: "Marked as evidenced.", description: "The artifact is linked — this now counts as proof." });
+      toast({ title: "Linked to your notes.", description: "Anchor can refer back to them later." });
     } catch { toast({ title: "Couldn't save the link", description: "Try again in a moment." }); }
     finally { setBusy(false); }
+  }
+  async function refreshCurriculum() {
+    if (!recommendationSourceId) return;
+    await qc.invalidateQueries({ queryKey: [`/api/recommendations/${recommendationSourceId}`] });
+  }
+  async function setMilestoneStatus(milestoneId: number, status: string, successTitle: string) {
+    if (!recommendationSourceId) return;
+    setBusy(true);
+    try {
+      await apiRequest("PATCH", `/api/recommendation-milestones/${milestoneId}`, { status });
+      await refreshCurriculum();
+      toast({ title: successTitle, description: "The theme plan has been updated." });
+    } catch {
+      toast({ title: "Couldn't update the checkpoint", description: "Try again in a moment." });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function makeMilestoneNext(milestoneId: number) {
+    if (!recommendationSourceId) return;
+    setBusy(true);
+    try {
+      const current = recommendationDetail?.milestones || [];
+      for (const milestone of current) {
+        if (milestone.id === milestoneId) continue;
+        if (milestone.status === "active") {
+          await apiRequest("PATCH", `/api/recommendation-milestones/${milestone.id}`, { status: "todo" });
+        }
+      }
+      const target = current.find((milestone) => milestone.id === milestoneId);
+      if (target && target.status !== "active") {
+        await apiRequest("PATCH", `/api/recommendation-milestones/${milestoneId}`, { status: "active" });
+      }
+      await refreshCurriculum();
+      toast({ title: "Set as the next prep step.", description: openLearnTask ? "Finish the current open prep task first; after that, this checkpoint will be next." : "The next prep task will use this checkpoint." });
+    } catch {
+      toast({ title: "Couldn't set the next checkpoint", description: "Try again in a moment." });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -383,8 +481,173 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
             </span>
           </div>
 
-          {l.requiredOutput && <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-snug"><span className="font-medium">Output:</span> {l.requiredOutput}</p>}
+          {l.requiredOutput && <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-snug"><span className="font-medium">Optional notes to keep:</span> {l.requiredOutput}</p>}
           {l.note && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{l.note}</p>}
+
+          {recommendationSourceId && (
+            <div className="mt-2.5 rounded-lg border border-card-border bg-muted/25 px-3 py-2.5">
+              <button
+                type="button"
+                onClick={() => setShowCurriculum((value) => !value)}
+                className="flex w-full items-center justify-between gap-2 text-left"
+                data-testid={`button-toggle-learn-curriculum-${l.id}`}
+              >
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Theme plan</p>
+                  <p className="mt-0.5 text-xs leading-snug text-foreground">Keep the subtopics, starter materials, and checkpoints attached to this learning theme.</p>
+                </div>
+                {showCurriculum ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />}
+              </button>
+
+              {showCurriculum && (
+                <div className="mt-3 space-y-3">
+                  {isLoadingCurriculum ? (
+                    <p className="text-xs text-muted-foreground">Loading the subtopics and checkpoints for this theme...</p>
+                  ) : (
+                    <>
+                      {recommendationDetail?.subdivisions?.length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Subtopics</p>
+                          <div className="mt-2 space-y-2">
+                            {recommendationDetail.subdivisions.map((subdivision) => {
+                              const materials = parseSuggestedMaterials(subdivision.suggestedMaterials);
+                              return (
+                                <div key={subdivision.id} className="rounded-lg border border-card-border bg-card px-3 py-2.5">
+                                  <p className="text-xs font-medium leading-snug text-foreground">{subdivision.label}</p>
+                                  {subdivision.whyItMatters && <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{subdivision.whyItMatters}</p>}
+                                  {materials.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      {materials.map((material) => (
+                                        <span key={material} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[10px] text-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                                          <BookOpen className="w-2.5 h-2.5" /> {material}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {recommendationDetail?.milestones?.length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Checkpoints</p>
+                          <div className="mt-2 space-y-2">
+                            {recommendationDetail.milestones.map((milestone) => {
+                              const isDone = milestone.status === "done";
+                              const isSkipped = milestone.status === "skipped";
+                              const isActive = milestone.status === "active";
+                              const isBlocked = milestone.status === "blocked";
+                              const isClosed = isDone || isSkipped;
+                              return (
+                                <div key={milestone.id} className="rounded-lg border border-card-border bg-card px-3 py-2.5">
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <p className="text-xs font-medium leading-snug text-foreground">{milestone.label}</p>
+                                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                          isDone ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                            : isSkipped ? "bg-slate-200 text-slate-600 dark:bg-slate-800/70 dark:text-slate-300"
+                                              : isBlocked ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                                              : isActive ? "bg-primary/10 text-primary"
+                                                : "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                        }`}>
+                                          {isDone ? "done" : isSkipped ? "skipped" : isBlocked ? "blocked" : isActive ? "next up" : "todo"}
+                                        </span>
+                                      </div>
+                                      {milestone.doneWhen && <p className="mt-1 text-[11px] leading-snug text-muted-foreground">Done when: {milestone.doneWhen}</p>}
+                                      {milestone.suggestedTaskTitle && <p className="mt-1 text-[11px] leading-snug text-primary">Suggested next move: {milestone.suggestedTaskTitle}</p>}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {!isActive && !isBlocked && !isClosed && (
+                                        <button
+                                          type="button"
+                                          onClick={() => makeMilestoneNext(milestone.id)}
+                                          disabled={busy}
+                                          className="text-[11px] text-primary hover:underline disabled:opacity-60"
+                                          data-testid={`button-milestone-next-${milestone.id}`}
+                                        >
+                                          Make next
+                                        </button>
+                                      )}
+                                      {isClosed ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => setMilestoneStatus(milestone.id, "todo", "Checkpoint reopened.")}
+                                          disabled={busy}
+                                          className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+                                          data-testid={`button-milestone-reopen-${milestone.id}`}
+                                        >
+                                          Reopen
+                                        </button>
+                                      ) : isBlocked ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setMilestoneStatus(milestone.id, "active", "Checkpoint reopened.")}
+                                            disabled={busy}
+                                            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+                                            data-testid={`button-milestone-reopen-${milestone.id}`}
+                                          >
+                                            Reopen
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setMilestoneStatus(milestone.id, "done", "Checkpoint marked done.")}
+                                            disabled={busy}
+                                            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+                                            data-testid={`button-milestone-done-${milestone.id}`}
+                                          >
+                                            Mark done
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setMilestoneStatus(milestone.id, "skipped", "Checkpoint skipped.")}
+                                            disabled={busy}
+                                            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+                                            data-testid={`button-milestone-skip-${milestone.id}`}
+                                          >
+                                            Skip
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setMilestoneStatus(milestone.id, "done", "Checkpoint marked done.")}
+                                            disabled={busy}
+                                            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+                                            data-testid={`button-milestone-done-${milestone.id}`}
+                                          >
+                                            Mark done
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setMilestoneStatus(milestone.id, "skipped", "Checkpoint skipped.")}
+                                            disabled={busy}
+                                            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-60"
+                                            data-testid={`button-milestone-skip-${milestone.id}`}
+                                          >
+                                            Skip
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {(prereqIds.length > 0 || unlockIds.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -395,21 +658,21 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
 
           {needsNudge && (
             <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-2 inline-flex items-center gap-1" data-testid={`learn-nudge-${l.id}`}>
-              <Hammer className="w-3 h-3" /> Building something from this? Track it below.
+              <Hammer className="w-3 h-3" /> If this leaves you with notes worth keeping, track them below.
             </p>
           )}
 
           {outputState === "reference" && !l.done && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2">
               <button onClick={toggleProofIntent} data-testid={`button-proof-intent-${l.id}`} className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-                <Hammer className="w-3 h-3" /> Track an output
+                <Hammer className="w-3 h-3" /> Keep notes from this
               </button>
             </div>
           )}
 
           {outputState === "evidenced" && l.outputEvidenceUrl && (
             <a href={l.outputEvidenceUrl} target="_blank" rel="noopener noreferrer" data-testid={`link-evidence-${l.id}`} className="text-xs text-emerald-700 dark:text-emerald-300 mt-2 inline-flex items-center gap-1 hover:underline">
-              <BadgeCheck className="w-3 h-3" /> {l.outputTitle || "View published piece"} <ExternalLink className="w-3 h-3" />
+              <BadgeCheck className="w-3 h-3" /> {l.outputTitle || "View linked notes"} <ExternalLink className="w-3 h-3" />
             </a>
           )}
 
@@ -420,16 +683,16 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
 
           {outputState === "producing" && !l.done && (
             <div className="mt-2.5 rounded-lg bg-muted/40 px-3 py-2.5 space-y-2">
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">What you're building</p>
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Notes to keep</p>
               {editingTitle ? (
                 <div className="flex items-center gap-2">
-                  <Input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} placeholder="e.g. AI governance article, policy memo…" className="h-7 text-xs" data-testid={`input-output-title-${l.id}`} />
+                  <Input value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} placeholder="e.g. notes summary, checklist, policy memo, interview brief" className="h-7 text-xs" data-testid={`input-output-title-${l.id}`} />
                   <button onClick={saveOutputTitle} className="text-xs text-primary font-medium hover:underline shrink-0">Save</button>
                   <button onClick={() => { setEditingTitle(false); setTitleDraft(l.outputTitle || ""); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0">Cancel</button>
                 </div>
               ) : (
                 <button onClick={() => setEditingTitle(true)} data-testid={`button-edit-output-title-${l.id}`} className="text-xs text-left w-full hover:text-primary transition-colors">
-                  {l.outputTitle ? <span className="font-medium">{l.outputTitle}</span> : <span className="text-muted-foreground">Add a title…</span>}
+                  {l.outputTitle ? <span className="font-medium">{l.outputTitle}</span> : <span className="text-muted-foreground">Add a title...</span>}
                 </button>
               )}
               <div className="flex items-center gap-1.5">
@@ -445,11 +708,11 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
                 <div>
                   {l.outputEvidenceUrl ? (
                     <a href={l.outputEvidenceUrl} target="_blank" rel="noopener noreferrer" data-testid={`link-evidence-${l.id}`} className="text-xs text-primary hover:underline inline-flex items-center gap-1">
-                      <ExternalLink className="w-3 h-3" /> View {l.outputTitle || "piece"}
+                      <ExternalLink className="w-3 h-3" /> View {l.outputTitle || "notes"}
                     </a>
                   ) : evidencing ? (
                     <span className="inline-flex items-center gap-2">
-                      <Input value={evidenceDraft} onChange={(e) => setEvidenceDraft(e.target.value)} placeholder="Link to the published piece" className="h-7 text-xs w-48" data-testid={`input-evidence-${l.id}`} />
+                      <Input value={evidenceDraft} onChange={(e) => setEvidenceDraft(e.target.value)} placeholder="Link to the notes, checklist, doc, or project" className="h-7 text-xs w-48" data-testid={`input-evidence-${l.id}`} />
                       <button onClick={markEvidenced} disabled={busy || !evidenceDraft.trim()} data-testid={`button-confirm-evidence-${l.id}`} className="text-xs text-primary font-medium hover:underline disabled:opacity-60">Save</button>
                       <button onClick={() => { setEvidencing(false); setEvidenceDraft(""); }} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
                     </span>
@@ -461,13 +724,14 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
                 </div>
               )}
               <button onClick={createOutputTask} disabled={busy} data-testid={`button-create-output-task-${l.id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 disabled:opacity-60">
-                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create task to work on this
+                {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} {learnTaskActionLabel("producing")}
               </button>
             </div>
           )}
 
           <CardActions entity="learn" id={l.id} trackId={trackId} tracks={tracks}
-            onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create output task' to make one." })} />
+            nextTaskHint={taskPreviewHint(nextTaskPreviewTitle, openLearnTask?.title)}
+            onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : `Use '${learnTaskActionLabel(outputState)}' to make one.` })} />
         </div>
       </div>
     </div>
@@ -485,27 +749,36 @@ export function LearnView() {
   const [showMoreLearnFields, setShowMoreLearnFields] = useState(false);
   const [form, setForm] = useState<LearnFormT>(EMPTY_LEARN_FORM);
   const [selectedLane, setSelectedLane] = useState("");
+  const [starterHint, setStarterHint] = useState<{ label: string; why: string } | null>(null);
   const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
   useEffect(() => {
-    const pending = takeHashDraft<LearnFormT>("learnDraft") || takeIntakeDraft<LearnFormT>(PENDING_LEARN_DRAFT_KEY);
+    const pending = takeHashDraft<LearnStarterPrefillT>("learnDraft") || takeIntakeDraft<LearnStarterPrefillT>(PENDING_LEARN_DRAFT_KEY);
     if (pending) {
-      setForm({ ...EMPTY_LEARN_FORM, ...pending });
+      const { starterLabel, starterWhy, ...draft } = pending;
+      setForm({ ...EMPTY_LEARN_FORM, ...draft });
+      setStarterHint(starterLabel || starterWhy ? { label: starterLabel || draft.title || "Suggested starter", why: starterWhy || "" } : null);
       setShowForm(true);
     }
   }, []);
   const suggestedDomainKeys = Array.from(
     new Set(tracks.flatMap((track) => requiredDomainsForTrack(track)).filter((key) => !!key)),
   ) as string[];
+  function updateLearnForm(patch: Partial<LearnFormT>, clearStarter = false) {
+    if (clearStarter) setStarterHint(null);
+    setForm((current) => ({ ...current, ...patch }));
+  }
   function startLaneLearn(item: GoalPortfolioItemT) {
     const preset = learnPresetForLane(item, tracks);
-    setForm({ ...EMPTY_LEARN_FORM, ...preset });
+    const { starterLabel, starterWhy, ...draft } = preset as LearnStarterPrefillT;
+    setForm({ ...EMPTY_LEARN_FORM, ...draft });
+    setStarterHint(starterLabel || starterWhy ? { label: starterLabel || draft.title || "Suggested starter", why: starterWhy || "" } : null);
     setSelectedLane(item.combination);
     setShowForm(true);
   }
   async function add() {
     if (!form.title.trim()) return;
     await mutateAndInvalidate("POST", "/api/learn", { ...form, done: false, active: false }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]);
-    setForm(EMPTY_LEARN_FORM); setSelectedLane(""); setShowForm(false); setShowMoreLearnFields(false);
+    setForm(EMPTY_LEARN_FORM); setSelectedLane(""); setStarterHint(null); setShowForm(false); setShowMoreLearnFields(false);
   }
   async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
   async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
@@ -531,64 +804,82 @@ export function LearnView() {
   const activeNow = live.filter((l) => l.active);
 
   return (
-    <div>
+      <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Learn" sub="What you're building so future roles and interviews feel easier." />
-        <Button onClick={() => showForm ? setShowForm(false) : setShowForm(true)} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add</Button>
+        <SectionHeading title="Learn" sub="Courses, reading, and prep that make future roles and interviews feel easier. Brand work like Substack belongs below under Writing, Projects, and Brand, not under Learn." />
+        <Button onClick={() => {
+          if (showForm) {
+            setShowForm(false);
+            setStarterHint(null);
+            return;
+          }
+          setStarterHint(null);
+          setShowForm(true);
+        }} className="shrink-0" data-testid="button-toggle-learn-form"><Plus className="w-4 h-4 mr-1" /> Add learning item</Button>
       </div>
       {activeGoal && !(live.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="learn" goal={activeGoal} />}
-      {activeGoal && live.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="learn" onStartLane={startLaneLearn} />}
+      {activeGoal && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="learn" onStartLane={startLaneLearn} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3">
           {selectedLane && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="learn-form-lane-banner">
               <div>
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Lane</p>
-                <p className="text-sm font-medium">{selectedLane}</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Role type</p>
+                <p className="text-sm font-medium">{displayCombinationLabel(selectedLane)}</p>
                 {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
               </div>
-              <button type="button" onClick={() => { setSelectedLane(""); setForm((c) => ({ ...c, title: "", category: "", capabilityBuilt: "", requiredOutput: "", note: "", relatedTrackId: null, proofIntent: false })); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0" data-testid="button-clear-learn-lane">Clear</button>
+              <button type="button" onClick={() => { setSelectedLane(""); setStarterHint(null); setForm((c) => ({ ...c, title: "", category: "", capabilityBuilt: "", requiredOutput: "", note: "", relatedTrackId: null, proofIntent: false })); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0" data-testid="button-clear-learn-lane">Clear</button>
             </div>
           )}
-          <Input placeholder="Title *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} data-testid="input-learn-title" autoFocus />
-          <Input placeholder="Link (optional)" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} data-testid="input-learn-url" />
+          {starterHint && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5" data-testid="learn-starter-hint">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this starter</p>
+              <p className="text-sm font-medium mt-1">{starterHint.label}</p>
+              {starterHint.why && <p className="text-xs text-muted-foreground mt-1">{starterHint.why}</p>}
+              <p className="text-xs text-muted-foreground mt-1">You can save this as-is, or tweak it first.</p>
+            </div>
+          )}
+          <Input placeholder="Title *" value={form.title} onChange={(e) => updateLearnForm({ title: e.target.value }, true)} data-testid="input-learn-title" autoFocus />
+          <Input placeholder="Link (optional)" value={form.url} onChange={(e) => updateLearnForm({ url: e.target.value })} data-testid="input-learn-url" />
           {suggestedDomainKeys.length > 0 && (
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Capability domain (optional)</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Topic area (optional)</p>
               <div className="flex flex-wrap gap-1.5">
-                {suggestedDomainKeys.map((key) => (
-                  <button key={key} type="button" onClick={() => setForm({ ...form, category: domainLabel(key), capabilityBuilt: domainLabel(key) })}
+                {suggestedDomainKeys.map((key) => {
+                  const label = domainLabel(key);
+                  return (
+                  <button key={key} type="button" onClick={() => updateLearnForm({ category: label, capabilityBuilt: label }, true)}
                     className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.category === domainLabel(key) ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground hover:text-foreground"}`}
-                    data-testid={`button-learn-domain-${key}`}>{domainLabel(key)}</button>
-                ))}
+                    data-testid={`button-learn-domain-${key}`}>{label}</button>
+                )})}
               </div>
             </div>
           )}
           <button type="button" onClick={() => setShowMoreLearnFields((v) => !v)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMoreLearnFields ? "rotate-180" : ""}`} />
-            {showMoreLearnFields ? "Fewer options" : "More options (output, mode, track)"}
+            {showMoreLearnFields ? "Fewer options" : "More options (result, mode, role type)"}
           </button>
           {showMoreLearnFields && (
             <div className="space-y-2">
               <div className="grid gap-2 sm:grid-cols-2">
-                <Input placeholder="Capability this builds" value={form.capabilityBuilt} onChange={(e) => setForm({ ...form, capabilityBuilt: e.target.value })} data-testid="input-learn-capability-built" />
-                <Input placeholder="Intended output" value={form.requiredOutput} onChange={(e) => setForm({ ...form, requiredOutput: e.target.value })} data-testid="input-learn-required-output" />
-                <Input placeholder="Note" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="sm:col-span-2" data-testid="input-learn-note" />
+                <Input placeholder="Helps you get better at" value={form.capabilityBuilt} onChange={(e) => updateLearnForm({ capabilityBuilt: e.target.value }, true)} data-testid="input-learn-capability-built" />
+                <Input placeholder="Optional notes, checklist, or brief to keep" value={form.requiredOutput} onChange={(e) => updateLearnForm({ requiredOutput: e.target.value })} data-testid="input-learn-required-output" />
+                <Input placeholder="Note" value={form.note} onChange={(e) => updateLearnForm({ note: e.target.value })} className="sm:col-span-2" data-testid="input-learn-note" />
               </div>
               <div className="flex flex-wrap gap-3">
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Mode</p>
                   <div className="flex gap-1.5">
-                    <button type="button" onClick={() => setForm({ ...form, proofIntent: false })} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${!form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`} data-testid="button-learn-mode-reference">Reference only</button>
-                    <button type="button" onClick={() => setForm({ ...form, proofIntent: true })} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`} data-testid="button-learn-mode-output">Build output</button>
+                    <button type="button" onClick={() => updateLearnForm({ proofIntent: false })} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${!form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`} data-testid="button-learn-mode-reference">Just learning</button>
+                    <button type="button" onClick={() => updateLearnForm({ proofIntent: true })} className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.proofIntent ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`} data-testid="button-learn-mode-output">May leave notes worth keeping</button>
                   </div>
                 </div>
                 <div>
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Status</p>
                   <div className="flex gap-1.5">
                     {(["open", "watch", "active"] as LearnStatus[]).map((status) => (
-                      <button key={status} type="button" onClick={() => setForm({ ...form, learnStatus: status })}
+                      <button key={status} type="button" onClick={() => updateLearnForm({ learnStatus: status })}
                         className={`rounded-full border px-2.5 py-1 text-xs font-medium ${form.learnStatus === status ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground"}`}
                         data-testid={`button-learn-status-${status}`}>{LEARN_STATUS_LABEL[status]}</button>
                     ))}
@@ -597,10 +888,10 @@ export function LearnView() {
               </div>
               {tracks.length > 0 && (
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to path</p>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to role type</p>
                   <div className="flex flex-wrap gap-1.5">
                     {tracks.map((track) => (
-                      <button key={track.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === track.id ? null : track.id })}
+                      <button key={track.id} type="button" onClick={() => updateLearnForm({ relatedTrackId: form.relatedTrackId === track.id ? null : track.id }, true)}
                         className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${form.relatedTrackId === track.id ? "border-primary/30 bg-primary/10 text-primary" : "border-card-border bg-card text-muted-foreground hover:text-foreground"}`}
                         data-testid={`button-learn-track-${track.id}`}>{track.name}</button>
                     ))}
@@ -610,13 +901,13 @@ export function LearnView() {
             </div>
           )}
           <div className="flex gap-2 justify-end">
-            <Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setForm(EMPTY_LEARN_FORM); setShowMoreLearnFields(false); }}>Cancel</Button>
+            <Button variant="ghost" onClick={() => { setShowForm(false); setSelectedLane(""); setStarterHint(null); setForm(EMPTY_LEARN_FORM); setShowMoreLearnFields(false); }}>Cancel</Button>
             <Button onClick={add} data-testid="button-save-learn">Save</Button>
           </div>
         </div>
       )}
       {isLoading ? <Loading /> : items.length === 0 ? (
-        <Empty icon={GraduationCap} text="No support items yet. Add one reusable capability move now." action={{ label: "Add a learning item", onClick: () => setShowForm(true) }} />
+        <Empty icon={GraduationCap} text="No learning items yet. Add one thing you want to learn, practise, or get clearer on." action={{ label: "Add a learning item", onClick: () => setShowForm(true) }} />
       ) : (
         <div className="space-y-6">
           {activeNow.length > 0 && (

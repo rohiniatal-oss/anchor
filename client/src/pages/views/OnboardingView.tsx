@@ -75,14 +75,22 @@ function priorityTone(priority: string) {
   return "bg-muted text-muted-foreground";
 }
 
+function priorityLabel(priority: string) {
+  if (priority === "convert") return "pursue now";
+  if (priority === "explore") return "test";
+  if (priority === "watch") return "later";
+  if (priority === "pause") return "pause";
+  return priority;
+}
+
 const ROUTE_DECISION_COPY: Record<string, string> = {
-  "broad-role-pursuit": "Choose this if you need real market signal fast.",
-  "fit-clarification": "Choose this if the role families still feel too muddy to apply usefully.",
-  "warm-path-build": "Choose this if access, referrals, or insider context are the real bottleneck.",
-  "capability-ramp": "Choose this if one clear readiness gap is holding you back.",
-  "clarify-outcome": "Choose this if the goal is still too fuzzy to plan well.",
-  "reduce-friction": "Choose this if one blocker is making everything harder than it should be.",
-  "start-small-routine": "Choose this if consistency matters more than one big push.",
+  "broad-role-pursuit": "Start here if real openings will teach you faster than more abstract thinking.",
+  "fit-clarification": "Start here if you still need to work out which role types are actually worth testing.",
+  "warm-path-build": "Start here if the right conversation could speed things up more than another application.",
+  "capability-ramp": "Start here if one repeated weak spot needs focused prep before you push harder.",
+  "clarify-outcome": "Start here if the goal is still too fuzzy to plan well.",
+  "reduce-friction": "Start here if one blocker is making everything harder than it should be.",
+  "start-small-routine": "Start here if consistency matters more than one big push.",
 };
 
 export default function OnboardingView() {
@@ -201,7 +209,7 @@ export default function OnboardingView() {
             <h2 className="text-sm font-semibold">Not sure which role types to choose?</h2>
             <p className="text-xs text-muted-foreground mt-1">
               Describe the career problem in plain English. Anchor will turn it into a
-              working direction, suggested role types, and the first tasks.
+              starting point, suggested role types, and the first tasks.
             </p>
           </div>
         </div>
@@ -210,7 +218,7 @@ export default function OnboardingView() {
           <Textarea
             value={concern}
             onChange={(e) => setConcern(e.target.value)}
-            placeholder="Example: I need a credible next role soon, but I am torn between AI strategy, geopolitics, and chief of staff paths."
+            placeholder="Example: I need a credible next role soon, but I am torn between AI strategy, geopolitics, and chief of staff role types."
             className="min-h-[104px] bg-background"
             data-testid="input-discovery-concern"
           />
@@ -249,7 +257,7 @@ export default function OnboardingView() {
           <div className="mt-5 space-y-4" data-testid="discovery-results">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
-                Start with the route choice. Open more context only if you want it.
+                Start by choosing the kind of first move that fits best. Open more context only if you want it.
               </p>
               <button
                 onClick={() => setDetailsOpen((open) => !open)}
@@ -263,7 +271,7 @@ export default function OnboardingView() {
             <div className="rounded-xl border border-card-border bg-card p-4">
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                  <Lightbulb className="w-3 h-3" /> Working direction
+                  <Lightbulb className="w-3 h-3" /> Starting point
                 </span>
                 <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                   {discovery.workingGoalDraft.timeHorizon}
@@ -285,7 +293,7 @@ export default function OnboardingView() {
 
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                Pick a starting route
+                Pick your first move
               </p>
               <div className="space-y-2">
                 {discovery.routes.map((route) => {
@@ -320,7 +328,7 @@ export default function OnboardingView() {
                       {selected && preview && (
                         <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2">
                           <p className="text-[11px] uppercase tracking-wide text-primary font-semibold">
-                            First move if you choose this
+                            First move on this route
                           </p>
                           <p className="text-xs text-foreground mt-1">
                             {preview.tinyNextAction.title}
@@ -349,7 +357,7 @@ export default function OnboardingView() {
 
               <div className="rounded-xl border border-card-border bg-card p-4">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  Suggested role types
+                  Role types to test
                 </p>
                 {discovery.trackDrafts.length > 0 ? (
                   <div className="mt-2 space-y-2">
@@ -357,7 +365,7 @@ export default function OnboardingView() {
                       <div key={track.slug} className="rounded-lg bg-muted/50 px-3 py-2">
                         <p className="text-sm font-medium">{track.name}</p>
                         <p className="text-[11px] text-muted-foreground mt-1">
-                          Search focus: {track.targetRoleArchetype}
+                          Useful search phrase: {track.targetRoleArchetype}
                         </p>
                         {detailsOpen && (
                           <p className="text-xs text-muted-foreground mt-1">
@@ -369,7 +377,7 @@ export default function OnboardingView() {
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground mt-2">
-                    Anchor will create the right role types after you commit the route.
+                    Anchor will create the right role types after you choose this starting option.
                   </p>
                 )}
               </div>
@@ -420,13 +428,14 @@ export default function OnboardingView() {
             )}
 
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
-              <p className="text-sm font-medium">{selectedRoute?.label || "Selected route"}</p>
+              <p className="text-sm font-medium">{selectedRoute?.label || "Chosen first move"}</p>
               <p className="text-xs text-muted-foreground mt-1">
+                <span className="font-medium text-foreground">Why this fits:</span>{" "}
                 {selectedRouteReason || discovery.recommendedRoute.reason}
               </p>
               {detailsOpen && (selectedRoutePreview?.supportAction || discovery.supportAction) && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  Support move: {(selectedRoutePreview?.supportAction || discovery.supportAction)?.title}
+                  Helpful next move: {(selectedRoutePreview?.supportAction || discovery.supportAction)?.title} (saved for later, not dropped into Today straight away)
                 </p>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -440,12 +449,12 @@ export default function OnboardingView() {
                   ) : (
                     <ArrowRight className="w-4 h-4 mr-1" />
                   )}
-                  {committing ? "Building your starting plan..." : "Use this starting direction"}
+                  {committing ? "Building your starting plan..." : "Start with this plan"}
                 </Button>
                 {discoveryCommitted && (
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
                     <Check className="w-3.5 h-3.5" />
-                    Role types and starter tasks created
+                    Starter plan created with one clear Today item
                   </span>
                 )}
               </div>
@@ -491,7 +500,7 @@ export default function OnboardingView() {
                               role.priority,
                             )}`}
                           >
-                            {role.priority}
+                            {priorityLabel(role.priority)}
                           </span>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">{role.fitLogic}</p>

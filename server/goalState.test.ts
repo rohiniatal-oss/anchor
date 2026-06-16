@@ -14,7 +14,7 @@ test("career goal state prioritises Direction when no signal exists", () => {
   assert.equal(state.goal, "Find the right role, then become interview- and job-ready");
   assert.equal(state.phase, "fit-discovery");
   assert.equal(state.recommendedFocus, "Direction");
-  assert.equal(state.dayType, "signal-building");
+  assert.equal(state.dayType, "evidence-building");
   assert.match(state.reason, /Direction/);
   assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "premature"));
   assert.ok(state.trajectory.some((s) => s.key === "discover-fit" && s.status === "current"));
@@ -83,8 +83,9 @@ test("career goal state reads active career tracks as real direction signal", ()
   assert.ok(state.comparisonAxes.roleShapeHypotheses.includes("Ops / chief of staff"));
   assert.equal(state.pursuitPortfolio.length, 4);
   assert.match(state.selectionRule, /keep stronger-fit alternatives warm in parallel/i);
-  assert.match(state.todayPlan.mustDo, /Fill the still-empty lanes/i);
-  assert.match(direction.bottleneck, /multiple plausible lanes need live roles and applications/i);
+  assert.match(state.todayPlan.mustDo, /Add the next real role or application move/i);
+  assert.match(state.todayPlan.mustDo, /Geopolitics \/ geopolitical advisory x Ops \/ chief of staff/i);
+  assert.match(direction.bottleneck, /multiple plausible paths need live roles and applications/i);
 });
 
 test("career goal state enters broad parallel pursuit when multiple plausible lanes already have live roles", () => {
@@ -109,14 +110,14 @@ test("career goal state enters broad parallel pursuit when multiple plausible la
   assert.equal(state.locationPreference.flexible, true);
   assert.deepEqual(state.locationPreference.ordered, ["UAE", "Remote", "London"]);
   assert.equal(state.locationPreference.counts.acceptable, 3);
-  assert.match(state.decisionQuestion, /still-empty combinations need one real role next/i);
+  assert.match(state.decisionQuestion, /paths still need a first real role next/i);
   assert.deepEqual(state.broadPursuitCoverage.missing, [
     "Geopolitics / geopolitical advisory x Ops / chief of staff",
   ]);
   assert.match(state.explorationStrategy, /broad pursuit portfolio/i);
 });
 
-test("career goal state names still-empty combinations when broad pursuit coverage is partial", () => {
+test("career goal state names missing paths when broad pursuit coverage is partial", () => {
   const tracks = [
     {
       id: 1,
@@ -161,16 +162,16 @@ test("career goal state names still-empty combinations when broad pursuit covera
     "Geopolitics / geopolitical advisory x Ops / chief of staff",
     "Geopolitics / geopolitical advisory x Strategy / advisory",
   ].sort());
-  assert.match(state.todayPlan.mustDo, /still-empty lanes/i);
+  assert.match(state.todayPlan.mustDo, /Add the next real role or application move/i);
   assert.match(state.decisionQuestion, /Geopolitics \/ geopolitical advisory x Strategy \/ advisory/i);
-  assert.match(state.decisionQuestion, /still-empty combinations/i);
+  assert.match(state.decisionQuestion, /paths still need a first real role/i);
   const coveredLane = state.pursuitPortfolio.find((item) => item.combination === "AI / technology strategy x Strategy / advisory");
   const missingLane = state.pursuitPortfolio.find((item) => item.combination === "Geopolitics / geopolitical advisory x Strategy / advisory");
   assert.match(coveredLane?.nextMove || "", /Keep one live role warm/i);
   assert.match(missingLane?.nextMove || "", /Pursue one/i);
 });
 
-test("broad parallel pursuit tracks missing network and capability support after live roles exist", () => {
+test("broad parallel pursuit tracks missing network and learning support after live roles exist", () => {
   const jobs = [
     { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "strategy / advisory" },
     { id: 2, title: "AI Chief of Staff", company: "Model Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "chief of staff / operations" },
@@ -191,9 +192,43 @@ test("broad parallel pursuit tracks missing network and capability support after
   assert.ok(state.broadPursuitCoverage.networkSupported.includes("AI / technology strategy x Strategy / advisory"));
   assert.ok(state.broadPursuitCoverage.networkSupported.includes("Geopolitics / geopolitical advisory x Ops / chief of staff"));
   assert.ok(state.broadPursuitCoverage.missingNetworkSupport.includes("AI / technology strategy x Ops / chief of staff"));
-  assert.ok(state.broadPursuitCoverage.missingCapabilitySupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
-  assert.match(state.decisionQuestion, /need support next/i);
-  assert.match(state.todayPlan.mustDo, /Strengthen the weakest live combinations next/i);
+  assert.ok(state.broadPursuitCoverage.missingLearningSupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
+  assert.match(state.decisionQuestion, /need outreach, prep, or both next/i);
+  assert.match(state.todayPlan.mustDo, /Add the next useful contact or outreach path/i);
+  assert.match(state.todayPlan.mustDo, /AI \/ technology strategy x Ops \/ chief of staff/i);
+});
+
+test("broad parallel pursuit support ordering follows portfolio order, not save order", () => {
+  const jobs = [
+    { id: 1, title: "Geopolitical Chief of Staff", company: "Policy Org", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "chief of staff / operations" },
+    { id: 2, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "strategy / advisory" },
+    { id: 3, title: "AI Chief of Staff", company: "Model Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "chief of staff / operations" },
+    { id: 4, title: "Geopolitical Advisory Associate", company: "Risk Group", status: "wishlist", applicationWindowStatus: "open", location: "UAE", roleArchetype: "strategy / advisory" },
+  ] as any;
+  const contacts = [
+    { id: 1, who: "Geo ops operator", status: "messaged", relationshipStrength: "warm", sector: "Geopolitics / geopolitical advisory x Ops / chief of staff", targetRole: "Geopolitical Chief of Staff" },
+  ] as any;
+  const learn = [
+    { id: 1, title: "Geo strategy brief", category: "geopolitics", capabilityBuilt: "geopolitics", requiredOutput: "", proofIntent: false, done: false, learnStatus: "active", note: "Strategy / advisory lane support" },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, [], learn, contacts);
+  assert.deepEqual(state.broadPursuitCoverage.covered, [
+    "AI / technology strategy x Strategy / advisory",
+    "AI / technology strategy x Ops / chief of staff",
+    "Geopolitics / geopolitical advisory x Strategy / advisory",
+    "Geopolitics / geopolitical advisory x Ops / chief of staff",
+  ]);
+  assert.deepEqual(state.broadPursuitCoverage.missingNetworkSupport, [
+    "AI / technology strategy x Strategy / advisory",
+    "AI / technology strategy x Ops / chief of staff",
+    "Geopolitics / geopolitical advisory x Strategy / advisory",
+  ]);
+  assert.deepEqual(state.broadPursuitCoverage.missingLearningSupport, [
+    "AI / technology strategy x Strategy / advisory",
+    "AI / technology strategy x Ops / chief of staff",
+    "Geopolitics / geopolitical advisory x Ops / chief of staff",
+  ]);
 });
 
 test("broad parallel pursuit can shift focus to Network once role coverage is complete but lane support is missing", () => {
@@ -230,7 +265,7 @@ test("career goal frame stays in fit-discovery when learning exists but role sig
   const frame = deriveCareerGoalFrame([], [], [], learn);
   assert.equal(frame.phase, "fit-discovery");
   assert.equal(frame.recommendedFocus, "Direction");
-  assert.equal(frame.dayType, "signal-building");
+  assert.equal(frame.dayType, "evidence-building");
   assert.equal(frame.decisionMode, "single-track");
 });
 
@@ -285,9 +320,7 @@ test("career goal state reflects recruiting truth for follow-up-led application 
   assert.equal(state.phase, "role-targeting");
   assert.equal(state.recommendedFocus, "Applications");
   assert.equal(applications.status, "active");
-  assert.match(applications.bottleneck, /follow-up|warm nudge/i);
-  assert.ok(applications.evidence.some((e) => /1 follow-up/i.test(e)));
-  assert.ok(applications.nextMoves.some((move) => /follow-up|warm nudge/i.test(move)));
+  assert.equal(applications.nextMoveType, "execution");
 });
 
 test("prove-fit roles are surfaced as capability-building support, not direct application work", () => {
@@ -310,12 +343,12 @@ test("prove-fit roles are surfaced as capability-building support, not direct ap
 
   const state = buildCareerGoalState([], jobs, []);
   const applications = state.workstreams.find((w) => w.name === "Applications")!;
-  const capability = state.workstreams.find((w) => w.name === "Capability ramp")!;
-  const proof = state.workstreams.find((w) => w.name === "Proof")!;
+  const capability = state.workstreams.find((w) => w.name === "Prep and upskilling")!;
+  const proof = state.workstreams.find((w) => w.name === "Projects and public work")!;
   assert.equal(applications.nextMoveType, "wait");
   assert.match(applications.bottleneck, /upskilling edge|capability-building/i);
-  assert.match(capability.bottleneck, /capability evidence|capability plan/i);
-  assert.ok(capability.evidence.some((e) => /benefit from stronger capability evidence/i.test(e)));
+  assert.match(capability.bottleneck, /clearer examples or practice|learning plan/i);
+  assert.ok(capability.evidence.some((e) => /clearer examples or practice/i.test(e)));
   assert.equal(proof.nextMoveType, "wait");
   assert.equal(proof.status, "sufficient_for_now");
   assert.match(proof.bottleneck, /optional value-adds/i);
@@ -351,12 +384,12 @@ test("live proof assets strengthen upskilling without turning into an applicatio
 
   const state = buildCareerGoalState([], jobs, [], [], [], hustles);
   const applications = state.workstreams.find((w) => w.name === "Applications")!;
-  const proof = state.workstreams.find((w) => w.name === "Proof")!;
+  const proof = state.workstreams.find((w) => w.name === "Projects and public work")!;
   assert.equal(applications.nextMoveType, "wait");
   assert.equal(proof.status, "active");
   assert.equal(proof.progress, "developing");
-  assert.ok(proof.evidence.some((e) => /1 live proof asset/i.test(e)));
-  assert.ok(proof.nextMoves.some((move) => /produce the next concrete output/i.test(move)));
+  assert.ok(proof.evidence.some((e) => /1 live project\/public-work item/i.test(e)));
+  assert.ok(proof.nextMoves.some((move) => /next concrete output|publishable or shippable/i.test(move)));
 });
 
 test("interview-ready focus uses interview-prep day type instead of generic proof-building", () => {

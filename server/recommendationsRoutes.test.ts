@@ -1,0 +1,304 @@
+import { test, before, after, beforeEach } from "node:test";
+import assert from "node:assert/strict";
+import { api, makeHarness, type Harness } from "./spine.harness";
+
+let h: Harness;
+
+before(async () => { h = await makeHarness(); });
+after(async () => { await h.close(); });
+beforeEach(() => { h.reset(); });
+
+test("recommendation detail and accept preserve a broad learning theme as a durable learn item", async () => {
+  const track = await h.storage.createCareerTrack({
+    name: "AI strategy",
+    slug: "ai-strategy",
+    description: "",
+    targetRoleArchetype: "ai-strategy",
+    priority: 80,
+    status: "active",
+    whyItFits: "",
+  } as any);
+
+  const created = await api(h.base, "POST", "/api/recommendations", {
+    collection: "learning-corpus",
+    kind: "learning-theme",
+    status: "saved",
+    source: "llm",
+    title: "AI governance foundations",
+    whySuggested: "This would tighten your AI strategy baseline.",
+    linkedTrackId: track.id,
+    executionShape: "ongoing-program",
+    acceptanceDraft: JSON.stringify({
+      capabilityBuilt: "AI governance",
+      note: "Accepted from the learning corpus.",
+    }),
+  });
+  assert.equal(created.status, 200);
+
+  const recommendationId = created.json.id;
+  await api(h.base, "POST", `/api/recommendations/${recommendationId}/subdivisions`, {
+    subdivisionKey: "model-governance",
+    label: "Model governance",
+    whyItMatters: "Core policy lever",
+    suggestedMaterials: JSON.stringify(["OECD overview"]),
+    sequence: 0,
+  });
+  await api(h.base, "POST", `/api/recommendations/${recommendationId}/subdivisions`, {
+    subdivisionKey: "eu-ai-act",
+    label: "EU AI Act",
+    whyItMatters: "Regulatory fluency",
+    suggestedMaterials: JSON.stringify(["Commission explainer"]),
+    sequence: 1,
+  });
+  await api(h.base, "POST", `/api/recommendations/${recommendationId}/milestones`, {
+    milestoneKey: "skim",
+    label: "Skim the landscape",
+    doneWhen: "You can explain the major buckets",
+    status: "todo",
+    sequence: 0,
+    suggestedTaskTitle: "Skim AI governance landscape",
+    subdivisionKey: "model-governance",
+  });
+  await api(h.base, "POST", `/api/recommendations/${recommendationId}/milestones`, {
+    milestoneKey: "compare",
+    label: "Compare regimes",
+    doneWhen: "You can contrast two approaches",
+    status: "todo",
+    sequence: 1,
+    suggestedTaskTitle: "Compare two AI governance approaches",
+    subdivisionKey: "eu-ai-act",
+  });
+
+  const detail = await api(h.base, "GET", `/api/recommendations/${recommendationId}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.json.subdivisions.length, 2);
+  assert.equal(detail.json.milestones.length, 2);
+
+  const accepted = await api(h.base, "POST", `/api/recommendations/${recommendationId}/accept`, {
+    entityType: "learn",
+  });
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.json.entityType, "learn");
+  assert.equal(accepted.json.created.title, "AI governance foundations");
+  assert.equal(accepted.json.created.relatedTrackId, track.id);
+  assert.equal(accepted.json.created.sourceType, "recommendation");
+  assert.equal(accepted.json.created.sourceId, recommendationId);
+  assert.match(String(accepted.json.created.note || ""), /2 subtopics, 2 checkpoints/i);
+
+  const nextTask = await api(h.base, "POST", `/api/learn/${accepted.json.created.id}/create-next-task`, {});
+  assert.equal(nextTask.status, 200);
+  assert.equal(nextTask.json.title, "Skim AI governance landscape");
+  assert.equal(nextTask.json.doneWhen, "You can explain the major buckets");
+  assert.equal(nextTask.json.sourceType, "learn");
+  assert.equal(nextTask.json.sourceId, accepted.json.created.id);
+  assert.equal(nextTask.json.sourceStepType, "recommendation_milestone");
+  assert.equal(nextTask.json.sourceStepId, detail.json.milestones[0].id);
+
+  const savedRecommendation = await h.storage.getRecommendation(recommendationId);
+  assert.equal(savedRecommendation?.status, "accepted");
+  assert.equal(savedRecommendation?.acceptanceEntityType, "learn");
+});
+
+test("recommendation accept infers a contact when the inventory item is a network target", async () => {
+  const created = await api(h.base, "POST", "/api/recommendations", {
+    collection: "network-targets",
+    kind: "contact-person-type",
+    status: "saved",
+    source: "llm",
+    title: "AI policy alumni in think tanks",
+    whySuggested: "Warm-ish people who may clarify hiring patterns.",
+    acceptanceDraft: JSON.stringify({
+      sector: "AI policy",
+      askType: "advice",
+    }),
+  });
+  assert.equal(created.status, 200);
+
+  const accepted = await api(h.base, "POST", `/api/recommendations/${created.json.id}/accept`, {});
+  assert.equal(accepted.status, 200);
+  assert.equal(accepted.json.entityType, "contact");
+  assert.equal(accepted.json.created.who, "AI policy alumni in think tanks");
+  assert.equal(accepted.json.created.status, "to_contact");
+});
+
+test("recommendation milestones keep a single active checkpoint and auto-advance", async () => {
+  const created = await api(h.base, "POST", "/api/recommendations", {
+    collection: "learning-corpus",
+    kind: "learning-theme",
+    status: "saved",
+    source: "manual",
+    title: "AI policy foundations",
+    whySuggested: "A structured theme with multiple checkpoints.",
+    executionShape: "ongoing-program",
+  });
+  assert.equal(created.status, 200);
+
+  const first = await api(h.base, "POST", `/api/recommendations/${created.json.id}/milestones`, {
+    milestoneKey: "scan",
+    label: "Scan the landscape",
+    doneWhen: "You can name the main pieces",
+    status: "todo",
+    sequence: 0,
+    suggestedTaskTitle: "Scan AI policy landscape",
+    subdivisionKey: "",
+  });
+  const second = await api(h.base, "POST", `/api/recommendations/${created.json.id}/milestones`, {
+    milestoneKey: "compare",
+    label: "Compare two approaches",
+    doneWhen: "You can explain one real tradeoff",
+    status: "todo",
+    sequence: 1,
+    suggestedTaskTitle: "Compare two AI policy approaches",
+    subdivisionKey: "",
+  });
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(first.json.status, "active");
+  assert.equal(second.json.status, "todo");
+
+  const makeSecondActive = await api(h.base, "PATCH", `/api/recommendation-milestones/${second.json.id}`, {
+    status: "active",
+  });
+  assert.equal(makeSecondActive.status, 200);
+  assert.equal(makeSecondActive.json.status, "active");
+
+  const afterActive = await api(h.base, "GET", `/api/recommendations/${created.json.id}/milestones`);
+  assert.equal(afterActive.status, 200);
+  assert.equal(afterActive.json[0].status, "todo");
+  assert.equal(afterActive.json[1].status, "active");
+
+  const markDone = await api(h.base, "PATCH", `/api/recommendation-milestones/${second.json.id}`, {
+    status: "done",
+  });
+  assert.equal(markDone.status, 200);
+  assert.equal(markDone.json.status, "done");
+  assert.ok(markDone.json.completedAt);
+
+  const afterDone = await api(h.base, "GET", `/api/recommendations/${created.json.id}/milestones`);
+  assert.equal(afterDone.status, 200);
+  assert.equal(afterDone.json[0].status, "active");
+  assert.equal(afterDone.json[1].status, "done");
+});
+
+test("completing a learn task advances the linked recommendation checkpoint", async () => {
+  const created = await api(h.base, "POST", "/api/recommendations", {
+    collection: "learning-corpus",
+    kind: "learning-theme",
+    status: "saved",
+    source: "manual",
+    title: "AI strategy foundations",
+    whySuggested: "A learning theme that should stay in sync with tasks.",
+    executionShape: "ongoing-program",
+    acceptanceDraft: JSON.stringify({
+      capabilityBuilt: "AI strategy",
+      note: "Accepted from structured theme.",
+    }),
+  });
+  assert.equal(created.status, 200);
+
+  await api(h.base, "POST", `/api/recommendations/${created.json.id}/milestones`, {
+    milestoneKey: "scan",
+    label: "Scan the field",
+    doneWhen: "You can explain the main players",
+    status: "todo",
+    sequence: 0,
+    suggestedTaskTitle: "Scan AI strategy field",
+    subdivisionKey: "",
+  });
+  await api(h.base, "POST", `/api/recommendations/${created.json.id}/milestones`, {
+    milestoneKey: "compare",
+    label: "Compare two role shapes",
+    doneWhen: "You can explain one meaningful difference",
+    status: "todo",
+    sequence: 1,
+    suggestedTaskTitle: "Compare two AI strategy role shapes",
+    subdivisionKey: "",
+  });
+
+  const accepted = await api(h.base, "POST", `/api/recommendations/${created.json.id}/accept`, {
+    entityType: "learn",
+  });
+  assert.equal(accepted.status, 200);
+
+  const task = await api(h.base, "POST", `/api/learn/${accepted.json.created.id}/create-next-task`, {});
+  assert.equal(task.status, 200);
+  assert.equal(task.json.title, "Scan AI strategy field");
+  assert.equal(task.json.sourceStepType, "recommendation_milestone");
+  assert.ok(task.json.sourceStepId);
+
+  const completed = await api(h.base, "POST", `/api/tasks/${task.json.id}/complete`, {});
+  assert.equal(completed.status, 200);
+
+  const milestones = await api(h.base, "GET", `/api/recommendations/${created.json.id}/milestones`);
+  assert.equal(milestones.status, 200);
+  assert.equal(milestones.json[0].status, "done");
+  assert.ok(milestones.json[0].completedAt);
+  assert.equal(milestones.json[1].status, "active");
+});
+
+test("blocking and parking a learn task syncs blocked and active milestone state", async () => {
+  const created = await api(h.base, "POST", "/api/recommendations", {
+    collection: "learning-corpus",
+    kind: "learning-theme",
+    status: "saved",
+    source: "manual",
+    title: "AI governance drills",
+    whySuggested: "A theme that should reflect task block and park state.",
+    executionShape: "ongoing-program",
+    acceptanceDraft: JSON.stringify({
+      capabilityBuilt: "AI governance",
+      note: "Accepted from structured theme.",
+    }),
+  });
+  assert.equal(created.status, 200);
+
+  await api(h.base, "POST", `/api/recommendations/${created.json.id}/milestones`, {
+    milestoneKey: "scan",
+    label: "Scan one current source",
+    doneWhen: "You can explain the current source clearly",
+    status: "todo",
+    sequence: 0,
+    suggestedTaskTitle: "Scan one current AI governance source",
+    subdivisionKey: "",
+  });
+  await api(h.base, "POST", `/api/recommendations/${created.json.id}/milestones`, {
+    milestoneKey: "compare",
+    label: "Compare one tradeoff",
+    doneWhen: "You can explain one tradeoff",
+    status: "todo",
+    sequence: 1,
+    suggestedTaskTitle: "Compare one AI governance tradeoff",
+    subdivisionKey: "",
+  });
+
+  const accepted = await api(h.base, "POST", `/api/recommendations/${created.json.id}/accept`, {
+    entityType: "learn",
+  });
+  assert.equal(accepted.status, 200);
+
+  const task = await api(h.base, "POST", `/api/learn/${accepted.json.created.id}/create-next-task`, {});
+  assert.equal(task.status, 200);
+  assert.equal(task.json.sourceStepType, "recommendation_milestone");
+  const milestoneId = task.json.sourceStepId;
+  assert.ok(milestoneId);
+
+  const blocked = await api(h.base, "POST", `/api/tasks/${task.json.id}/block`, {
+    reason: "Need a better source first",
+  });
+  assert.equal(blocked.status, 200);
+
+  const afterBlock = await api(h.base, "GET", `/api/recommendations/${created.json.id}/milestones`);
+  assert.equal(afterBlock.status, 200);
+  assert.equal(afterBlock.json[0].id, milestoneId);
+  assert.equal(afterBlock.json[0].status, "blocked");
+  assert.equal(afterBlock.json[1].status, "todo");
+
+  const parked = await api(h.base, "POST", `/api/tasks/${task.json.id}/park`, {});
+  assert.equal(parked.status, 200);
+
+  const afterPark = await api(h.base, "GET", `/api/recommendations/${created.json.id}/milestones`);
+  assert.equal(afterPark.status, 200);
+  assert.equal(afterPark.json[0].id, milestoneId);
+  assert.equal(afterPark.json[0].status, "active");
+  assert.equal(afterPark.json[1].status, "todo");
+});

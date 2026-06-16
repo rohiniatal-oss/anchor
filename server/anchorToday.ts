@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import type { Task } from "@shared/schema";
+import { LANE_NAME, laneFocusAreaLabel, type CanonicalLaneName } from "./lanes";
 import { storage } from "./storage";
 import { buildTrackSpine } from "./trackSpine";
 
@@ -41,20 +42,24 @@ function firstStepFromTask(task: Task) {
   return "Open the task and do the smallest visible first step.";
 }
 
-function taskMatchesSpineMove(task: Task, title: string, lane: string) {
+function focusAreaLabel(lane: CanonicalLaneName) {
+  return laneFocusAreaLabel(lane, { proofLabel: "writing, projects, and brand" });
+}
+
+function taskMatchesSpineMove(task: Task, title: string, lane: CanonicalLaneName) {
   const text = taskText(task);
   const words = title.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 4);
   const overlap = words.filter((w) => text.includes(w)).length;
   if (overlap >= 2) return true;
-  if (lane === "Applications" && /apply|application|cv|cover|interview|submit|tailor|requirements/i.test(text)) return true;
-  if (lane === "Network" && /network|contact|message|intro|referral|coffee|person/i.test(text)) return true;
-  if (lane === "Learning and development" && /learn|resource|course|practice|drill|skill|development|study/i.test(text)) return true;
-  if (lane === "Proof assets" && /proof|memo|story|bullet|portfolio|case|evidence/i.test(text)) return true;
-  if (lane === "Direction" && /direction|role|inspect|signal|market|requirements|track/i.test(text) && !/apply|submit/i.test(text)) return true;
+  if (lane === LANE_NAME.APPLICATIONS && /apply|application|cv|cover|interview|submit|tailor|requirements/i.test(text)) return true;
+  if (lane === LANE_NAME.NETWORK && /network|contact|message|intro|referral|coffee|person/i.test(text)) return true;
+  if (lane === LANE_NAME.LEARNING_DEVELOPMENT && /learn|resource|course|practice|drill|skill|development|study/i.test(text)) return true;
+  if (lane === LANE_NAME.PROOF_ASSETS && /proof|memo|story|bullet|portfolio|case|evidence/i.test(text)) return true;
+  if (lane === LANE_NAME.DIRECTION && /direction|role|inspect|signal|market|requirements|track/i.test(text) && !/apply|submit/i.test(text)) return true;
   return false;
 }
 
-function assessExistingTasks(tasks: Task[], bestMove: { title: string; lane: string }) {
+function assessExistingTasks(tasks: Task[], bestMove: { title: string; lane: CanonicalLaneName }) {
   return activeTasks(tasks).map((task) => {
     let action: ExistingTaskAction = "ignore";
     let reason = "Not clearly connected to the current track move.";
@@ -72,7 +77,7 @@ function assessExistingTasks(tasks: Task[], bestMove: { title: string; lane: str
       score += 4;
     } else if (matches) {
       action = "use";
-      reason = "This matches the current Tracks x Lanes spine move.";
+      reason = "This already lines up with the best next move right now.";
       score += 6;
     } else if (["health", "admin"].includes(task.category)) {
       action = "use";
@@ -89,15 +94,16 @@ export function buildAnchorToday(input: { tasks: Task[]; jobs: any[]; learn: any
   const assessedTasks = assessExistingTasks(input.tasks, { title: spine.bestMove.title, lane: spine.bestMove.lane });
   const useExistingTask = assessedTasks.find((t) => t.action === "use" || t.action === "shrink") || null;
   const ignoreForNow = assessedTasks.filter((t) => t.action === "ignore").slice(0, 3);
+  const focusArea = focusAreaLabel(spine.bestMove.lane);
 
   const headline = spine.activeTrack
-    ? `${spine.activeTrack.name} is the active track; ${spine.bestMove.lane.toLowerCase()} is the next move.`
-    : `${spine.bestMove.lane} is the next useful move.`;
+    ? `${spine.activeTrack.name} is the main path right now. Next, focus on ${focusArea}.`
+    : `Next, focus on ${focusArea}.`;
 
   const bestMove = useExistingTask ? {
     title: useExistingTask.action === "shrink" ? `Shrink and do: ${useExistingTask.title}` : useExistingTask.title,
     firstStep: useExistingTask.firstStep,
-    doneWhen: useExistingTask.action === "shrink" ? "One smaller useful output exists." : "The task's next visible outcome is complete.",
+    doneWhen: useExistingTask.action === "shrink" ? "One smaller useful step is complete." : "The task's next visible outcome is complete.",
     stopWhen: spine.bestMove.stopWhen,
     source: "existing_task",
     reason: useExistingTask.reason,

@@ -16,7 +16,7 @@ type StrategyBuild = {
   }>;
   peopleMap?: Array<{ category: string; why: string; ask: string; linkedArchetype: string }>;
   resourceMap?: Array<{ category: string; why: string; output: string; linkedArchetype: string }>;
-  capabilitySupport?: Array<{ need: string; asset: string; doneWhen: string; linkedArchetype: string }>;
+  exampleProjectIdeas?: Array<{ need: string; asset: string; doneWhen: string; linkedArchetype: string }>;
   planShifts?: Array<{ action: string; target: string; reason: string }>;
   weeklyShape?: Record<string, number>;
 };
@@ -28,6 +28,14 @@ async function post(path: string, body: any) {
 
 function Chip({ children }: { children: any }) {
   return <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{children}</span>;
+}
+
+function priorityLabel(priority: string) {
+  if (priority === "convert") return "pursue now";
+  if (priority === "explore") return "test";
+  if (priority === "watch") return "later";
+  if (priority === "pause") return "pause";
+  return priority;
 }
 
 function AcceptButton({ onClick, label = "Accept" }: { onClick: () => Promise<void>; label?: string }) {
@@ -83,14 +91,14 @@ export function StrategyBuilderPanel() {
               <div className="flex items-start justify-between gap-3 border-b border-card-border p-4">
                 <div>
                   <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary"><Sparkles className="h-4 w-4" /> Strategy Builder</div>
-                  <h2 className="mt-1 text-lg font-bold tracking-tight">What Anchor thinks ahead</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Suggested roles, people, resources, capability support ideas, and plan shifts. Nothing is added unless you accept it.</p>
+                  <h2 className="mt-1 text-lg font-bold tracking-tight">What Anchor recommends next</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Suggested role types, people to reach out to, prep items to add, and optional writing, project, or brand ideas. Nothing is added unless you accept it.</p>
                 </div>
                 <button onClick={() => setOpen(false)} className="rounded-md p-1 text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Building strategy…</div>}
+                {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Building strategy...</div>}
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 {data && (
                   <div className="space-y-5">
@@ -104,17 +112,19 @@ export function StrategyBuilderPanel() {
                     </div>
 
                     <section>
-                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><Briefcase className="h-4 w-4 text-primary" /> Role lanes to explore or convert</h3>
+                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><Briefcase className="h-4 w-4 text-primary" /> Role types to test or pursue</h3>
                       <div className="space-y-2">
                         {(data.roleArchetypes || []).slice(0, 4).map((r) => (
                           <div key={r.archetype} className="rounded-xl border border-card-border bg-background/40 p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{r.archetype}</p><Chip>{r.priority}</Chip></div>
-                                <p className="mt-1 text-xs text-muted-foreground">{r.fitLogic}</p>
+                                <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{r.archetype}</p><Chip>{priorityLabel(r.priority)}</Chip></div>
+                                <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Why it fits:</span> {r.fitLogic}</p>
+                                <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">What still needs work:</span> {r.credibilityGap}</p>
+                                <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Useful prep:</span> {r.capabilitySignal}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Next test:</span> {r.nextExperiment}</p>
                               </div>
-                              <AcceptButton label="Add track" onClick={() => post("/api/strategy-builder/accept-role", r)} />
+                              <AcceptButton label="Add role type" onClick={() => post("/api/strategy-builder/accept-role", r)} />
                             </div>
                           </div>
                         ))}
@@ -140,7 +150,7 @@ export function StrategyBuilderPanel() {
                     </section>
 
                     <section>
-                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><BookOpen className="h-4 w-4 text-primary" /> Resources to add only if useful</h3>
+                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><BookOpen className="h-4 w-4 text-primary" /> Prep to add only if useful</h3>
                       <div className="space-y-2">
                         {(data.resourceMap || []).slice(0, 3).map((r) => (
                           <div key={`${r.category}-${r.linkedArchetype}`} className="rounded-xl border border-card-border bg-background/40 p-3">
@@ -148,9 +158,9 @@ export function StrategyBuilderPanel() {
                               <div>
                                 <p className="text-sm font-semibold">{r.category}</p>
                                 <p className="mt-1 text-xs text-muted-foreground">{r.why}</p>
-                                <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Output:</span> {r.output}</p>
+                                <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Possible useful note:</span> {r.output}</p>
                               </div>
-                              <AcceptButton label="Add resource" onClick={() => post("/api/strategy-builder/accept-resource", r)} />
+                              <AcceptButton label="Create prep item" onClick={() => post("/api/strategy-builder/accept-resource", r)} />
                             </div>
                           </div>
                         ))}
@@ -158,9 +168,9 @@ export function StrategyBuilderPanel() {
                     </section>
 
                     <section>
-                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><FileText className="h-4 w-4 text-primary" /> Capability support ideas</h3>
+                      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold"><FileText className="h-4 w-4 text-primary" /> Optional writing, project, or brand ideas</h3>
                       <div className="space-y-2">
-                        {(data.capabilitySupport || []).slice(0, 3).map((p) => (
+                        {(data.exampleProjectIdeas || []).slice(0, 3).map((p) => (
                           <div key={`${p.asset}-${p.linkedArchetype}`} className="rounded-xl border border-card-border bg-background/40 p-3">
                             <div className="flex items-start justify-between gap-3">
                               <div>
@@ -168,7 +178,7 @@ export function StrategyBuilderPanel() {
                                 <p className="mt-1 text-xs text-muted-foreground">{p.need}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Done when:</span> {p.doneWhen}</p>
                               </div>
-                              <AcceptButton label="Add support asset" onClick={() => post("/api/strategy-builder/accept-support", p)} />
+                              <AcceptButton label="Add writing/project idea" onClick={() => post("/api/strategy-builder/accept-example", p)} />
                             </div>
                           </div>
                         ))}
@@ -176,7 +186,7 @@ export function StrategyBuilderPanel() {
                     </section>
 
                     <section>
-                      <h3 className="mb-2 text-sm font-semibold">Plan shifts</h3>
+                      <h3 className="mb-2 text-sm font-semibold">What to do more or less of</h3>
                       <div className="space-y-2">
                         {(data.planShifts || []).slice(0, 6).map((s) => (
                           <div key={`${s.action}-${s.target}`} className="flex items-start justify-between gap-3 rounded-xl border border-card-border bg-background/40 p-3">
@@ -200,3 +210,4 @@ export function StrategyBuilderPanel() {
     </>
   );
 }
+

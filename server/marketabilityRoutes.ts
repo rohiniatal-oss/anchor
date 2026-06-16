@@ -1,16 +1,12 @@
 import type { Express } from "express";
+import { taskCategoryForPlannerLane } from "./lanes";
 import { storage } from "./storage";
 import { buildMarketabilityPlan, type MarketabilityMove } from "./marketabilityEngine";
 
 function norm(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
-function categoryForMove(move: MarketabilityMove) {
-  if (move.lane === "Applications") return "job";
-  if (move.lane === "Learning" || move.lane === "Development") return "learning";
-  if (move.lane === "Proof assets") return "hustle";
-  return "admin";
-}
+function categoryForMove(move: MarketabilityMove) { return taskCategoryForPlannerLane(move.lane); }
 function sizeForMove(move: MarketabilityMove) {
   if (move.kind === "cleanup" || move.kind === "network") return "quick";
   if (move.kind === "development") return "medium";

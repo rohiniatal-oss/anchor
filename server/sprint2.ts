@@ -5,8 +5,15 @@ import { explainPersistedPlanItem, planDay } from "./brain";
 import { dayPlans, dayPlanItems, insertTaskSchema, type DayPlan, type Task, type CareerTrack } from "@shared/schema";
 import { isOpportunityActionable } from "@shared/domainState";
 import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey, refinedEstimateFromSteps, stepsWithEstimatedMinutes } from "./planningFeedback";
+import {
+  broadPursuitMissingRolesPlanSummary,
+  broadPursuitMissingRolesPlanWhy,
+  broadPursuitMissingRolesPlannerNote,
+  broadPursuitMissingRolesSupportingReasons,
+} from "./broadPursuitCopy";
 import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
+import { buildTaskIntakeDefaults, intakeWords } from "./taskIntakeInference";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
@@ -167,12 +174,12 @@ async function saveExecutionReadySteps(task: Task) {
 }
 
 function shrinkReason(task: Task) {
-  if ((task.skipped || 0) >= 1) return "This has friction already, so it was made smaller before it could stall again.";
+  if ((task.skipped || 0) >= 1) return "This kept slipping, so it was made smaller before it stalled again.";
   if (["job", "learn", "contact", "hustle"].includes(String(task.sourceType || ""))) {
-    return "This is structured work with enough context to pre-split into easier execution steps.";
+    return "This had enough context to split into easier steps.";
   }
-  if (task.size === "deep") return "This is big enough that it needs a smaller visible start before execution.";
-  return "This looked cognitively heavy, so it was pre-shrunk into an easier start.";
+  if (task.size === "deep") return "This was a bit big, so it got a smaller starting step.";
+  return "This looked heavy, so it was made smaller to start more easily.";
 }
 
 function itemWasPreShrunk(item: any, task: Task | undefined, preShrunkTaskIds: Set<number>) {
@@ -228,7 +235,7 @@ async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes
       why: `${item.why} ${reason}`.trim(),
       explanation: {
         ...item.explanation,
-        summary: `${item.explanation.summary} This was pre-shrunk into easier execution steps.`,
+        summary: `${item.explanation.summary} This was made smaller so starting is easier.`,
         whyNow: reason,
         supportingReasons: [reason, ...(item.explanation.supportingReasons || [])].slice(0, 4),
       },
@@ -260,19 +267,15 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         if (item.candidate.source !== "goal") return item;
         return {
           ...item,
-          why: `Broad pursuit. Fill the still-empty lanes with one real role or application move each: ${missingCombinationText}.`,
+          why: broadPursuitMissingRolesPlanWhy(broadPursuitCoverage.missing),
           explanation: {
             ...item.explanation,
-            summary: "Broad pursuit is active, so this move turns the empty lanes into real pipeline signal.",
-            whyNow: "You said to apply across all plausible lanes in parallel, not choose one abstract lane first, and some combinations still have no live role at all.",
+            summary: broadPursuitMissingRolesPlanSummary(),
+            whyNow: "You said to apply across several plausible directions in parallel, and some of those path combinations still have no saved role at all.",
             whyThis: index === 0
               ? "It beats narrower comparison work because the market can only separate the lanes once real roles are in the pipeline."
               : item.explanation.whyThis,
-            supportingReasons: [
-              "Broad pursuit is active across all plausible lanes.",
-              `These lanes are still empty: ${missingCombinationText}.`,
-              "Real role and application moves are more valuable now than abstract narrowing.",
-            ],
+            supportingReasons: broadPursuitMissingRolesSupportingReasons(broadPursuitCoverage.missing),
           },
         };
       })
@@ -287,7 +290,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   const trimmedForTime = corrected.trimmed || (correctedPlan.length < actionableToday && budget.remainingMinutes > 0 && budget.remainingMinutes < 120);
   const overloadNote = trimmedForTime ? "Today was cut down to what can realistically fit." : "";
   const plannerNote = broadPursuitNeedsRealRoles
-    ? `Broad pursuit is active. Fill each still-empty lane with one real role or application move before narrowing anything: ${missingCombinationText}.`
+    ? broadPursuitMissingRolesPlannerNote(broadPursuitCoverage.missing)
     : result.note;
   const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, plannerNote].filter(Boolean).join(" ");
 
@@ -381,7 +384,7 @@ async function shouldRefreshBroadPursuitPlan(items: Array<{ sourceType?: string 
   const goalItem = items.find((item) => item.sourceType === "goal");
   if (!goalItem) return true;
   const oldCopy = `${goalItem.title || ""} ${goalItem.whySelected || ""}`;
-  return /plausible lane that still looks real|still-empty combination/i.test(oldCopy);
+  return /plausible lane that still looks real|plausible role type that still looks real|still-empty combination/i.test(oldCopy);
 }
 
 function readAvailableMinutes(raw: unknown) {
@@ -414,45 +417,8 @@ async function saveUnstickStep(task: Task, step: string) {
   return updated;
 }
 
-function words(text: string) {
-  return (text || "").toLowerCase().split(/[^a-z0-9]+/).filter((x) => x.length >= 4);
-}
-
-function containsAny(text: string, terms: string[]) {
-  const t = (text || "").toLowerCase();
-  return terms.some((term) => t.includes(term));
-}
-
-function inferCategory(title: string, current?: string) {
-  if (current && current !== "admin") return current;
-  if (containsAny(title, ["cv", "cover", "application", "apply", "interview", "role", "job", "fellowship"])) return "job";
-  if (containsAny(title, ["read", "course", "learn", "study", "book", "certificate"])) return "learning";
-  if (containsAny(title, ["article", "substack", "post", "memo", "essay", "publish", "draft"])) return "substack";
-  if (containsAny(title, ["workout", "walk", "sleep", "meal", "gym"])) return "health";
-  return current || "admin";
-}
-
-function inferEstimate(title: string, current?: string) {
-  if (current === "quick") return { size: "quick", minutes: 15, reason: "user_marked_quick" };
-  if (current === "medium") return { size: "medium", minutes: 45, reason: "user_marked_medium" };
-  if (current === "deep") return { size: "deep", minutes: 90, reason: "user_marked_deep" };
-  if (containsAny(title, ["open", "check", "confirm", "send", "email", "message", "reply", "book", "pay", "list", "note", "skim", "find"])) return { size: "quick", minutes: 15, reason: "quick_action_keyword" };
-  if (containsAny(title, ["write", "draft", "apply", "prepare", "research", "tailor", "build", "finish", "review", "outline"])) return { size: "deep", minutes: 90, reason: "deep_work_keyword" };
-  return { size: "medium", minutes: 45, reason: "default_medium" };
-}
-
-function inferDoneWhen(title: string, category: string) {
-  if (containsAny(title, ["email", "message", "reply", "send"])) return "Message is sent";
-  if (containsAny(title, ["open", "check", "confirm", "find"])) return "You have the answer or next constraint";
-  if (containsAny(title, ["cv", "cover", "application", "apply"])) return "Application material is updated or submitted";
-  if (containsAny(title, ["read", "course", "learn", "study", "book"])) return "One useful note or output exists";
-  if (containsAny(title, ["article", "substack", "post", "memo", "essay", "draft"])) return "A rough draft or outline exists";
-  if (category === "health") return "The healthy action is done";
-  return "The next visible action is complete";
-}
-
 function inferTrackId(title: string, tracks: CareerTrack[]) {
-  const tokens = words(title);
+  const tokens = intakeWords(title);
   let best: { id: number; score: number } | null = null;
   for (const track of tracks.filter((t) => t.status === "active")) {
     const hay = `${track.slug} ${track.name} ${track.description} ${track.targetRoleArchetype}`.toLowerCase();
@@ -463,22 +429,12 @@ function inferTrackId(title: string, tracks: CareerTrack[]) {
 }
 
 export async function enrichTaskInput(raw: any) {
-  const title = String(raw?.title || "").trim();
-  const category = inferCategory(title, raw?.category);
-  const estimate = inferEstimate(title, raw?.size);
-  const relatedTrackId = raw?.relatedTrackId ?? inferTrackId(title, await storage.getCareerTracks());
+  const inferred = buildTaskIntakeDefaults(raw || {});
+  const relatedTrackId = raw?.relatedTrackId ?? inferTrackId(inferred.title, await storage.getCareerTracks());
   const enriched = {
     ...raw,
-    title,
-    category,
-    size: raw?.size || estimate.size,
-    estimateMinutes: raw?.estimateMinutes ?? estimate.minutes,
-    estimateConfidence: raw?.estimateConfidence || "low",
-    estimateReason: raw?.estimateReason || `intake_guess:${estimate.reason}`,
-    doneWhen: raw?.doneWhen || inferDoneWhen(title, category),
+    ...inferred,
     relatedTrackId,
-    readiness: raw?.readiness || (raw?.blockerReason ? "blocked" : "ready"),
-    status: raw?.status || "not_started",
   };
   return insertTaskSchema.parse(enriched);
 }

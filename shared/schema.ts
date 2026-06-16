@@ -26,6 +26,8 @@ export const tasks = sqliteTable("tasks", {
   // --- P1: SOURCE CONTEXT (carry-through so accepted items keep their meaning) ---
   sourceType: text("source_type").notNull().default(""), // task|job|learn|hustle|contact|plan_item
   sourceId: integer("source_id"), // id of the originating job/learn/hustle/contact
+  sourceStepType: text("source_step_type").notNull().default(""), // recommendation_milestone|job_step|proof_step|...
+  sourceStepId: integer("source_step_id"), // id of the originating step/checkpoint when relevant
   sourceUrl: text("source_url").notNull().default(""), // the real posting / course / profile URL
   sourceNote: text("source_note").notNull().default(""), // context snippet from the source
   sourceStatus: text("source_status").notNull().default(""), // mirror of source object status
@@ -161,6 +163,8 @@ export const learn = sqliteTable("learn", {
   prerequisites: text("prerequisites").notNull().default("[]"), // JSON [learnId,...]
   unlocks: text("unlocks").notNull().default("[]"), // JSON [learnId,...]
   relatedTrackId: integer("related_track_id"),
+  sourceType: text("source_type").notNull().default(""), // recommendation|capture|manual|...
+  sourceId: integer("source_id"), // id of the originating object when available
   // P5 — explicit "this item is intended as proof-building" flag. Sharpens the
   // 4.4 nudge/output-state, which now key off proofIntent OR requiredOutput
   // (not relatedTrackId alone). Pure-consumption (0 + no requiredOutput) stays silent.
@@ -207,6 +211,65 @@ export const discoverySessions = sqliteTable("discovery_sessions", {
   payload: text("payload").notNull().default("{}"), // JSON snapshot of the draft
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
+});
+
+// RECOMMENDATIONS — persistent suggestion inventory. A recommendation is a
+// candidate, not yet committed work. It can later accept into Learn / Contact /
+// Job / Project and may carry subdivisions or milestones.
+export const recommendations = sqliteTable("recommendations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  collection: text("collection").notNull().default("learning-corpus"),
+  kind: text("kind").notNull().default("learning-resource"),
+  status: text("status").notNull().default("new"),
+  source: text("source").notNull().default("llm"),
+  title: text("title").notNull(),
+  whySuggested: text("why_suggested").notNull().default(""),
+  linkedTrackId: integer("linked_track_id"),
+  linkedGapKey: text("linked_gap_key").notNull().default(""),
+  linkedCombination: text("linked_combination").notNull().default(""),
+  confidenceScore: integer("confidence_score"),
+  freshnessLabel: text("freshness_label").notNull().default(""),
+  sourceLabel: text("source_label").notNull().default(""),
+  sourceUrl: text("source_url").notNull().default(""),
+  rankScore: integer("rank_score"),
+  rankReason: text("rank_reason").notNull().default(""),
+  executionShape: text("execution_shape").notNull().default("single-step"),
+  acceptanceEntityType: text("acceptance_entity_type").notNull().default(""),
+  acceptanceDraft: text("acceptance_draft").notNull().default("{}"), // JSON
+  duplicateOfId: integer("duplicate_of_id"),
+  createdAt: integer("created_at").notNull(),
+  reviewedAt: integer("reviewed_at"),
+  acceptedAt: integer("accepted_at"),
+  rejectedAt: integer("rejected_at"),
+});
+
+// RECOMMENDATION SUBDIVISIONS — the middle layer between a broad theme and tiny
+// tasks. Example: "AI governance prep" -> "model governance", "EU AI Act".
+export const recommendationSubdivisions = sqliteTable("recommendation_subdivisions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  recommendationId: integer("recommendation_id").notNull(),
+  subdivisionKey: text("subdivision_key").notNull(),
+  label: text("label").notNull(),
+  whyItMatters: text("why_it_matters").notNull().default(""),
+  suggestedMaterials: text("suggested_materials").notNull().default("[]"), // JSON string[]
+  sequence: integer("sequence").notNull().default(0),
+  createdAt: integer("created_at").notNull(),
+});
+
+// RECOMMENDATION MILESTONES — durable checkpoints for accepted multi-step items.
+// Tasks remain the next executable slice only; milestones preserve the larger arc.
+export const recommendationMilestones = sqliteTable("recommendation_milestones", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  recommendationId: integer("recommendation_id").notNull(),
+  milestoneKey: text("milestone_key").notNull(),
+  label: text("label").notNull(),
+  doneWhen: text("done_when").notNull().default(""),
+  status: text("status").notNull().default("todo"), // todo|active|done|skipped
+  sequence: integer("sequence").notNull().default(0),
+  suggestedTaskTitle: text("suggested_task_title").notNull().default(""),
+  subdivisionKey: text("subdivision_key").notNull().default(""),
+  createdAt: integer("created_at").notNull(),
+  completedAt: integer("completed_at"),
 });
 
 export const wins = sqliteTable("wins", {
@@ -334,6 +397,9 @@ export const insertContactSchema = createInsertSchema(contacts).omit({ id: true,
 export const insertCareerTrackSchema = createInsertSchema(careerTracks).omit({ id: true, createdAt: true });
 export const insertUserProfileSchema = createInsertSchema(userProfile).omit({ id: true });
 export const insertDiscoverySessionSchema = createInsertSchema(discoverySessions).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertRecommendationSchema = createInsertSchema(recommendations).omit({ id: true, createdAt: true, reviewedAt: true, acceptedAt: true, rejectedAt: true });
+export const insertRecommendationSubdivisionSchema = createInsertSchema(recommendationSubdivisions).omit({ id: true, createdAt: true });
+export const insertRecommendationMilestoneSchema = createInsertSchema(recommendationMilestones).omit({ id: true, createdAt: true, completedAt: true });
 export const insertDayPlanSchema = createInsertSchema(dayPlans).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertDayPlanItemSchema = createInsertSchema(dayPlanItems).omit({ id: true, createdAt: true });
 export const insertEntityLinkSchema = createInsertSchema(entityLinks).omit({ id: true, createdAt: true });
@@ -372,3 +438,9 @@ export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
 export type ActivityLog = typeof activityLog.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type UserProfile = typeof userProfile.$inferSelect;
+export type InsertRecommendation = z.infer<typeof insertRecommendationSchema>;
+export type Recommendation = typeof recommendations.$inferSelect;
+export type InsertRecommendationSubdivision = z.infer<typeof insertRecommendationSubdivisionSchema>;
+export type RecommendationSubdivision = typeof recommendationSubdivisions.$inferSelect;
+export type InsertRecommendationMilestone = z.infer<typeof insertRecommendationMilestoneSchema>;
+export type RecommendationMilestone = typeof recommendationMilestones.$inferSelect;

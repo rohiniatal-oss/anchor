@@ -19,7 +19,7 @@ export type Harness = {
 const TABLES = [
   "tasks", "events", "jobs", "job_pipeline_steps", "proof_asset_steps",
   "learn", "hustles", "wins", "contacts", "career_tracks",
-  "discovery_sessions",
+  "discovery_sessions", "recommendations", "recommendation_subdivisions", "recommendation_milestones",
   "day_plans", "day_plan_items", "entity_links", "activity_log",
 ];
 

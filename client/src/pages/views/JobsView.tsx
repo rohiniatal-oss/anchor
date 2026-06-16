@@ -24,9 +24,13 @@ import { ConstraintBadge } from "@/components/home/ConstraintBadge";
 import { CardActions } from "@/components/home/CardActions";
 import { ViewSpineCallout, BroadPursuitJobsKickoff } from "@/lib/parallelPursuit";
 import { laneGuideForCombination, lanePresetForJob, JOB_ARCHETYPE_OPTIONS } from "@/lib/parallelPursuit";
-import { useLinkedTaskCount } from "@/lib/homeHelpers";
-import { LEARN_OUTPUT_META, LEARN_STATUS_LABEL } from "@/lib/learnShared";
+import { buildLearnStarterDraft } from "@/lib/learnStarter";
+import { displayCombinationLabel } from "@/lib/goalSpine";
+import { findOpenLinkedTask, useLinkedTaskCount } from "@/lib/homeHelpers";
+import { LEARN_OUTPUT_META, LEARN_STATUS_LABEL, learnTaskActionLabel, learnTaskCreatedLabel } from "@/lib/learnShared";
+import { noLinkedTasksHelp, taskActionLabelForEntity, taskPreviewHint, taskToastDescription } from "@/lib/taskActionCopy";
 import { STEP_STATUS_TONE } from "@/lib/stepRailShared";
+import { nextContactTaskTitle, nextJobTaskTitle, nextLearnTaskTitle } from "@shared/taskPreview";
 import type { Job, Learn, Contact, Task, CareerTrack, JobPipelineStep } from "@shared/schema";
 import type { GoalPortfolioItemT, GoalsStateResponseT } from "@/lib/goalSpine";
 import type { JobFormT, JobTruthStripT } from "@/lib/jobsViewTypes";
@@ -57,8 +61,8 @@ const READINESS_STAGES = [
   { key: "cv", label: "CV tailored" },
   { key: "cover", label: "Cover letter" },
   { key: "questions", label: "Application questions" },
-  { key: "sample", label: "Work sample" },
-  { key: "referral", label: "Referral secured" },
+  { key: "sample", label: "Extra material" },
+  { key: "referral", label: "Intro / referral" },
   { key: "submitted", label: "Submitted" },
   { key: "follow_up", label: "Followed up" },
 ] as const;
@@ -145,7 +149,7 @@ function JobStepRail({ j }: { j: Job }) {
     try {
       const r = await mutateAndInvalidate("POST", `/api/steps/${s.id}/materialize`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       await reloadInto();
-      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: r?.reused ? "There's already an open task for this role." : "Find it in Brain dump, or in Today if it gets planned." });
+      toast({ title: r?.reused ? "Already on your list." : "Task created from this step.", description: taskToastDescription(r, "There's already an open task for this role.") });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
@@ -334,7 +338,7 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
       sector: j.company || "",
       targetOrg: j.company || "",
       targetRole: j.title || "",
-      why: `Could help warm a path into ${j.title}${j.company ? ` at ${j.company}` : ""}.`,
+      why: `Could help you get closer to ${j.title}${j.company ? ` at ${j.company}` : ""}.`,
       relatedTrackId: trackId,
       askType: "advice",
       relationshipStrength: "cold",
@@ -347,11 +351,11 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-amber-50/40 dark:bg-amber-950/10 -mx-1 px-2 pb-2" data-testid={`warmpath-${j.id}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1.5">
-        <Flame className="w-3.5 h-3.5" /> No contacts linked
+        <Flame className="w-3.5 h-3.5" /> Helpful contacts
       </div>
       {candidates.length === 0 ? (
         <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">No contacts linked to this role yet — add someone in Network.</p>
+          <p className="text-xs text-muted-foreground">No contacts linked to this role yet. Add someone in Network.</p>
           <button
             type="button"
             onClick={openNetworkIntake}
@@ -363,7 +367,7 @@ function JobWarmPath({ j, trackId, contacts }: { j: Job; trackId: number | null;
         </div>
       ) : (
         <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">{trackContacts.length > 0 ? "Someone who could help here:" : "Someone who could open a path:"}</p>
+          <p className="text-[11px] text-muted-foreground">Someone who could help here:</p>
           {candidates.map((c) => (
             <div key={c.id} className="flex items-center justify-between gap-2" data-testid={`warmpath-candidate-${j.id}-${c.id}`}>
               <span className="text-xs min-w-0 truncate">{c.who || c.name || "contact"}</span>
@@ -383,11 +387,13 @@ function JobCapabilitySupport({
   trackId,
   tracks,
   learns,
+  truth,
 }: {
   j: Job;
   trackId: number | null;
   tracks: CareerTrack[];
   learns: Learn[];
+  truth: JobTruthStripT | null;
 }) {
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -395,6 +401,7 @@ function JobCapabilitySupport({
 
   const track = tracks.find((t) => t.id === trackId) || null;
   const requiredDomains = track ? requiredDomainsForTrack(track) : [];
+  const needsPrep = truth?.action === "prove" || truth?.action === "prepare";
   const supportItems = learns
     .filter((l) => !l.done && getTrackId("learn", l) === trackId)
     .sort((a, b) => {
@@ -414,31 +421,28 @@ function JobCapabilitySupport({
   async function createSupportTask(l: Learn) {
     setBusyId(l.id);
     try {
-      const endpoint = getLearnOutputState(l) === "reference" ? `/api/learn/${l.id}/create-next-task` : `/api/learn/${l.id}/create-output-task`;
+      const outputState = getLearnOutputState(l);
+      const endpoint = outputState === "reference" ? `/api/learn/${l.id}/create-next-task` : `/api/learn/${l.id}/create-output-task`;
       const r = await mutateAndInvalidate("POST", endpoint, {}, ["/api/tasks", "/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       toast({
-        title: r?.reused ? "Already on your list." : "Support task created.",
-        description: r?.reused ? "There's already an open task for this learning item." : "Find it in Brain dump, or in Today if it gets planned.",
+        title: r?.reused ? "Already on your list." : learnTaskCreatedLabel(outputState),
+        description: taskToastDescription(r, "There's already an open task for this learning item."),
       });
     } catch {
-      toast({ title: "Couldn't create the support task", description: "Try again in a moment." });
+      toast({ title: "Couldn't create the prep task", description: "Try again in a moment." });
     } finally {
       setBusyId(null);
     }
   }
 
   function openLearnIntake() {
-    const primaryDomain = requiredDomains.length > 0 ? domainLabel(requiredDomains[0]) : "";
-    const draft = {
-      title: primaryDomain ? `${primaryDomain} capability support` : `${track?.name || j.title} capability support`,
-      category: primaryDomain,
-      capabilityBuilt: primaryDomain,
-      requiredOutput: track ? `One reusable output that strengthens ${track.name}.` : "",
-      note: `Support ${track?.name || "this lane"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
+    const draft = buildLearnStarterDraft({
+      subjectText: `${track?.name || ""} ${j.title} ${j.company || ""}`.trim(),
       relatedTrackId: trackId,
-      proofIntent: true,
-      learnStatus: "open",
-    };
+      track,
+      noteIntro: `Build familiarity with ${track?.name || "this role type"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
+      fallbackTitle: `${track?.name || j.title} prep`,
+    });
     queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
     window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
   }
@@ -446,12 +450,14 @@ function JobCapabilitySupport({
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-slate-50/70 dark:bg-slate-900/20 -mx-1 px-2 pb-2" data-testid={`capability-support-${j.id}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-1.5">
-        <Hammer className="w-3.5 h-3.5" /> Capability support
+        <Hammer className="w-3.5 h-3.5" /> Prep and learning
       </div>
       {supportItems.length === 0 ? (
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
-            No learning support is linked to this track yet. Add one in Learn so this role has a capability ramp, not just an application task list.
+            {needsPrep
+              ? "This role may need clearer prep. Add one starter prep item if you want more focused support here."
+              : "No prep item is linked to this role type yet. Add one starter prep item if you want extra prep for this role or interview."}
           </p>
           {requiredDomains.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -468,7 +474,7 @@ function JobCapabilitySupport({
             className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
             data-testid={`button-open-learn-from-job-${j.id}`}
           >
-            <GraduationCap className="w-3.5 h-3.5" /> Add capability support
+            <GraduationCap className="w-3.5 h-3.5" /> Add starter
           </button>
         </div>
       ) : (
@@ -489,7 +495,7 @@ function JobCapabilitySupport({
                         <meta.icon className="w-2.5 h-2.5" /> {meta.label}
                       </span>
                     </div>
-                    {l.requiredOutput && <p className="text-[11px] text-muted-foreground mt-1">Output: {l.requiredOutput}</p>}
+                    {l.requiredOutput && <p className="text-[11px] text-muted-foreground mt-1">Possible result: {l.requiredOutput}</p>}
                   </div>
                   {outputState !== "evidenced" && (
                     <button
@@ -500,7 +506,7 @@ function JobCapabilitySupport({
                       data-testid={`button-job-support-task-${j.id}-${l.id}`}
                     >
                       {busyId === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-                      {outputState === "reference" ? "Create next task" : "Create output task"}
+                      {learnTaskActionLabel(outputState)}
                     </button>
                   )}
                 </div>
@@ -519,6 +525,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
   const trackId = getTrackId("jobs", j);
   const track = tracks.find((t) => t.id === trackId) || null;
   const linked = useLinkedTaskCount(tasks, "job", j.id);
+  const openJobTask = findOpenLinkedTask(tasks, "job", j.id);
   const [open, setOpen] = useState(false);
   const [primaryBusy, setPrimaryBusy] = useState(false);
 
@@ -532,7 +539,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
     const r = await mutateAndInvalidate("POST", `/api/jobs/${j.id}/create-next-task`, {}, ["/api/tasks", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
     toast({
       title: r?.reused ? "Already on your list." : "Job task created.",
-      description: r?.reused ? "There's already an open task for this role." : "Find it in Brain dump, or in Today if it gets planned.",
+      description: taskToastDescription(r, "There's already an open task for this role."),
     });
   }
 
@@ -540,16 +547,17 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
     const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     toast({
       title: r?.reused ? "Already on your list." : "Outreach task created.",
-      description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned.",
+      description: taskToastDescription(r, "There's already an open task for this contact."),
     });
   }
 
   async function createSupportTask(l: Learn) {
-    const endpoint = getLearnOutputState(l) === "reference" ? `/api/learn/${l.id}/create-next-task` : `/api/learn/${l.id}/create-output-task`;
+    const outputState = getLearnOutputState(l);
+    const endpoint = outputState === "reference" ? `/api/learn/${l.id}/create-next-task` : `/api/learn/${l.id}/create-output-task`;
     const r = await mutateAndInvalidate("POST", endpoint, {}, ["/api/tasks", "/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
     toast({
-      title: r?.reused ? "Already on your list." : "Support task created.",
-      description: r?.reused ? "There's already an open task for this learning item." : "Find it in Brain dump, or in Today if it gets planned.",
+      title: r?.reused ? "Already on your list." : learnTaskCreatedLabel(outputState),
+      description: taskToastDescription(r, "There's already an open task for this learning item."),
     });
   }
 
@@ -558,7 +566,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
       sector: j.company || "",
       targetOrg: j.company || "",
       targetRole: j.title || "",
-      why: `Could help warm a path into ${j.title}${j.company ? ` at ${j.company}` : ""}.`,
+      why: `Could help you get closer to ${j.title}${j.company ? ` at ${j.company}` : ""}.`,
       relatedTrackId: trackId,
       askType: truth?.action === "warm" ? "referral" : "advice",
       relationshipStrength: "cold",
@@ -569,17 +577,13 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
   }
 
   function openLearnIntake() {
-    const primaryDomain = requiredDomains.length > 0 ? domainLabel(requiredDomains[0]) : "";
-    const draft = {
-      title: primaryDomain ? `${primaryDomain} capability support` : `${track?.name || j.title} capability support`,
-      category: primaryDomain,
-      capabilityBuilt: primaryDomain,
-      requiredOutput: track ? `One reusable output that strengthens ${track.name}.` : "",
-      note: `Support ${track?.name || "this lane"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
+    const draft = buildLearnStarterDraft({
+      subjectText: `${track?.name || ""} ${j.title} ${j.company || ""}`.trim(),
       relatedTrackId: trackId,
-      proofIntent: true,
-      learnStatus: "open",
-    };
+      track,
+      noteIntro: `Build familiarity with ${track?.name || "this role type"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
+      fallbackTitle: `${track?.name || j.title} prep`,
+    });
     queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
     window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
   }
@@ -596,7 +600,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
     };
     return {
       label: "Log progress", icon: Trophy,
-      run: async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win 🎉", description: "Application progress counts." }); },
+      run: async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win.", description: "Application progress counts." }); },
     };
   })();
   const truthPrimary = (() => {
@@ -609,7 +613,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
     if (truth.action === "prove") {
       return supportItems[0]
         ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
-        : { label: "Add capability support", icon: GraduationCap, run: async () => openLearnIntake() };
+        : { label: "Use prep starter", icon: GraduationCap, run: async () => openLearnIntake() };
     }
     if (truth.action === "clarify") {
       return j.url
@@ -638,7 +642,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
       </div>
 
       {gated ? (
-        <p className="text-xs text-muted-foreground mt-2">Probably skip — {j.note || "a stretch versus your background"}. Kept for reference.</p>
+        <p className="text-xs text-muted-foreground mt-2">Probably skip for now: {j.note || "a stretch versus your background"}. Kept for reference.</p>
       ) : windowClosed ? (
         <div className="flex items-center justify-between mt-2">
           <p className="text-xs text-muted-foreground">Watching for the next cycle.</p>
@@ -701,12 +705,12 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
               {j.note && <p className="text-xs text-muted-foreground leading-snug">{j.note}</p>}
               {j.narrativeAngle && (
                 <p className="text-xs text-foreground/80 leading-snug">
-                  <span className="font-medium text-muted-foreground">Your angle: </span>{j.narrativeAngle}
+                  <span className="font-medium text-muted-foreground">Why you fit: </span>{j.narrativeAngle}
                 </p>
               )}
               {j.jdText && (
                 <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
-                  <FileText className="w-3 h-3 shrink-0" /> JD saved — used for CV suggestions when you work on this application.
+                  <FileText className="w-3 h-3 shrink-0" /> Job description saved. Used for CV suggestions when you work on this application.
                 </p>
               )}
               <div className="flex items-center gap-1">
@@ -715,9 +719,10 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, onMove, onRemove }
               </div>
               <JobStepRail j={j} />
               <JobWarmPath j={j} trackId={trackId} contacts={contacts} />
-              <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} />
+              <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} truth={truth} />
               <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
-                onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} />
+                nextTaskHint={taskPreviewHint(nextJobTaskTitle(j), openJobTask?.title)}
+                onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />
             </div>
           )}
         </>
@@ -785,14 +790,14 @@ export function JobsView() {
         <Button onClick={() => showForm ? setShowForm(false) : startBlankRole()} className="shrink-0" data-testid="button-toggle-job-form"><Plus className="w-4 h-4 mr-1" /> Add role</Button>
       </div>
       {activeGoal && !(roles.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="jobs" goal={activeGoal} />}
-      {activeGoal && roles.length === 0 && <BroadPursuitJobsKickoff goal={activeGoal} onStartLane={startLaneRole} />}
+      {activeGoal && <BroadPursuitJobsKickoff goal={activeGoal} onStartLane={startLaneRole} />}
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3">
           {selectedLane && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="job-form-lane-banner">
               <div>
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Role type</p>
-                <p className="text-sm font-medium">{selectedLane}</p>
+                <p className="text-sm font-medium">{displayCombinationLabel(selectedLane)}</p>
                 {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
               </div>
               <button type="button" onClick={() => { setSelectedLane(""); setForm((c) => ({ ...c, roleArchetype: "", narrativeAngle: "", note: "", nextStep: "", relatedTrackId: null })); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0" data-testid="button-clear-job-lane">Clear</button>
@@ -824,7 +829,7 @@ export function JobsView() {
           <button type="button" onClick={() => setShowMoreJobFields((v) => !v)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMoreJobFields ? "rotate-180" : ""}`} />
-            {showMoreJobFields ? "Fewer options" : "More options (deadline, role type, notes)"}
+            {showMoreJobFields ? "Fewer options" : "More options (deadline, role shape, notes)"}
           </button>
           {showMoreJobFields && (
             <div className="grid gap-2 sm:grid-cols-2">
@@ -876,7 +881,7 @@ export function JobsView() {
                       {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
                       {items.length === 0 && col.id === "wishlist" && (
                         <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
-                          <p className="text-sm text-muted-foreground">No roles yet — add one above or use a lane shortcut.</p>
+                          <p className="text-sm text-muted-foreground">No roles yet - add one above or start from one of the suggested role types.</p>
                         </div>
                       )}
                     </div>

@@ -102,6 +102,6 @@ test("only a stalled active proof asset surfaces as low-priority proof support",
 
   assert.equal(diagnostic.signals.proofGap, 1);
   assert.equal(diagnostic.bottleneck, "proof");
-  assert.equal(diagnostic.bottleneckLabel, "Active proof asset stalled");
-  assert.equal(diagnostic.recommendedMove, "Produce one reusable output from the active proof asset");
+  assert.equal(diagnostic.bottleneckLabel, "Active project or public-work item stalled");
+  assert.equal(diagnostic.recommendedMove, "Move the active project or public-work item one concrete step forward");
 });

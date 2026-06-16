@@ -4,6 +4,7 @@ import {
 } from "@shared/domainState";
 import { domainForLearn, domainLabel, CAPABILITY_DOMAIN_KEYS } from "@shared/capabilityDomains";
 import { requiredDomainsForTrack, type CapabilityDomainKey } from "@shared/capabilityTargets";
+import { learningGapMissingReason, learningGapRecommendedMove } from "@shared/learningGapSuggestions";
 import type { CareerTrack, Learn, Hustle, Win } from "@shared/schema";
 import { computeEvidence, type TrackKey } from "./evidence";
 
@@ -170,7 +171,7 @@ function sequenceForTrack(
       ? "Has an unmet prerequisite — comes after the items it depends on"
       : near
         ? `Deadline in ${e.dleft} day${e.dleft === 1 ? "" : "s"} — do this sooner`
-        : "Builds a required capability for this track";
+        : "Strengthens an area this track keeps asking for";
     return {
       learnId: e.l.id,
       title: e.l.title,
@@ -191,7 +192,7 @@ function sequenceForTrack(
       title: null,
       gapDomain: g,
       domainLabel: domainLabel(g),
-      reason: "No resource yet for this capability — find one",
+      reason: learningGapMissingReason(g, domainLabel(g)),
       hasUnmetPrereq: false,
       deadline: "",
     });
@@ -284,7 +285,7 @@ export function topLearningGapSignal(gaps: TrackLearningGap[]): LearningGapSigna
     const hasResource = !!step;
     const recommendedMove = hasResource
       ? `Build ${topGap.label}: do the next step on "${step!.title}"`
-      : `No resource yet for ${topGap.label} — find one`;
+      : learningGapRecommendedMove(topGap.domain, topGap.label);
     return {
       trackId: g.trackId, trackName: g.name,
       gapDomains: g.gapDomains, topGap, recommendedMove, hasResource,

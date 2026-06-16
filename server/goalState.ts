@@ -1,8 +1,49 @@
 import type { Express } from "express";
+import { GOAL_WORKSTREAM, type GoalWorkstreamName } from "@shared/goalWorkstreams";
 import type { ActivityLog, CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse } from "./candidates";
 import { computeJobTruthStrip, type JobTruthAction, type JobTruthStrip } from "./jobTruth";
+import {
+  broadPursuitMissingRolesDecisionQuestion,
+  broadPursuitMissingRolesContextReason,
+  broadPursuitNextMissingRolePlanNote,
+  broadPursuitNextMissingRoleStopRule,
+  broadPursuitNextMissingRoleTodayMustDo,
+  broadPursuitNextMissingContactStopRule,
+  broadPursuitNextMissingContactTodayMustDo,
+  broadPursuitNextMissingPrepStopRule,
+  broadPursuitNextMissingPrepTodayMustDo,
+  broadPursuitMissingSupportDecisionQuestion,
+  broadPursuitMissingSupportContextReason,
+  broadPursuitMissingSupportTodayMustDo,
+  broadPursuitMissingSupportStopRule,
+} from "./broadPursuitCopy";
+import {
+  fitDiscoveryDecisionQuestion,
+  fitDiscoveryTodayMustDo,
+  fitDiscoveryTodayNext,
+  fitDiscoveryTodayOptional,
+  fitDiscoveryTodayStopRule,
+  interviewPrepDecisionQuestion,
+  interviewPrepReason,
+  interviewPrepTodayMustDo,
+  interviewPrepTodayNext,
+  interviewPrepTodayOptional,
+  interviewPrepTodayStopRule,
+  laneNarrowingSingleAxisDecisionQuestion,
+  laneNarrowingSingleAxisReason,
+  laneNarrowingSingleAxisTodayMustDo,
+  laneNarrowingSingleAxisTodayNext,
+  laneNarrowingSingleAxisTodayOptional,
+  laneNarrowingSingleAxisTodayStopRule,
+  laneNarrowingTwoAxisDecisionQuestion,
+  laneNarrowingTwoAxisReason,
+  laneNarrowingTwoAxisTodayMustDo,
+  laneNarrowingTwoAxisTodayNext,
+  laneNarrowingTwoAxisTodayOptional,
+  laneNarrowingTwoAxisTodayStopRule,
+} from "./explorationCopy";
 
 type WorkstreamStatus = "active" | "underdeveloped" | "premature" | "blocked" | "stale" | "sufficient_for_now";
 type NextMoveType = "learning" | "relationship" | "preparation" | "execution" | "maintenance" | "wait";
@@ -11,7 +52,7 @@ type TrajectoryStatus = "complete" | "current" | "pending";
 type DecisionMode = "single-track" | "forced-comparison" | "parallel-exploration" | "broad-parallel-pursuit";
 
 type WorkstreamState = {
-  name: string;
+  name: GoalWorkstreamName;
   status: WorkstreamStatus;
   progress: "not_started" | "early" | "developing" | "ready";
   bottleneck: string;
@@ -38,18 +79,21 @@ type BroadPursuitCoverage = {
   covered: string[];
   missing: string[];
   networkSupported: string[];
-  capabilitySupported: string[];
+  learningSupported: string[];
+  exampleProjectSupported: string[];
   missingNetworkSupport: string[];
-  missingCapabilitySupport: string[];
+  missingLearningSupport: string[];
   fullySupported: string[];
   laneStates: Array<{
     combination: string;
     roleCount: number;
     contactCount: number;
-    capabilityItemCount: number;
+    learningItemCount: number;
+    exampleProjectItemCount: number;
     hasRole: boolean;
     hasNetworkSupport: boolean;
-    hasCapabilitySupport: boolean;
+    hasLearningSupport: boolean;
+    hasExampleProjectSupport: boolean;
   }>;
 };
 
@@ -85,6 +129,7 @@ type GoalSnapshot = {
   proofSupportDemandCount: number;
   liveProofAssetCount: number;
   outlinedProofAssetCount: number;
+  activeHustleItems: Hustle[];
   activeLearnItems: Learn[];
   activeLearnCount: number;
   evidencedLearnCount: number;
@@ -227,7 +272,7 @@ function scoreHypothesesFromText(text: string, scores: Map<string, number>) {
   if (/\b(geopolitic\w*|foreign policy|international|security|middle east|geostrateg\w*|geopolitical risk|risk advisory)\b/.test(lower)) {
     addHypothesisScore(scores, "geopolitics", 2);
   }
-  if (/\b(policy|public sector|think tank|government|advisory|advisor|advisory work)\b/.test(lower)) {
+  if (/\b(policy|public sector|think tank|government|regulation|public affairs)\b/.test(lower)) {
     addHypothesisScore(scores, "policy_advisory", 1);
   }
   if (/\b(strategy|chief of staff|operations|ops|program management|delivery|partnerships)\b/.test(lower)) {
@@ -365,6 +410,7 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   const proofSupportDemandCount = applicationActionCounts.prove;
   const hasProofTask = careerTasks.some((t) => /proof|gap|bullet|story|portfolio|sample/i.test(t.title));
   const liveProofAssets = hustles.filter((h) => h.stage === "testing" || h.stage === "earning");
+  const activeHustleItems = hustles.filter((h) => h.stage !== "earning");
   const outlinedProofAssetCount = hustles.filter((h) => !!((h.nextStep && h.nextStep.trim()) || (h.coreClaim && h.coreClaim.trim()) || (h.firstPostIdea && h.firstPostIdea.trim()))).length;
   const activeLearn = learn.filter((l) => !l.done && l.learnStatus !== "closed");
   const evidencedLearnCount = learn.filter((l) => !!(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
@@ -406,6 +452,7 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     proofSupportDemandCount,
     liveProofAssetCount: liveProofAssets.length,
     outlinedProofAssetCount,
+    activeHustleItems,
     activeLearnItems: activeLearn,
     activeLearnCount: activeLearn.length,
     evidencedLearnCount,
@@ -441,7 +488,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     snapshot.activeTracks.length ? `${snapshot.activeTracks.length} active career track${snapshot.activeTracks.length === 1 ? "" : "s"}` : "no active career tracks",
     snapshot.savedJobs.length ? `${snapshot.savedJobs.length} open or saved roles` : "no open or saved roles",
     snapshot.candidateCommits ? `${snapshot.candidateCommits} candidate activities committed` : "no candidate activity committed",
-    snapshot.roleFeedbackCount ? `${snapshot.roleFeedbackCount} role attribute signals captured` : "no role attribute signals captured",
+    snapshot.roleFeedbackCount ? `${snapshot.roleFeedbackCount} role reactions captured` : "no role reactions captured",
     snapshot.roleHypotheses.length ? `current hypotheses: ${snapshot.roleHypotheses.join(" vs ")}` : "no clear role hypotheses yet",
     snapshot.topicHypotheses.length ? `topic axis: ${snapshot.topicHypotheses.join(" vs ")}` : "topic axis still unclear",
     snapshot.roleShapeHypotheses.length ? `role-shape axis: ${snapshot.roleShapeHypotheses.join(" vs ")}` : "role-shape axis still unclear",
@@ -469,7 +516,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     : snapshot.dueFollowUpCount > 0
       ? `${snapshot.dueFollowUpCount} follow-up${snapshot.dueFollowUpCount > 1 ? "s are" : " is"} due or overdue`
       : missingNetworkByLane.length > 0
-        ? `these live combinations still lack networking support: ${missingNetworkByLane.join("; ")}`
+        ? `these live paths still lack networking support: ${missingNetworkByLane.join("; ")}`
       : snapshot.networkContactsCount > 0 && snapshot.warmContactCount === 0
         ? "contacts exist, but none are warm enough to create easy momentum yet"
       : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
@@ -482,7 +529,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     : snapshot.dueFollowUpCount > 0
       ? ["follow up with the warmest overdue contact", "send one concise nudge tied to the current role or ask", "schedule the next touch so the thread does not go cold again"]
       : missingNetworkByLane.length > 0
-        ? [`add or link one contact to ${missingNetworkByLane[0]}`, "draft one lane-specific advice, reconnect, or referral ask", "make sure each live combination has at least one real contact path"]
+        ? [`add or link one contact to ${missingNetworkByLane[0]}`, "draft one advice, reconnect, or referral ask for that role type", "make sure each live path has at least one real person to reach out to"]
       : snapshot.savedJobs.length > 0 && snapshot.roleLinkedContactCount === 0
         ? ["tie one contact to the strongest live role", "identify who can warm the best current application", "draft one role-linked outreach message"]
         : snapshot.activeConversationCount === 0
@@ -513,7 +560,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       : applicationLead?.action === "apply"
         ? `${snapshot.applicationActionCounts.apply} role${snapshot.applicationActionCounts.apply === 1 ? " is" : "s are"} ready for a concrete application step`
         : applicationLead?.action === "warm"
-          ? `${snapshot.applicationActionCounts.warm} promising role${snapshot.applicationActionCounts.warm === 1 ? " should" : "s should"} use a warm path before going cold`
+          ? `${snapshot.applicationActionCounts.warm} promising role${snapshot.applicationActionCounts.warm === 1 ? " should" : "s should"} reach out to someone useful before going cold`
           : applicationLead?.action === "clarify"
             ? `${snapshot.applicationActionCounts.clarify} role${snapshot.applicationActionCounts.clarify === 1 ? " still needs" : "s still need"} clarification before real conversion`
             : snapshot.proofSupportDemandCount > 0
@@ -522,13 +569,13 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
               ? "no role is ready for a concrete conversion move yet"
               : "direction is not ready enough for broad applications";
   const applicationNextMoves = applicationLead?.action === "prepare"
-      ? [applicationLead.nextMove, "review the most likely interview themes", "tighten one reusable interview story or capability example"]
+      ? [applicationLead.nextMove, "review the most likely interview themes", "tighten one interview story or concrete example"]
     : applicationLead?.action === "follow_up"
       ? [applicationLead.nextMove, "identify the warmest internal nudge for that role", "log the next follow-up point so the role does not disappear"]
     : applicationLead?.action === "apply"
       ? [applicationLead.nextMove, "finish the strongest application material", "submit or clearly schedule the exact next application step"]
     : applicationLead?.action === "warm"
-      ? [applicationLead.nextMove, "tie one contact to the live role before applying cold", "send one warm-path message that advances the role"]
+      ? [applicationLead.nextMove, "tie one contact to the live role before applying cold", "send one message or referral ask that advances the role before going in cold"]
     : applicationLead?.action === "clarify"
       ? [applicationLead.nextMove, "confirm the role facts before spending more effort", "decide whether the role is worth keeping in the portfolio"]
       : ["wait until one role has a concrete conversion move", "keep the pipeline selective rather than forcing an application", "do not mass apply yet"];
@@ -543,20 +590,20 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       ? "early"
       : "not_started";
   const proofBottleneck = snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
-    ? "proof assets are optional value-adds for upskilling, not a blocker for applying"
-    : snapshot.liveProofAssetCount > 0 && snapshot.outlinedProofAssetCount === 0
-      ? "proof assets exist, but they are not yet concrete enough to convert into reusable evidence"
-      : snapshot.liveProofAssetCount > 0
-        ? "proof assets are live, but they need the next concrete output"
-        : "proof ideas exist, but they are not active yet";
-  const proofNextMoves = snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
-    ? ["keep proof as a secondary upskilling layer for now", "start one proof asset only when it will compound your learning", "define the smallest publishable or shippable proof output when you are ready"]
+    ? "projects and public work are optional value-adds for upskilling, not a blocker for applying"
+  : snapshot.liveProofAssetCount > 0 && snapshot.outlinedProofAssetCount === 0
+      ? "projects or public work exist, but they are not yet concrete enough to point to clearly later"
     : snapshot.liveProofAssetCount > 0
-      ? ["produce the next concrete output on the live proof asset", "package one existing output into reusable evidence", "connect the proof asset back to the capability it is building"]
-      : ["turn one proof idea into a real asset", "pick one output format you can sustain", "connect the asset to a learning goal, not a single role"];
-  const missingCapabilityByLane = broadSupportCoverage?.missing.length === 0 ? (broadSupportCoverage?.missingCapabilitySupport || []) : [];
+        ? "projects or public work are live, but they need the next concrete output"
+      : "ideas for projects or public work exist, but they are not active yet";
+  const proofNextMoves = snapshot.liveProofAssetCount === 0 && !snapshot.hasProofTask && snapshot.outlinedProofAssetCount === 0
+    ? ["keep projects and public work as a secondary upskilling layer for now", "start one only when it will compound your learning", "define the smallest publishable or shippable output when you are ready"]
+  : snapshot.liveProofAssetCount > 0
+      ? ["produce the next concrete output on the live project or public-work item", "capture one existing result in a way you can point to later", "turn it into something publishable or shippable enough to point to later"]
+      : ["turn one project or public-work idea into something real", "pick one output format you can sustain", "connect it to a learning goal, not a single role"];
+  const missingLearningByLane = broadSupportCoverage?.missing.length === 0 ? (broadSupportCoverage?.missingLearningSupport || []) : [];
   const capabilityStatus: WorkstreamStatus = snapshot.directionReady || snapshot.interviewingJobs > 0
-    ? missingCapabilityByLane.length > 0
+    ? missingLearningByLane.length > 0
       ? "underdeveloped"
       : (snapshot.activeLearnCount > 0 || snapshot.evidencedLearnCount > 0 ? "active" : "underdeveloped")
     : "premature";
@@ -567,65 +614,65 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       : "not_started";
   const capabilityBottleneck = snapshot.interviewingJobs > 0
     ? snapshot.learningOutputGapCount > 0
-      ? `${snapshot.learningOutputGapCount} capability-building item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} a reusable output before the interview`
-      : "interview and role preparation need capability-linked practice outputs"
-    : missingCapabilityByLane.length > 0
-      ? `these live combinations still lack capability support: ${missingCapabilityByLane.join("; ")}`
+      ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} notes, practice, or a short brief before the interview`
+      : "interview and role preparation need practice that turns into something you can reuse"
+    : missingLearningByLane.length > 0
+      ? `these live paths still need prep: ${missingLearningByLane.join("; ")}`
     : snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
       ? snapshot.proofSupportDemandCount > 0
-        ? `no role-relevant capability plan is active yet, and ${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger capability evidence`
-        : "no role-relevant capability plan is active yet"
+        ? `no role-relevant learning plan is active yet, and ${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice`
+        : "no role-relevant learning plan is active yet"
       : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
-        ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger credibility, and ${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} reusable evidence`
+        ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice, and ${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} notes or a short brief`
       : snapshot.proofSupportDemandCount > 0
-        ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger capability evidence`
+        ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice`
       : snapshot.learningOutputGapCount > 0
-        ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} a reusable output`
-        : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0
-          ? "learning is in motion, but nothing is evidenced yet"
-          : "turn learning into reusable job evidence and practice";
+        ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} notes or a short brief`
+      : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0
+          ? "learning is in motion, but nothing is linked back yet"
+      : "turn learning into clearer examples, notes, or practice";
   const capabilityNextMoves = snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
-    ? ["choose one role-relevant capability to strengthen", "start one learning item with a clear output in mind", "define what reusable evidence this learning should produce"]
-    : missingCapabilityByLane.length > 0
-      ? [`add one capability-support item for ${missingCapabilityByLane[0]}`, "define one reusable output that strengthens the lane across multiple roles", "turn lane-level upskilling into reusable evidence, not role-specific proof"]
+    ? ["pick one requirement that feels weakest today", "start one learning item tied to that requirement", "decide whether notes, a brief, or an example would help later"]
+    : missingLearningByLane.length > 0
+      ? [`add one prep step for ${missingLearningByLane[0]}`, "decide what notes, brief, or example would actually help across those roles", "turn upskilling into something you can use again later, not one-off prep"]
     : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
-      ? ["finish one reusable learning output for the current lane", "turn that output into a reusable interview or credibility artifact", "capture the evidence so Anchor can reuse it later"]
+      ? ["finish one useful prep note, brief, or example for the current path", "turn that result into something you can use in interviews or applications", "save the notes or link so Anchor can refer back to it later"]
     : snapshot.proofSupportDemandCount > 0
-      ? ["strengthen one reusable capability signal for the current lane", "turn existing learning into a reusable proof point", "package one output as reusable evidence"]
+      ? ["pick one requirement for the current path that still feels weak today", "turn existing learning into a clearer example or talking point", "save one note, brief, or result so it is easy to reuse later"]
     : snapshot.learningOutputGapCount > 0
-      ? ["finish one reusable learning output", "attach evidence to the learning item", "turn one learning output into interview or job-ready material"]
-        : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0
-          ? ["move one active learning item to a concrete output", "practice one scenario or framework", "capture one reusable takeaway in writing"]
-        : ["convert one learning item into a reusable interview/job artifact", "practice one scenario or framework", "choose the next capability to strengthen"];
+      ? ["finish one useful note, brief, or practice result", "attach the notes or link to the learning item", "turn it into interview or job prep material"]
+    : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0
+          ? ["move one active learning item to concrete notes, a brief, or a practice result", "practice one scenario or framework", "capture the useful part in writing"]
+        : ["turn one learning item into interview or job prep material", "practice one scenario or framework", "choose the next area to strengthen"];
 
   return [
     {
-      name: "Direction",
+      name: GOAL_WORKSTREAM.DIRECTION,
       status: snapshot.directionReady ? "active" : "underdeveloped",
       progress: snapshot.directionReady ? "developing" : snapshot.directionStarted ? "early" : "not_started",
       bottleneck: hasBroadParallelLanes(snapshot)
-        ? "multiple plausible lanes need live roles and applications so the market can separate them for you"
+        ? "multiple plausible paths need live roles and applications so real feedback can separate them for you"
         : snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
-          ? "you need one real role or application signal in each strong combination before narrowing"
+          ? "you need one real role or application move in each strong option before narrowing"
           : snapshot.roleHypotheses.length >= 2
-            ? "you still need live role and application signal across the plausible lanes"
-            : snapshot.directionReady ? "signals need narrowing into one role lane" : "not enough role-family signal",
+            ? "you still need live roles and application moves across the plausible paths"
+            : snapshot.directionReady ? "you have options, but still need to narrow them into a clearer role path" : "not enough real evidence yet about which role type fits",
       nextMoveType: "learning",
       evidence: directionEvidence,
       nextMoves: hasBroadParallelLanes(snapshot)
         ? snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
-          ? ["add one real role in each live combination", "capture which combinations feel energising, credible, or gettable", "let concrete roles separate the lanes instead of forcing a winner early"]
-          : ["add one real role in each plausible lane", "capture what the work actually looks like in each lane", "let concrete roles separate the lanes instead of forcing a winner early"]
+          ? ["add one real role in each live option", "capture which options feel energising, credible, or gettable", "let concrete roles separate the options instead of forcing a winner early"]
+          : ["add one real role in each plausible path", "capture what the work actually looks like in each path", "let concrete roles separate the options instead of forcing a winner early"]
         : snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2
-          ? ["save one concrete role example for each strong combination", "capture what feels energising, credible, or gettable in each", "let live roles and applications narrow the field"]
+          ? ["save one concrete role example for each strong option", "capture what feels energising, credible, or gettable in each", "let live roles and applications narrow the field"]
           : snapshot.roleHypotheses.length >= 2
-            ? ["save one concrete example from each plausible lane", "define what a credible near-term role must include", "let live roles and applications narrow the field"]
+            ? ["save one concrete example from each plausible path", "define what a credible near-term role must include", "let live roles and applications narrow the field"]
           : snapshot.directionReady
-            ? ["summarise patterns", "compare the strongest lanes", "inspect one adjacent role"]
+            ? ["summarise patterns", "compare the strongest role paths", "inspect one adjacent role"]
             : ["inspect one asset-backed role", "save one plausible role", "note one useful attribute"],
     },
     {
-      name: "Market map",
+      name: GOAL_WORKSTREAM.MARKET_MAP,
       status: snapshot.savedJobs.length >= 10 ? "sufficient_for_now" : snapshot.savedJobs.length > 0 ? "active" : "underdeveloped",
       progress: snapshot.savedJobs.length >= 10 ? "ready" : snapshot.savedJobs.length > 0 ? "early" : "not_started",
       bottleneck: snapshot.savedJobs.length >= 10 ? "enough initial roles to pattern-match" : "not enough real role examples",
@@ -634,7 +681,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       nextMoves: snapshot.savedJobs.length >= 10 ? ["summarise role patterns"] : ["save one role from an asset-backed search", "compare two role descriptions"],
     },
     {
-      name: "Network",
+      name: GOAL_WORKSTREAM.NETWORK,
       status: networkStatus,
       progress: networkProgress,
       bottleneck: networkBottleneck,
@@ -647,38 +694,38 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         `${snapshot.roleLinkedContactCount} role-linked contact${snapshot.roleLinkedContactCount === 1 ? "" : "s"}`,
         `${snapshot.dueFollowUpCount} due follow-up${snapshot.dueFollowUpCount === 1 ? "" : "s"}`,
         broadSupportCoverage && broadSupportCoverage.missing.length === 0
-          ? `${broadSupportCoverage.networkSupported.length} live combination${broadSupportCoverage.networkSupported.length === 1 ? "" : "s"} with networking support`
-          : "role coverage still comes before lane-support coverage",
+          ? `${broadSupportCoverage.networkSupported.length} live path${broadSupportCoverage.networkSupported.length === 1 ? "" : "s"} with outreach in place`
+          : "role coverage still comes before support for each role type",
         snapshot.hasNetworkTask ? "network task exists" : "no clear network task",
         networkAssets ? "network assets available" : "no explicit network assets",
       ],
       nextMoves: networkNextMoves,
     },
     {
-      name: "Positioning",
+      name: GOAL_WORKSTREAM.POSITIONING,
       status: snapshot.directionReady ? "active" : "premature",
       progress: snapshot.directionReady ? "early" : "not_started",
-      bottleneck: snapshot.directionReady ? "story needs to connect assets to the chosen lane" : "target lane is not clear enough",
+      bottleneck: snapshot.directionReady ? "your story needs to connect your experience to the chosen role type" : "target role type is not clear enough",
       nextMoveType: snapshot.directionReady ? "preparation" : "wait",
-      evidence: [snapshot.directionReady ? "some direction signal exists" : "direction still unclear"],
-      nextMoves: snapshot.directionReady ? ["write one rough positioning sentence", "map one asset to one role requirement"] : ["wait until more role signal exists"],
+      evidence: [snapshot.directionReady ? "some real role evidence exists" : "direction still unclear"],
+      nextMoves: snapshot.directionReady ? ["write one rough why-you-fit line", "match one past example to one role requirement"] : ["wait until more real role evidence exists"],
     },
     {
-      name: "Proof",
+      name: GOAL_WORKSTREAM.PROJECTS_PUBLIC_WORK,
       status: proofStatus,
       progress: proofProgress,
       bottleneck: proofBottleneck,
       nextMoveType: snapshot.liveProofAssetCount > 0 || snapshot.hasProofTask ? "preparation" : "wait",
       evidence: [
-        `${snapshot.liveProofAssetCount} live proof asset${snapshot.liveProofAssetCount === 1 ? "" : "s"}`,
-        `${snapshot.outlinedProofAssetCount} outlined proof asset${snapshot.outlinedProofAssetCount === 1 ? "" : "s"}`,
+        `${snapshot.liveProofAssetCount} live project/public-work item${snapshot.liveProofAssetCount === 1 ? "" : "s"}`,
+        `${snapshot.outlinedProofAssetCount} outlined project/public-work item${snapshot.outlinedProofAssetCount === 1 ? "" : "s"}`,
         snapshot.deconstructionCommits ? `${snapshot.deconstructionCommits} role deconstruction tasks committed` : "no role deconstruction commitments",
         hasSignal(snapshot.feedbackSummary, "gap") ? "gap feedback exists" : "no explicit proof-gap feedback",
       ],
       nextMoves: proofNextMoves,
     },
     {
-      name: "Applications",
+      name: GOAL_WORKSTREAM.APPLICATIONS,
       status: applicationStatus,
       progress: applicationProgress,
       bottleneck: applicationBottleneck,
@@ -687,7 +734,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         `${snapshot.savedJobs.length} open or saved role${snapshot.savedJobs.length === 1 ? "" : "s"}`,
         `${snapshot.viableApplicationCount} viable role${snapshot.viableApplicationCount === 1 ? "" : "s"}`,
         `${snapshot.applicationActionCounts.apply} ready-to-apply`,
-        `${snapshot.applicationActionCounts.warm} warm-path-first`,
+        `${snapshot.applicationActionCounts.warm} contact-first`,
         `${snapshot.applicationActionCounts.prove} capability-support`,
         `${snapshot.applicationActionCounts.clarify} clarify-first`,
         `${snapshot.applicationActionCounts.follow_up} follow-up`,
@@ -698,33 +745,33 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       nextMoves: applicationNextMoves,
     },
     {
-      name: "Interview readiness",
+      name: GOAL_WORKSTREAM.INTERVIEW_READINESS,
       status: snapshot.interviewingJobs > 0 ? "active" : snapshot.savedJobs.length > 0 ? "underdeveloped" : "premature",
       progress: snapshot.interviewingJobs > 0 ? "early" : "not_started",
-      bottleneck: snapshot.interviewingJobs > 0 ? "interview stories and role-specific examples need tightening" : snapshot.savedJobs.length > 0 ? "no live interview yet, but prep assets are still thin" : "premature until live roles exist",
+      bottleneck: snapshot.interviewingJobs > 0 ? "interview stories and role-specific examples need tightening" : snapshot.savedJobs.length > 0 ? "no live interview yet, but interview prep is still thin" : "premature until live roles exist",
       nextMoveType: snapshot.interviewingJobs > 0 ? "preparation" : "wait",
       evidence: [snapshot.interviewingJobs ? `${snapshot.interviewingJobs} interviewing role(s)` : "no interviewing roles yet"],
-      nextMoves: snapshot.interviewingJobs > 0 ? ["prepare 3 evidence-backed stories", "simulate one interview answer", "review the company and role thesis"] : ["wait until a live interview exists"],
+      nextMoves: snapshot.interviewingJobs > 0 ? ["prepare 3 concrete interview stories", "simulate one interview answer", "review the company and role thesis"] : ["wait until a live interview exists"],
     },
     {
-      name: "Capability ramp",
+      name: GOAL_WORKSTREAM.PREP_UPSKILLING,
       status: capabilityStatus,
       progress: capabilityProgress,
       bottleneck: capabilityBottleneck,
       nextMoveType: snapshot.directionReady || snapshot.interviewingJobs > 0 ? "learning" : "wait",
       evidence: [
         snapshot.activeLearnCount ? `${snapshot.activeLearnCount} active learning item(s)` : "no active learning items",
-        snapshot.evidencedLearnCount ? `${snapshot.evidencedLearnCount} evidenced learning output(s)` : "no evidenced learning outputs",
-        snapshot.learningOutputGapCount ? `${snapshot.learningOutputGapCount} learning item(s) still need an output` : "learning outputs are in better shape",
+        snapshot.evidencedLearnCount ? `${snapshot.evidencedLearnCount} learning item(s) with notes or an output linked` : "no linked learning outputs yet",
+        snapshot.learningOutputGapCount ? `${snapshot.learningOutputGapCount} learning item(s) still need notes or an output` : "learning outputs are in better shape",
         broadSupportCoverage && broadSupportCoverage.missing.length === 0
-          ? `${broadSupportCoverage.capabilitySupported.length} live combination${broadSupportCoverage.capabilitySupported.length === 1 ? "" : "s"} with capability support`
-          : "role coverage still comes before lane-support coverage",
-        `${snapshot.proofSupportDemandCount} role${snapshot.proofSupportDemandCount === 1 ? "" : "s"} that could benefit from stronger capability evidence`,
+          ? `${broadSupportCoverage.learningSupported.length} live path${broadSupportCoverage.learningSupported.length === 1 ? "" : "s"} with prep in place`
+          : "role coverage still comes before support for each role type",
+        `${snapshot.proofSupportDemandCount} role${snapshot.proofSupportDemandCount === 1 ? "" : "s"} that could benefit from clearer examples or practice`,
       ],
-      nextMoves: snapshot.directionReady || snapshot.interviewingJobs > 0 ? capabilityNextMoves : ["wait until the target lane is clearer"],
+      nextMoves: snapshot.directionReady || snapshot.interviewingJobs > 0 ? capabilityNextMoves : ["wait until the target role type is clearer"],
     },
     {
-      name: "Energy and stability",
+      name: GOAL_WORKSTREAM.ENERGY_STABILITY,
       status: "active",
       progress: "developing",
       bottleneck: "execution must stay sustainable",
@@ -736,22 +783,22 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
 }
 
 function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snapshot: GoalSnapshot): WorkstreamState {
-  const network = workstreams.find((w) => w.name === "Network");
+  const network = workstreams.find((w) => w.name === GOAL_WORKSTREAM.NETWORK);
   if ((phase === "role-targeting" || phase === "interview-prep") && network && network.status === "stale") return network;
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
     const coverage = buildBroadPursuitCoverage(snapshot);
     if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length > 0 && network && network.nextMoveType !== "wait") return network;
-    const capability = workstreams.find((w) => w.name === "Capability ramp");
-    if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingCapabilitySupport.length > 0 && capability && capability.nextMoveType !== "wait") {
+    const capability = workstreams.find((w) => w.name === GOAL_WORKSTREAM.PREP_UPSKILLING);
+    if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingLearningSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
       return capability;
     }
   }
 
   const priorityByPhase: Record<GoalPhase, string[]> = {
-    "fit-discovery": ["Direction", "Market map", "Network", "Energy and stability"],
-    "lane-narrowing": ["Direction", "Positioning", "Market map", "Network", "Energy and stability"],
-    "role-targeting": ["Applications", "Network", "Positioning", "Capability ramp", "Proof", "Energy and stability"],
-    "interview-prep": ["Interview readiness", "Network", "Capability ramp", "Applications", "Proof", "Energy and stability"],
+    "fit-discovery": [GOAL_WORKSTREAM.DIRECTION, GOAL_WORKSTREAM.MARKET_MAP, GOAL_WORKSTREAM.NETWORK, GOAL_WORKSTREAM.ENERGY_STABILITY],
+    "lane-narrowing": [GOAL_WORKSTREAM.DIRECTION, GOAL_WORKSTREAM.POSITIONING, GOAL_WORKSTREAM.MARKET_MAP, GOAL_WORKSTREAM.NETWORK, GOAL_WORKSTREAM.ENERGY_STABILITY],
+    "role-targeting": [GOAL_WORKSTREAM.APPLICATIONS, GOAL_WORKSTREAM.NETWORK, GOAL_WORKSTREAM.POSITIONING, GOAL_WORKSTREAM.PREP_UPSKILLING, GOAL_WORKSTREAM.PROJECTS_PUBLIC_WORK, GOAL_WORKSTREAM.ENERGY_STABILITY],
+    "interview-prep": [GOAL_WORKSTREAM.INTERVIEW_READINESS, GOAL_WORKSTREAM.NETWORK, GOAL_WORKSTREAM.PREP_UPSKILLING, GOAL_WORKSTREAM.APPLICATIONS, GOAL_WORKSTREAM.PROJECTS_PUBLIC_WORK, GOAL_WORKSTREAM.ENERGY_STABILITY],
   };
   return priorityByPhase[phase]
     .map((name) => workstreams.find((w) => w.name === name))
@@ -760,70 +807,77 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
 }
 
 function dayTypeFor(focus: WorkstreamState) {
-  if (focus.name === "Interview readiness") return "interview-prep";
-  if (focus.name === "Capability ramp" || focus.name === "Proof") return "capability-building";
-  if (focus.name === "Energy and stability") return "stabilising";
+  if (focus.name === GOAL_WORKSTREAM.INTERVIEW_READINESS) return "interview-prep";
+  if (focus.name === GOAL_WORKSTREAM.PREP_UPSKILLING || focus.name === GOAL_WORKSTREAM.PROJECTS_PUBLIC_WORK) return "capability-building";
+  if (focus.name === GOAL_WORKSTREAM.ENERGY_STABILITY) return "stabilising";
   if (focus.nextMoveType === "relationship") return "network-building";
   if (focus.nextMoveType === "execution") return "conversion";
-  return "signal-building";
+  return "evidence-building";
 }
 
 function phaseObjective(phase: GoalPhase) {
   if (phase === "fit-discovery") return "identify role families that genuinely fit your interests, goals, and energy";
-  if (phase === "lane-narrowing") return "gather enough live signal to narrow promising lanes without forcing a premature choice";
-  if (phase === "role-targeting") return "turn plausible lanes into live roles, selective applications, and stronger positioning";
+  if (phase === "lane-narrowing") return "gather enough live evidence to narrow promising paths without forcing a premature choice";
+  if (phase === "role-targeting") return "turn plausible paths into live roles, selective applications, and stronger positioning";
   return "prepare to perform strongly in the interview and strengthen the capabilities the role will demand";
 }
 
 function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot) {
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
     const coverage = buildBroadPursuitCoverage(snapshot);
-    const missingNote = coverage.missing.length
-      ? ` Some combinations still need live roles: ${coverage.missing.join("; ")}.`
-      : coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0
-        ? ` Live roles exist across the combinations, but some still lack networking or capability support.`
-      : "";
+    if (coverage.missing.length > 0) {
+      return snapshot.savedJobs.length > 0
+        ? broadPursuitMissingRolesContextReason(coverage.missing, "keep multiple plausible paths open while converting the most credible live roles")
+        : broadPursuitMissingRolesContextReason(coverage.missing, "open multiple plausible paths in parallel and turn them into live roles");
+    }
+    if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
+      return broadPursuitMissingSupportContextReason(
+        coverage.missingNetworkSupport,
+        coverage.missingLearningSupport,
+      );
+    }
     return snapshot.savedJobs.length > 0
-      ? `You need a job, so Anchor should keep multiple plausible lanes open in parallel and convert the most credible live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.${missingNote}`
-      : `You need a job, so Anchor should open multiple plausible lanes in parallel and turn them into live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.${missingNote}`;
+      ? "You need a job, so Anchor should keep multiple plausible paths open in parallel and convert the most credible live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London."
+      : "You need a job, so Anchor should open multiple plausible paths in parallel and turn them into live roles instead of forcing an early identity choice. Location stays flexible across UAE, Remote, and London.";
   }
   if (phase === "lane-narrowing" && snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
-    return `You have multiple plausible topics (${snapshot.topicHypotheses.join(" vs ")}) and multiple plausible role shapes (${snapshot.roleShapeHypotheses.join(" vs ")}). Anchor should keep the combinations alive in parallel until live evidence starts separating them.`;
+    return laneNarrowingTwoAxisReason(snapshot.topicHypotheses, snapshot.roleShapeHypotheses);
   }
   if (phase === "lane-narrowing" && snapshot.roleHypotheses.length >= 2) {
-    return `You have multiple plausible lanes in play (${snapshot.roleHypotheses.join(" vs ")}). Anchor should keep them live in parallel long enough to learn from real roles, energy, and response before narrowing.`;
+    return laneNarrowingSingleAxisReason(snapshot.roleHypotheses);
   }
   if (phase === "interview-prep") {
-    return `A live interview path exists, so the bottleneck shifts from generic exploration to interview and role readiness.`;
+    return interviewPrepReason();
   }
   return `${focus.name} is the current bottleneck: ${focus.bottleneck}.`;
 }
 
 function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
-  if (phase === "fit-discovery") return "What kinds of work actually fit your interests, goals, and energy well enough to test in the market?";
+  if (phase === "fit-discovery") return fitDiscoveryDecisionQuestion();
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
     const coverage = buildBroadPursuitCoverage(snapshot);
     if (coverage.missing.length > 0) {
-      return `Which still-empty combinations need one real role next: ${coverage.missing.join("; ")}?`;
+      return broadPursuitMissingRolesDecisionQuestion(coverage.missing);
     }
-    if (coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0) {
-      const networkText = coverage.missingNetworkSupport.length > 0 ? `network support: ${coverage.missingNetworkSupport.join("; ")}` : "";
-      const capabilityText = coverage.missingCapabilitySupport.length > 0 ? `capability support: ${coverage.missingCapabilitySupport.join("; ")}` : "";
-      return `Which live combinations need support next: ${[networkText, capabilityText].filter(Boolean).join(" | ")}?`;
+    if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
+      return broadPursuitMissingSupportDecisionQuestion(
+        coverage.missingNetworkSupport,
+        coverage.missingLearningSupport,
+      );
     }
     return snapshot.savedJobs.length > 0
-      ? "Which live roles are most gettable, credible, and worth pushing right now while keeping the other lanes open?"
-      : "Which plausible lanes need one real role or application move next so the market can start separating them for you?";
+      ? "Which live roles are most gettable, credible, and worth pushing right now while keeping the other paths open?"
+      : "Which plausible paths need one real role or application move next so outside feedback can start separating them for you?";
   }
   if (phase === "lane-narrowing") {
     if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
-      return `Which combinations keep earning more attention from real roles, energy, and response over time?`;
+      return laneNarrowingTwoAxisDecisionQuestion();
     }
-    if (snapshot.roleHypotheses.length >= 2) return "Which lanes keep earning more attention from real role examples, energy, and response?";
-    return "Which promising role lane keeps earning more attention from live evidence?";
+    if (snapshot.roleHypotheses.length >= 2) return laneNarrowingSingleAxisDecisionQuestion();
+    return "Which promising role path keeps earning more attention from live evidence?";
   }
   if (phase === "role-targeting") return "Which specific role family should you convert first?";
-  return "What stories, knowledge, and capabilities will make you strong in the interview and in the role?";
+  return interviewPrepDecisionQuestion();
 }
 
 function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
@@ -831,10 +885,10 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
   const currentIndex = phase === "fit-discovery" ? 0 : phase === "lane-narrowing" ? 1 : phase === "role-targeting" ? 2 : 3;
   const titles: Record<GoalTrajectoryStep["key"], Omit<GoalTrajectoryStep, "status">> = {
     "discover-fit": { key: "discover-fit", title: "Discover fit", description: "Figure out which kinds of roles genuinely fit your interests, strengths, and goals." },
-    "narrow-lane": { key: "narrow-lane", title: "Narrow with evidence", description: "Keep plausible lanes alive long enough to gather signal, then narrow from real evidence instead of guesswork." },
-    "target-role": { key: "target-role", title: "Target live roles", description: "Turn plausible lanes into real roles, capability support, and selective applications." },
+    "narrow-lane": { key: "narrow-lane", title: "Narrow with evidence", description: "Keep plausible paths alive long enough to gather evidence, then narrow from real evidence instead of guesswork." },
+    "target-role": { key: "target-role", title: "Target live roles", description: "Turn plausible paths into real roles, prep, and selective applications." },
     "prepare-interview": { key: "prepare-interview", title: "Prepare for interviews", description: "Build stories, examples, and role knowledge for live interview processes." },
-    "capability-ramp": { key: "capability-ramp", title: "Build job-ready capability", description: "Upskill for the interview and the role so you can perform strongly once in seat." },
+    "capability-ramp": { key: "capability-ramp", title: "Prep for the role", description: "Strengthen weak spots for the interview and the job so you can perform strongly once hired." },
   };
   return order.map((key, index) => ({
     ...titles[key],
@@ -848,77 +902,80 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
     if (coverage.missing.length > 0) {
       const missingText = coverage.missing.join("; ");
       return {
-        mustDo: "Fill the still-empty lanes with one real role or application move each.",
+        mustDo: broadPursuitNextMissingRoleTodayMustDo(coverage.missing),
         next: coverage.covered.length > 0
-          ? `Keep these already-live combinations warm while you fill the missing ones: ${coverage.covered.join("; ")}`
-          : `Start with these lanes: ${missingText}`,
-        optional: "Send one warm message that supports the most gettable missing combination",
-        stopRule: "Stop after one concrete pipeline move in each still-empty lane; do not drift back into abstract comparison.",
+          ? `Keep these already-live paths warm while you fill the missing ones: ${coverage.covered.join("; ")}`
+          : `Start with these paths: ${missingText}`,
+        optional: "Send one message to someone useful for the most gettable missing path",
+        stopRule: broadPursuitNextMissingRoleStopRule(coverage.missing),
       };
     }
-    if (coverage.missingNetworkSupport.length > 0 || coverage.missingCapabilitySupport.length > 0) {
-      const networkText = coverage.missingNetworkSupport.join("; ");
-      const capabilityText = coverage.missingCapabilitySupport.join("; ");
-      const supportMoves = [
-        networkText ? `warm these live combinations: ${networkText}` : "",
-        capabilityText ? `add capability support for: ${capabilityText}` : "",
-      ].filter(Boolean).join(" | ");
+    if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
+      const focusNetwork = focus.name === GOAL_WORKSTREAM.NETWORK && coverage.missingNetworkSupport.length > 0;
+      const focusPrep = focus.name === GOAL_WORKSTREAM.PREP_UPSKILLING && coverage.missingLearningSupport.length > 0;
       return {
-        mustDo: `Strengthen the weakest live combinations next: ${supportMoves}`,
-        next: "Keep live roles moving while you fill the lane-support gaps that make the search more resilient.",
-        optional: "Package one support move so it helps more than one role in the same lane.",
-        stopRule: "Stop after each live combination has either a real contact path, a capability-support move, or both.",
+        mustDo: focusNetwork
+          ? broadPursuitNextMissingContactTodayMustDo(coverage.missingNetworkSupport)
+          : focusPrep
+            ? broadPursuitNextMissingPrepTodayMustDo(coverage.missingLearningSupport)
+            : broadPursuitMissingSupportTodayMustDo(
+              coverage.missingNetworkSupport,
+              coverage.missingLearningSupport,
+            ),
+        next: "Keep live roles moving while you add the missing contact or prep support.",
+        optional: "If useful, add one optional example/project idea that could help more than one role in the same path.",
+        stopRule: focusNetwork
+          ? broadPursuitNextMissingContactStopRule(coverage.missingNetworkSupport)
+          : focusPrep
+            ? broadPursuitNextMissingPrepStopRule(coverage.missingLearningSupport)
+            : broadPursuitMissingSupportStopRule(),
       };
     }
     return {
-      mustDo: "Advance the most gettable live role now and keep the other plausible lanes warm in parallel",
-      next: "Add or refresh one credible role in a second lane so you are not betting everything on a single path",
-      optional: "Capture which lanes are producing the best mix of fit, realism, and response",
+      mustDo: "Advance the most gettable live role now and keep the other plausible paths warm in parallel",
+      next: "Add or refresh one credible role in a second path so you are not betting everything on a single path",
+      optional: "Capture which paths are producing the best mix of fit, realism, and response",
       stopRule: "Stop after one real conversion move and one parallel-portfolio maintenance move.",
     };
   }
   if (phase === "lane-narrowing") {
     if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
-      const topicA = snapshot.topicHypotheses[0] || "topic one";
-      const topicB = snapshot.topicHypotheses[1] || "topic two";
-      const shapeA = snapshot.roleShapeHypotheses[0] || "role shape one";
-      const shapeB = snapshot.roleShapeHypotheses[1] || "role shape two";
       return {
-        mustDo: `Collect one real role signal for each live combination: ${topicA} x ${shapeA}, ${topicA} x ${shapeB}, ${topicB} x ${shapeA}, and ${topicB} x ${shapeB}`,
-        next: "Note which combinations gain energy, lose energy, or look more gettable once you see the real work",
-        optional: "Ask one warm contact which of the four combinations looks strongest from the outside",
-        stopRule: "Stop after one concrete signal per live combination and one shortlist note; do not force a winner just to feel finished.",
+        mustDo: laneNarrowingTwoAxisTodayMustDo(snapshot.topicHypotheses, snapshot.roleShapeHypotheses),
+        next: laneNarrowingTwoAxisTodayNext(),
+        optional: laneNarrowingTwoAxisTodayOptional(),
+        stopRule: laneNarrowingTwoAxisTodayStopRule(),
       };
     }
     const lanes = snapshot.roleHypotheses.slice(0, 4);
     return {
-      mustDo: `Collect one real role signal from each live lane: ${lanes.join(", ")}`,
-      next: "Note which lanes gain energy, lose energy, or look more credible once you inspect the real work",
-      optional: "Ask one warm contact which lane looks most credible from the outside",
-      stopRule: "Stop after one concrete signal per live lane and one shortlist note; do not force a final identity choice today.",
+      mustDo: laneNarrowingSingleAxisTodayMustDo(lanes),
+      next: laneNarrowingSingleAxisTodayNext(),
+      optional: laneNarrowingSingleAxisTodayOptional(),
+      stopRule: laneNarrowingSingleAxisTodayStopRule(),
     };
   }
   if (phase === "fit-discovery") {
     return {
-      mustDo: focus.nextMoves[0] || candidateUniverse.recommended?.createsTaskTitle || "Inspect one plausible role family",
-      next: focus.nextMoves[1] || "Write down what energises you and what you do not want",
-      optional: "Capture one emerging hypothesis, even if it is rough",
-      stopRule: "Stop after one useful signal or 20 minutes.",
+      mustDo: fitDiscoveryTodayMustDo(focus.nextMoves[0] || candidateUniverse.recommended?.createsTaskTitle),
+      next: fitDiscoveryTodayNext(focus.nextMoves[1]),
+      optional: fitDiscoveryTodayOptional(),
+      stopRule: fitDiscoveryTodayStopRule(),
     };
   }
   if (phase === "interview-prep") {
     return {
-      mustDo: "Prepare 3 evidence-backed stories for the most likely interview themes",
-      next: "Review the role and company thesis and write one sharp answer for why this role fits",
-      optional: "Convert one learning item into a job-relevant note, framework, or practice answer",
-      stopRule: "Stop once the interview packet is stronger than it was before.",
+      mustDo: interviewPrepTodayMustDo(),
+      next: interviewPrepTodayNext(),
+      optional: interviewPrepTodayOptional(),
+      stopRule: interviewPrepTodayStopRule(),
     };
   }
   return {
     mustDo: focus.nextMoves[0] || candidateUniverse.recommended?.createsTaskTitle || "Convert one live role into the next concrete move",
-    next: focus.nextMoves[1] || candidateUniverse.recommended?.activity || "Strengthen one capability or positioning asset",
-    optional: focus.name === "Energy and stability" ? "Stop after the minimum viable action" : "Do one small maintenance action so the day stays sustainable",
-    stopRule: focus.nextMoveType === "learning" ? "Stop after one useful signal or 20 minutes." : "Stop once the defined small action is complete.",
+    next: focus.nextMoves[1] || candidateUniverse.recommended?.activity || "Make one weak requirement easier to explain or back up",
+    optional: focus.name === GOAL_WORKSTREAM.ENERGY_STABILITY ? "Stop after the minimum viable action" : "Do one small maintenance action so the day stays sustainable",
+    stopRule: focus.nextMoveType === "learning" ? "Stop after one useful data point or 20 minutes." : "Stop once the defined small action is complete.",
   };
 }
 
@@ -927,7 +984,7 @@ function whyPlausibleForCombination(topic: string, shape: string) {
   if (/AI/i.test(topic) && /Ops|chief of staff/i.test(shape)) return "Lets you stay close to AI while testing whether you prefer execution and operating rhythm.";
   if (/Geopolitics/i.test(topic) && /Strategy|advisory/i.test(shape)) return "Matches substantive geopolitical interest with a classic advisory shape.";
   if (/Geopolitics/i.test(topic) && /Ops|chief of staff/i.test(shape)) return "Tests whether you want geopolitical substance with a more internal, execution-heavy role shape.";
-  return "Plausible based on the signals Anchor has seen so far.";
+  return "Plausible based on what Anchor has seen so far.";
 }
 
 function nextTestForCombination(topic: string, shape: string) {
@@ -941,8 +998,10 @@ function nextTestForCombination(topic: string, shape: string) {
 }
 
 function buildParallelExperiments(snapshot: GoalSnapshot): CombinationTest[] {
-  const topics = snapshot.topicHypotheses.slice(0, 2);
-  const shapes = snapshot.roleShapeHypotheses.slice(0, 2);
+  const topicOrder = [TOPIC_LABELS.ai, TOPIC_LABELS.geopolitics, TOPIC_LABELS.policy];
+  const shapeOrder = [ROLE_SHAPE_LABELS.strategy_advisory, ROLE_SHAPE_LABELS.ops_cos, ROLE_SHAPE_LABELS.research_analysis];
+  const topics = topicOrder.filter((topic) => snapshot.topicHypotheses.includes(topic)).slice(0, 2);
+  const shapes = shapeOrder.filter((shape) => snapshot.roleShapeHypotheses.includes(shape)).slice(0, 2);
   return topics.flatMap((topic) => shapes.map((shape) => ({
     combination: `${topic} x ${shape}`,
     whyPlausible: whyPlausibleForCombination(topic, shape),
@@ -1009,33 +1068,55 @@ function learnCombination(item: Learn, tracks: CareerTrack[], combinations: stri
   );
 }
 
+function hustleCombination(item: Hustle, tracks: CareerTrack[], combinations: string[]) {
+  const fromTrack = trackCombination(linkedTrack(tracks, item.proofAssetForTrack), combinations);
+  if (fromTrack) return fromTrack;
+  return inferCombinationFromText(
+    `${item.title || ""} ${item.contentPillar || ""} ${item.coreClaim || ""} ${item.note || ""}`,
+    combinations,
+  );
+}
+
 function buildBroadPursuitCoverage(snapshot: GoalSnapshot): BroadPursuitCoverage {
   const combinations = buildParallelExperiments(snapshot).map((item) => item.combination);
-  const covered = [...new Set(snapshot.savedJobs.map((job) => jobCombination(job, combinations)).filter(Boolean) as string[])];
-  const networkSupported = [...new Set(
+  const coveredSet = new Set(
+    snapshot.savedJobs.map((job) => jobCombination(job, combinations)).filter(Boolean) as string[],
+  );
+  const networkSupportedSet = new Set(
     snapshot.openContacts
       .map((contact) => contactCombination(contact, snapshot.activeTracks, combinations))
       .filter(Boolean) as string[],
-  )];
-  const capabilitySupported = [...new Set(
+  );
+  const learningSupportedSet = new Set(
     snapshot.activeLearnItems
       .map((item) => learnCombination(item, snapshot.activeTracks, combinations))
       .filter(Boolean) as string[],
-  )];
+  );
+  const exampleProjectSupportedSet = new Set(
+    snapshot.activeHustleItems
+      .map((item) => hustleCombination(item, snapshot.activeTracks, combinations))
+      .filter(Boolean) as string[],
+  );
+  const covered = combinations.filter((combination) => coveredSet.has(combination));
+  const networkSupported = combinations.filter((combination) => networkSupportedSet.has(combination));
+  const learningSupported = combinations.filter((combination) => learningSupportedSet.has(combination));
+  const exampleProjectSupported = combinations.filter((combination) => exampleProjectSupportedSet.has(combination));
   const missing = combinations.filter((combination) => !covered.includes(combination));
-  const missingNetworkSupport = covered.filter((combination) => !networkSupported.includes(combination));
-  const missingCapabilitySupport = covered.filter((combination) => !capabilitySupported.includes(combination));
-  const fullySupported = covered.filter((combination) => networkSupported.includes(combination) && capabilitySupported.includes(combination));
+  const missingNetworkSupport = combinations.filter((combination) => coveredSet.has(combination) && !networkSupportedSet.has(combination));
+  const missingLearningSupport = combinations.filter((combination) => coveredSet.has(combination) && !learningSupportedSet.has(combination));
+  const fullySupported = combinations.filter((combination) => coveredSet.has(combination) && networkSupportedSet.has(combination) && learningSupportedSet.has(combination));
   const laneStates = combinations.map((combination) => ({
     combination,
     roleCount: snapshot.savedJobs.filter((job) => jobCombination(job, combinations) === combination).length,
     contactCount: snapshot.openContacts.filter((contact) => contactCombination(contact, snapshot.activeTracks, combinations) === combination).length,
-    capabilityItemCount: snapshot.activeLearnItems.filter((item) => learnCombination(item, snapshot.activeTracks, combinations) === combination).length,
+    learningItemCount: snapshot.activeLearnItems.filter((item) => learnCombination(item, snapshot.activeTracks, combinations) === combination).length,
+    exampleProjectItemCount: snapshot.activeHustleItems.filter((item) => hustleCombination(item, snapshot.activeTracks, combinations) === combination).length,
     hasRole: covered.includes(combination),
     hasNetworkSupport: networkSupported.includes(combination),
-    hasCapabilitySupport: capabilitySupported.includes(combination),
+    hasLearningSupport: learningSupported.includes(combination),
+    hasExampleProjectSupport: exampleProjectSupported.includes(combination),
   }));
-  return { combinations, covered, missing, networkSupported, capabilitySupported, missingNetworkSupport, missingCapabilitySupport, fullySupported, laneStates };
+  return { combinations, covered, missing, networkSupported, learningSupported, exampleProjectSupported, missingNetworkSupport, missingLearningSupport, fullySupported, laneStates };
 }
 
 function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamState[]) {
@@ -1054,7 +1135,7 @@ function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamSta
   const selectionRule = broadParallelPursuit
     ? "Take any credible role that can land soon across UAE, Remote, or London; keep stronger-fit alternatives warm in parallel."
     : phase === "lane-narrowing"
-      ? "Keep plausible lanes alive in parallel until live evidence clearly separates them."
+      ? "Keep plausible paths alive in parallel until live evidence clearly separates them."
       : "Prefer the strongest live role while keeping adjacent plausible options open until evidence is decisive.";
 
   return {
@@ -1100,9 +1181,10 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     covered: [],
     missing: [],
     networkSupported: [],
-    capabilitySupported: [],
+    learningSupported: [],
+    exampleProjectSupported: [],
     missingNetworkSupport: [],
-    missingCapabilitySupport: [],
+    missingLearningSupport: [],
     fullySupported: [],
     laneStates: [],
   };
@@ -1130,23 +1212,23 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     comparisonCriteria: (frame.parallelExperiments.length || frame.broadParallelPursuit)
       ? [
           "How energised would you feel doing this work weekly?",
-          "How strong is your existing credibility for this combination?",
-          "How likely is this lane to convert into a real offer soon?",
+          "How strong is your existing credibility for this option?",
+          "How likely is this path to convert into a real offer soon?",
           "How much interview and on-the-job upskilling would it require?",
           "How attractive is the day-to-day work shape, not just the topic?",
         ]
       : [],
     explorationStrategy: frame.broadParallelPursuit
-      ? "Run all four combinations as a broad pursuit portfolio; convert live roles while keeping parallel lanes warm."
+      ? "Run all four options as a broad pursuit portfolio; convert live roles while keeping parallel paths warm."
       : frame.parallelExperiments.length
-      ? "Run all four combinations in parallel for now; collect evidence before forcing a winner."
+      ? "Run all four options in parallel for now; collect evidence before forcing a winner."
       : "",
     experiments: frame.broadParallelPursuit ? [] : frame.parallelExperiments,
     pursuitPortfolio: frame.broadParallelPursuit ? buildParallelExperiments(snapshot).map((x) => ({
       combination: x.combination,
       whyPlausible: x.whyPlausible,
       nextMove: broadPursuitCoverage.covered.includes(x.combination)
-        ? `Keep one live role warm in this combination and only add a new one if the current pipeline goes stale.`
+        ? `Keep one live role warm in this path and only add a new one if the current pipeline goes stale.`
         : x.nextTest.replace(/^Find one /, "Pursue one "),
     })) : [],
     trajectory: trajectoryFor(frame.phase),

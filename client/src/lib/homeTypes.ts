@@ -24,7 +24,7 @@ export const WIN_CATEGORY_LABEL: Record<WinCategory, string> = {
   job_progress: "Job progress",
   learning: "Learning",
   network: "Network",
-  proof_asset: "Work sample",
+  proof_asset: "Projects and public work",
   mindset: "Mindset",
   admin: "Admin",
 };

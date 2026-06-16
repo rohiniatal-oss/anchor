@@ -4,6 +4,7 @@ import { explainPersistedPlanItem, recommend, planDay } from "./brain";
 import { createNextTask } from "./nextTask";
 import { deterministicUnstickStep, prependStep } from "./planningFeedback";
 import { buildDeterministicTaskBreakdown, normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
+import { completeRecommendationMilestone, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { storage } from "./storage";
 import { insertEventSchema, type InsertActivityLog, type InsertDayPlanItem } from "@shared/schema";
 
@@ -30,6 +31,25 @@ function parseTaskSteps(raw: string) {
   }
 }
 
+export function categoryForPlanItem(item: {
+  sourceType?: string | null;
+  title?: string | null;
+  whySelected?: string | null;
+  doneWhen?: string | null;
+}) {
+  if (item.sourceType === "job") return "job";
+  if (item.sourceType === "learn") return "learning";
+  if (item.sourceType === "hustle") return "hustle";
+  if (item.sourceType === "contact") return "admin";
+  if (item.sourceType === "goal") {
+    const text = `${item.title || ""} ${item.whySelected || ""} ${item.doneWhen || ""}`.toLowerCase();
+    if (/contact|outreach|reach out|message|network/i.test(text)) return "admin";
+    if (/prep item|prep support|learn|learning/i.test(text)) return "learning";
+    return "job";
+  }
+  return "admin";
+}
+
 async function saveStarterStep(task: any) {
   if (parseTaskSteps(task.steps || "[]").length > 0) return task;
   const step = deterministicUnstickStep(task);
@@ -42,10 +62,11 @@ async function ensureExecutionReadyTask(task: any) {
   const repaired = await normalizeExistingTaskBreakdown(task as any);
   if (repaired.changed) {
     const updated = await storage.updateTask(task.id, {
+      title: repaired.title,
       steps: repaired.steps,
       minimumOutcome: repaired.minimumOutcome,
     } as any);
-    task = updated || { ...task, steps: repaired.steps, minimumOutcome: repaired.minimumOutcome };
+    task = updated || { ...task, title: repaired.title, steps: repaired.steps, minimumOutcome: repaired.minimumOutcome };
   }
   if (parseTaskSteps(task.steps || "[]").length > 0) return task;
 
@@ -372,7 +393,7 @@ export function registerPlanningRoutes(app: Express) {
         pinned: true,
         steps: "[]",
         sort: 0,
-        category: item.sourceType === "job" || item.sourceType === "goal" ? "job" : item.sourceType === "learn" ? "learning" : item.sourceType === "hustle" ? "hustle" : "admin",
+        category: categoryForPlanItem(item),
         deadline: "",
         status: "in_progress",
         skipped: 0,
@@ -404,6 +425,9 @@ export function registerPlanningRoutes(app: Express) {
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
     await storage.updateTask(id, { done: true, status: "done", pinned: false } as any);
+    if (task.sourceStepType === "recommendation_milestone" && task.sourceStepId) {
+      await completeRecommendationMilestone(task.sourceStepId);
+    }
     const winCategory =
       task.category === "job" || task.category === "interview" ? "job_progress"
       : task.category === "learning" ? "learning"
@@ -423,6 +447,9 @@ export function registerPlanningRoutes(app: Express) {
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
     await storage.updateTask(id, { readiness: "blocked", blockerReason: reason, status: "stuck", pinned: false } as any);
+    if (task.sourceStepType === "recommendation_milestone" && task.sourceStepId) {
+      await setRecommendationMilestoneStatus(task.sourceStepId, "blocked");
+    }
     await storage.logActivity({ eventType: "blocked", sourceType: "task", taskId: id, metadata: JSON.stringify({ reason }) } as any);
     res.json({ ok: true });
   });
@@ -433,6 +460,9 @@ export function registerPlanningRoutes(app: Express) {
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
     await storage.updateTask(id, { list: "inbox", block: null, pinned: false, skipped: (task.skipped || 0) + 1 } as any);
+    if (task.sourceStepType === "recommendation_milestone" && task.sourceStepId) {
+      await setRecommendationMilestoneStatus(task.sourceStepId, "active");
+    }
     await storage.logActivity({ eventType: "parked", sourceType: "task", taskId: id } as any);
     await syncPlanItem(day, task, { status: "parked", parkedAt: Date.now() });
     res.json({ ok: true });

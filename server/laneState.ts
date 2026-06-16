@@ -1,7 +1,17 @@
 import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { getLearnOutputState, getProofStage, isOpportunityActionable } from "@shared/domainState";
+import { LANE_NAME } from "./lanes";
 
-export type LaneName = "Direction" | "Applications" | "Network" | "Proof assets" | "Learning" | "Stability";
+export const OPERATING_LANE_NAME = {
+  DIRECTION: LANE_NAME.DIRECTION,
+  APPLICATIONS: LANE_NAME.APPLICATIONS,
+  NETWORK: LANE_NAME.NETWORK,
+  PROOF_ASSETS: LANE_NAME.PROOF_ASSETS,
+  LEARNING: "Learning",
+  STABILITY: LANE_NAME.STABILITY,
+} as const;
+
+export type LaneName = typeof OPERATING_LANE_NAME[keyof typeof OPERATING_LANE_NAME];
 export type LaneStage =
   | "empty"
   | "exploring"
@@ -67,20 +77,20 @@ function directionLane(tasks: Task[], jobs: Job[]): LaneState {
   else if (roleSignals > 0 || hasDirectionTask) stage = "exploring";
 
   return {
-    name: "Direction",
+    name: OPERATING_LANE_NAME.DIRECTION,
     stage,
     priority: stage === "empty" ? 100 : stage === "exploring" ? 92 : stage === "narrowing" ? 65 : 25,
     bottleneck:
-      stage === "empty" ? "no role-family signal yet" :
+      stage === "empty" ? "no real role examples yet" :
       stage === "exploring" ? "not enough comparable role examples" :
-      stage === "narrowing" ? "signals need synthesis into a sharper lane" :
+      stage === "narrowing" ? "the patterns still need synthesising into a sharper path" :
       "direction is good enough for selective execution",
     unlockMove:
       stage === "empty" ? "Inspect one asset-backed role family" :
       stage === "exploring" ? "Save or inspect one more real role and note useful attributes" :
-      stage === "narrowing" ? "Summarise the strongest role patterns and choose the next lane to test" :
-      "Use the chosen direction to select one high-fit application or proof asset",
-    stopRule: "Stop after one useful signal or one explicit lane decision.",
+      stage === "narrowing" ? "Summarise the strongest role patterns and choose the next path to test" :
+      "Use the chosen direction to select one high-fit application or project/public-work item",
+    stopRule: "Stop after one useful data point or one explicit path decision.",
     evidence: [`${roleSignals} actionable saved roles`, `${archetypes.size} role archetypes`, hasDirectionTask ? "direction task exists" : "no direction task"],
   };
 }
@@ -100,7 +110,7 @@ function applicationsLane(tasks: Task[], jobs: Job[], direction: LaneState): Lan
   if (!premature && stalled) stage = "stalled";
 
   return {
-    name: "Applications",
+    name: OPERATING_LANE_NAME.APPLICATIONS,
     stage,
     priority:
       premature ? 18 :
@@ -113,7 +123,7 @@ function applicationsLane(tasks: Task[], jobs: Job[], direction: LaneState): Lan
       ready > 0 ? "one high-fit role needs conversion" :
       "no high-fit application has been selected yet",
     unlockMove:
-      premature ? "Build one role signal before applying" :
+      premature ? "Build one real role example before applying" :
       stalled ? "Convert one existing application task into a submitted or followed-up outcome" :
       ready > 0 ? "Tailor one strong application step for the highest-fit role" :
       "Choose one role worth converting and define its application requirements",
@@ -134,7 +144,7 @@ function networkLane(tasks: Task[], contacts: Contact[]): LaneState {
   else if (drafted > 0 || hasNetworkTask) stage = "active";
 
   return {
-    name: "Network",
+    name: OPERATING_LANE_NAME.NETWORK,
     stage,
     priority: stage === "empty" ? 58 : stage === "active" ? 72 : stage === "waiting" ? 42 : 55,
     bottleneck:
@@ -163,22 +173,22 @@ function proofLane(tasks: Task[], hustles: Hustle[], learn: Learn[]): LaneState 
   else if (proofAssets.length > 0) stage = "idea";
 
   return {
-    name: "Proof assets",
+    name: OPERATING_LANE_NAME.PROOF_ASSETS,
     stage,
     // Proof is a compounding capability layer, not a routine bottleneck.
     priority: stage === "empty" ? 16 : stage === "idea" ? 22 : stage === "outlined" ? 30 : stage === "packaged" ? 26 : 18,
     bottleneck:
-      stage === "empty" ? "no proof asset exists yet, which is fine until upskilling needs one" :
-      stage === "idea" ? "proof asset exists only as an optional idea" :
-      stage === "outlined" ? "proof asset can be made more reusable when capacity allows" :
-      "proof exists and can be reused as a capability signal",
+      stage === "empty" ? "no project or public-work item exists yet, which is fine until upskilling needs one" :
+      stage === "idea" ? "a project or public-work item exists only as an optional idea" :
+      stage === "outlined" ? "the project or public-work item can be made more reusable when capacity allows" :
+      "an existing project or public-work item can now be reused as evidence",
     unlockMove:
-      stage === "empty" ? "Only define a lightweight proof idea if it supports current upskilling" :
-      stage === "idea" ? "Turn one proof idea into a small claim and outline" :
-      stage === "outlined" ? "Package one proof asset into a reusable paragraph, link, or bullet" :
-      "Reuse one live proof asset where it strengthens your profile",
+      stage === "empty" ? "Only define a lightweight project or public-work idea if it supports current upskilling" :
+      stage === "idea" ? "Turn one idea into a small claim and outline" :
+      stage === "outlined" ? "Package one project or public-work item into a reusable paragraph, link, or bullet" :
+      "Reuse one live project or public-work item where it strengthens your profile",
     stopRule: "Stop after one asset becomes more reusable than it was before.",
-    evidence: [`${proofAssets.length} proof assets`, `${liveProofAssets.length} live proof assets`, `${packagedLearning} evidenced learning outputs`, `${proofTasks.length} proof-like tasks`],
+    evidence: [`${proofAssets.length} project/public-work item(s)`, `${liveProofAssets.length} live project/public-work item(s)`, `${packagedLearning} learning output(s) linked back`, `${proofTasks.length} output-related tasks`],
   };
 }
 
@@ -195,22 +205,22 @@ function learningLane(tasks: Task[], learn: Learn[]): LaneState {
   if (outputMissing.length > 0) stage = "output_missing";
 
   return {
-    name: "Learning",
+    name: OPERATING_LANE_NAME.LEARNING,
     stage,
     priority: stage === "output_missing" ? 58 : stage === "active" ? 46 : stage === "queued" ? 34 : stage === "converted" ? 28 : 25,
     bottleneck:
-      stage === "output_missing" ? "learning has not been converted into usable output" :
-      stage === "active" ? "active learning needs a concrete output" :
-      stage === "queued" ? "resources are queued but not yet selected for use" :
-      stage === "converted" ? "learning is already producing evidence" :
+      stage === "output_missing" ? "learning has not yet turned into something you can use later" :
+      stage === "active" ? "active learning needs one concrete note, brief, or practice attempt" :
+      stage === "queued" ? "prep items are queued but not yet selected for use" :
+      stage === "converted" ? "learning is already turning into something reusable" :
       "no active learning lane",
     unlockMove:
-      stage === "output_missing" ? "Convert one learning item into a note, bullet, or proof output" :
-      stage === "active" ? "Finish the smallest useful output from one active resource" :
-      stage === "queued" ? "Choose one resource only if it supports the current bottleneck" :
-      "Do not add learning unless it unlocks Direction, Proof, or Applications",
-    stopRule: "Stop after one output exists; do not keep consuming.",
-    evidence: [`${open.length} open learning items`, `${active.length} active`, `${outputMissing.length} missing output`],
+      stage === "output_missing" ? "Turn one learning item into notes, bullets, or a reusable example" :
+      stage === "active" ? "Finish the smallest useful note, brief, or practice attempt from one active prep item" :
+      stage === "queued" ? "Choose one prep item only if it supports the current bottleneck" :
+      "Do not add learning unless it helps with direction, writing/projects, or applications",
+    stopRule: "Stop after one useful note, brief, or practice attempt exists; do not keep consuming.",
+    evidence: [`${open.length} open learning items`, `${active.length} active`, `${outputMissing.length} still need notes or a brief`],
   };
 }
 
@@ -218,7 +228,7 @@ function stabilityLane(tasks: Task[]): LaneState {
   const blocked = tasks.filter((t) => !t.done && (t.readiness === "blocked" || t.blockerReason)).length;
   const tooManyToday = tasks.filter((t) => !t.done && t.list === "today").length;
   return {
-    name: "Stability",
+    name: OPERATING_LANE_NAME.STABILITY,
     stage: blocked > 0 || tooManyToday > 5 ? "stalled" : "steady",
     priority: blocked > 0 ? 86 : tooManyToday > 5 ? 62 : 20,
     bottleneck: blocked > 0 ? "blocked tasks are creating drag" : tooManyToday > 5 ? "too many live tasks are competing" : "execution base is stable enough",
@@ -229,7 +239,7 @@ function stabilityLane(tasks: Task[]): LaneState {
 }
 
 function chooseBottleneck(lanes: LaneState[]) {
-  const hardGate = lanes.find((l) => l.name === "Direction" && ["empty", "exploring"].includes(l.stage));
+  const hardGate = lanes.find((l) => l.name === OPERATING_LANE_NAME.DIRECTION && ["empty", "exploring"].includes(l.stage));
   if (hardGate) return hardGate;
   return [...lanes].sort((a, b) => b.priority - a.priority)[0];
 }

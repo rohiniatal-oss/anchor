@@ -1,11 +1,11 @@
-import { readdirSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
+import { build } from "esbuild";
 
-const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const testRoots = [path.join(repoRoot, "server"), path.join(repoRoot, "client", "src")];
+const testBuildDir = path.join(repoRoot, ".tmp", "test-build");
 
 function collectTestFiles(dir) {
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -32,8 +32,30 @@ if (testFiles.length === 0) {
   process.exit(1);
 }
 
-const tsxCli = require.resolve("tsx/cli");
-const result = spawnSync(process.execPath, [tsxCli, "--test", ...testFiles], {
+rmSync(testBuildDir, { recursive: true, force: true });
+mkdirSync(testBuildDir, { recursive: true });
+
+const builtTestFiles = [];
+
+for (const testFile of testFiles) {
+  const relative = path.relative(repoRoot, testFile);
+  const outFile = path.join(testBuildDir, relative).replace(/\.ts$/, ".mjs");
+  mkdirSync(path.dirname(outFile), { recursive: true });
+  await build({
+    entryPoints: [testFile],
+    outfile: outFile,
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    target: "node20",
+    sourcemap: "inline",
+    packages: "external",
+    logLevel: "silent",
+  });
+  builtTestFiles.push(outFile);
+}
+
+const result = spawnSync(process.execPath, ["--test", ...builtTestFiles], {
   cwd: repoRoot,
   stdio: "inherit",
 });

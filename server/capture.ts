@@ -2,10 +2,11 @@ import type { Express } from "express";
 import { storage } from "./storage";
 import type { Task } from "@shared/schema";
 import OpenAI from "openai";
+import { buildCaptureTaskPatch } from "./captureTaskRouting";
 
 // Resolve a bare captured thought into REAL asset details before filing, so a
 // brain-dump like "read 80,000 hours career guide" becomes a Learn item WITH its
-// canonical URL, type, required output and capability — context that then flows
+// canonical URL, type, optional reusable result, and capability â€” context that then flows
 // through to the breakdown and everywhere else. Knowledge-grounded; safe empty
 // fallback so filing never blocks if the model is unavailable.
 async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof" | "network"): Promise<Record<string, string>> {
@@ -13,7 +14,7 @@ async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof
     const client = new OpenAI();
     const ask =
       kind === "learn"
-        ? `Resolve this learning capture. If it's a known public resource, give its CANONICAL url. Fields: title (clean), url (real canonical URL or ""), learnType (course|fellowship|book|podcast|resource|practice), category (short label), requiredOutput (a concrete output proving value, tied to AI-governance/strategy goals), capabilityBuilt (the skill it builds).`
+        ? `Resolve this learning capture. If it's a known public resource, give its CANONICAL url. Fields: title (clean), url (real canonical URL or ""), learnType (course|fellowship|book|podcast|resource|practice), category (short label), requiredOutput (optional reusable result, if there is an obvious one), capabilityBuilt (the skill it builds).`
         : kind === "job"
         ? `Resolve this into a real opportunity. Fields: title (clean role title), company (if implied else ""), location (if implied else ""), url (real careers/board URL if a known org else ""), nextStep (concrete first step, e.g. "open the board and shortlist 3 roles").`
         : kind === "proof"
@@ -23,7 +24,7 @@ async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof
       model: "gpt_5_1",
       input:
         `Rohini targets AI governance / strategic advisory / chief-of-staff roles (ex-Bain, TBI, Abraaj). ` +
-        `${ask}\nUse real-world knowledge; NEVER invent a fake URL — use "" if unsure. ` +
+        `${ask}\nUse real-world knowledge; NEVER invent a fake URL â€” use "" if unsure. ` +
         `Capture: "${title}". Return ONLY a JSON object with those exact fields.`,
     });
     let text = (out.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -34,13 +35,13 @@ async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PHASE 4.7 — BRAIN DUMP AS UNIVERSAL CAPTURE
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// PHASE 4.7 â€” BRAIN DUMP AS UNIVERSAL CAPTURE
 // Brain Dump is the lossless front door: capture first, classify conservatively,
 // route only when there is enough signal, and never destroy the original thought.
 // No schema change: captures are still tasks with list="inbox" until routed;
 // object routes preserve the original row as list="captured" with route metadata.
-// ─────────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const CAPTURE_ROUTES = [
   "task", "today", "subtask", "job", "learn", "network", "proof",
@@ -68,7 +69,7 @@ const ROUTE_LABEL: Record<CaptureRoute, string> = {
   job: "Jobs",
   learn: "Learn",
   network: "Network",
-  proof: "Proof Assets",
+  proof: "Projects / Public Work",
   deadline: "Deadline",
   blocker: "Blocker",
   decision: "Decision",
@@ -111,7 +112,7 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   // One-word / name-only items are usually people or vague reminders, but they are
   // not safely routeable without the user's intent.
   if (title.split(" ").length <= 2 && !has(t, /\b(read|study|apply|write|pay|book|send|message|call|email|course|job|role)\b/)) {
-    return suggestion(id, "keep", "low", "Too little context to route safely", "Is this a person, task, resource, or idea?");
+    return suggestion(id, "keep", "low", "Too little context to route safely", "Is this a person, task, prep item, or idea?");
   }
 
   // Source hygiene before destination routing: these are updates to existing work,
@@ -125,7 +126,7 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   }
 
   if (has(t, /\b(step|subtask|part of|for the role|for that job|for the application|for the memo|for substack|for course|under)\b/)) {
-    return suggestion(id, "subtask", "medium", "This sounds like a child action under an existing object", "Which job, learning item, or proof asset should this attach to?");
+    return suggestion(id, "subtask", "medium", "This sounds like a child action under an existing object", "Which job, prep item, or project/public-work item should this attach to?");
   }
 
   if (has(t, /\b(already added|duplicate|same as|covered by|already have)\b/)) {
@@ -153,18 +154,18 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
 
   // Proof assets. Production verbs beat consumption nouns.
   if (has(t, /\b(write|draft|publish|post|substack|memo|essay|article|build|ship|launch|prototype|portfolio|case study|forecast log)\b/)) {
-    return suggestion(id, "proof", "high", "This creates an output that can become proof");
+    return suggestion(id, "proof", "high", "This creates a memo, post, project, or other reusable public-facing work");
   }
 
   // Learning / resources.
   if (has(t, /\b(read|study|learn about|course|book|article|podcast|lecture|syllabus|resource|watch|module|class|curriculum)\b/)) {
-    return suggestion(id, "learn", "high", "This is a resource to study or consume");
+    return suggestion(id, "learn", "high", "This is something to study, practise, or turn into prep");
   }
 
   // Decision / research is not automatically Learn: it is a thinking task until it
   // becomes a resource or output.
   if (has(t, /\b(figure out|work out|decide|choose|clarify|think through|whether|what kind|what type|pros and cons|trade[- ]?off)\b/)) {
-    return suggestion(id, "decision", "medium", "This is a decision or research question, not a resource yet");
+    return suggestion(id, "decision", "medium", "This is a decision or research question, not a prep item yet");
   }
 
   // Concrete execution verbs.
@@ -177,12 +178,12 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
     return suggestion(id, "task", "medium", "This looks actionable but has no specialist destination");
   }
 
-  return suggestion(id, "keep", "low", "Not enough signal to route safely", "Should this become a task, learning item, contact, job, or proof asset?");
+  return suggestion(id, "keep", "low", "Not enough signal to route safely", "Should this become a task, prep item, contact, job, or project/public-work item?");
 }
 
 // A capture has no slot/plan context, so we never fabricate a time block.
 // This matches the Phase 4.6a convention (/api/plan-items/:id/start): block is
-// derived from real slot context or left null — never hardcoded by guessing.
+// derived from real slot context or left null â€” never hardcoded by guessing.
 function routeToBlock(_route: CaptureRoute, _task?: Task): string | null {
   return null;
 }
@@ -230,60 +231,61 @@ export async function routeCapture(id: number, rawRoute: string) {
   }
 
   if (route === "today" || route === "task") {
-    const patch: any = {
+    const patch = buildCaptureTaskPatch(task, {
       list: route === "today" ? "today" : "inbox",
       block: routeToBlock(route, task),
-      category: task.category || "admin",
       sourceStatus: route === "today" ? "routed:today:task" : "routed:task:task",
       sourceNote: reason,
-    };
+    });
     const updated = await storage.updateTask(id, patch);
     return { status: 200, body: { moved: route, route, task: updated, reason } };
   }
 
   if (route === "subtask") {
-    const updated = await storage.updateTask(id, {
+    const updated = await storage.updateTask(id, buildCaptureTaskPatch(task, {
       list: "inbox",
-      category: task.category || "admin",
       sourceStatus: "needs_parent",
       sourceNote: reason,
-      doneWhen: task.doneWhen || "This is attached to the right parent item",
-    } as any);
+      doneWhen: "This is attached to the right parent item",
+      minimumOutcome: "This is attached to the right parent item",
+    }) as any);
     return { status: 200, body: { moved: "subtask", route, task: updated, reason, question: inferred.question } };
   }
 
   if (route === "deadline") {
-    const updated = await storage.updateTask(id, {
+    const updated = await storage.updateTask(id, buildCaptureTaskPatch(task, {
       list: "inbox",
       category: "admin",
       sourceStatus: "deadline_update",
       sourceNote: reason,
-      doneWhen: task.doneWhen || "The relevant source item has the correct deadline",
-    } as any);
+      doneWhen: "The relevant source item has the correct deadline",
+      minimumOutcome: "The relevant source item has the correct deadline",
+    }) as any);
     return { status: 200, body: { moved: "deadline", route, task: updated, reason } };
   }
 
   if (route === "blocker") {
-    const updated = await storage.updateTask(id, {
+    const updated = await storage.updateTask(id, buildCaptureTaskPatch(task, {
       list: "inbox",
-      category: task.category || "admin",
       readiness: "blocked",
       blockerReason: task.title.slice(0, 160),
       sourceStatus: "blocker_update",
       sourceNote: reason,
-      doneWhen: task.doneWhen || "The blocker is attached to the right item or resolved",
-    } as any);
+      doneWhen: "The blocker is attached to the right item or resolved",
+      minimumOutcome: "The blocker is attached to the right item or resolved",
+    }) as any);
     return { status: 200, body: { moved: "blocker", route, task: updated, reason } };
   }
 
   if (route === "decision") {
-    const updated = await storage.updateTask(id, {
+    const updated = await storage.updateTask(id, buildCaptureTaskPatch(task, {
       list: "inbox",
       category: "admin",
-      doneWhen: task.doneWhen || "A clear decision or next action is written down",
+      doneWhen: "A clear decision or next action is written down",
+      minimumOutcome: "A clear decision or next action is written down",
       sourceStatus: "routed:decision:task",
       sourceNote: reason,
-    } as any);
+    }) as any);
     return { status: 200, body: { moved: "decision", route, task: updated, reason } };
   }
 
@@ -321,7 +323,7 @@ export async function routeCapture(id: number, rawRoute: string) {
   if (route === "proof") {
     const d = await resolveAssetDetails(task.title, "proof");
     const created = await storage.createHustle({
-      title: d.title || task.title, note: "From Brain Dump", nextStep: d.nextStep || "Define the smallest output", stage: "idea",
+      title: d.title || task.title, note: "From Brain Dump", nextStep: d.nextStep || "Define the smallest useful piece", stage: "idea",
     } as any);
     await markCaptureRouted(task, route, "hustle", created.id, reason);
     return { status: 200, body: { moved: "proof", route, hustle: created, reason } };
@@ -351,3 +353,4 @@ export function registerCaptureRoutes(app: Express) {
     res.status(result.status).json(result.body);
   });
 }
+

@@ -346,7 +346,7 @@ test("task breakdown updates only the task and does not rewrite parent source fi
 
 test("GET /api/tasks repairs legacy workflow meta-steps on saved tasks", async () => {
   await h.storage.createTask({
-    title: "Inspect three AI governance strategy roles and capture repeated requirements.",
+    title: "Review three AI governance strategy roles and note the requirements that keep coming up.",
     list: "today",
     done: false,
     status: "in_progress",
@@ -654,6 +654,7 @@ test("a gap with no Learn item produces an unfilled-gap slot", async () => {
   const t = r.tracks.find((x) => x.trackId === track.id)!;
   assert.ok(t.unfilledGapCount >= 1, "no Learn items -> unfilled-gap slots exist");
   assert.ok(t.sequence.some((s) => s.learnId === null), "an unfilled slot is present in the sequence");
+  assert.ok(t.sequence.some((s) => s.learnId === null && /start with/i.test(s.reason)), "the fallback suggests a concrete prep starting point");
 });
 
 // 5.4 — strategy ordering: the learning gap is a STRUCTURAL bottleneck but ranks

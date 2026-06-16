@@ -1,7 +1,8 @@
 import { db } from "./storage";
-import { tasks, jobs, learn, contacts, hustles, jobPipelineSteps, proofAssetSteps, type Task, type JobPipelineStep, type ProofAssetStep } from "@shared/schema";
-import { eq, and, ne } from "drizzle-orm";
+import { tasks, jobs, learn, contacts, hustles, jobPipelineSteps, proofAssetSteps, recommendationMilestones, type Task, type JobPipelineStep, type ProofAssetStep } from "@shared/schema";
+import { eq, and, ne, asc } from "drizzle-orm";
 import { buildDeterministicTaskBreakdown, attachWorkflowState } from "./taskBreakdownRoutes";
+import { materializedJobStepTaskTitle, materializedProofStepTaskTitle, nextContactTaskTitle, nextHustleTaskTitle, nextJobTaskTitle, nextLearnTaskTitle } from "@shared/taskPreview";
 
 // ─────────────────────────────────────────────────────────────────────────
 // NEXT-TASK ENGINE — turn any source object (job/learn/contact/hustle) into a
@@ -45,7 +46,7 @@ export async function createNextTask(args: { sourceType: NextTaskSourceType; sou
   if (sourceType === "job") {
     const j = db.select().from(jobs).where(eq(jobs.id, sourceId)).get();
     if (!j) return null;
-    const title = j.nextStep?.trim() || `Advance application: ${j.title}${j.company ? " @ " + j.company : ""}`;
+    const title = nextJobTaskTitle(j);
     values = {
       ...base,
       title,
@@ -64,26 +65,43 @@ export async function createNextTask(args: { sourceType: NextTaskSourceType; sou
   } else if (sourceType === "learn") {
     const l = db.select().from(learn).where(eq(learn.id, sourceId)).get();
     if (!l) return null;
-    const title = l.requiredOutput ? `Produce output: ${l.requiredOutput}` : `Produce output for: ${l.title}`;
+    const recommendationMilestone = l.sourceType === "recommendation" && l.sourceId
+      ? db.select().from(recommendationMilestones)
+        .where(eq(recommendationMilestones.recommendationId, l.sourceId))
+        .orderBy(asc(recommendationMilestones.sequence), asc(recommendationMilestones.id))
+        .all()
+        .find((milestone) => milestone.status === "active")
+        || db.select().from(recommendationMilestones)
+          .where(eq(recommendationMilestones.recommendationId, l.sourceId))
+          .orderBy(asc(recommendationMilestones.sequence), asc(recommendationMilestones.id))
+          .all()
+          .find((milestone) => milestone.status === "todo")
+      : null;
+    const hasReusableResult = !!(l.requiredOutput && l.requiredOutput.trim());
+    const title = recommendationMilestone?.suggestedTaskTitle?.trim() || nextLearnTaskTitle(l);
+    const doneWhen = recommendationMilestone?.doneWhen?.trim()
+      || (hasReusableResult ? `${l.requiredOutput} exists` : "One useful note, practice step, or prep note exists");
     values = {
       ...base,
       title,
       category: "learning",
-      doneWhen: l.requiredOutput ? `${l.requiredOutput} exists` : "A concrete output exists",
+      doneWhen,
       sourceUrl: l.url || "",
       sourceNote: l.note || "",
       sourceStatus: l.learnStatus,
+      sourceStepType: recommendationMilestone ? "recommendation_milestone" : "",
+      sourceStepId: recommendationMilestone?.id ?? null,
       relatedTrackId: l.relatedTrackId ?? null,
       relatedOpportunityId: l.id,
-      minimumOutcome: "A first version of the output",
+      minimumOutcome: recommendationMilestone?.doneWhen?.trim()
+        || (hasReusableResult ? "A first version of the reusable result" : "One useful step forward on the learning item"),
       estimateMinutes: null,
       estimateConfidence: "",
     };
   } else if (sourceType === "contact") {
     const c = db.select().from(contacts).where(eq(contacts.id, sourceId)).get();
     if (!c) return null;
-    const target = c.who || c.name || "contact";
-    const title = `Draft ${c.askType || "soft"} outreach to ${target}`;
+    const title = nextContactTaskTitle(c);
     values = {
       ...base,
       title,
@@ -102,18 +120,18 @@ export async function createNextTask(args: { sourceType: NextTaskSourceType; sou
     const h = db.select().from(hustles).where(eq(hustles.id, sourceId)).get();
     if (!h) return null;
     const category = /substack/i.test(h.title) ? "substack" : /afterline/i.test(h.title) ? "afterline" : "hustle";
-    const title = h.nextStep?.trim() || `Advance proof asset: ${h.title}`;
+    const title = nextHustleTaskTitle(h);
     values = {
       ...base,
       title,
       category,
-      doneWhen: h.nextStep?.trim() ? "That step is done" : "Proof asset moved one step forward",
+      doneWhen: h.nextStep?.trim() ? "That step is done" : "The project or public-work item moved one step forward",
       sourceUrl: "",
       sourceNote: h.note || "",
       sourceStatus: h.stage,
       relatedTrackId: h.proofAssetForTrack ?? null,
       relatedOpportunityId: null,
-      minimumOutcome: "One concrete step on this asset",
+      minimumOutcome: "One concrete step on this project or public-work item",
       estimateMinutes: null,
       estimateConfidence: "",
     };
@@ -149,8 +167,7 @@ export async function materializeJobStep(step: JobPipelineStep): Promise<CreateR
   // job's nextStep). Reused tasks keep their existing title untouched.
   if (!result.reused && step.stepLabel.trim()) {
     const j = db.select().from(jobs).where(eq(jobs.id, step.jobId)).get();
-    const suffix = j ? `: ${j.title}${j.company ? " @ " + j.company : ""}` : "";
-    const updated = db.update(tasks).set({ title: `${step.stepLabel.trim()}${suffix}` })
+    const updated = db.update(tasks).set({ title: materializedJobStepTaskTitle(step.stepLabel, j) })
       .where(eq(tasks.id, result.task.id)).returning().get();
     if (updated) result.task = updated;
   }
@@ -176,8 +193,7 @@ export async function materializeProofStep(step: ProofAssetStep): Promise<Create
 
   if (!result.reused && step.stepLabel.trim()) {
     const h = db.select().from(hustles).where(eq(hustles.id, step.hustleId)).get();
-    const suffix = h ? `: ${h.title}` : "";
-    const updated = db.update(tasks).set({ title: `${step.stepLabel.trim()}${suffix}` })
+    const updated = db.update(tasks).set({ title: materializedProofStepTaskTitle(step.stepLabel, h) })
       .where(eq(tasks.id, result.task.id)).returning().get();
     if (updated) result.task = updated;
   }

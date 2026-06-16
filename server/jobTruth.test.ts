@@ -26,7 +26,7 @@ test("job truth strip rejects closed opportunities", async () => {
   assert.match(r.json.headline, /closed/i);
 });
 
-test("job truth strip recommends warm path when warm score is strong", async () => {
+test("job truth strip recommends a contact route when warm score is strong", async () => {
   const job = await h.storage.createJob({
     title: "Policy Advisor",
     company: "Think Tank",
@@ -64,8 +64,8 @@ test("job truth strip recommends prove when role is strong but narrative is miss
   const r = await api(h.base, "GET", `/api/jobs/${job.id}/truth-strip`);
   assert.equal(r.status, 200);
   assert.equal(r.json.action, "prove");
-  assert.match(r.json.headline, /reusable capability evidence/i);
-  assert.match(r.json.nextMove, /capability signal/i);
+  assert.match(r.json.headline, /clearer example|practice first/i);
+  assert.match(r.json.nextMove, /requirement.*feels weak today/i);
 });
 
 test("job truth strip recommends apply when fit and readiness are sufficient", async () => {

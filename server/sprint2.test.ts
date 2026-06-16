@@ -96,7 +96,7 @@ test("current plan response exposes a remaining-day budget for the frontend", as
 
 test("current plan refreshes stale single-lane carry-forward work when broad parallel pursuit is active", async () => {
   await h.storage.createTask({
-    title: "Inspect three AI governance strategy roles and capture repeated requirements.",
+    title: "Review three AI governance strategy roles and note the requirements that keep coming up.",
     list: "today",
     done: false,
     status: "not_started",
@@ -130,7 +130,7 @@ test("current plan refreshes stale single-lane carry-forward work when broad par
   const refreshed = await api(h.base, "GET", `/api/plan/current?day=${DAY}&energy=medium&availableMinutes=180`);
   assert.equal(refreshed.status, 200);
   assert.equal(refreshed.json.items[0]?.sourceType, "goal");
-  assert.match(refreshed.json.items[0]?.title || "", /Fill the still-empty lanes/i);
+  assert.match(refreshed.json.items[0]?.title || "", /missing path|real role/i);
 });
 
 test("avoidance review distinguishes repeated avoidance from normal tasks", async () => {

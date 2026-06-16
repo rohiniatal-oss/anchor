@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { taskCategoryForPlannerLane } from "./lanes";
 import { storage } from "./storage";
 import { buildMarketGroundedStrategyBuilder, buildStrategyBuilder } from "./strategyBuilder";
 import { buildAllTrackPlans, type TrackNeed } from "./trackPlanner";
@@ -12,10 +13,21 @@ function norm(value: string) {
 function slug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
 }
-
-function categoryForNeed(need: TrackNeed) {
-  return need.lane === "Applications" ? "job" : need.lane === "Proof assets" ? "hustle" : need.lane === "Learning" ? "learning" : need.lane === "Network" ? "admin" : "learning";
+function learningFocusForArchetype(value: string) {
+  const text = norm(value || "");
+  if (/ai|technology|frontier|safety|governance/.test(text)) return "AI governance, strategy, and policy judgment";
+  if (/chief of staff|founder office|operations|operating|operator/.test(text)) return "Operating cadence, decision support, and execution follow-through";
+  if (/philanthropy|development|funder|foundation|global development/.test(text)) return "Strategy judgment, policy framing, and stakeholder communication";
+  return "Geopolitical, policy, and strategic judgment";
 }
+function findTrackIdByArchetype(tracks: any[], linkedArchetype: string) {
+  const key = norm(linkedArchetype || "");
+  if (!key) return null;
+  const match = tracks.find((track) => norm(track.name || "") === key || norm(track.targetRoleArchetype || "") === key);
+  return match?.id ?? null;
+}
+
+function categoryForNeed(need: TrackNeed) { return taskCategoryForPlannerLane(need.lane); }
 function sizeForNeed(need: TrackNeed) {
   if (need.kind === "ongoing") return "quick";
   return need.lane === "Applications" ? "deep" : need.lane === "Proof assets" ? "medium" : "medium";
@@ -94,7 +106,7 @@ export function registerStrategyBuilderRoutes(app: Express) {
         track = await storage.createCareerTrack({
           name: r.archetype,
           slug: slug(r.archetype),
-          description: safeText(`${r.fitLogic}${r.marketSignal ? " Market signal: " + r.marketSignal : ""}`, 420),
+          description: safeText(`${r.fitLogic}${r.marketSignal ? " Why it exists now: " + r.marketSignal : ""}`, 420),
           targetRoleArchetype: r.archetype,
           priority: r.priority === "convert" ? 80 : 60,
           status: "active",
@@ -125,11 +137,11 @@ export function registerStrategyBuilderRoutes(app: Express) {
       const supportNeeds = [plan.sequence.anchor, ...plan.sequence.next, ...plan.sequence.ongoing];
       const needsNetworkSupport = supportNeeds.some((n) => n.lane === "Network");
       const needsLearningSupport = supportNeeds.some((n) => n.lane === "Learning");
-      const needsProofSupport = supportNeeds.some((n) => n.lane === "Proof assets");
+      const needsExampleProjectIdea = supportNeeds.some((n) => n.lane === "Proof assets");
 
       if (needsNetworkSupport) {
         const person = strategy.peopleMap.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
-          || { category: `${plan.track.name} insider`, why: `Reality-check ${plan.track.name}`, ask: "Ask what profiles actually get hired and which capability signals matter.", linkedArchetype: plan.track.name };
+          || { category: `${plan.track.name} insider`, why: `Reality-check ${plan.track.name}`, ask: "Ask what profiles actually get hired and which requirements matter most.", linkedArchetype: plan.track.name };
         if (!existingContactKeys.has(norm(person.category))) {
           await storage.createContact({
             name: "", who: person.category, sector: plan.track.name, why: safeText(person.why, 240), status: "to_contact",
@@ -142,24 +154,30 @@ export function registerStrategyBuilderRoutes(app: Express) {
 
       if (needsLearningSupport) {
         const resource = strategy.resourceMap.find((r) => norm(r.linkedArchetype) === norm(plan.track.name) || norm(r.linkedArchetype) === norm(plan.track.targetRoleArchetype))
-          || { category: `${plan.track.name} resource with required output`, why: `Close capability gap for ${plan.track.name}`, output: "A reusable note or proof bullet", linkedArchetype: plan.track.name };
+          || {
+            category: `${plan.track.name} prep item`,
+            why: `Give ${plan.track.name} one concrete prep item Anchor can turn into interview or application support`,
+            output: "A useful note, checklist, or interview example",
+            linkedArchetype: plan.track.name,
+          };
+        const capabilityBuilt = learningFocusForArchetype(resource.linkedArchetype || plan.track.targetRoleArchetype || plan.track.name);
         if (!existingLearnKeys.has(norm(resource.category))) {
           await storage.createLearn({
-            title: resource.category, category: plan.track.name, cost: "", url: "", note: safeText(resource.why, 300), done: false,
-            active: false, type: "resource", learnStatus: "open", capabilityBuilt: plan.track.name,
-            requiredOutput: safeText(resource.output || "A reusable note, paragraph, or interview example", 240), proofIntent: true, relatedTrackId: plan.track.id,
+            title: resource.category, category: capabilityBuilt, cost: "", url: "", note: safeText(`${resource.why}. Optional useful result: ${resource.output || "A useful note or interview example"}`, 300), done: false,
+            active: false, type: "resource", learnStatus: "open", capabilityBuilt,
+            requiredOutput: "", proofIntent: false, relatedTrackId: plan.track.id,
           } as any);
           existingLearnKeys.add(norm(resource.category));
           created.push(`learn:${resource.category}`);
         }
       }
 
-      if (needsProofSupport) {
-        const support = strategy.capabilitySupport.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
-          || { asset: `Reusable capability-support asset for ${plan.track.name}`, need: `Capability-support gap for ${plan.track.name}`, doneWhen: "A reusable paragraph, link, bullet, or interview example exists", linkedArchetype: plan.track.name };
+      if (needsExampleProjectIdea) {
+        const support = strategy.exampleProjectIdeas.find((p) => norm(p.linkedArchetype) === norm(plan.track.name) || norm(p.linkedArchetype) === norm(plan.track.targetRoleArchetype))
+          || { asset: `Optional writing or project example for ${plan.track.name}`, need: `This path may benefit from one clearer example, note, or project`, doneWhen: "A paragraph, link, bullet, or interview example exists that you can point to later", linkedArchetype: plan.track.name };
         if (!existingProofKeys.has(norm(support.asset))) {
           await storage.createHustle({
-            title: support.asset, note: safeText(`${support.need}. Done when: ${support.doneWhen}`, 400), nextStep: "Define the claim and smallest reusable output",
+            title: support.asset, note: safeText(`${support.need}. Done when: ${support.doneWhen}`, 400), nextStep: "Define the angle and smallest useful version",
             stage: "idea", coreClaim: "", contentPillar: plan.track.name, proofAssetForTrack: plan.track.id,
           } as any);
           existingProofKeys.add(norm(support.asset));
@@ -186,31 +204,41 @@ export function registerStrategyBuilderRoutes(app: Express) {
   app.post("/api/strategy-builder/accept-person", async (req, res) => {
     const category = safeText(req.body?.category, 120);
     if (!category) return res.status(400).json({ error: "Need category" });
-    const created = await storage.createContact({ name: "", who: category, sector: safeText(req.body?.linkedArchetype || req.body?.sector, 80), why: safeText(req.body?.why, 240), status: "to_contact", note: safeText(req.body?.ask ? `Suggested ask: ${req.body.ask}` : "From Strategy Builder", 300), askType: "advice" } as any);
+    const tracks = await storage.getCareerTracks();
+    const relatedTrackId = findTrackIdByArchetype(tracks, safeText(req.body?.linkedArchetype || req.body?.sector, 140));
+    const created = await storage.createContact({ name: "", who: category, sector: safeText(req.body?.linkedArchetype || req.body?.sector, 80), why: safeText(req.body?.why, 240), status: "to_contact", note: safeText(req.body?.ask ? `Suggested ask: ${req.body.ask}` : "From Strategy Builder", 300), askType: "advice", relatedTrackId, targetRole: safeText(req.body?.linkedArchetype, 140) } as any);
     res.json({ ok: true, contact: created });
   });
 
   app.post("/api/strategy-builder/accept-resource", async (req, res) => {
     const category = safeText(req.body?.category, 180);
     if (!category) return res.status(400).json({ error: "Need category" });
-    const created = await storage.createLearn({ title: category, category: safeText(req.body?.linkedArchetype, 80), cost: "", url: "", note: safeText(req.body?.why || "From Strategy Builder", 300), done: false, active: false, type: "resource", learnStatus: "open", capabilityBuilt: safeText(req.body?.linkedArchetype, 120), requiredOutput: safeText(req.body?.output || "A reusable note, paragraph, or interview example", 240), proofIntent: true } as any);
+    const tracks = await storage.getCareerTracks();
+    const linkedArchetype = safeText(req.body?.linkedArchetype, 140);
+    const relatedTrackId = findTrackIdByArchetype(tracks, linkedArchetype);
+    const capabilityBuilt = learningFocusForArchetype(linkedArchetype);
+    const created = await storage.createLearn({ title: category, category: capabilityBuilt, cost: "", url: "", note: safeText(`${req.body?.why || "From Strategy Builder"}. Optional useful result: ${req.body?.output || "A useful note or interview example"}`, 300), done: false, active: false, type: "resource", learnStatus: "open", capabilityBuilt, requiredOutput: "", proofIntent: false, relatedTrackId } as any);
     res.json({ ok: true, learn: created });
   });
 
   async function acceptSupport(req: any, res: any) {
     const asset = safeText(req.body?.asset, 180);
     if (!asset) return res.status(400).json({ error: "Need asset" });
-    const created = await storage.createHustle({ title: asset, note: safeText(`${req.body?.need || req.body?.gap || "Capability-support gap"}. Done when: ${req.body?.doneWhen || "Reusable capability support exists."}`, 400), nextStep: "Define the claim and smallest reusable output", stage: "idea", coreClaim: "", contentPillar: safeText(req.body?.linkedArchetype, 100) } as any);
+    const tracks = await storage.getCareerTracks();
+    const linkedArchetype = safeText(req.body?.linkedArchetype, 140);
+    const proofAssetForTrack = findTrackIdByArchetype(tracks, linkedArchetype);
+    const created = await storage.createHustle({ title: asset, note: safeText(`${req.body?.need || req.body?.gap || "Optional support idea"}. Done when: ${req.body?.doneWhen || "A useful example, note, or project exists."}`, 400), nextStep: "Define the angle and smallest useful version", stage: "idea", coreClaim: "", contentPillar: linkedArchetype, proofAssetForTrack } as any);
     res.json({ ok: true, hustle: created });
   }
   app.post("/api/strategy-builder/accept-support", acceptSupport);
+  app.post("/api/strategy-builder/accept-example", acceptSupport);
   app.post("/api/strategy-builder/accept-proof", acceptSupport);
 
   app.post("/api/strategy-builder/accept-role", async (req, res) => {
     const archetype = safeText(req.body?.archetype, 140);
     if (!archetype) return res.status(400).json({ error: "Need archetype" });
     const track = await storage.createCareerTrack({ name: archetype, slug: slug(archetype), description: safeText(req.body?.fitLogic, 300), targetRoleArchetype: archetype, priority: req.body?.priority === "convert" ? 80 : req.body?.priority === "explore" ? 60 : 30, status: req.body?.priority === "pause" ? "paused" : "active", whyItFits: safeText(req.body?.fitLogic, 300) } as any);
-    const task = await storage.createTask({ title: safeText(req.body?.nextExperiment || `Explore ${archetype}`, 180), list: "inbox", block: null, done: false, pinned: false, steps: "[]", sort: 0, category: "learning", size: "medium", status: "not_started", skipped: 0, doneWhen: "One clear role-family signal is captured", sourceType: "career_track", sourceId: track.id, sourceNote: "From Strategy Builder", relatedTrackId: track.id } as any);
+    const task = await storage.createTask({ title: safeText(req.body?.nextExperiment || `Explore ${archetype}`, 180), list: "inbox", block: null, done: false, pinned: false, steps: "[]", sort: 0, category: "learning", size: "medium", status: "not_started", skipped: 0, doneWhen: "One clear role example or prep note is captured", sourceType: "career_track", sourceId: track.id, sourceNote: "From Strategy Builder", relatedTrackId: track.id } as any);
     res.json({ ok: true, track, task });
   });
 

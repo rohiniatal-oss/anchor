@@ -19,7 +19,10 @@ import { ConstraintBadge } from "@/components/home/ConstraintBadge";
 import { LinkTrackControl } from "@/components/home/LinkTrackControl";
 import { ViewSpineCallout, BroadPursuitParallelSupportKickoff } from "@/lib/parallelPursuit";
 import { laneGuideForCombination, contactPresetForLane } from "@/lib/parallelPursuit";
-import { useLinkedTaskCount } from "@/lib/homeHelpers";
+import { displayCombinationLabel } from "@/lib/goalSpine";
+import { findOpenLinkedTask, useLinkedTaskCount } from "@/lib/homeHelpers";
+import { noLinkedTasksHelp, taskActionLabelForEntity, taskCreatedLabelForEntity, taskPreviewHint, taskToastDescription } from "@/lib/taskActionCopy";
+import { nextContactTaskTitle } from "@shared/taskPreview";
 import type { Contact, Task, CareerTrack } from "@shared/schema";
 import type { GoalPortfolioItemT, GoalsStateResponseT } from "@/lib/goalSpine";
 import { getTrackId, getRelationshipStrength } from "@shared/domainState";
@@ -90,21 +93,24 @@ function isFollowUpOverdue(c: Contact): boolean {
   return Math.round((d.getTime() - now.getTime()) / 86400000) < 0;
 }
 
-function CreateNextContactTask({ c }: { c: Contact }) {
+function CreateNextContactTask({ c, hint }: { c: Contact; hint?: string | null }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   async function go() {
     setBusy(true);
     try {
       const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
-      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned." });
+      toast({ title: r?.reused ? "Already on your list." : taskCreatedLabelForEntity("contacts"), description: taskToastDescription(r, "There's already an open task for this contact.") });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
   return (
-    <button onClick={go} disabled={busy} data-testid={`button-create-next-contacts-${c.id}`} className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
-      {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Create next task
-    </button>
+    <div>
+      <button onClick={go} disabled={busy} data-testid={`button-create-next-contacts-${c.id}`} className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} {taskActionLabelForEntity("contacts")}
+      </button>
+      {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
+    </div>
   );
 }
 
@@ -117,6 +123,7 @@ function ContactCard({ c, tracks, tasks, onPatch, onRemove }: { c: Contact; trac
   const idx = OUTREACH_COLS.findIndex((s) => s.id === c.status);
   const trackId = getTrackId("contacts", c);
   const linked = useLinkedTaskCount(tasks, "contact", c.id);
+  const openContactTask = findOpenLinkedTask(tasks, "contact", c.id);
   const overdue = isFollowUpOverdue(c);
   const replied = c.status === "replied";
   const strength = getRelationshipStrength(c);
@@ -186,12 +193,12 @@ function ContactCard({ c, tracks, tasks, onPatch, onRemove }: { c: Contact; trac
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2.5 pt-2 border-t border-card-border">
-        <CreateNextContactTask c={c} />
+        <CreateNextContactTask c={c} hint={taskPreviewHint(nextContactTaskTitle(c), openContactTask?.title)} />
         <button onClick={() => setDraftOpen((o) => !o)} data-testid={`button-draft-message-${c.id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
           <MessageSquare className="w-3.5 h-3.5" /> Message
         </button>
         <LinkTrackControl entity="contacts" id={c.id} trackId={trackId} tracks={tracks} />
-        <button data-testid={`button-view-tasks-contacts-${c.id}`} onClick={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : "Use 'Create next task' to make one." })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <button data-testid={`button-view-tasks-contacts-${c.id}`} onClick={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("contacts")) })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
           <ListChecks className="w-3.5 h-3.5" /> Tasks
         </button>
       </div>
@@ -264,7 +271,7 @@ export function NetworkView() {
   async function addContact() {
     if (!form.who.trim()) return;
     await mutateAndInvalidate("POST", "/api/contacts", form, ["/api/contacts", ...GOAL_SPINE_QUERY_KEYS]);
-    toast({ title: "Added to your network.", description: "This contact now carries a real ask and lane context." });
+    toast({ title: "Added to your network.", description: "This contact now has a clear ask and is linked to the right role type." });
     if (sug && form.who === sug.who) {
       const next = [...seen, sug.who];
       setSeen(next);
@@ -291,7 +298,7 @@ export function NetworkView() {
         <Button onClick={() => showForm ? setShowForm(false) : startBlankContact()} className="shrink-0" data-testid="button-toggle-contact-form"><Plus className="w-4 h-4 mr-1" /> Add contact</Button>
       </div>
       {activeGoal && !(contacts.length === 0 && activeGoal.decisionMode === "broad-parallel-pursuit") && <ViewSpineCallout view="network" goal={activeGoal} />}
-      {activeGoal && contacts.length === 0 && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="network" onStartLane={startLaneContact} />}
+      {activeGoal && <BroadPursuitParallelSupportKickoff goal={activeGoal} mode="network" onStartLane={startLaneContact} />}
 
       {showForm && (
         <div className="mb-5 rounded-xl border border-card-border bg-card p-4 space-y-3" data-testid="contact-intake-form">
@@ -299,7 +306,7 @@ export function NetworkView() {
             <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 flex items-center justify-between gap-2" data-testid="contact-form-lane-banner">
               <div>
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Role type</p>
-                <p className="text-sm font-medium">{selectedLane}</p>
+                <p className="text-sm font-medium">{displayCombinationLabel(selectedLane)}</p>
                 {selectedLaneGuide && <p className="text-xs text-muted-foreground mt-0.5">{selectedLaneGuide.fitHint}</p>}
               </div>
               <button type="button" onClick={() => { setSelectedLane(""); setForm((c) => ({ ...c, sector: "", why: "", targetRole: "", relatedTrackId: null })); }} className="text-xs text-muted-foreground hover:text-foreground shrink-0" data-testid="button-clear-contact-lane">Clear</button>
@@ -335,7 +342,7 @@ export function NetworkView() {
           <button type="button" onClick={() => setShowMoreContactFields((v) => !v)}
             className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMoreContactFields ? "rotate-180" : ""}`} />
-            {showMoreContactFields ? "Fewer options" : "More options (track, follow-up, notes)"}
+            {showMoreContactFields ? "Fewer options" : "More options (role type, follow-up, notes)"}
           </button>
           {showMoreContactFields && (
             <div className="grid gap-2 sm:grid-cols-2">
@@ -345,7 +352,7 @@ export function NetworkView() {
               <Input placeholder="Network source / sector" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" data-testid="input-contact-source-network" />
               {tracks.length > 0 && (
                 <div className="sm:col-span-2">
-                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to path</p>
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to role type</p>
                   <div className="flex flex-wrap gap-1.5">
                     {tracks.map((track) => (
                       <button key={track.id} type="button" onClick={() => setForm({ ...form, relatedTrackId: form.relatedTrackId === track.id ? null : track.id })}
@@ -377,7 +384,7 @@ export function NetworkView() {
               <p className="text-sm font-medium leading-snug">{sug.who}{sug.sector && <span className="ml-2 inline-flex items-center rounded-full bg-card px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">{sug.sector}</span>}</p>
               {sug.why && <p className="text-xs text-muted-foreground mt-0.5">{sug.why}</p>}
               <div className="flex items-center gap-2 mt-3">
-                <Button size="sm" onClick={startSuggestedContact} data-testid="button-network-add"><Plus className="w-4 h-4 mr-1" /> Shape contact</Button>
+                <Button size="sm" onClick={startSuggestedContact} data-testid="button-network-add"><Plus className="w-4 h-4 mr-1" /> Add this contact</Button>
                 <button onClick={another} data-testid="button-network-another" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"><RefreshCw className="w-3.5 h-3.5" /> someone else</button>
               </div>
             </div>
@@ -386,7 +393,7 @@ export function NetworkView() {
       )}
 
       {isLoading ? <Loading /> : contacts.length === 0 ? (
-        <Empty icon={Users} text="No contacts yet. Add one real contact path now." action={{ label: "Add a contact", onClick: () => setShowForm(true) }} />
+        <Empty icon={Users} text="No contacts yet. Add one real contact for a role type now." action={{ label: "Add a contact", onClick: () => setShowForm(true) }} />
       ) : (
         <div className="space-y-6">
           {(() => {
@@ -422,7 +429,7 @@ export function NetworkView() {
           })}
           {quietLaneKeys.length > 0 && (
             <div className="rounded-xl border border-dashed border-border p-4" data-testid="quiet-network-lanes">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Routes to warm later</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">Role types with no contacts yet</p>
               <div className="flex flex-wrap gap-2">
                 {quietLaneKeys.map((key) => (
                   <span key={key} className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">

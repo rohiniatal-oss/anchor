@@ -63,8 +63,8 @@ test("structured medium job task planned for Today gets deterministic execution 
   assert.ok(steps.length >= 1);
   assert.match(String(steps[0]?.text || ""), /open|write|draft|list|highlight|match|rewrite|read|note/i);
   const item = r.json.items.find((i: any) => i.taskId === task.id);
-  assert.match(String(item?.explanation?.summary || ""), /pre-shrunk|easier execution steps/i);
-  assert.match(String(item?.explanation?.whyNow || ""), /made smaller|pre-split|easier/i);
+  assert.match(String(item?.explanation?.summary || ""), /made smaller|starting is easier/i);
+  assert.match(String(item?.explanation?.whyNow || ""), /made smaller|split into easier steps|starting step/i);
 });
 
 test("overloaded restart trims Today to fit remaining time", async () => {

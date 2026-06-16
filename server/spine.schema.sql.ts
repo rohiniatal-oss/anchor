@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   source TEXT NOT NULL DEFAULT '',
   source_type TEXT NOT NULL DEFAULT '',
   source_id INTEGER,
+  source_step_type TEXT NOT NULL DEFAULT '',
+  source_step_id INTEGER,
   source_url TEXT NOT NULL DEFAULT '',
   source_note TEXT NOT NULL DEFAULT '',
   source_status TEXT NOT NULL DEFAULT '',
@@ -123,6 +125,8 @@ CREATE TABLE IF NOT EXISTS learn (
   prerequisites TEXT NOT NULL DEFAULT '[]',
   unlocks TEXT NOT NULL DEFAULT '[]',
   related_track_id INTEGER,
+  source_type TEXT NOT NULL DEFAULT '',
+  source_id INTEGER,
   proof_intent INTEGER NOT NULL DEFAULT 0,
   deadline_confidence TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
@@ -247,6 +251,55 @@ CREATE TABLE IF NOT EXISTS discovery_sessions (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS recommendations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  collection TEXT NOT NULL DEFAULT 'learning-corpus',
+  kind TEXT NOT NULL DEFAULT 'learning-resource',
+  status TEXT NOT NULL DEFAULT 'new',
+  source TEXT NOT NULL DEFAULT 'llm',
+  title TEXT NOT NULL,
+  why_suggested TEXT NOT NULL DEFAULT '',
+  linked_track_id INTEGER,
+  linked_gap_key TEXT NOT NULL DEFAULT '',
+  linked_combination TEXT NOT NULL DEFAULT '',
+  confidence_score INTEGER,
+  freshness_label TEXT NOT NULL DEFAULT '',
+  source_label TEXT NOT NULL DEFAULT '',
+  source_url TEXT NOT NULL DEFAULT '',
+  rank_score INTEGER,
+  rank_reason TEXT NOT NULL DEFAULT '',
+  execution_shape TEXT NOT NULL DEFAULT 'single-step',
+  acceptance_entity_type TEXT NOT NULL DEFAULT '',
+  acceptance_draft TEXT NOT NULL DEFAULT '{}',
+  duplicate_of_id INTEGER,
+  created_at INTEGER NOT NULL,
+  reviewed_at INTEGER,
+  accepted_at INTEGER,
+  rejected_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS recommendation_subdivisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recommendation_id INTEGER NOT NULL,
+  subdivision_key TEXT NOT NULL,
+  label TEXT NOT NULL,
+  why_it_matters TEXT NOT NULL DEFAULT '',
+  suggested_materials TEXT NOT NULL DEFAULT '[]',
+  sequence INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS recommendation_milestones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  recommendation_id INTEGER NOT NULL,
+  milestone_key TEXT NOT NULL,
+  label TEXT NOT NULL,
+  done_when TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'todo',
+  sequence INTEGER NOT NULL DEFAULT 0,
+  suggested_task_title TEXT NOT NULL DEFAULT '',
+  subdivision_key TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  completed_at INTEGER
+);
 `;
 
 // Migrations for columns added to existing tables after initial release.
@@ -255,4 +308,8 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE jobs ADD COLUMN jd_text TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE learn ADD COLUMN output_title TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE learn ADD COLUMN output_status TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE learn ADD COLUMN source_type TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE learn ADD COLUMN source_id INTEGER`,
+  `ALTER TABLE tasks ADD COLUMN source_step_type TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE tasks ADD COLUMN source_step_id INTEGER`,
 ];

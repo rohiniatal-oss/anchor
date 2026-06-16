@@ -5,10 +5,12 @@ import { createNextTask, type NextTaskSourceType } from "./nextTask";
 import { getTrackDiagnostics, getUnlinkedItems, getEvidencePayload } from "./strategy";
 import { computeLearningGaps } from "./learningStrategy";
 import { computeWinsSummary } from "./evidence";
+import { z } from "zod";
 
 import {
   insertTaskSchema, insertJobSchema,
   insertLearnSchema, insertHustleSchema, insertWinSchema, insertContactSchema,
+  insertRecommendationSchema, insertRecommendationSubdivisionSchema, insertRecommendationMilestoneSchema,
 } from "@shared/schema";
 import { migrateFellowshipLearnRows } from "./fellowshipMigration";
 import { registerPlanningRoutes } from "./planningRoutes";
@@ -16,6 +18,43 @@ import { registerStrategyRoutes } from "./strategyRoutes";
 import { registerTaskAssistRoutes } from "./taskAssistRoutes";
 import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
+import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
+
+const acceptRecommendationSchema = z.object({
+  entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
+  title: z.string().trim().min(1).max(180).optional(),
+  list: z.enum(["inbox", "today"]).optional(),
+  trackId: z.number().int().nullable().optional(),
+});
+
+function safeJsonObject(value: string | null | undefined): Record<string, any> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function trimSentence(value: string | undefined, max = 300) {
+  return String(value || "").trim().slice(0, max);
+}
+
+function inferRecommendationEntityType(rec: {
+  collection: string;
+  kind: string;
+  acceptanceEntityType: string;
+}) {
+  if (rec.acceptanceEntityType === "task" || rec.acceptanceEntityType === "learn" || rec.acceptanceEntityType === "contact" || rec.acceptanceEntityType === "job" || rec.acceptanceEntityType === "hustle") {
+    return rec.acceptanceEntityType;
+  }
+  if (rec.collection === "learning-corpus" || rec.kind === "learning-resource" || rec.kind === "learning-theme") return "learn";
+  if (rec.collection === "network-targets" || rec.kind === "contact-person-type" || rec.kind === "contact-actual-person") return "contact";
+  if (rec.collection === "project-ideas" || rec.kind === "project-idea") return "hustle";
+  if (rec.kind === "organization-target" || rec.kind === "role-example" || rec.kind === "next-step-idea") return "task";
+  return "task";
+}
 
 function crud(app: Express, name: string, get: () => Promise<any>, schema: any,
   create: (d: any) => Promise<any>, update: (id: number, d: any) => Promise<any>, del: (id: number) => Promise<any>) {
@@ -47,6 +86,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       const normalized = await normalizeExistingTaskBreakdown(task);
       if (!normalized.changed) return task;
       return await storage.updateTask(task.id, {
+        title: normalized.title,
         steps: normalized.steps,
         minimumOutcome: normalized.minimumOutcome,
       } as any) || { ...task, steps: normalized.steps, minimumOutcome: normalized.minimumOutcome };
@@ -79,6 +119,214 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     (d) => storage.createWin(d), () => Promise.resolve(undefined), (id) => storage.deleteWin(id));
   crud(app, "contacts", () => storage.getContacts(), insertContactSchema,
     (d) => storage.createContact(d), (id, d) => storage.updateContact(id, d), (id) => storage.deleteContact(id));
+  crud(app, "recommendations", () => storage.getRecommendations(), insertRecommendationSchema,
+    (d) => storage.createRecommendation(d), (id, d) => storage.updateRecommendation(id, d), (id) => storage.deleteRecommendation(id));
+
+  app.get("/api/recommendations/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const recommendation = await storage.getRecommendation(id);
+    if (!recommendation) return res.status(404).json({ error: "Not found" });
+    const [subdivisions, milestones] = await Promise.all([
+      storage.getRecommendationSubdivisions(id),
+      storage.getRecommendationMilestones(id),
+    ]);
+    res.json({ ...recommendation, subdivisions, milestones });
+  });
+
+  app.get("/api/recommendations/:id/subdivisions", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    res.json(await storage.getRecommendationSubdivisions(id));
+  });
+  app.post("/api/recommendations/:id/subdivisions", async (req, res) => {
+    const recommendationId = Number(req.params.id);
+    if (!Number.isFinite(recommendationId)) return res.status(400).json({ error: "Bad id" });
+    const p = insertRecommendationSubdivisionSchema.safeParse({ ...req.body, recommendationId });
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    res.json(await storage.createRecommendationSubdivision(p.data));
+  });
+  app.patch("/api/recommendation-subdivisions/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const p = insertRecommendationSubdivisionSchema.partial().safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const updated = await storage.updateRecommendationSubdivision(id, p.data);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  });
+  app.delete("/api/recommendation-subdivisions/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    await storage.deleteRecommendationSubdivision(id);
+    res.json({ ok: true });
+  });
+
+  app.get("/api/recommendations/:id/milestones", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    res.json(await storage.getRecommendationMilestones(id));
+  });
+  app.post("/api/recommendations/:id/milestones", async (req, res) => {
+    const recommendationId = Number(req.params.id);
+    if (!Number.isFinite(recommendationId)) return res.status(400).json({ error: "Bad id" });
+    const p = insertRecommendationMilestoneSchema.safeParse({ ...req.body, recommendationId });
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const created = await storage.createRecommendationMilestone(p.data);
+    await normalizeRecommendationMilestones(recommendationId);
+    res.json((await storage.getRecommendationMilestone(created.id)) || created);
+  });
+  app.patch("/api/recommendation-milestones/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const p = insertRecommendationMilestoneSchema.partial().safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const existing = await storage.getRecommendationMilestone(id);
+    if (!existing) return res.status(404).json({ error: "Not found" });
+    const requestedStatus = String(p.data.status || "").trim();
+    const nonStatusPatch = { ...p.data } as Record<string, unknown>;
+    delete nonStatusPatch.status;
+    let updated = Object.keys(nonStatusPatch).length
+      ? await storage.updateRecommendationMilestone(id, nonStatusPatch as any)
+      : await storage.getRecommendationMilestone(id);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    if (requestedStatus === "todo" || requestedStatus === "active" || requestedStatus === "blocked" || requestedStatus === "done" || requestedStatus === "skipped") {
+      updated = (await setRecommendationMilestoneStatus(id, requestedStatus as any)) || undefined;
+    } else {
+      await normalizeRecommendationMilestones(existing.recommendationId);
+      updated = (await storage.getRecommendationMilestone(id)) || undefined;
+    }
+    res.json(updated || existing);
+  });
+  app.delete("/api/recommendation-milestones/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const existing = await storage.getRecommendationMilestone(id);
+    await storage.deleteRecommendationMilestone(id);
+    if (existing) await normalizeRecommendationMilestones(existing.recommendationId);
+    res.json({ ok: true });
+  });
+
+  app.post("/api/recommendations/:id/accept", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const p = acceptRecommendationSchema.safeParse(req.body || {});
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+
+    const recommendation = await storage.getRecommendation(id);
+    if (!recommendation) return res.status(404).json({ error: "Not found" });
+    if (recommendation.status === "accepted") return res.status(409).json({ error: "Recommendation already accepted" });
+
+    const [subdivisions, milestones] = await Promise.all([
+      storage.getRecommendationSubdivisions(id),
+      storage.getRecommendationMilestones(id),
+    ]);
+    const draft = safeJsonObject(recommendation.acceptanceDraft);
+    const entityType = p.data.entityType || inferRecommendationEntityType(recommendation);
+    const title = p.data.title || trimSentence(draft.title, 180) || recommendation.title;
+    const trackId = p.data.trackId === undefined ? (draft.relatedTrackId ?? recommendation.linkedTrackId ?? null) : p.data.trackId;
+
+    const arcSummary = [
+      subdivisions.length ? `${subdivisions.length} subtopic${subdivisions.length === 1 ? "" : "s"}` : "",
+      milestones.length ? `${milestones.length} checkpoint${milestones.length === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(", ");
+    const acceptedFromRecommendation = trimSentence(
+      `${draft.note || recommendation.whySuggested || "Accepted from recommendation inventory."}${arcSummary ? ` Includes ${arcSummary}.` : ""}`,
+      400,
+    );
+
+    let created: any;
+    if (entityType === "learn") {
+      created = await storage.createLearn({
+        title,
+        category: trimSentence(draft.category || draft.capabilityBuilt || recommendation.linkedGapKey, 120),
+        cost: trimSentence(draft.cost, 80),
+        url: trimSentence(draft.url || recommendation.sourceUrl, 500),
+        note: acceptedFromRecommendation,
+        done: false,
+        active: false,
+        type: recommendation.kind === "learning-theme" ? "practice" : "resource",
+        learnStatus: "open",
+        capabilityBuilt: trimSentence(draft.capabilityBuilt || recommendation.linkedGapKey, 180),
+        requiredOutput: trimSentence(draft.requiredOutput, 240),
+        proofIntent: Boolean(draft.proofIntent),
+        relatedTrackId: trackId,
+        sourceType: "recommendation",
+        sourceId: recommendation.id,
+      } as any);
+    } else if (entityType === "contact") {
+      created = await storage.createContact({
+        name: trimSentence(draft.name, 120),
+        who: title,
+        sector: trimSentence(draft.sector || draft.linkedArchetype, 120),
+        why: trimSentence(draft.why || recommendation.whySuggested, 240),
+        status: "to_contact",
+        note: acceptedFromRecommendation,
+        askType: trimSentence(draft.askType || "advice", 40),
+        relatedTrackId: trackId,
+        targetOrg: trimSentence(draft.targetOrg, 140),
+        targetRole: trimSentence(draft.targetRole, 140),
+      } as any);
+    } else if (entityType === "hustle") {
+      created = await storage.createHustle({
+        title,
+        note: acceptedFromRecommendation,
+        nextStep: trimSentence(draft.nextStep || milestones[0]?.suggestedTaskTitle || "Define the smallest useful first version", 180),
+        stage: trimSentence(draft.stage || "idea", 40),
+        proofAssetForTrack: trackId,
+        coreClaim: trimSentence(draft.coreClaim, 180),
+        contentPillar: trimSentence(draft.contentPillar, 140),
+      } as any);
+    } else if (entityType === "job") {
+      created = await storage.createJob({
+        title,
+        company: trimSentence(draft.company, 140),
+        location: trimSentence(draft.location, 140),
+        url: trimSentence(draft.url || recommendation.sourceUrl, 500),
+        note: acceptedFromRecommendation,
+        nextStep: trimSentence(draft.nextStep || milestones[0]?.suggestedTaskTitle || "Review fit and decide whether to pursue", 180),
+        status: "wishlist",
+        roleArchetype: trimSentence(draft.roleArchetype, 120),
+        relatedTrackId: trackId,
+      } as any);
+    } else {
+      created = await storage.createTask({
+        title,
+        list: p.data.list || draft.list || "inbox",
+        block: null,
+        done: false,
+        pinned: false,
+        steps: "[]",
+        sort: 0,
+        category: trimSentence(draft.category || "learning", 40) || "learning",
+        size: trimSentence(draft.size || "medium", 20) || "medium",
+        status: "not_started",
+        skipped: 0,
+        doneWhen: trimSentence(draft.doneWhen || milestones[0]?.doneWhen || "A concrete next move is completed", 240),
+        sourceType: "recommendation",
+        sourceId: recommendation.id,
+        sourceUrl: trimSentence(recommendation.sourceUrl, 500),
+        sourceNote: acceptedFromRecommendation,
+        relatedTrackId: trackId,
+        minimumOutcome: trimSentence(draft.doneWhen || milestones[0]?.doneWhen || "A concrete next move is completed", 240),
+      } as any);
+    }
+
+    const now = Date.now();
+    const updated = await storage.updateRecommendation(id, {
+      status: "accepted",
+      acceptanceEntityType: entityType,
+      reviewedAt: now,
+      acceptedAt: now,
+    } as any);
+    await storage.logActivity({
+      eventType: "recommendation_accepted",
+      sourceType: "recommendation",
+      sourceId: id,
+      metadata: JSON.stringify({ entityType, createdId: created?.id ?? null }),
+    } as any);
+    res.json({ ok: true, entityType, created, recommendation: updated, subdivisions, milestones });
+  });
 
   registerTaskAssistRoutes(app);
   registerPlanningRoutes(app);

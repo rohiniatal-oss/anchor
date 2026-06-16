@@ -494,9 +494,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         status: "to_contact",
         note: acceptedFromRecommendation,
         askType: trimSentence(draft.askType || "advice", 40),
+        relationshipStrength: trimSentence(draft.relationshipStrength || "cold", 40),
+        sourceNetwork: trimSentence(draft.sourceNetwork, 140),
         relatedTrackId: trackId,
         targetOrg: trimSentence(draft.targetOrg, 140),
         targetRole: trimSentence(draft.targetRole, 140),
+        messageDraft: trimSentence(draft.messageDraft, 500),
+        referralPotential: trimSentence(draft.referralPotential, 80),
       } as any);
     } else if (entityType === "hustle") {
       created = await storage.createHustle({

@@ -120,6 +120,12 @@ test("recommendation accept infers a contact when the inventory item is a networ
     acceptanceDraft: JSON.stringify({
       sector: "AI policy",
       askType: "advice",
+      relationshipStrength: "warm",
+      sourceNetwork: "SIPA",
+      targetOrg: "GovAI",
+      targetRole: "AI policy",
+      referralPotential: "medium",
+      messageDraft: "Hi — I came across your work in AI policy and would love a quick reality-check conversation.",
     }),
   });
   assert.equal(created.status, 200);
@@ -129,6 +135,12 @@ test("recommendation accept infers a contact when the inventory item is a networ
   assert.equal(accepted.json.entityType, "contact");
   assert.equal(accepted.json.created.who, "AI policy alumni in think tanks");
   assert.equal(accepted.json.created.status, "to_contact");
+  assert.equal(accepted.json.created.relationshipStrength, "warm");
+  assert.equal(accepted.json.created.sourceNetwork, "SIPA");
+  assert.equal(accepted.json.created.targetOrg, "GovAI");
+  assert.equal(accepted.json.created.targetRole, "AI policy");
+  assert.equal(accepted.json.created.referralPotential, "medium");
+  assert.match(String(accepted.json.created.messageDraft || ""), /AI policy/i);
 });
 
 test("recommendation milestones keep a single active checkpoint and auto-advance", async () => {

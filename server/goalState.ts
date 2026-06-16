@@ -50,6 +50,20 @@ type NextMoveType = "learning" | "relationship" | "preparation" | "execution" | 
 type GoalPhase = "fit-discovery" | "lane-narrowing" | "role-targeting" | "interview-prep";
 type TrajectoryStatus = "complete" | "current" | "pending";
 type DecisionMode = "single-track" | "forced-comparison" | "parallel-exploration" | "broad-parallel-pursuit";
+type OpportunityStateKind = "empty" | "researching" | "converting" | "interviewing";
+type OpportunityBlocker = "targeting" | "clarify" | "access" | "application" | "capability" | "assessment" | "none";
+type FocusReasonCode =
+  | "target_unclear"
+  | "missing_roles"
+  | "network_access"
+  | "stale_follow_up"
+  | "clarify_before_push"
+  | "repeated_capability_gap"
+  | "live_apply"
+  | "live_follow_up"
+  | "live_interview"
+  | "parallel_support_gap"
+  | "general_progress";
 
 type WorkstreamState = {
   name: GoalWorkstreamName;
@@ -122,8 +136,11 @@ type GoalSnapshot = {
   dueFollowUpCount: number;
   draftedContactCount: number;
   hasApplicationTask: boolean;
+  activeOpportunityCount: number;
   viableApplicationCount: number;
   applicationActionCounts: Record<JobTruthAction, number>;
+  opportunityStateKind: OpportunityStateKind;
+  dominantOpportunityBlocker: OpportunityBlocker;
   leadApplicationTruth: JobTruthStrip | null;
   hasProofTask: boolean;
   proofSupportDemandCount: number;
@@ -140,6 +157,12 @@ type GoalSnapshot = {
   roleShapeHypotheses: string[];
   directionReady: boolean;
   directionStarted: boolean;
+};
+
+type OpportunityStateSummary = {
+  state: OpportunityStateKind;
+  dominantBlocker: OpportunityBlocker;
+  summary: string;
 };
 
 const HYPOTHESIS_LABELS = {
@@ -171,6 +194,81 @@ const APPLICATION_ACTION_PRIORITY: Record<JobTruthAction, number> = {
   clarify: 58,
   reject: 0,
 };
+
+function opportunityStageFor(input: {
+  interviewingJobs: number;
+  activeOpportunityCount: number;
+  viableApplicationCount: number;
+  savedJobsCount: number;
+}): OpportunityStateKind {
+  if (input.interviewingJobs > 0) return "interviewing";
+  if (input.activeOpportunityCount > 0) return "converting";
+  if (input.viableApplicationCount > 0 || input.savedJobsCount > 0) return "researching";
+  return "empty";
+}
+
+function dominantOpportunityBlockerFor(input: {
+  state: OpportunityStateKind;
+  activeConversationCount: number;
+  applicationActionCounts: Record<JobTruthAction, number>;
+  viableApplicationCount: number;
+  savedJobsCount: number;
+}): OpportunityBlocker {
+  const { state, activeConversationCount, applicationActionCounts, viableApplicationCount, savedJobsCount } = input;
+
+  if (state === "empty") return "targeting";
+  if (applicationActionCounts.prepare > 0 || state === "interviewing") return "assessment";
+
+  const onlyClarify = viableApplicationCount > 0
+    && applicationActionCounts.clarify === viableApplicationCount
+    && applicationActionCounts.apply === 0
+    && applicationActionCounts.warm === 0
+    && applicationActionCounts.follow_up === 0
+    && applicationActionCounts.prepare === 0;
+  if (onlyClarify) return "clarify";
+
+  if (applicationActionCounts.follow_up > 0 || applicationActionCounts.warm > 0) return "access";
+  if (applicationActionCounts.apply > 0) return "application";
+
+  const repeatedCapabilityPressure = applicationActionCounts.prove >= 2
+    && applicationActionCounts.apply === 0
+    && applicationActionCounts.warm === 0
+    && applicationActionCounts.follow_up === 0
+    && applicationActionCounts.prepare === 0
+    && activeConversationCount === 0;
+  if (repeatedCapabilityPressure) return "capability";
+
+  if (applicationActionCounts.clarify > 0) return "clarify";
+  if (savedJobsCount > 0 && viableApplicationCount === 0) return "targeting";
+  return "none";
+}
+
+function describeOpportunityState(summary: OpportunityStateSummary, snapshot: Pick<GoalSnapshot, "savedJobs" | "viableApplicationCount" | "activeOpportunityCount" | "applicationActionCounts">) {
+  if (summary.state === "empty") return "No real opportunities are active yet, so the next step is to create one.";
+  if (summary.state === "interviewing") return "A live interview process exists, so preparation has the highest leverage.";
+  if (summary.dominantBlocker === "clarify") {
+    return `${snapshot.applicationActionCounts.clarify} promising role${snapshot.applicationActionCounts.clarify === 1 ? " still needs" : "s still need"} role-fact clarification before harder pushing makes sense.`;
+  }
+  if (summary.dominantBlocker === "access") {
+    const count = snapshot.applicationActionCounts.follow_up + snapshot.applicationActionCounts.warm;
+    return `${count} promising role${count === 1 ? " is" : "s are"} mainly blocked by access, follow-up, or a useful person.`;
+  }
+  if (summary.dominantBlocker === "application") {
+    return `${snapshot.applicationActionCounts.apply} role${snapshot.applicationActionCounts.apply === 1 ? " is" : "s are"} ready for a concrete application move.`;
+  }
+  if (summary.dominantBlocker === "capability") {
+    return `${snapshot.applicationActionCounts.prove} promising role${snapshot.applicationActionCounts.prove === 1 ? " points" : "s point"} to the same weak area, so one strengthening move has reuse across them.`;
+  }
+  if (summary.state === "researching") {
+    return snapshot.viableApplicationCount > 0
+      ? `${snapshot.viableApplicationCount} viable role${snapshot.viableApplicationCount === 1 ? " is" : "s are"} in view, but none are moving yet.`
+      : `${snapshot.savedJobs.length} saved role${snapshot.savedJobs.length === 1 ? "" : "s"} exist, but none are strong enough yet to convert.`;
+  }
+  if (summary.state === "converting") {
+    return `${snapshot.activeOpportunityCount} active opportunity${snapshot.activeOpportunityCount === 1 ? " is" : "ies are"} already in motion.`;
+  }
+  return "The opportunity picture is mixed, so the next move should reduce uncertainty or move the best live role forward.";
+}
 
 function isCareerTask(t: Task) {
   return !t.done && (t.category === "job" || /job|career|role|cv|interview|application|network|contact|message|proof|course|learn|skill/i.test(t.title));
@@ -392,6 +490,13 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   const hasApplicationTask = careerTasks.some((t) => /apply|application|cv|cover|interview/i.test(t.title));
   const applicationTruth = savedJobs.map(computeJobTruthStrip);
   const viableApplicationTruth = applicationTruth.filter((t) => t.action !== "reject");
+  const activeOpportunityCount = savedJobs.filter((job) =>
+    job.status === "applied"
+    || job.status === "interviewing"
+    || job.applicationReadiness === "submitted"
+    || job.applicationReadiness === "follow_up",
+  ).length;
+  const interviewingJobs = savedJobs.filter((j) => j.status === "interviewing").length;
   const applicationActionCounts: Record<JobTruthAction, number> = {
     apply: 0,
     warm: 0,
@@ -402,6 +507,19 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     follow_up: 0,
   };
   for (const truth of applicationTruth) applicationActionCounts[truth.action] += 1;
+  const opportunityStateKind = opportunityStageFor({
+    interviewingJobs,
+    activeOpportunityCount,
+    viableApplicationCount: viableApplicationTruth.length,
+    savedJobsCount: savedJobs.length,
+  });
+  const dominantOpportunityBlocker = dominantOpportunityBlockerFor({
+    state: opportunityStateKind,
+    activeConversationCount,
+    applicationActionCounts,
+    viableApplicationCount: viableApplicationTruth.length,
+    savedJobsCount: savedJobs.length,
+  });
   const leadApplicationTruth = [...viableApplicationTruth.filter((t) => t.action !== "prove")].sort((a, b) => {
     const priorityDiff = APPLICATION_ACTION_PRIORITY[b.action] - APPLICATION_ACTION_PRIORITY[a.action];
     if (priorityDiff !== 0) return priorityDiff;
@@ -415,7 +533,6 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
   const activeLearn = learn.filter((l) => !l.done && l.learnStatus !== "closed");
   const evidencedLearnCount = learn.filter((l) => !!(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
   const learningOutputGapCount = activeLearn.filter((l) => !!(l.requiredOutput || l.proofIntent) && !(l.outputEvidenceUrl && l.outputEvidenceUrl.trim())).length;
-  const interviewingJobs = savedJobs.filter((j) => j.status === "interviewing").length;
   const roleHypotheses = detectRoleHypotheses(tasks, savedJobs, log, activeTracks);
   const topicHypotheses = detectTopicHypotheses(tasks, savedJobs, log, activeTracks);
   const roleShapeHypotheses = detectRoleShapeHypotheses(tasks, savedJobs, log, activeTracks);
@@ -445,8 +562,11 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     dueFollowUpCount,
     draftedContactCount,
     hasApplicationTask,
+    activeOpportunityCount,
     viableApplicationCount: viableApplicationTruth.length,
     applicationActionCounts,
+    opportunityStateKind,
+    dominantOpportunityBlocker,
     leadApplicationTruth,
     hasProofTask,
     proofSupportDemandCount,
@@ -541,13 +661,13 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     && snapshot.applicationActionCounts.warm === 0
     && snapshot.applicationActionCounts.follow_up === 0
     && snapshot.applicationActionCounts.prepare === 0;
-  const applicationLead = clarifyOnlyApplications ? null : snapshot.leadApplicationTruth;
+  const applicationLead = snapshot.leadApplicationTruth;
   const applicationStatus: WorkstreamStatus = snapshot.viableApplicationCount === 0
     ? (snapshot.directionReady ? "underdeveloped" : "premature")
-    : clarifyOnlyApplications ? "premature"
+    : clarifyOnlyApplications ? "active"
     : applicationLead ? "active" : "underdeveloped";
   const applicationProgress: WorkstreamState["progress"] = clarifyOnlyApplications
-    ? "not_started"
+    ? "early"
     : applicationLead?.action === "prepare" || applicationLead?.action === "follow_up"
     ? "developing"
     : applicationLead
@@ -729,7 +849,8 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       status: applicationStatus,
       progress: applicationProgress,
       bottleneck: applicationBottleneck,
-      nextMoveType: clarifyOnlyApplications ? "wait" : applicationLead?.action === "prepare" ? "preparation" : applicationLead ? "execution" : "wait",
+      nextMoveType: clarifyOnlyApplications ? "execution" : applicationLead?.action === "prepare" ? "preparation" : applicationLead ? "execution" : "wait",
+      
       evidence: [
         `${snapshot.savedJobs.length} open or saved role${snapshot.savedJobs.length === 1 ? "" : "s"}`,
         `${snapshot.viableApplicationCount} viable role${snapshot.viableApplicationCount === 1 ? "" : "s"}`,
@@ -784,13 +905,29 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
 
 function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snapshot: GoalSnapshot): WorkstreamState {
   const network = workstreams.find((w) => w.name === GOAL_WORKSTREAM.NETWORK);
+  const applications = workstreams.find((w) => w.name === GOAL_WORKSTREAM.APPLICATIONS);
+  const capability = workstreams.find((w) => w.name === GOAL_WORKSTREAM.PREP_UPSKILLING);
+  const direction = workstreams.find((w) => w.name === GOAL_WORKSTREAM.DIRECTION);
+  const marketMap = workstreams.find((w) => w.name === GOAL_WORKSTREAM.MARKET_MAP);
   if ((phase === "role-targeting" || phase === "interview-prep") && network && network.status === "stale") return network;
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
     const coverage = buildBroadPursuitCoverage(snapshot);
     if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length > 0 && network && network.nextMoveType !== "wait") return network;
-    const capability = workstreams.find((w) => w.name === GOAL_WORKSTREAM.PREP_UPSKILLING);
     if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingLearningSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
       return capability;
+    }
+  }
+  if (phase === "role-targeting") {
+    if (snapshot.dominantOpportunityBlocker === "access" && network && network.nextMoveType !== "wait") return network;
+    if ((snapshot.dominantOpportunityBlocker === "clarify" || snapshot.dominantOpportunityBlocker === "application") && applications && applications.nextMoveType !== "wait") {
+      return applications;
+    }
+    if (snapshot.dominantOpportunityBlocker === "capability" && capability && capability.status !== "premature" && capability.nextMoveType !== "wait") {
+      return capability;
+    }
+    if (snapshot.dominantOpportunityBlocker === "targeting") {
+      if (direction && direction.nextMoveType !== "wait") return direction;
+      if (marketMap && marketMap.nextMoveType !== "wait") return marketMap;
     }
   }
 
@@ -804,6 +941,33 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
     .map((name) => workstreams.find((w) => w.name === name))
     .find((w): w is WorkstreamState => !!w && ["underdeveloped", "active", "stale", "blocked"].includes(w.status) && w.nextMoveType !== "wait")
     || workstreams[0]!;
+}
+
+function focusReasonCodeFor(
+  focus: WorkstreamState,
+  phase: GoalPhase,
+  snapshot: GoalSnapshot,
+): FocusReasonCode {
+  if (phase === "interview-prep" || focus.name === GOAL_WORKSTREAM.INTERVIEW_READINESS) return "live_interview";
+  if (focus.name === GOAL_WORKSTREAM.DIRECTION || focus.name === GOAL_WORKSTREAM.MARKET_MAP) {
+    if (hasBroadParallelLanes(snapshot) && buildBroadPursuitCoverage(snapshot).missing.length > 0) return "missing_roles";
+    return "target_unclear";
+  }
+  if (focus.name === GOAL_WORKSTREAM.NETWORK) {
+    return snapshot.dueFollowUpCount > 0 ? "stale_follow_up" : "network_access";
+  }
+  if (focus.name === GOAL_WORKSTREAM.PREP_UPSKILLING) {
+    if (phase === "role-targeting" && snapshot.dominantOpportunityBlocker === "capability") {
+      return "repeated_capability_gap";
+    }
+    return "parallel_support_gap";
+  }
+  if (focus.name === GOAL_WORKSTREAM.APPLICATIONS) {
+    if (snapshot.dominantOpportunityBlocker === "clarify" || snapshot.leadApplicationTruth?.action === "clarify") return "clarify_before_push";
+    if (snapshot.leadApplicationTruth?.action === "follow_up") return "live_follow_up";
+    return "live_apply";
+  }
+  return "general_progress";
 }
 
 function dayTypeFor(focus: WorkstreamState) {
@@ -1150,6 +1314,16 @@ function buildCareerGoalFrame(snapshot: GoalSnapshot, workstreams: WorkstreamSta
   };
 }
 
+function buildOpportunityStateSummary(snapshot: GoalSnapshot): OpportunityStateSummary {
+  const summary: OpportunityStateSummary = {
+    state: snapshot.opportunityStateKind,
+    dominantBlocker: snapshot.dominantOpportunityBlocker,
+    summary: "",
+  };
+  summary.summary = describeOpportunityState(summary, snapshot);
+  return summary;
+}
+
 export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityLog[] = [], learn: Learn[] = [], contacts: Contact[] = [], hustles: Hustle[] = [], tracks: CareerTrack[] = []) {
   const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles, tracks);
   const workstreams = workstreamStates(snapshot);
@@ -1163,6 +1337,7 @@ export function deriveCareerGoalFrame(tasks: Task[], jobs: Job[], log: ActivityL
     selectionRule: frame.selectionRule,
     broadParallelPursuit: frame.broadParallelPursuit,
     recommendedFocus: frame.focus.name,
+    focusReasonCode: focusReasonCodeFor(frame.focus, frame.phase, snapshot),
   };
 }
 
@@ -1175,6 +1350,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
   const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles, tracks);
   const workstreams = workstreamStates(snapshot);
   const frame = buildCareerGoalFrame(snapshot, workstreams);
+  const opportunityState = buildOpportunityStateSummary(snapshot);
   const candidateUniverse = generateCandidateUniverse(tasks, jobs, snapshot.assets, snapshot.feedback, snapshot.activeTracks);
   const broadPursuitCoverage = frame.broadParallelPursuit ? buildBroadPursuitCoverage(snapshot) : {
     combinations: [],
@@ -1196,11 +1372,13 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     phase: frame.phase,
     dayType: frame.dayType,
     recommendedFocus: frame.focus.name,
+    focusReasonCode: focusReasonCodeFor(frame.focus, frame.phase, snapshot),
     reason: phaseReason(frame.phase, frame.focus, snapshot),
     decisionQuestion: phaseDecisionQuestion(frame.phase, snapshot),
     decisionMode: frame.decisionMode,
     landingPriority: frame.landingPriority,
     selectionRule: frame.selectionRule,
+    opportunityState,
     locationPreference: buildLocationPreference(snapshot.savedJobs),
     roleHypotheses: snapshot.roleHypotheses,
     comparisonAxes: {
@@ -1238,6 +1416,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     trace: [
       "Read career assets, saved jobs, learning items, tasks, role feedback, and activity history.",
       `Current phase is ${frame.phase}.`,
+      `Opportunity state is ${opportunityState.state}; dominant blocker is ${opportunityState.dominantBlocker}.`,
       `Selected ${frame.focus.name} because ${frame.focus.bottleneck}.`,
       `Day type is ${frame.dayType}.`,
       "Today plan is a small surface of the goal state, not the whole goal.",

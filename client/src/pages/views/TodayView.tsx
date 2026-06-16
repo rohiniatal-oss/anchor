@@ -22,8 +22,8 @@ import type { Task, Event, Recommendation } from "@shared/schema";
 import type { Tab } from "@/lib/homeTypes";
 import {
   type PlanItemT, type DayPlanT, type CareerGoalT, type GoalsStateResponseT,
-  SLOT_LABEL, getBroadPursuitCoverage, isPreShrunkPlanItem, isBroadPursuitGoalItem,
-  broadPursuitGapLines, broadPursuitPlanTitle, broadPursuitPrimarySummary,
+  SLOT_LABEL, deriveTodayExecutionState, getBroadPursuitCoverage, isPreShrunkPlanItem, isBroadPursuitGoalItem,
+  broadPursuitGapLines, broadPursuitPlanTitle, broadPursuitPrimarySummary, goalMorningBriefWithExecution, goalTodayIntroLine,
 } from "@/lib/goalSpine";
 import { WIN_CATEGORY_LABEL, type WinCategory } from "@/lib/homeTypes";
 
@@ -56,6 +56,13 @@ function deadlineTone(d: string): string {
   if (diff <= 2) return "bg-destructive/10 text-destructive";
   if (diff <= 7) return "bg-primary/10 text-primary";
   return "bg-muted text-muted-foreground";
+}
+
+function defaultEnergyForNow() {
+  const hour = new Date().getHours();
+  if (hour < 11) return "high";
+  if (hour < 17) return "medium";
+  return "low";
 }
 
 function nextVisibleStep(task?: Task | null) {
@@ -503,6 +510,52 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
   );
 }
 
+function TodayBrief({
+  goal,
+  brief,
+  showDetails,
+  onToggleDetails,
+}: {
+  goal: CareerGoalT;
+  brief: ReturnType<typeof goalMorningBriefWithExecution>;
+  showDetails: boolean;
+  onToggleDetails: () => void;
+}) {
+  return (
+    <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5" data-testid="today-brief">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-primary font-semibold">{brief.eyebrow}</p>
+          <p className="text-sm text-muted-foreground mt-1">{brief.intro}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onToggleDetails}
+          className="shrink-0 text-xs text-primary font-medium hover:underline"
+          data-testid="button-toggle-today-strategy"
+        >
+          {showDetails ? "Hide fuller strategy" : "See fuller strategy"}
+        </button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold text-primary border border-card-border">
+          <Target className="w-3 h-3" /> {brief.stateLabel}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold text-muted-foreground border border-card-border">
+          <Sparkles className="w-3 h-3" /> {brief.blockerLabel}
+        </span>
+      </div>
+      {brief.summary && (
+        <p className="text-sm font-medium mt-3">{brief.summary}</p>
+      )}
+      <div className="mt-3 rounded-xl border border-card-border bg-card px-3 py-3">
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{brief.bestUseLabel}</p>
+        <p className="text-sm font-medium mt-1">{brief.bestUseText || goal.todayPlan.mustDo}</p>
+      </div>
+    </div>
+  );
+}
+
 export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { data: tracks = [], isLoading: tracksLoading, isError: tracksError } = useCareerTracks();
@@ -523,6 +576,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [planItems, setPlanItems] = useState<PlanItemT[]>([]);
   const pinnedPlanItem = pinned ? planItems.find((it) => it.id === pinned.planItemId) || null : null;
   const [loadingPlan, setLoadingPlan] = useState(false);
+  const [showCompass, setShowCompass] = useState(false);
   const [showSecondary, setShowSecondary] = useState<boolean | null>(null);
   const [showDoneList, setShowDoneList] = useState<boolean | null>(null);
   // Quick-capture: get a stray thought out of your head from Today, without
@@ -596,24 +650,28 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       setCapturingQuick(false);
     }
   }
-  const [energy, setEnergy] = useState("medium");
+  const [energy, setEnergy] = useState(defaultEnergyForNow);
   const taskById = new Map(tasks.map((task) => [task.id, task] as const));
 
   // Load the PERSISTED plan (it lives in the DB now — survives reloads).
   useEffect(() => {
     if (isLoading || tracksLoading || tracks.length === 0 || pinned || plan || loadingPlan) return;
-    getPlan("medium");
+    getPlan(energy, false, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, tracksLoading, pinned, tracks.length]);
 
-  async function getPlan(e: string, recompute = false) {
+  async function getPlan(e: string, recompute = false, preferCurrent = false) {
     setLoadingPlan(true);
     try {
-      // Recompute when energy is explicitly chosen; otherwise just read current.
-      const r = recompute || e !== "medium"
+      // On first load, prefer the persisted plan if one exists. Explicit energy
+      // changes still reshuffle the day.
+      const r = recompute || (!preferCurrent && e !== "medium")
         ? await mutateAndInvalidate("POST", "/api/plan/recompute", { energy: e, day }, [])
         : await mutateAndInvalidate("GET", `/api/plan/current?day=${day}&energy=${e}`, undefined, []);
       setPlan(r?.plan || null); setPlanItems(Array.isArray(r?.items) ? r.items : []);
+      if (typeof r?.plan?.energy === "string" && ["low", "medium", "high"].includes(r.plan.energy)) {
+        setEnergy(r.plan.energy);
+      }
     } catch { toast({ title: "Couldn't shape the day", description: "Try again in a moment." }); }
     finally { setLoadingPlan(false); }
   }
@@ -626,11 +684,20 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
   }
 
-  const activeItems = planItems.filter((it) => it.status === "planned" || it.status === "started");
+  const executionState = deriveTodayExecutionState({
+    todayTasks: today,
+    doneTodayTasks: doneToday,
+    planItems,
+    events,
+    pinnedTask: pinned,
+    plan,
+    isLoadingPlan: isLoading || loadingPlan,
+  });
+  const activeItems = executionState.activeItems;
   const isMVD = (it: PlanItemT) => plan?.minimumViableItemId === it.id;
-  const hasPrimaryFocus = !!pinned || activeItems.length > 0;
-  const secondaryOpen = showSecondary ?? !hasPrimaryFocus;
-  const doneListOpen = showDoneList ?? !hasPrimaryFocus;
+  const hasPrimaryFocus = executionState.hasPrimaryFocus;
+  const secondaryOpen = showSecondary ?? executionState.defaultSecondaryOpen;
+  const doneListOpen = showDoneList ?? executionState.defaultDoneListOpen;
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 
@@ -640,6 +707,8 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   // onboarding at a user who actually has data. So an error is NOT empty.
   if (!tracksLoading && !tracksError && !isLoading && tracks.length === 0) return <OnboardingView />;
   const activeGoal = goalState?.goals?.[0] || null;
+  const introLine = goalTodayIntroLine(activeGoal);
+  const todayBrief = goalMorningBriefWithExecution(activeGoal, executionState.briefInput);
 
   return (
     <div>
@@ -668,10 +737,20 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
-      <p className="text-sm text-muted-foreground mt-1 mb-3">Here's your day. Start at the top - you don't have to decide.</p>
+      {!activeGoal && <p className="text-sm text-muted-foreground mt-1 mb-3">{introLine}</p>}
 
       {/* Quick-capture — always here so a stray thought never needs another tab. */}
-      {activeGoal && <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} variant="compact" />}
+      {activeGoal && (
+        <>
+          <TodayBrief
+            goal={activeGoal}
+            brief={todayBrief}
+            showDetails={showCompass}
+            onToggleDetails={() => setShowCompass((current) => !current)}
+          />
+          {showCompass && <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} variant="compact" />}
+        </>
+      )}
       <div className="mb-5 rounded-xl border border-card-border bg-card p-3.5">
         <div className="flex gap-2">
           <Input

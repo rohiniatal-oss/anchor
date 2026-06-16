@@ -269,6 +269,43 @@ test("career goal frame stays in fit-discovery when learning exists but role sig
   assert.equal(frame.decisionMode, "single-track");
 });
 
+test("role-targeting can focus prep and upskilling when several serious roles share the same weak area", () => {
+  const jobs = Array.from({ length: 5 }).map((_, i) => ({
+    id: i + 1,
+    title: `AI Strategy Associate ${i + 1}`,
+    company: "Frontier Lab",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    applicationReadiness: "cover",
+    deadlineConfidence: "high",
+    location: "Remote",
+    fitScore: 82,
+    strategicValue: 78,
+    narrativeAngle: "",
+    warmPathScore: 15,
+  })) as any;
+  const learn = [{
+    id: 100,
+    title: "AI strategy memo drill",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const state = buildCareerGoalState([], jobs, [], learn, []);
+  assert.equal(state.phase, "role-targeting");
+  assert.equal(state.recommendedFocus, "Prep and upskilling");
+  assert.equal(state.dayType, "capability-building");
+  assert.equal(state.focusReasonCode, "repeated_capability_gap");
+  assert.match(state.reason, /Prep and upskilling|learning/i);
+});
+
 test("career goal state reflects real networking progress from live contacts", () => {
   const today = new Date().toISOString().slice(0, 10);
   const jobs = [
@@ -299,6 +336,31 @@ test("career goal state reflects real networking progress from live contacts", (
   assert.ok(network.nextMoves.some((move) => /follow up/i.test(move)));
 });
 
+test("contact-first roles surface Network as the live bottleneck", () => {
+  const jobs = [
+    {
+      id: 21,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      fitScore: 80,
+      strategicValue: 76,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+      warmPathScore: 82,
+      narrativeAngle: "Strong bridge into AI strategy",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, []);
+  assert.equal(state.recommendedFocus, "Network");
+  assert.equal(state.opportunityState.state, "researching");
+  assert.equal(state.opportunityState.dominantBlocker, "access");
+  assert.match(state.opportunityState.summary, /blocked by access|useful person/i);
+});
+
 test("career goal state reflects recruiting truth for follow-up-led application work", () => {
   const jobs = [
     {
@@ -321,6 +383,39 @@ test("career goal state reflects recruiting truth for follow-up-led application 
   assert.equal(state.recommendedFocus, "Applications");
   assert.equal(applications.status, "active");
   assert.equal(applications.nextMoveType, "execution");
+});
+
+test("clarify-first roles surface as live application work instead of being hidden as premature", () => {
+  const jobs = [
+    {
+      id: 22,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      fitScore: 82,
+      strategicValue: 78,
+      applicationReadiness: "none",
+      deadlineConfidence: "",
+      warmPathScore: 30,
+      narrativeAngle: "Strong bridge into AI strategy",
+      note: "",
+      url: "",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, []);
+  const applications = state.workstreams.find((w) => w.name === "Applications")!;
+  assert.equal(state.phase, "role-targeting");
+  assert.equal(state.recommendedFocus, "Applications");
+  assert.equal(state.focusReasonCode, "clarify_before_push");
+  assert.equal(applications.status, "active");
+  assert.equal(applications.nextMoveType, "execution");
+  assert.match(applications.bottleneck, /clarification before real conversion/i);
+  assert.ok(applications.nextMoves.some((move) => /confirm the role facts/i.test(move)));
+  assert.equal(state.opportunityState.state, "researching");
+  assert.equal(state.opportunityState.dominantBlocker, "clarify");
 });
 
 test("prove-fit roles are surfaced as capability-building support, not direct application work", () => {
@@ -352,6 +447,30 @@ test("prove-fit roles are surfaced as capability-building support, not direct ap
   assert.equal(proof.nextMoveType, "wait");
   assert.equal(proof.status, "sufficient_for_now");
   assert.match(proof.bottleneck, /optional value-adds/i);
+});
+
+test("a single prove-fit role does not make prep the dominant planner focus", () => {
+  const jobs = [
+    {
+      id: 31,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      status: "wishlist",
+      applicationWindowStatus: "open",
+      location: "Remote",
+      fitScore: 82,
+      strategicValue: 78,
+      applicationReadiness: "cv",
+      deadlineConfidence: "high",
+      warmPathScore: 35,
+      narrativeAngle: "",
+    },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, []);
+  assert.notEqual(state.recommendedFocus, "Prep and upskilling");
+  assert.notEqual(state.focusReasonCode, "repeated_capability_gap");
+  assert.notEqual(state.opportunityState.dominantBlocker, "capability");
 });
 
 test("live proof assets strengthen upskilling without turning into an application gate", () => {

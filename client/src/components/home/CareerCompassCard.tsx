@@ -14,9 +14,81 @@ import {
   compactLanePreview,
   DECISION_MODE_LABEL,
   displayCombinationLabel,
+  goalCompassSummary,
+  goalFocusComparisonLines,
+  goalFocusSupportLine,
+  goalModeInfo,
   getBroadPursuitCoverage,
   PHASE_LABEL,
 } from "@/lib/goalSpine";
+
+function opportunityStateMeta(goal: CareerGoalT) {
+  const state = goal.opportunityState?.state || "empty";
+  const blocker = goal.opportunityState?.dominantBlocker || "none";
+
+  const stateLabel = state === "interviewing"
+    ? "Live interview"
+    : state === "converting"
+      ? "Live process moving"
+      : state === "researching"
+        ? "Real roles in view"
+        : "No live opportunity yet";
+
+  const blockerMeta = blocker === "access"
+    ? {
+        label: "What is slowing this down: access",
+        detail: "The best next move is probably a person move: outreach, referral, or follow-up.",
+        tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300",
+        Icon: Users,
+      }
+    : blocker === "clarify"
+      ? {
+          label: "What is slowing this down: role facts",
+          detail: "The best next move is probably to confirm what the role really asks for before pushing harder.",
+          tone: "bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
+          Icon: Briefcase,
+        }
+      : blocker === "application"
+        ? {
+            label: "What is slowing this down: application follow-through",
+            detail: "The best next move is probably a concrete application or materials step.",
+            tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
+            Icon: Briefcase,
+          }
+        : blocker === "capability"
+          ? {
+              label: "What is slowing this down: repeated weak area",
+              detail: "The best next move is probably one learning or practice step that helps more than one role.",
+              tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/30 dark:text-violet-300",
+              Icon: GraduationCap,
+            }
+          : blocker === "assessment"
+            ? {
+                label: "What is slowing this down: interview or assessment prep",
+                detail: "The best next move is probably to prepare examples, stories, or role-specific material.",
+                tone: "bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-300",
+                Icon: Briefcase,
+              }
+            : blocker === "targeting"
+              ? {
+                  label: "What is slowing this down: targeting",
+                  detail: "The best next move is probably to add or compare real roles before doing more prep.",
+                  tone: "bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300",
+                  Icon: Compass,
+                }
+              : {
+                  label: "What is slowing this down: mixed",
+                  detail: "The next move should either reduce uncertainty or move the strongest live role forward.",
+                  tone: "bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300",
+                  Icon: Compass,
+                };
+
+  return {
+    stateLabel,
+    blockerMeta,
+    summary: goal.opportunityState?.summary || "",
+  };
+}
 
 export function CareerCompassCard({
   goal,
@@ -37,9 +109,14 @@ export function CareerCompassCard({
   const firstMissingRole = coverage.missing[0] || null;
   const firstMissingNetwork = coverage.missingNetworkSupport[0] || null;
   const firstMissingPrep = coverage.missingLearningSupport[0] || null;
-  const compassSummary = hasCoverage
-    ? "You are testing several role types in parallel. Get one real role into each before narrowing."
-    : goal.reason;
+  const compassSummary = goalCompassSummary(goal);
+  const focusSupportLine = goalFocusSupportLine(goal);
+  const comparisonLines = goalFocusComparisonLines(goal);
+  const leadComparison = comparisonLines[0] || null;
+  const secondaryComparisons = comparisonLines.slice(1);
+  const mode = goalModeInfo(goal);
+  const opportunity = opportunityStateMeta(goal);
+  const OpportunityIcon = opportunity.blockerMeta.Icon;
 
   function openContactDraftForCombination(combination: string) {
     const draft = {
@@ -80,6 +157,9 @@ export function CareerCompassCard({
             <span className="inline-flex items-center gap-1 rounded-full bg-card text-muted-foreground px-2 py-0.5 text-[11px] font-medium border border-card-border">
               {DECISION_MODE_LABEL[goal.decisionMode]}
             </span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border ${mode.tone}`}>
+              {mode.label}
+            </span>
             {goal.landingPriority === "credible-role-quickly" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-card text-muted-foreground px-2 py-0.5 text-[11px] font-medium border border-card-border">
                 land something credible soon
@@ -88,6 +168,7 @@ export function CareerCompassCard({
           </div>
           <h2 className="text-sm font-semibold leading-snug">Career compass</h2>
           <p className="text-xs text-muted-foreground mt-1">{compassSummary}</p>
+          <p className="text-xs text-muted-foreground mt-1">{mode.detail}</p>
         </div>
         {showOpenStrategy && (
           <button onClick={() => onOpenTab("strategy")} className="shrink-0 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1" data-testid="button-open-strategy-from-compass">
@@ -96,11 +177,27 @@ export function CareerCompassCard({
         )}
       </div>
 
+      {goal.opportunityState && (
+        <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="career-compass-search-snapshot">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Search snapshot</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+              <Compass className="w-3 h-3" /> {opportunity.stateLabel}
+            </span>
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${opportunity.blockerMeta.tone}`}>
+              <OpportunityIcon className="w-3 h-3" /> {opportunity.blockerMeta.label}
+            </span>
+          </div>
+          <p className="text-sm font-medium mt-2">{opportunity.summary}</p>
+          <p className="text-xs text-muted-foreground mt-1">{opportunity.blockerMeta.detail}</p>
+        </div>
+      )}
+
       <div className={`mt-3 grid gap-3 ${isCompact ? "sm:grid-cols-1" : "sm:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]"}`}>
         <div className="rounded-xl border border-card-border bg-card p-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">What matters now</p>
           <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
-          <p className="text-xs text-muted-foreground mt-1">{goal.selectionRule}</p>
+          <p className="text-xs text-muted-foreground mt-1">{focusSupportLine}</p>
         </div>
         {!isCompact && <div className="rounded-xl border border-card-border bg-card p-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{hasCoverage ? "Still missing" : "Question to answer"}</p>
@@ -136,6 +233,23 @@ export function CareerCompassCard({
         </div>}
       </div>
 
+      {leadComparison && (
+        <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="career-compass-why-first">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this first</p>
+          <p className="text-sm font-medium mt-1">{leadComparison.detail}</p>
+          {!isCompact && secondaryComparisons.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {secondaryComparisons.map((line) => (
+                <div key={line.workstream}>
+                  <p className="text-xs font-medium text-foreground">{line.title}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{line.detail}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {hasCoverage && (firstMissingRole || firstMissingNetwork || firstMissingPrep) && (
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="career-compass-next-moves">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Make the next gap easier</p>
@@ -152,7 +266,7 @@ export function CareerCompassCard({
             )}
             {firstMissingPrep && (
               <Button size="sm" variant="outline" onClick={() => openLearnDraftForCombination(firstMissingPrep)} data-testid="button-compass-add-prep">
-                <GraduationCap className="w-4 h-4 mr-1" /> Add starter
+                <GraduationCap className="w-4 h-4 mr-1" /> Use suggestion
               </Button>
             )}
           </div>
@@ -169,7 +283,7 @@ export function CareerCompassCard({
             )}
             {firstMissingPrep && (
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> still needs one prep item if you want clearer interview or application support.
+                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> still needs one learning item if you want clearer interview or application support.
               </p>
             )}
           </div>

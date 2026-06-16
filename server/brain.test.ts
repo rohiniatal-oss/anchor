@@ -689,6 +689,129 @@ test("fit-discovery keeps exploratory networking ahead of pure capability drills
   assert.match(result.explanation.summary, /get clearer on which roles make sense/i);
 });
 
+test("repeated capability pressure can promote development work ahead of saved roles", () => {
+  const jobs = Array.from({ length: 5 }).map((_, index) =>
+    job({
+      id: 32 + index,
+      title: `AI Strategy Associate ${index + 1}`,
+      company: "Frontier Lab",
+      status: "wishlist",
+      applicationReadiness: "cv",
+      fitScore: 82,
+      strategicValue: 78,
+      warmPathScore: 15,
+      narrativeAngle: "",
+      deadlineConfidence: "high",
+    })
+  );
+  const learn = [{
+    id: 40,
+    title: "AI strategy memo drill",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const result = recommend([], jobs, learn, [], "medium");
+  assert.ok(result.pick, "a capability-first move should be selected");
+  assert.ok(
+    result.pick?.source === "learn" || result.pick?.jobTruthAction === "prove",
+    "repeated capability pressure should surface a strengthening move"
+  );
+  assert.ok(result.trace?.some((line: string) => /repeated weak area|strengthening work is promoted/i.test(line)));
+  assert.match(result.explanation.summary, /get stronger|clearer example|without stopping applications/i);
+});
+
+test("no live applications alone does not let development outrank a ready application move", () => {
+  const jobs = [
+    job({
+      id: 41,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      status: "wishlist",
+      applicationReadiness: "cover",
+      fitScore: 82,
+      strategicValue: 80,
+      warmPathScore: 20,
+      narrativeAngle: "Strong bridge from strategy to AI governance",
+      deadlineConfidence: "high",
+      note: "Clear role scope and requirements",
+    }),
+  ];
+  const learn = [{
+    id: 42,
+    title: "AI strategy memo drill",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const result = recommend([], jobs, learn, [], "medium");
+  assert.equal(result.pick?.source, "job");
+  assert.equal(result.pick?.jobTruthAction, "apply");
+  assert.ok(!result.trace?.some((line: string) => /no live application pipeline yet/i.test(line)));
+});
+
+test("clarify-first roles outrank learning and networking when the facts are still too thin", () => {
+  const jobs = [
+    job({
+      id: 43,
+      title: "AI Strategy Associate",
+      company: "GovAI",
+      status: "wishlist",
+      applicationReadiness: "none",
+      fitScore: 82,
+      strategicValue: 78,
+      warmPathScore: 20,
+      narrativeAngle: "Strong bridge into AI strategy",
+      deadlineConfidence: "",
+      note: "",
+      url: "",
+    }),
+  ];
+  const contacts = [
+    contact({
+      id: 44,
+      who: "Warm alum",
+      status: "to_contact",
+      relationshipStrength: "warm",
+      askType: "advice",
+      targetRole: "AI Strategy Associate",
+      targetOrg: "GovAI",
+    }),
+  ];
+  const learn = [{
+    id: 45,
+    title: "AI strategy memo drill",
+    requiredOutput: "one memo paragraph",
+    active: true,
+    proofIntent: true,
+    done: false,
+    learnStatus: "active",
+    applicationDeadline: "",
+    url: "",
+    note: "",
+    relatedTrackId: null,
+  }] as any;
+
+  const result = recommend([], jobs, learn, [], "medium", contacts);
+  assert.equal(result.pick?.source, "job");
+  assert.equal(result.pick?.jobTruthAction, "clarify");
+  assert.ok(result.trace?.some((line: string) => /clarification before more effort|missing role facts/i.test(line)));
+});
+
 test("track-linked reference learning does not surface as a strategic candidate by itself", () => {
   const learn = [{
     id: 35,

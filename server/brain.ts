@@ -61,6 +61,7 @@ const CATEGORY_FAMILY: Record<string, string> = {
 
 type Energy = "low" | "medium" | "high";
 const SIZE_MINUTES: Record<string, number> = { quick: 15, medium: 45, deep: 120 };
+type ActionCategory = "pursue" | "prepare" | "develop" | "decide" | "wait";
 
 export type Candidate = {
   source: "task" | "job" | "learn" | "hustle" | "contact" | "goal";
@@ -118,6 +119,8 @@ type StrategicContext = {
   goalDayType: ReturnType<typeof deriveCareerGoalFrame>["dayType"];
   decisionMode: ReturnType<typeof deriveCareerGoalFrame>["decisionMode"];
   planningPosture: "exploration" | "conversion" | "interview" | "capability";
+  activeOpportunityCount: number;
+  clarifyBeforePush: boolean;
 };
 
 const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
@@ -139,6 +142,8 @@ const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
   goalDayType: "exploration",
   decisionMode: "parallel-exploration",
   planningPosture: "exploration",
+  activeOpportunityCount: 0,
+  clarifyBeforePush: false,
 };
 
 type RankedCandidate = { c: Candidate; s: number; trace: string[] };
@@ -307,6 +312,15 @@ function laneBalanceWindow(posture: StrategicContext["planningPosture"]) {
   return 34;
 }
 
+function countActiveOpportunities(jobs: Job[]) {
+  return jobs.filter((job) =>
+    job.status === "applied"
+    || job.status === "interviewing"
+    || job.applicationReadiness === "submitted"
+    || job.applicationReadiness === "follow_up",
+  ).length;
+}
+
 function buildStrategicContext(
   tasks: Task[],
   jobs: Job[],
@@ -324,6 +338,12 @@ function buildStrategicContext(
     spine.bestMove.lane,
     learn.some((l) => !l.done && l.learnStatus !== "closed"),
   );
+  const activeOpportunityCount = countActiveOpportunities(jobs);
+  const viableApplicationTruth = jobs
+    .map(computeJobTruthStrip)
+    .filter((truth) => truth.action !== "reject");
+  const clarifyBeforePush = viableApplicationTruth.length > 0
+    && viableApplicationTruth.every((truth) => truth.action === "clarify");
   const liveJobTargets = jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" }));
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
   const broadPursuitNeedsNetworkSupport = goalFrame.decisionMode === "broad-parallel-pursuit"
@@ -376,6 +396,8 @@ function buildStrategicContext(
     goalDayType: goalFrame.dayType,
     decisionMode: goalFrame.decisionMode,
     planningPosture,
+    activeOpportunityCount,
+    clarifyBeforePush,
   };
 }
 
@@ -980,6 +1002,57 @@ function passesGates(c: Candidate, context: StrategicContext): boolean {
   return gateReason(c, context) === null;
 }
 
+function candidateActionCategory(c: Candidate, context: StrategicContext): ActionCategory {
+  if (c.source === "job") {
+    if (c.jobTruthAction === "prepare") return "prepare";
+    if (c.jobTruthAction === "prove") return "develop";
+    if (c.jobTruthAction === "clarify") return "decide";
+    if (c.jobTruthAction === "reject") return "wait";
+    return "pursue";
+  }
+  if (c.source === "contact") {
+    const intent = contactIntent(c, context);
+    if (intent === "conversion") return "pursue";
+    if (intent === "interview") return "prepare";
+    if (intent === "capability") return "develop";
+    return "decide";
+  }
+  if (c.source === "goal") {
+    if (c.sourceStatus === "broad_parallel_pursuit_learning_support") return "develop";
+    if (c.sourceStatus === "broad_parallel_pursuit_network_support") return "pursue";
+    return "decide";
+  }
+  if (c.source === "learn" || c.source === "hustle") return "develop";
+  if (/\binterview|case|mock|presentation exercise|written test|prep\b/i.test(`${c.title} ${c.sourceNote}`)) return "prepare";
+  if (isApplicationLike(c) || isNetworkLike(c)) return "pursue";
+  if (isDirectionSignal(c)) return "decide";
+  if (isLearningLike(c) || isProofAsset(c)) return "develop";
+  return "wait";
+}
+
+function actionCategoryPriorityBand(category: ActionCategory, context: StrategicContext) {
+  if (context.clarifyBeforePush) {
+    if (category === "decide") return 1;
+    if (category === "pursue") return 2;
+    if (category === "prepare") return 3;
+    if (category === "develop") return 4;
+    return 5;
+  }
+  const shouldPromoteDevelopment = context.planningPosture === "capability";
+  if (shouldPromoteDevelopment) {
+    if (category === "develop") return 1;
+    if (category === "decide") return 2;
+    if (category === "pursue") return 3;
+    if (category === "prepare") return 4;
+    return 5;
+  }
+  if (category === "pursue") return 1;
+  if (category === "prepare") return 2;
+  if (category === "decide") return 3;
+  if (category === "develop") return 4;
+  return 5;
+}
+
 export function pickDayMode(cands: Candidate[], energy: Energy, context?: StrategicContext): DayMode {
   const hasUrgent = cands.some((c) => { const d = daysUntil(c.deadline); return d !== null && d <= 3; });
   if (hasUrgent) return "deadline";
@@ -1067,6 +1140,29 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (context.recommendedExploration && `${c.title} ${c.sourceNote}`.toLowerCase().includes(context.recommendedExploration.toLowerCase().slice(0, 20))) {
     s += 30;
     trace.push("matches active track from spine");
+  }
+
+  const actionCategory = candidateActionCategory(c, context);
+  const priorityBand = actionCategoryPriorityBand(actionCategory, context);
+  if (priorityBand === 1) {
+    s += 26;
+  } else if (priorityBand === 2) {
+    s += 12;
+  } else if (priorityBand === 4) {
+    s -= 10;
+  } else if (priorityBand >= 5) {
+    s -= 18;
+  }
+  if (context.clarifyBeforePush && actionCategory === "decide") {
+    trace.push("the strongest roles still need clarification before more effort is worth it");
+  } else if (context.clarifyBeforePush && actionCategory === "pursue") {
+    trace.push("application work stays secondary until the missing role facts are confirmed");
+  } else if (context.planningPosture === "capability" && actionCategory === "develop") {
+    trace.push("the main bottleneck is a repeated weak area, so strengthening work is promoted");
+  } else if (context.planningPosture === "capability" && actionCategory === "pursue") {
+    trace.push("live pursuit stays secondary until the shared weak area is less exposed");
+  } else if ((context.planningPosture === "conversion" || context.planningPosture === "interview") && actionCategory === "develop") {
+    trace.push("development stays secondary while the main bottleneck is conversion or interview work");
   }
 
   const startability = startabilityMomentum(c);

@@ -313,6 +313,90 @@ test("blocking and parking a learn task syncs blocked and active milestone state
   assert.equal(afterPark.json[1].status, "todo");
 });
 
+test("marking a milestone done directly closes its linked open task and plan item", async () => {
+  const day = "2026-06-16";
+  const created = await api(h.base, "POST", "/api/recommendations", {
+    collection: "learning-corpus",
+    kind: "learning-theme",
+    status: "saved",
+    source: "manual",
+    title: "AI strategy foundations",
+    whySuggested: "A theme that should keep Learn and Today in sync.",
+    executionShape: "ongoing-program",
+    acceptanceDraft: JSON.stringify({
+      capabilityBuilt: "AI strategy",
+      note: "Accepted from structured theme.",
+    }),
+  });
+  assert.equal(created.status, 200);
+
+  const milestone = await api(h.base, "POST", `/api/recommendations/${created.json.id}/milestones`, {
+    milestoneKey: "scan",
+    label: "Scan the field",
+    doneWhen: "You can explain the main players",
+    status: "todo",
+    sequence: 0,
+    suggestedTaskTitle: "Scan AI strategy field",
+    subdivisionKey: "",
+  });
+  assert.equal(milestone.status, 200);
+
+  const accepted = await api(h.base, "POST", `/api/recommendations/${created.json.id}/accept`, {
+    entityType: "learn",
+  });
+  assert.equal(accepted.status, 200);
+
+  const task = await api(h.base, "POST", `/api/learn/${accepted.json.created.id}/create-next-task`, {});
+  assert.equal(task.status, 200);
+  assert.equal(task.json.sourceStepType, "recommendation_milestone");
+  assert.equal(task.json.sourceStepId, milestone.json.id);
+
+  const plan = await h.storage.createPlan({ date: day, status: "active" } as any);
+  const planItem = await h.storage.createPlanItem({
+    planId: plan.id,
+    sequence: 0,
+    slot: "now",
+    sourceType: "learn",
+    sourceId: accepted.json.created.id,
+    taskId: task.json.id,
+    title: task.json.title,
+    whySelected: "This is the current learning checkpoint",
+    doneWhen: task.json.doneWhen,
+    status: "started",
+    plannedFor: day,
+  } as any);
+  await h.storage.updatePlan(plan.id, { minimumViableItemId: planItem.id } as any);
+  await h.storage.updateTask(task.json.id, { planItemId: planItem.id, status: "in_progress", list: "today" } as any);
+
+  const markedDone = await api(h.base, "PATCH", `/api/recommendation-milestones/${milestone.json.id}`, {
+    status: "done",
+  });
+  assert.equal(markedDone.status, 200);
+  assert.equal(markedDone.json.status, "done");
+
+  const updatedTask = (await h.storage.getTasks()).find((item) => item.id === task.json.id)!;
+  assert.equal(updatedTask.done, true);
+  assert.equal(updatedTask.status, "done");
+  assert.equal(updatedTask.pinned, false);
+
+  const updatedPlanItem = await h.storage.getPlanItem(planItem.id);
+  assert.equal(updatedPlanItem?.status, "completed");
+  assert.ok(updatedPlanItem?.completedAt);
+  const updatedPlan = await h.storage.getPlan(plan.id);
+  assert.equal(updatedPlan?.enoughForToday, true);
+
+  const wins = await h.storage.getWins();
+  assert.equal(wins.length, 1);
+  assert.equal(wins[0].text, task.json.title);
+
+  const activity = await h.storage.getActivityLog();
+  assert.ok(activity.some((entry) =>
+    entry.eventType === "completed"
+    && entry.taskId === task.json.id
+    && entry.planItemId === planItem.id,
+  ));
+});
+
 test("synthesis helper routes return fallback text with an error marker when the model is unavailable", async () => {
   const created = await api(h.base, "POST", "/api/recommendations", {
     collection: "learning-corpus",

@@ -73,6 +73,18 @@ test("/api/capture/sort returns confidence, reason, and compatibility category",
   assert.ok(r.json.suggestions.some((s: any) => s.route === "keep" && s.question));
 });
 
+test("/api/capture/:id/suggest returns a suggestion for one capture without sorting the whole inbox", async () => {
+  const urgent = await h.storage.createTask({ title: "Message Sarah about Anthropic policy jobs", list: "inbox", done: false } as any);
+  await h.storage.createTask({ title: "Read Superforecasting", list: "inbox", done: false } as any);
+
+  const r = await api(h.base, "POST", `/api/capture/${urgent.id}/suggest`, {});
+  assert.equal(r.status, 200);
+  assert.equal(r.json.suggestion.id, urgent.id);
+  assert.equal(r.json.suggestion.route, "network");
+  assert.equal(r.json.suggestion.confidence, "high");
+  assert.match(r.json.suggestion.reason, /relationship|outreach/i);
+});
+
 test("routing to Network creates a contact and preserves the original capture", async () => {
   const cap = await h.storage.createTask({ title: "Message Sarah about Anthropic policy jobs", list: "inbox", done: false } as any);
   const r = await api(h.base, "POST", `/api/capture/${cap.id}/route`, { route: "network" });

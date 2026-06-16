@@ -149,6 +149,7 @@ export interface IStorage {
   updateContact(id: number, patch: Partial<InsertContact>): Promise<Contact | undefined>;
   deleteContact(id: number): Promise<void>;
   getPlanByDate(date: string): Promise<DayPlan | undefined>;
+  getPlan(id: number): Promise<DayPlan | undefined>;
   createPlan(p: InsertDayPlan): Promise<DayPlan>;
   updatePlan(id: number, patch: Partial<InsertDayPlan>): Promise<DayPlan | undefined>;
   getPlanItems(planId: number): Promise<DayPlanItem[]>;
@@ -321,6 +322,7 @@ export class DatabaseStorage implements IStorage {
   async deleteContact(id: number) { db.delete(contacts).where(eq(contacts.id, id)).run(); }
 
   async getPlanByDate(date: string) { return db.select().from(dayPlans).where(eq(dayPlans.date, date)).get(); }
+  async getPlan(id: number) { return db.select().from(dayPlans).where(eq(dayPlans.id, id)).get(); }
   async createPlan(p: InsertDayPlan) { const now = Date.now(); return db.insert(dayPlans).values({ ...p, createdAt: now, updatedAt: now }).returning().get(); }
   async updatePlan(id: number, patch: Partial<InsertDayPlan>) { return db.update(dayPlans).set({ ...patch, updatedAt: Date.now() }).where(eq(dayPlans.id, id)).returning().get(); }
   async getPlanItems(planId: number) { return db.select().from(dayPlanItems).where(eq(dayPlanItems.planId, planId)).orderBy(asc(dayPlanItems.sequence)).all(); }

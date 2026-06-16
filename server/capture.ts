@@ -347,6 +347,14 @@ export function registerCaptureRoutes(app: Express) {
     res.json({ suggestions: await sortOpenCaptures() });
   });
 
+  app.post("/api/capture/:id/suggest", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const task = (await storage.getTasks()).find((item) => item.id === id);
+    if (!task) return res.status(404).json({ error: "Capture not found" });
+    res.json({ suggestion: classifyCapture(task.id, task.title) });
+  });
+
   app.post("/api/capture/:id/route", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });

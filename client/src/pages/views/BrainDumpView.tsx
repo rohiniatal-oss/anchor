@@ -34,6 +34,7 @@ export default function BrainDumpView() {
   const [adding, setAdding] = useState(false);
   const [captureNote, setCaptureNote] = useState("");
   const [sorting, setSorting] = useState(false);
+  const [suggestingId, setSuggestingId] = useState<number | null>(null);
   const [triage, setTriage] = useState<Record<number, CaptureSug>>({});
   const { toast } = useToast();
   const inbox = tasks.filter((t) => t.list === "inbox");
@@ -69,6 +70,21 @@ export default function BrainDumpView() {
       toast({ title: "Couldn't sort right now", description: "Give it another go in a moment." });
     } finally {
       setSorting(false);
+    }
+  }
+
+  async function suggestOne(taskId: number) {
+    setSuggestingId(taskId);
+    try {
+      const r = await apiRequest("POST", `/api/capture/${taskId}/suggest`);
+      const data = await r.json();
+      if (data?.suggestion) {
+        setTriage((current) => ({ ...current, [taskId]: data.suggestion as CaptureSug }));
+      }
+    } catch {
+      toast({ title: "Couldn't suggest a route", description: "Try again in a moment." });
+    } finally {
+      setSuggestingId((current) => (current === taskId ? null : current));
     }
   }
 
@@ -128,6 +144,19 @@ export default function BrainDumpView() {
                 <div className="flex items-center gap-2">
                   <span className="flex-1 text-sm">{t.title}</span>
                   <div className="flex items-center gap-1 shrink-0">
+                    {!tr && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2"
+                        onClick={() => suggestOne(t.id)}
+                        data-testid={`button-route-braindump-${t.id}`}
+                        disabled={suggestingId === t.id}
+                      >
+                        {suggestingId === t.id ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ArrowRight className="w-3 h-3 mr-1" />}
+                        {suggestingId === t.id ? "Thinking..." : "Route"}
+                      </Button>
+                    )}
                     {!tr && <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => applyRoute(t, "today", "Added to today")} data-testid={`button-addday-${t.id}`}>Add to day</Button>}
                     <button onClick={() => remove(t.id)} aria-label="Delete" data-testid={`button-delete-braindump-${t.id}`} className="text-muted-foreground hover:text-destructive ml-0.5"><X className="w-4 h-4" /></button>
                   </div>

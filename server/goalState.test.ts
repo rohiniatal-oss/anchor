@@ -200,7 +200,7 @@ test("broad parallel pursuit tracks missing network and learning support after l
   assert.ok(state.broadPursuitCoverage.networkSupported.includes("Geopolitics / geopolitical advisory x Ops / chief of staff"));
   assert.ok(state.broadPursuitCoverage.missingNetworkSupport.includes("AI / technology strategy x Ops / chief of staff"));
   assert.ok(state.broadPursuitCoverage.missingLearningSupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
-  assert.match(state.decisionQuestion, /need outreach, prep, or both next/i);
+  assert.match(state.decisionQuestion, /need outreach, role-specific support, or both next/i);
   assert.match(state.todayPlan.mustDo, /Add the next useful contact or outreach path/i);
   assert.match(state.todayPlan.mustDo, /AI \/ technology strategy x Ops \/ chief of staff/i);
 });
@@ -252,6 +252,25 @@ test("broad parallel pursuit can shift focus to Network once role coverage is co
   assert.equal(network.status, "underdeveloped");
   assert.match(network.bottleneck, /lack networking support/i);
   assert.ok(network.nextMoves.some((move) => /add or link one contact/i.test(move)));
+});
+
+test("broad parallel support gaps do not outrank a real application move", () => {
+  const jobs = [
+    { id: 1, title: "AI Strategy Associate", company: "Frontier Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "strategy / advisory", applicationReadiness: "questions", fitScore: 81, strategicValue: 78, narrativeAngle: "Strong bridge from strategy to AI governance", deadlineConfidence: "high" },
+    { id: 2, title: "AI Chief of Staff", company: "Model Lab", status: "wishlist", applicationWindowStatus: "open", location: "Remote", roleArchetype: "chief of staff / operations" },
+    { id: 3, title: "Geopolitical Advisory Associate", company: "Risk Group", status: "wishlist", applicationWindowStatus: "open", location: "UAE", roleArchetype: "strategy / advisory" },
+    { id: 4, title: "Geopolitical Chief of Staff", company: "Policy Org", status: "wishlist", applicationWindowStatus: "open", location: "London", roleArchetype: "chief of staff / operations" },
+  ] as any;
+  const contacts = [
+    { id: 1, who: "AI strategy advisor", status: "to_contact", relationshipStrength: "warm", sector: "AI / technology strategy x Strategy / advisory", targetRole: "AI Strategy Associate" },
+  ] as any;
+
+  const state = buildCareerGoalState([], jobs, [], [], contacts);
+  assert.equal(state.decisionMode, "broad-parallel-pursuit");
+  assert.equal(state.opportunityState.dominantBlocker, "application");
+  assert.equal(state.recommendedFocus, "Applications");
+  assert.equal(state.focusReasonCode, "live_apply");
+  assert.match(state.todayPlan.mustDo, /Advance the strongest application move/i);
 });
 
 test("career goal frame stays in fit-discovery when learning exists but role signal does not", () => {

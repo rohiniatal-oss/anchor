@@ -348,10 +348,12 @@ function buildStrategicContext(
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
   const broadPursuitNeedsNetworkSupport = goalFrame.decisionMode === "broad-parallel-pursuit"
     && broadPursuitCoverage.missing.length === 0
+    && goalFrame.recommendedFocus === GOAL_WORKSTREAM.NETWORK
     && broadPursuitCoverage.missingNetworkSupport.length > 0;
   const broadPursuitNeedsLearningSupport = goalFrame.decisionMode === "broad-parallel-pursuit"
     && broadPursuitCoverage.missing.length === 0
     && broadPursuitCoverage.missingNetworkSupport.length === 0
+    && goalFrame.recommendedFocus === GOAL_WORKSTREAM.PREP_UPSKILLING
     && broadPursuitCoverage.missingLearningSupport.length > 0;
   return {
     bottleneck: broadPursuitNeedsRealRoles
@@ -502,17 +504,17 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         source: "goal",
         sourceId: 300 + index,
         taskId: null,
-        title: `Add one learning item for ${combination}`,
+        title: `Add one role-support item for ${combination}`,
         category: "learning",
         size: "medium",
         deadline: "",
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `This live role type still needs learning support: ${combination}. Add one learning item for it next.`,
+        sourceNote: `This live role type still needs role-specific support: ${combination}. Add one support item in Learn for it next.`,
         sourceStatus: "broad_parallel_pursuit_learning_support",
-        doneWhen: `One learning item exists for ${combination}`,
-        whyNow: `the ${combination} path still needs learning support`,
+        doneWhen: `One support item in Learn exists for ${combination}`,
+        whyNow: `the ${combination} path still needs role-specific support`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -1092,7 +1094,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (c.source === "goal") {
     s += 42;
     if (c.sourceStatus === "broad_parallel_pursuit_network_support") trace.push("some live role paths still need someone useful to reach out to");
-    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") trace.push("some live role paths still need learning support");
+    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") trace.push("some live role paths still need role-specific support");
     else trace.push("several role paths still need a real role before you narrow");
   }
 
@@ -1230,7 +1232,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
       return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Open Learn and add one learning item for ${candidate.targetRole}.`;
+      if (candidate?.targetRole) return `Open Learn and add one support item, note, or resource for ${candidate.targetRole}.`;
       return broadPursuitMissingPrepFirstStep(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1268,7 +1270,7 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
       return broadPursuitMissingContactsStopRule();
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one learning item.`;
+      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one support item in Learn.`;
       return broadPursuitMissingPrepStopRule();
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1306,7 +1308,7 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
       return broadPursuitMissingContactsSourceFrame(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `${candidate.targetRole} still needs learning support, so the best move is to add one learning item for it now.`;
+      if (candidate?.targetRole) return `${candidate.targetRole} still needs role-specific support, so the best move is to add one support item in Learn for it now.`;
       return broadPursuitMissingPrepSourceFrame(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {

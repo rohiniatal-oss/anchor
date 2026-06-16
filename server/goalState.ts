@@ -910,13 +910,6 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
   const direction = workstreams.find((w) => w.name === GOAL_WORKSTREAM.DIRECTION);
   const marketMap = workstreams.find((w) => w.name === GOAL_WORKSTREAM.MARKET_MAP);
   if ((phase === "role-targeting" || phase === "interview-prep") && network && network.status === "stale") return network;
-  if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
-    const coverage = buildBroadPursuitCoverage(snapshot);
-    if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length > 0 && network && network.nextMoveType !== "wait") return network;
-    if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingLearningSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
-      return capability;
-    }
-  }
   if (phase === "role-targeting") {
     if (snapshot.dominantOpportunityBlocker === "access" && network && network.nextMoveType !== "wait") return network;
     if ((snapshot.dominantOpportunityBlocker === "clarify" || snapshot.dominantOpportunityBlocker === "application") && applications && applications.nextMoveType !== "wait") {
@@ -928,6 +921,13 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
     if (snapshot.dominantOpportunityBlocker === "targeting") {
       if (direction && direction.nextMoveType !== "wait") return direction;
       if (marketMap && marketMap.nextMoveType !== "wait") return marketMap;
+    }
+    if (hasBroadParallelLanes(snapshot)) {
+      const coverage = buildBroadPursuitCoverage(snapshot);
+      if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length > 0 && network && network.nextMoveType !== "wait") return network;
+      if (coverage.missing.length === 0 && coverage.missingNetworkSupport.length === 0 && coverage.missingLearningSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
+        return capability;
+      }
     }
   }
 
@@ -1087,7 +1087,7 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
               coverage.missingNetworkSupport,
               coverage.missingLearningSupport,
             ),
-        next: "Keep live roles moving while you add the missing contact or learning support.",
+        next: "Keep live roles moving while you add the missing contact or role-specific support.",
         optional: "If useful, add one optional example/project idea that could help more than one role in the same path.",
         stopRule: focusNetwork
           ? broadPursuitNextMissingContactStopRule(coverage.missingNetworkSupport)

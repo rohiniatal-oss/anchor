@@ -418,9 +418,44 @@ test("planner surfaces missing broad-pursuit prep support after contact support 
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, contacts as any, tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /learning item/i);
+  assert.match(result.plan[0].candidate.title, /support item/i);
   assert.match(result.plan[0].explanation.firstStep, /Open Learn/i);
-  assert.match(result.note, /learning support/i);
+  assert.match(result.note, /role-specific support/i);
+});
+
+test("planner keeps a real application move ahead of broad-pursuit support gaps", () => {
+  const jobs = [
+    job({
+      id: 110,
+      title: "AI Strategy Associate",
+      company: "Frontier Lab",
+      location: "Remote",
+      roleArchetype: "strategy / advisory",
+      relatedTrackId: 1,
+      fitScore: 81,
+      warmPathScore: 20,
+      applicationReadiness: "questions",
+      narrativeAngle: "Strong bridge from strategy to AI governance",
+      deadlineConfidence: "high",
+    }),
+    job({ id: 111, title: "AI Chief of Staff", company: "Model Lab", location: "Remote", roleArchetype: "chief of staff / operations", relatedTrackId: 2 }),
+    job({ id: 112, title: "Geopolitical Advisory Associate", company: "Risk Desk", location: "UAE", roleArchetype: "strategy / advisory", relatedTrackId: 3 }),
+    job({ id: 113, title: "Geopolitics Chief of Staff", company: "Policy Lab", location: "London", roleArchetype: "chief of staff / operations", relatedTrackId: 4 }),
+  ];
+  const contacts = [
+    contact({ id: 14, who: "AI strategy operator", relatedTrackId: 1, askType: "advice", status: "to_contact" }),
+  ];
+  const tracks = [
+    { id: 1, name: "AI strategy", slug: "ai-strategy", status: "active", targetRoleArchetype: "AI strategy / advisory", whyItFits: "Technology strategy and advisory fit", description: "Explore AI strategy roles in parallel" },
+    { id: 2, name: "AI operations", slug: "ai-operations", status: "active", targetRoleArchetype: "chief of staff / operations", whyItFits: "Operating roles are plausible", description: "Parallel operating lane" },
+    { id: 3, name: "Geopolitical advisory", slug: "geopolitical-advisory", status: "active", targetRoleArchetype: "geopolitical advisory", whyItFits: "Strong geopolitical and advisory fit", description: "Parallel geopolitical advisory lane" },
+    { id: 4, name: "Geopolitics operations", slug: "geopolitics-operations", status: "active", targetRoleArchetype: "geopolitics chief of staff operations", whyItFits: "Geopolitical operating roles are plausible", description: "Parallel geopolitical operating lane" },
+  ] as any;
+
+  const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 120 }, contacts as any, tracks);
+  assert.equal(result.plan[0].candidate.source, "job");
+  assert.equal(result.plan[0].candidate.jobTruthAction, "apply");
+  assert.ok(!/role-specific support/i.test(result.plan[0].why));
 });
 
 test("planner keeps job pursuit and capability-building in parallel when time allows", () => {

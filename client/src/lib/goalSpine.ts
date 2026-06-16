@@ -163,7 +163,7 @@ export function broadPursuitPrimarySummary(goal?: CareerGoalT | null) {
   const coverage = getBroadPursuitCoverage(goal);
   if (coverage.missing.length > 0) return "One real role per role type is enough to start seeing what is viable.";
   if (coverage.missingNetworkSupport.length > 0 || coverage.missingLearningSupport.length > 0) {
-    return "Keep the live role types moving while you add the missing contact or learning support.";
+    return "Keep the live role types moving while you add the missing contact or role-specific support.";
   }
   return "Keep the strongest live role moving without dropping the other active paths.";
 }
@@ -676,16 +676,16 @@ export function nextLaneGap(goal: CareerGoalT, combination: string) {
   }
   if (!support.hasLearningSupport) {
     return {
-      label: "Needs learning support",
-      detail: "Add one learning item for this target.",
+      label: "Needs support item",
+      detail: "Add one support item in Learn for this target.",
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
     };
   }
   return {
     label: "Well supported",
     detail: support.hasExampleProjectSupport
-      ? "This target has a role, a contact, a learning item, and an optional writing/project idea."
-      : "This target has a role, a contact, and a learning item. Optional writing or project ideas can compound later.",
+      ? "This target has a role, a contact, a support item in Learn, and an optional writing/project idea."
+      : "This target has a role, a contact, and a support item in Learn. Optional writing or project ideas can compound later.",
     tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   };
 }
@@ -718,9 +718,9 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
   if (coverage.missingLearningSupport.length > 0) {
     lines.push({
       key: "prep",
-      label: "Need prep",
+      label: "Need support",
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
-      text: compactLanePreview(coverage.missingLearningSupport, "Every active role type has a learning item."),
+      text: compactLanePreview(coverage.missingLearningSupport, "Every active role type has a support item in Learn."),
     });
   }
   if (lines.length === 0) {
@@ -728,7 +728,7 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
       key: "covered",
       label: "Covered",
       tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
-      text: "Each active role type has a real role, someone useful to reach out to, and learning support.",
+      text: "Each active role type has a real role, someone useful to reach out to, and role-specific support.",
     });
   }
   return lines;

@@ -70,7 +70,14 @@ export function registerTaskAssistRoutes(app: Express) {
   app.get("/api/stats", async (_req, res) => {
     const weekAgo = Date.now() - 7 * 86400000;
     const wins = await storage.getWins();
-    res.json({ doneThisWeek: wins.filter((w) => w.createdAt >= weekAgo).length });
+    const thisWeek = wins.filter((w) => w.createdAt >= weekAgo);
+    res.json({
+      doneThisWeek: thisWeek.length,
+      jobProgressThisWeek: thisWeek.filter((w) => w.winCategory === "job_progress").length,
+      networkThisWeek: thisWeek.filter((w) => w.winCategory === "network").length,
+      learningThisWeek: thisWeek.filter((w) => w.winCategory === "learning").length,
+      proofAssetThisWeek: thisWeek.filter((w) => w.winCategory === "proof_asset").length,
+    });
   });
 
   app.post("/api/braindump/sort", async (_req, res) => {

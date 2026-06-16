@@ -228,7 +228,7 @@ export function BroadPursuitParallelSupportKickoff({
     <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4" data-testid={`${mode}-broad-pursuit-kickoff`}>
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {mode === "network" ? "Contacts to add" : "Learning to add"}
+            {mode === "network" ? "Contacts to add" : "Support to add"}
           </p>
           <p className="text-sm font-medium mt-1">
             {mode === "network" ? "Add one contact for your weakest role types." : "Use one suggested starter for your weakest role types."}
@@ -236,7 +236,7 @@ export function BroadPursuitParallelSupportKickoff({
           <p className="text-xs text-muted-foreground mt-1">
             {mode === "network"
               ? `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a contact.`
-              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a learning item.`}
+              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a support item.`}
           </p>
           {canStartWithoutRole && (
             <p className="text-xs text-muted-foreground mt-1">

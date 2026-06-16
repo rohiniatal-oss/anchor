@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Plus, Check, CalendarDays, Loader2, Target, ChevronRight,
-  Pin, Wand2, MoveRight, MoonStar, Trophy,
+  Pin, Wand2, MoveRight, MoonStar, Trophy, Briefcase, Users, GraduationCap,
   X, Sparkles, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -565,7 +565,13 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const diagnosticTracks = (diagnosticsData as any)?.tracks || [];
   const day = todayKey();
   const { data: events = [] } = useQuery<Event[]>({ queryKey: ["/api/events", day] });
-  const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
+  const { data: stats } = useQuery<{
+    doneThisWeek: number;
+    jobProgressThisWeek: number;
+    networkThisWeek: number;
+    learningThisWeek: number;
+    proofAssetThisWeek: number;
+  }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
   const today = tasks.filter((t) => t.list === "today" && !t.done);
@@ -738,6 +744,36 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       )}
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
       {!activeGoal && <p className="text-sm text-muted-foreground mt-1 mb-3">{introLine}</p>}
+      {stats && stats.doneThisWeek > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Trophy className="w-3.5 h-3.5 text-primary" />
+            <span className="font-semibold text-foreground tabular-nums">{stats.doneThisWeek}</span>
+            {stats.doneThisWeek === 1 ? "win" : "wins"} this week
+          </span>
+          {stats.jobProgressThisWeek > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Briefcase className="w-3.5 h-3.5 text-primary" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.jobProgressThisWeek}</span>
+              job {stats.jobProgressThisWeek === 1 ? "move" : "moves"}
+            </span>
+          )}
+          {stats.networkThisWeek > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Users className="w-3.5 h-3.5 text-primary" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.networkThisWeek}</span>
+              network {stats.networkThisWeek === 1 ? "touch" : "touches"}
+            </span>
+          )}
+          {stats.learningThisWeek > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <GraduationCap className="w-3.5 h-3.5 text-primary" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.learningThisWeek}</span>
+              learning
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Quick-capture — always here so a stray thought never needs another tab. */}
       {activeGoal && (
@@ -856,6 +892,15 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium leading-snug">{compactTitle}</p>
+                        {(() => {
+                          const est = linkedTask?.estimateMinutes;
+                          if (!est) return null;
+                          return (
+                            <span className="text-[10px] font-medium text-muted-foreground bg-muted rounded-full px-2 py-0.5 shrink-0">
+                              ~{est < 60 ? `${est}m` : `${Math.round(est / 60)}h`}
+                            </span>
+                          );
+                        })()}
                         {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
                         {preShrunk && <span className="shrink-0 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
                       </div>
@@ -1045,11 +1090,6 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           <div className="mt-2">
             <div className="flex items-center justify-between mb-2.5">
               <GroupLabel>{alsoToday.length > 0 ? "Other tasks" : "Done today"}</GroupLabel>
-              {stats && stats.doneThisWeek > 0 && (
-                <span className="text-xs text-muted-foreground inline-flex items-center gap-1" data-testid="text-momentum">
-                  <Trophy className="w-3.5 h-3.5 text-primary" /> {stats.doneThisWeek} done this week
-                </span>
-              )}
             </div>
             {alsoToday.length > 0 && (
               <div className="rounded-xl border border-card-border bg-card p-3.5">

@@ -501,8 +501,8 @@ function JobCapabilitySupport({
             {savedLearningRec
               ? "Anchor already saved a useful prep starter for this track, so you can start from that instead of setting one up from scratch."
               : needsPrep
-                ? "This role may need clearer learning support. Add one suggested starter if you want more focused help here."
-                : "No learning item is linked to this role type yet. Add one suggested starter if you want extra support for this role or interview."}
+                ? "This role may need clearer role-specific support. Add one suggested starter if you want more focused help here."
+                : "No support item is linked to this role type yet. Add one suggested starter if you want extra support for this role or interview."}
           </p>
           {requiredDomains.length > 0 && (
             <div className="flex flex-wrap gap-1.5">

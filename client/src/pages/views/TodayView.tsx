@@ -578,7 +578,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                       {compactSummary && <p className="text-xs text-muted-foreground mt-0.5">{compactSummary}</p>}
                       {broadPursuitCoverage && (
                         <div className="mt-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Portfolio still missing</p>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Still needs coverage</p>
                           <div className="mt-1.5 space-y-1.5">
                             {broadPursuitLines.map((line) => (
                               <p key={line.key} className="text-xs text-muted-foreground">
@@ -600,7 +600,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                       {extraReasons.length > 0 && (
                         <details className="mt-2">
                           <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground hover:text-foreground list-none">
-                            Why this
+                            Why this is on your list
                           </summary>
                           <div className="mt-2 space-y-1.5 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                             {extraReasons.map((reason, reasonIndex) => (

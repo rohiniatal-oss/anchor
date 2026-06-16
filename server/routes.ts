@@ -390,6 +390,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         coreClaim: trimSentence(draft.coreClaim, 180),
         contentPillar: trimSentence(draft.contentPillar, 140),
       } as any);
+      if (created) generateHustleArc(created).catch(() => {});
     } else if (entityType === "job") {
       created = await storage.createJob({
         title,
@@ -402,6 +403,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         roleArchetype: trimSentence(draft.roleArchetype, 120),
         relatedTrackId: trackId,
       } as any);
+      if (created) generateJobPrepArc(created).catch(() => {});
     } else {
       created = await storage.createTask({
         title,

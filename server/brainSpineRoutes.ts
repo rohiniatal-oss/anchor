@@ -71,10 +71,22 @@ async function readBrainInputs(day?: string) {
   return { tasks, jobs, learn, hustles, contacts, tracks, events };
 }
 
+async function buildLearnMilestoneProgress(learnItems: any[]): Promise<Map<number, { done: number; total: number }>> {
+  const map = new Map<number, { done: number; total: number }>();
+  for (const l of learnItems) {
+    if (l.sourceType !== "recommendation" || l.sourceId == null) continue;
+    const milestones = await storage.getRecommendationMilestones(l.sourceId).catch(() => []);
+    if (!milestones.length) continue;
+    map.set(l.id, { done: milestones.filter((m: any) => m.status === "done").length, total: milestones.length });
+  }
+  return map;
+}
+
 async function buildAndPersistPlan(day: string, energy: "low" | "medium" | "high") {
   const inputs = await readBrainInputs(day);
   const busy = await busyMinutesFor(day);
-  const r = planDay(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, busy, inputs.contacts, inputs.tracks);
+  const learnMilestoneProgress = await buildLearnMilestoneProgress(inputs.learn);
+  const r = planDay(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, busy, inputs.contacts, inputs.tracks, learnMilestoneProgress);
   let plan = await storage.getPlanByDate(day);
   const planMode = r.mode === "low" ? "low_energy" : r.mode;
   if (!plan) plan = await storage.createPlan({ date: day, mode: planMode, energy, status: "active", enoughForToday: false, note: r.note } as any);
@@ -124,7 +136,8 @@ export function registerBrainSpineRoutes(app: Express) {
       const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
       const inputs = await readBrainInputs(day);
       const busy = await busyMinutesFor(day);
-      const r = planDay(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, busy, inputs.contacts, inputs.tracks);
+      const learnMilestoneProgress = await buildLearnMilestoneProgress(inputs.learn);
+      const r = planDay(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, busy, inputs.contacts, inputs.tracks, learnMilestoneProgress);
       res.json({ ...r, busyMinutes: busy, events: inputs.events });
     } catch (err) { next(err); }
   });

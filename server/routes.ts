@@ -20,7 +20,7 @@ import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
-import { generateJobPrepArc } from "./learningCurriculum";
+import { generateJobPrepArc, generateHustleArc } from "./learningCurriculum";
 import OpenAI from "openai";
 
 const acceptRecommendationSchema = z.object({
@@ -126,6 +126,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     (d) => storage.createJob(d), (id, d) => storage.updateJob(id, d), (id) => storage.deleteJob(id));
   crud(app, "learn", () => storage.getLearn(), insertLearnSchema,
     (d) => storage.createLearn(d), (id, d) => storage.updateLearn(id, d), (id) => storage.deleteLearn(id));
+  // Custom POST /api/hustles: same as crud but fires hustle arc generation.
+  app.post("/api/hustles", async (req, res) => {
+    const p = insertHustleSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const hustle = await storage.createHustle(p.data);
+    res.json(hustle);
+    generateHustleArc(hustle).catch(() => {
+      console.error(`hustle arc generation skipped for hustle ${hustle.id}`);
+    });
+  });
   crud(app, "hustles", () => storage.getHustles(), insertHustleSchema,
     (d) => storage.createHustle(d), (id, d) => storage.updateHustle(id, d), (id) => storage.deleteHustle(id));
   crud(app, "wins", () => storage.getWins(), insertWinSchema,

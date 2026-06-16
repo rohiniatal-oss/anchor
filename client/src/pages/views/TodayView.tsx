@@ -503,10 +503,10 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const today = tasks.filter((t) => t.list === "today" && !t.done);
   const doneToday = tasks.filter((t) => t.list === "today" && t.done);
   const pinned = today.find((t) => t.pinned);
-  const pinnedPlanItem = pinned ? planItems.find((it) => it.id === pinned.planItemId) || null : null;
 
   const [plan, setPlan] = useState<DayPlanT | null>(null);
   const [planItems, setPlanItems] = useState<PlanItemT[]>([]);
+  const pinnedPlanItem = pinned ? planItems.find((it) => it.id === pinned.planItemId) || null : null;
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [showSecondary, setShowSecondary] = useState<boolean | null>(null);
   const [showDoneList, setShowDoneList] = useState<boolean | null>(null);

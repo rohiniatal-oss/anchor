@@ -12,7 +12,7 @@
 
 import OpenAI from "openai";
 import { storage } from "./storage";
-import type { Job } from "@shared/schema";
+import type { Job, Hustle } from "@shared/schema";
 
 const USER_PROFILE =
   "ex-Bain consultant, ex-Tony Blair Institute, Abraaj/private equity, public-sector strategy, KSA/Africa investment work. " +
@@ -407,6 +407,141 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     `Sentence 3: what you'd bring that someone with a purely academic or policy background wouldn't. ` +
     `Keep it under 80 words. Read it aloud — if it sounds like a template, rewrite it."\n` +
     `doneWhen: has a complete opening narrative she would actually use — not a draft, a real version she'd send.\n\n` +
+    `Return ONLY valid JSON:\n` +
+    `{"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["question 1","question 2","question 3"]}]}`;
+
+  let parsed: { milestones?: unknown[] } = {};
+  try {
+    const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
+    const text = (r.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+    try { parsed = JSON.parse(text); } catch { return; }
+  } catch {
+    return;
+  }
+
+  const rawMilestones = Array.isArray(parsed.milestones) ? parseMilestones(parsed.milestones) : [];
+  if (!rawMilestones.length) return;
+
+  for (let i = 0; i < rawMilestones.length; i++) {
+    const m = rawMilestones[i];
+    const label = clean(m.label, 120);
+    if (!label) continue;
+    const milestoneType = ["content", "synthesis", "artifact"].includes(String(m.milestoneType))
+      ? String(m.milestoneType) as "content" | "synthesis" | "artifact"
+      : "content";
+    await storage.createRecommendationMilestone({
+      recommendationId: rec.id,
+      milestoneKey: `m${i + 1}`,
+      label,
+      doneWhen: clean(m.doneWhen, 300),
+      suggestedTaskTitle: clean(m.suggestedTaskTitle, 200),
+      milestoneType,
+      scaffolding: scaffoldingText(m.scaffolding),
+      subdivisionKey: "",
+      status: i === 0 ? "active" : "todo",
+      sequence: i,
+    } as any);
+  }
+}
+
+/**
+ * Generate and persist a structured execution arc for a proof-asset hustle.
+ * Idempotent: skips if a hustle-arc recommendation already exists for this hustle.
+ *
+ * Arc: ORIENT → DRAFT → SYNTHESISE → ARTIFACT
+ * - ORIENT (content): Research the space — what's already been written, what's missing
+ * - DRAFT (content): Write a complete first version — done, not perfect
+ * - SYNTHESISE (synthesis): Step back — what's actually strongest, what needs to go
+ * - ARTIFACT (artifact): The publish-ready version + the one-line pitch for it
+ */
+export async function generateHustleArc(hustle: Hustle): Promise<void> {
+  const gapKey = `hustle-arc-${hustle.id}`;
+  const existing = await storage.getRecommendations();
+  if (existing.some((r) => r.linkedGapKey === gapKey)) return;
+
+  const recTitle = `Build: ${hustle.title}`;
+  const rec = await storage.createRecommendation({
+    collection: "hustle-arc",
+    kind: "hustle-arc",
+    status: "accepted",
+    source: "system",
+    title: recTitle,
+    whySuggested: `Structured execution arc for "${hustle.title}".`,
+    linkedTrackId: hustle.proofAssetForTrack ?? null,
+    linkedGapKey: gapKey,
+    linkedCombination: "",
+    freshnessLabel: "",
+    sourceLabel: "Anchor",
+    sourceUrl: "",
+    rankScore: 75,
+    rankReason: "Proof asset execution",
+    executionShape: "milestone-arc",
+    acceptanceEntityType: "learn",
+    acceptanceDraft: JSON.stringify({ hustleId: hustle.id }),
+    confidenceScore: null,
+    duplicateOfId: null,
+  });
+
+  await storage.createLearn({
+    title: recTitle,
+    category: "hustle",
+    type: "resource",
+    learnStatus: "active",
+    active: true,
+    done: false,
+    sourceType: "recommendation",
+    sourceId: rec.id,
+    relatedTrackId: hustle.proofAssetForTrack ?? undefined,
+    capabilityBuilt: `Proof asset: ${hustle.title}`,
+    requiredOutput: hustle.coreClaim || `Published version of ${hustle.title}`,
+    note: hustle.note || "",
+  } as any);
+
+  const context = [
+    `Proof asset: "${hustle.title}"`,
+    hustle.audience ? `Target audience: ${hustle.audience}` : "",
+    hustle.coreClaim ? `Core claim: ${hustle.coreClaim}` : "",
+    hustle.contentPillar ? `Content pillar: ${hustle.contentPillar}` : "",
+    hustle.stage ? `Current stage: ${hustle.stage}` : "",
+  ].filter(Boolean).join("\n");
+
+  const client = new OpenAI();
+  const prompt =
+    `You are a writing coach for a strategy professional building public proof assets. ` +
+    `User profile: ${USER_PROFILE}\n\n` +
+    `${context}\n\n` +
+    `Generate a 4-milestone execution arc to take this from idea to published proof asset. ` +
+    `Be specific to THIS piece — not generic writing advice.\n\n` +
+    `MILESTONE 1 — ORIENT (milestoneType: "content"):\n` +
+    `Research the space before writing. Find 2-3 pieces already written on this topic.\n` +
+    `suggestedTaskTitle: e.g. "Search for existing ${hustle.title.toLowerCase()} pieces — note what's missing"\n` +
+    `scaffolding: "What's the best existing piece on this — and what's wrong with it or missing from it? | ` +
+    `What's the ONE angle that nobody has taken? | ` +
+    `What would make someone who already knows this topic share it anyway?"\n` +
+    `doneWhen: has read 2-3 comparable pieces and can state the specific gap this piece fills.\n\n` +
+    `MILESTONE 2 — DRAFT (milestoneType: "content"):\n` +
+    `Write a complete first draft — done, not perfect. Get it out.\n` +
+    `suggestedTaskTitle: "Write a full first draft of ${hustle.title} — aim for 80% there in one sitting"\n` +
+    `scaffolding: ` +
+    `"${hustle.coreClaim ? `Start from the core claim: ${hustle.coreClaim}. ` : "Start with the one thing you most want the reader to leave with. "}` +
+    `Write the intro first, then the 3 most important points, then the outro. ` +
+    `Don't edit as you go — just write. ` +
+    `What's the one story or example that makes this real?"\n` +
+    `doneWhen: has a complete first draft — every section exists, even if rough.\n\n` +
+    `MILESTONE 3 — SYNTHESISE (milestoneType: "synthesis"):\n` +
+    `No rewriting. Just read it and identify what's actually working.\n` +
+    `suggestedTaskTitle: "Read the draft aloud — mark what lands and what feels forced"\n` +
+    `scaffolding: "What's the ONE paragraph you'd save if you had to cut everything else? | ` +
+    `What's the thing you're most embarrassed to have written — what does that reveal? | ` +
+    `What do you actually believe that you're NOT saying directly?"\n` +
+    `doneWhen: has annotated the draft with 3 things to keep and 2 things to cut or rewrite.\n\n` +
+    `MILESTONE 4 — ARTIFACT (milestoneType: "artifact"):\n` +
+    `Produce the publish-ready version and the pitch line.\n` +
+    `suggestedTaskTitle: "Final edit of ${hustle.title} — and write the one-sentence pitch for it"\n` +
+    `scaffolding: "Open with the strongest line you have — not a question, not a preamble, just the thing. ` +
+    `Cut anything that doesn't earn its place. ` +
+    `Pitch line: I wrote [title] because [specific reason]. It argues [specific claim]. It's for [specific reader].\n` +
+    `doneWhen: has a version she'd actually publish today, and a one-sentence pitch she'd use to share it.\n\n` +
     `Return ONLY valid JSON:\n` +
     `{"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["question 1","question 2","question 3"]}]}`;
 

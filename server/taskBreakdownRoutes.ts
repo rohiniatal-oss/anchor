@@ -242,7 +242,7 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
   if (bundle.sourceKind === "goal") {
     if (goalNeedsNetworkSupport(text)) return "Open Network and add one person you could realistically reach out to for this path";
-    if (goalNeedsPrepSupport(text)) return "Open Learn and add one support item, note, or resource for this path";
+    if (goalNeedsPrepSupport(text)) return "Open Learn and add one prep item, note, or resource for this path";
     if (workflowState?.currentStage === "Define target") return "Open Jobs and look at the first path that still has no saved role";
     if (workflowState?.currentStage === "Build list") return laneSpecificSearchMove(text) || "Open Jobs and save the first real role for one path that is still missing one";
     if (workflowState?.currentStage === "Execute next batch") return "Open the saved role and take the next concrete pipeline action";
@@ -430,10 +430,10 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       `Note which live path still lacks outreach support after this`,
     ];
     if (goalNeedsPrepSupport(text)) return [
-      `Open Learn and add one support item, note, or resource for this live role path`,
+      `Open Learn and add one prep item, note, or resource for this live role path`,
       `Pick the one note, brief, or example that would help this path most`,
       `Write a short note on how you would use that prep later`,
-      `Note which live path still lacks role-specific support after this`,
+      `Note which live path still lacks role-specific prep after this`,
     ];
     if (currentStage === "Define target") return [
       `Open Jobs and find which path still has no saved role`,

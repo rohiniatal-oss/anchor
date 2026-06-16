@@ -504,17 +504,17 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         source: "goal",
         sourceId: 300 + index,
         taskId: null,
-        title: `Add one role-support item for ${combination}`,
+        title: `Add one prep item in Learn for ${combination}`,
         category: "learning",
         size: "medium",
         deadline: "",
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `This live role type still needs role-specific support: ${combination}. Add one support item in Learn for it next.`,
+        sourceNote: `This live role type still needs role-specific prep: ${combination}. Add one prep item in Learn for it next.`,
         sourceStatus: "broad_parallel_pursuit_learning_support",
-        doneWhen: `One support item in Learn exists for ${combination}`,
-        whyNow: `the ${combination} path still needs role-specific support`,
+        doneWhen: `One prep item in Learn exists for ${combination}`,
+        whyNow: `the ${combination} path still needs role-specific prep`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -1232,7 +1232,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
       return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Open Learn and add one support item, note, or resource for ${candidate.targetRole}.`;
+      if (candidate?.targetRole) return `Open Learn and add one prep item, note, or resource for ${candidate.targetRole}.`;
       return broadPursuitMissingPrepFirstStep(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1270,7 +1270,7 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
       return broadPursuitMissingContactsStopRule();
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one support item in Learn.`;
+      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one prep item in Learn.`;
       return broadPursuitMissingPrepStopRule();
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1308,7 +1308,7 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
       return broadPursuitMissingContactsSourceFrame(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `${candidate.targetRole} still needs role-specific support, so the best move is to add one support item in Learn for it now.`;
+      if (candidate?.targetRole) return `${candidate.targetRole} still needs role-specific prep, so the best move is to add one prep item in Learn for it now.`;
       return broadPursuitMissingPrepSourceFrame(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {

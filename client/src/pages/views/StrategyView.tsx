@@ -324,7 +324,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             {needsPrepItem && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a first support item.</p>
+                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a first prep item.</p>
                   {prepStarter && !savedLearningRec && (
                     <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Start with: <span className="font-medium text-foreground">{prepStarter.title}</span>.</p>
                   )}

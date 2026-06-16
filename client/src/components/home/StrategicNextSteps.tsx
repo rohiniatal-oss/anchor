@@ -27,8 +27,21 @@ type NextStep = {
   title: string;
   detail: string;
   action: string;
+  mode: "setup" | "do-now";
   onClick: () => void;
 };
+
+function nextStepsFooterText(steps: NextStep[]) {
+  const setupCount = steps.filter((step) => step.mode === "setup").length;
+  const doNowCount = steps.filter((step) => step.mode === "do-now").length;
+  if (doNowCount > 0 && setupCount === 0) {
+    return "Start with the first one. The rest can wait until that move is done.";
+  }
+  if (doNowCount > 0) {
+    return "Do the first one if it is already live. If not, set up the smallest missing piece and I will shape the day from there.";
+  }
+  return "Add one or two of these - I will shape a day plan from there.";
+}
 
 function visibleLearningRecommendationForTrack(
   recs: Recommendation[],
@@ -72,6 +85,7 @@ function buildSteps(
           ? track.recommendedMove || track.bottleneckLabel || "You already have roles here, so the next move is to sharpen which one is worth pursuing."
           : "Even a wishlist role gives this track direction - the search cannot move without one.",
         action: hasSavedRole ? "Open jobs" : "Add a job",
+        mode: hasSavedRole ? "do-now" : "setup",
         onClick: () => onOpenTab("jobs"),
       });
     } else if (b === "learning") {
@@ -97,6 +111,7 @@ function buildSteps(
             ? `${domainLabel} is a real weak area for this role type, so Anchor should give you one clear way to begin.`
             : "This track needs its first learning item before you can be ready to apply.",
         action: savedLearningRec ? "Open starter" : "Use starter",
+        mode: savedLearningRec ? "do-now" : "setup",
         onClick: savedLearningRec
           ? () => onOpenTab("learn")
           : () => {
@@ -120,6 +135,7 @@ function buildSteps(
           : `Work the strongest role for "${track.name}"`,
         detail: track.recommendedMove || track.bottleneckLabel || "A real role is close enough to work on now, so the next move should make it more ready rather than add more prep.",
         action: hasTaskTrail ? "Open today" : "Open jobs",
+        mode: "do-now",
         onClick: () => onOpenTab(hasTaskTrail ? "today" : "jobs"),
       });
     } else if (b === "warmth") {
@@ -133,6 +149,7 @@ function buildSteps(
           ? track.recommendedMove || track.bottleneckLabel || `You already have people linked here, so the next move is to use that access better.`
           : `You have live jobs for this track but no one to reach out to yet. One advice conversation could open doors.`,
         action: hasContacts ? "Open network" : "Add a contact",
+        mode: hasContacts ? "do-now" : "setup",
         onClick: () => {
           if (hasContacts) {
             onOpenTab("network");
@@ -157,6 +174,7 @@ function buildSteps(
         title: "Pick one task and finish it today",
         detail: track.bottleneckLabel || "You have tasks ready to go - none have been started yet.",
         action: "Open today",
+        mode: "do-now",
         onClick: () => onOpenTab("today"),
       });
     } else if (b === "proof") {
@@ -165,6 +183,7 @@ function buildSteps(
         title: `Move a stalled project forward for "${track.name}"`,
         detail: "A project you started has stalled. One concrete step today keeps it moving.",
         action: "Open projects",
+        mode: "do-now",
         onClick: () => onOpenTab("learn"),
       });
     }
@@ -248,7 +267,7 @@ export function StrategicNextSteps({
         })}
       </div>
       <p className="text-xs text-muted-foreground mt-3">
-        Add one or two of these - I will shape a day plan from there.
+        {nextStepsFooterText(steps)}
       </p>
     </div>
   );

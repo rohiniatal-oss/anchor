@@ -334,6 +334,21 @@ CREATE TABLE IF NOT EXISTS contact_interactions (
   note TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL DEFAULT 0
 );
+CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_source_step ON tasks(source_step_type, source_step_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_list_done ON tasks(list, done);
+CREATE INDEX IF NOT EXISTS idx_day_plan_items_plan ON day_plan_items(plan_id);
+CREATE INDEX IF NOT EXISTS idx_day_plan_items_task ON day_plan_items(task_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_activity_log_source ON activity_log(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_wins_track ON wins(track_id);
+CREATE INDEX IF NOT EXISTS idx_wins_created ON wins(created_at);
+CREATE INDEX IF NOT EXISTS idx_contacts_track ON contacts(related_track_id);
+CREATE INDEX IF NOT EXISTS idx_contact_classifications_contact ON contact_classifications(contact_id);
+CREATE INDEX IF NOT EXISTS idx_contact_interactions_contact ON contact_interactions(contact_id);
+CREATE INDEX IF NOT EXISTS idx_network_gaps_track ON network_gaps(track_id);
+CREATE INDEX IF NOT EXISTS idx_recommendation_milestones_rec ON recommendation_milestones(recommendation_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 `;
 
 // Migrations for columns added to existing tables after initial release.

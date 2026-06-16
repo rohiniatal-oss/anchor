@@ -14,9 +14,10 @@ import { todayKey } from "@/lib/utils";
 import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
 import { CareerCompassCard } from "@/components/home/CareerCompassCard";
+import { StrategicNextSteps } from "@/components/home/StrategicNextSteps";
 import { GroupLabel } from "@/components/home/GroupLabel";
 import OnboardingView from "@/pages/views/OnboardingView";
-import type { Task, Event } from "@shared/schema";
+import type { Task, Event, Recommendation } from "@shared/schema";
 import type { Tab } from "@/lib/homeTypes";
 import {
   type PlanItemT, type DayPlanT, type CareerGoalT, type GoalsStateResponseT,
@@ -382,6 +383,9 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { data: tracks = [], isLoading: tracksLoading, isError: tracksError } = useCareerTracks();
   const { data: goalState } = useQuery<GoalsStateResponseT>({ queryKey: ["/api/goals/state"] });
+  const { data: diagnosticsData } = useQuery({ queryKey: ["/api/strategy/diagnostics"] });
+  const { data: recommendations = [] } = useQuery<Recommendation[]>({ queryKey: ["/api/recommendations"] });
+  const diagnosticTracks = (diagnosticsData as any)?.tracks || [];
   const day = todayKey();
   const { data: events = [] } = useQuery<Event[]>({ queryKey: ["/api/events", day] });
   const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
@@ -634,15 +638,23 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               {plan.note && <p className="text-xs text-muted-foreground mt-3 italic">{plan.note}</p>}
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-border p-6 text-center">
-              <p className="text-sm text-muted-foreground mb-3">Nothing queued to plan yet. Add a thought, a job, or something to learn - then I'll shape a day.</p>
-              <div className="flex flex-wrap justify-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => onOpenTab("braindump")}>Brain dump</Button>
-                <Button size="sm" variant="outline" onClick={() => getPlan(energy, true)}>Try again</Button>
-              </div>
-            </div>
+            <StrategicNextSteps
+              tracks={diagnosticTracks}
+              recommendations={recommendations}
+              onOpenTab={onOpenTab}
+            />
           )}
         </div>
+      )}
+
+      {/* Strategic compact callout — shown when plan has items but track still has unaddressed bottlenecks */}
+      {!pinned && activeItems.length > 0 && diagnosticTracks.some((t: any) => t.status === "active" && t.bottleneck !== "none" && t.bottleneck !== "execution") && (
+        <StrategicNextSteps
+          tracks={diagnosticTracks}
+          recommendations={recommendations}
+          onOpenTab={onOpenTab}
+          compact
+        />
       )}
 
       {/* Also on your list — ONE secondary list, deduped against the plan above.

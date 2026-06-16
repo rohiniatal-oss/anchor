@@ -19,7 +19,7 @@ type TrackDiagnostic = {
   bottleneckLabel: string;
   recommendedMove: string;
   learningGap: { topGapDomain: string | null; topGapLabel: string | null } | null;
-  counts: { jobs: number; contacts: number };
+  counts: { jobs: number; contacts: number; tasks?: number };
 };
 
 type NextStep = {
@@ -69,7 +69,7 @@ function buildSteps(
         action: "Add a job",
         onClick: () => onOpenTab("jobs"),
       });
-    } else if (b === "learning" || b === "readiness") {
+    } else if (b === "learning") {
       const domainLabel = track.learningGap?.topGapLabel || null;
       const domain = domainLabel || track.name;
       const savedLearningRec = visibleLearningRecommendationForTrack(
@@ -106,13 +106,33 @@ function buildSteps(
               onOpenTab("learn");
             },
       });
+    } else if (b === "readiness") {
+      const hasTaskTrail = (track.counts.tasks || 0) > 0;
+      steps.push({
+        icon: hasTaskTrail ? ListChecks : Briefcase,
+        title: hasTaskTrail
+          ? `Unblock the next application move for "${track.name}"`
+          : `Work the strongest role for "${track.name}"`,
+        detail: track.recommendedMove || track.bottleneckLabel || "A real role is close enough to work on now, so the next move should make it more ready rather than add more prep.",
+        action: hasTaskTrail ? "Open tasks" : "Open jobs",
+        onClick: () => onOpenTab(hasTaskTrail ? "braindump" : "jobs"),
+      });
     } else if (b === "warmth") {
+      const hasContacts = track.counts.contacts > 0;
       steps.push({
         icon: Users,
-        title: `Add a contact for "${track.name}"`,
-        detail: `You have live jobs for this track but no one to reach out to yet. One advice conversation could open doors.`,
-        action: "Add a contact",
+        title: hasContacts
+          ? `Follow up or sharpen the ask for "${track.name}"`
+          : `Add a contact for "${track.name}"`,
+        detail: hasContacts
+          ? track.recommendedMove || track.bottleneckLabel || `You already have people linked here, so the next move is to use that access better.`
+          : `You have live jobs for this track but no one to reach out to yet. One advice conversation could open doors.`,
+        action: hasContacts ? "Open network" : "Add a contact",
         onClick: () => {
+          if (hasContacts) {
+            onOpenTab("network");
+            return;
+          }
           const draft = {
             relatedTrackId: track.id,
             askType: "advice",

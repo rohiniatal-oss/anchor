@@ -1,5 +1,6 @@
 import { USER_PROFILE } from "./userPromptProfile";
 import { llm, llmJSON } from "./llm";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 import type { CareerTrack, Contact, Job, NetworkGap } from "@shared/schema";
 
 export type ArchetypeKey =
@@ -99,8 +100,9 @@ export async function generateNetworkGaps(
     ? existingContacts.map((c) => `- ${c.who}${c.targetOrg ? ` @ ${c.targetOrg}` : ""}${c.sector ? ` (${c.sector})` : ""}`).join("\n")
     : "None yet";
 
+  const ctx = await buildUserContext();
   const prompt =
-    `You are building a network strategy for ${USER_PROFILE}\n\n` +
+    `You are building a network strategy for ${formatContextForPrompt(ctx)}\n\n` +
     `CAREER TRACK: "${track.name}"\n` +
     (track.description ? `Description: ${track.description}\n` : "") +
     (track.whyItFits ? `Why it fits her: ${track.whyItFits}\n` : "") +
@@ -337,9 +339,10 @@ export async function draftOutreachMessage(
   const hasName = !!(contact.name || "").trim();
   const nameOrg = [contact.name, contact.targetOrg].filter(Boolean).join(" at ");
 
+  const ctx = await buildUserContext();
   const systemPrompt =
     `You are helping Rohini Atal draft a professional outreach message.\n\n` +
-    `ABOUT ROHINI: ${USER_PROFILE}\n` +
+    `ABOUT ROHINI: ${formatContextForPrompt(ctx)}\n` +
     (track ? `She is pursuing: ${track.name}.\n` : "") +
     `\nABOUT THE CONTACT:\n` +
     `Who/role: ${contact.who}\n` +

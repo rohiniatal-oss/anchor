@@ -373,6 +373,7 @@ export class DatabaseStorage implements IStorage {
     db.update(contacts).set({ relatedTrackId: null } as any).where(eq(contacts.relatedTrackId, id)).run();
     db.update(wins).set({ trackId: null } as any).where(eq(wins.trackId, id)).run();
     db.delete(networkGaps).where(eq(networkGaps.trackId, id)).run();
+    db.delete(contactClassifications).where(eq(contactClassifications.trackId, id)).run();
     const trackRecs = db.select().from(recommendations).where(eq(recommendations.linkedTrackId, id)).all();
     for (const rec of trackRecs) {
       db.delete(recommendationSubdivisions).where(eq(recommendationSubdivisions.recommendationId, rec.id)).run();

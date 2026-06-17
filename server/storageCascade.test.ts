@@ -81,6 +81,19 @@ test("deleteCareerTrack deletes network gaps for the track", async () => {
   assert.equal(after.length, 0);
 });
 
+test("deleteCareerTrack deletes contact classifications for the track", async () => {
+  const track = await makeTrack();
+  const contact = await h.storage.createContact({ name: "Test Contact" } as any);
+  await h.storage.upsertContactClassifications(contact.id, [
+    { trackId: track.id, archetype: "insider", relevanceScore: 4, accessTypes: "[]", reasoning: "test" },
+  ]);
+  const before = await h.storage.getContactClassifications(contact.id);
+  assert.ok(before.length > 0);
+  await h.storage.deleteCareerTrack(track.id);
+  const after = await h.storage.getContactClassifications(contact.id);
+  assert.equal(after.length, 0);
+});
+
 test("deleteCareerTrack deletes recommendations linked to the track", async () => {
   const track = await makeTrack();
   await h.storage.createRecommendation({

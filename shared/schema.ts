@@ -238,6 +238,7 @@ export const recommendations = sqliteTable("recommendations", {
   acceptanceEntityType: text("acceptance_entity_type").notNull().default(""),
   acceptanceDraft: text("acceptance_draft").notNull().default("{}"), // JSON
   duplicateOfId: integer("duplicate_of_id"),
+  contextHash: text("context_hash"),
   createdAt: integer("created_at").notNull(),
   reviewedAt: integer("reviewed_at"),
   acceptedAt: integer("accepted_at"),
@@ -281,10 +282,9 @@ export const wins = sqliteTable("wins", {
   text: text("text").notNull(),
   kind: text("kind").notNull().default("manual"), // manual|planned|spontaneous|coach|source|mvd
   winCategory: text("win_category").notNull().default("mindset"), // job_progress|learning|network|proof_asset|mindset|admin
-  // P5 — explicit track attribution, set from the originating task's relatedTrackId
-  // on win creation. Replaces the fragile 4.5 text-match: evidence.ts PREFERS this
-  // column when present and falls back to text-match for legacy rows. Null = untracked.
   trackId: integer("track_id"),
+  sourceEntityType: text("source_entity_type"),
+  sourceEntityId: integer("source_entity_id"),
   createdAt: integer("created_at").notNull(),
 });
 

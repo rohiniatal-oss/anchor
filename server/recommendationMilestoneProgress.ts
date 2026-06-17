@@ -58,6 +58,8 @@ async function closeLinkedOpenTasksForMilestone(milestoneId: number) {
       kind: "planned",
       winCategory: winCategoryForTask(task),
       trackId: task.relatedTrackId ?? null,
+      sourceEntityType: task.sourceType || "task",
+      sourceEntityId: task.sourceId ?? task.id,
     } as any);
     await storage.logActivity({
       eventType: "completed",

@@ -4,6 +4,7 @@ import { learningGapPrepStarter } from "@shared/learningGapSuggestions";
 import { domainLabel } from "@shared/capabilityDomains";
 import type { CapabilityDomainKey } from "@shared/capabilityTargets";
 import { generateLearningCurriculum, generateContactArchetypes } from "./learningCurriculum";
+import { buildUserContext, contextFingerprint } from "./userContext";
 
 // Statuses that can be staled when a gap closes. Terminal statuses (accepted /
 // rejected / archived / duplicate / stale) are never touched by the sync.
@@ -15,13 +16,15 @@ const COVERED_STATUSES = new Set(["new", "ranked", "saved", "accepted"]);
 // Idempotent: deduped by (linkedTrackId + linkedGapKey + collection) so running
 // it twice leaves the same state. Never touches manually-created or accepted recs.
 export async function syncGapRecommendations(): Promise<void> {
-  const [recs, tracks, learningGapsResult, contacts, jobs] = await Promise.all([
+  const [recs, tracks, learningGapsResult, contacts, jobs, userCtx] = await Promise.all([
     storage.getRecommendations(),
     storage.getCareerTracks(),
     computeLearningGaps(),
     storage.getContacts(),
     storage.getJobs(),
+    buildUserContext(),
   ]);
+  const ctxHash = contextFingerprint(userCtx);
 
   const activeTrackIds = new Set(tracks.filter((t) => t.status === "active").map((t) => t.id));
 
@@ -116,6 +119,7 @@ export async function syncGapRecommendations(): Promise<void> {
         }),
         confidenceScore: null,
         duplicateOfId: null,
+        contextHash: ctxHash,
       });
 
       newLearningRecs.push({ id: created.id, domain, label, trackId: lg.trackId });
@@ -176,6 +180,7 @@ export async function syncGapRecommendations(): Promise<void> {
       }),
       confidenceScore: null,
       duplicateOfId: null,
+      contextHash: ctxHash,
     });
 
     // Fire-and-forget: generate specific contact archetypes with LLM

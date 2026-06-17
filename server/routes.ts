@@ -222,6 +222,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         kind: "planned",
         winCategory: "learning",
         trackId: updated.relatedTrackId ?? null,
+        sourceEntityType: "learn",
+        sourceEntityId: id,
       } as any);
       await storage.logActivity({ eventType: "completed", sourceType: "learn", sourceId: id } as any);
     }

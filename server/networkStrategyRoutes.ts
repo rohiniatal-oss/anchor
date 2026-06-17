@@ -226,7 +226,7 @@ export function registerNetworkStrategyRoutes(app: Express) {
         type === "meeting" ? `Had a networking meeting: ${(contact as any).who || (contact as any).name}`
         : type === "intro" ? `Got an intro via ${(contact as any).who || (contact as any).name}`
         : `Got a referral from ${(contact as any).who || (contact as any).name}`;
-      await storage.createWin({ text: winText, winCategory: "network", kind: "spontaneous", trackId: (contact as any).relatedTrackId ?? undefined } as any);
+      await storage.createWin({ text: winText, winCategory: "network", kind: "spontaneous", trackId: (contact as any).relatedTrackId ?? undefined, sourceEntityType: "contact", sourceEntityId: id } as any);
     }
 
     // Get classification for archetype (uses stored classifications if available)

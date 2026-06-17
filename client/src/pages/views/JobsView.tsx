@@ -311,13 +311,18 @@ function getJobCapabilitySupportItems(trackId: number | null, learns: Learn[]) {
     .slice(0, 3);
 }
 
-function getJobWarmSupport(trackId: number | null, contacts: Contact[]) {
+function getJobWarmSupport(trackId: number | null, contacts: Contact[], job?: { company?: string; title?: string }) {
   const trackContacts = trackId != null ? contacts.filter((c) => getTrackId("contacts", c) === trackId) : [];
-  const warmTrackContacts = trackContacts.filter((c) => c.status === "messaged" || c.status === "replied" || getRelationshipStrength(c) !== "cold");
-  const weak = trackId == null ? (contacts.length === 0) : ((warmTrackContacts.length === 0));
-  const pool = trackContacts.length > 0 ? trackContacts : contacts;
+  const companyLower = (job?.company || "").toLowerCase().trim();
+  const companyContacts = companyLower.length > 2
+    ? contacts.filter((c) => c.targetOrg && c.targetOrg.toLowerCase().includes(companyLower) && !trackContacts.some((tc) => tc.id === c.id))
+    : [];
+  const allRelevant = [...trackContacts, ...companyContacts];
+  const warmTrackContacts = allRelevant.filter((c) => c.status === "messaged" || c.status === "replied" || getRelationshipStrength(c) !== "cold");
+  const weak = allRelevant.length === 0 || warmTrackContacts.length === 0;
+  const pool = allRelevant.length > 0 ? allRelevant : contacts;
   const candidates = pool.filter((c) => c.status !== "replied").slice(0, 3);
-  return { trackContacts, warmTrackContacts, weak, candidates };
+  return { trackContacts: allRelevant, warmTrackContacts, weak, candidates, companyContacts };
 }
 
 function visibleTrackRecommendation(
@@ -587,7 +592,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
 
   const gated = j.eligibilityRisk === "likely_ineligible";
   const windowClosed = j.applicationWindowStatus === "closed" || j.status === "closed";
-  const warmSupport = getJobWarmSupport(trackId, contacts);
+  const warmSupport = getJobWarmSupport(trackId, contacts, j);
   const supportItems = getJobCapabilitySupportItems(trackId, learns);
   const requiredDomains = track ? requiredDomainsForTrack(track) : [];
   const savedContactRec = visibleTrackRecommendation(recommendations, { trackId, collection: "network-targets" });

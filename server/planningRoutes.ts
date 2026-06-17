@@ -439,7 +439,7 @@ export function registerPlanningRoutes(app: Express) {
       : task.category === "substack" || task.category === "hustle" || task.category === "afterline" ? "proof_asset"
       : task.sourceType === "contact" ? "network"
       : "admin";
-    await storage.createWin({ text: task.title, kind: "planned", winCategory, trackId: task.relatedTrackId ?? null } as any);
+    await storage.createWin({ text: task.title, kind: "planned", winCategory, trackId: task.relatedTrackId ?? null, sourceEntityType: task.sourceType || "task", sourceEntityId: task.sourceId ?? task.id } as any);
     await storage.logActivity({ eventType: "completed", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: id, planItemId: task.planItemId ?? undefined } as any);
     await syncPlanItem(day, task, { status: "completed", completedAt: Date.now() });
     await refreshDoneEnough(day);

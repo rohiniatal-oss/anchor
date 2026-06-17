@@ -1,6 +1,6 @@
 import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { buildLaneOperatingModel, type LaneOperatingModel } from "./laneState";
-import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
+import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llmJSON } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 

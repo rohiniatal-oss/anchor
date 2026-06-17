@@ -1,7 +1,6 @@
-import { USER_PROFILE } from "./userPromptProfile";
+import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
-import { COACH_PREAMBLE } from "./userPromptProfile";
 import type { CareerTrack, Contact, Job, NetworkGap } from "@shared/schema";
 
 export type ArchetypeKey =
@@ -168,7 +167,7 @@ export async function classifyContact(
 
   const prompt =
     `${COACH_PREAMBLE}You are classifying a contact for a career network.\n\n` +
-    `ABOUT THE USER: ${USER_PROFILE}\n\n` +
+    `ABOUT THE USER: ${formatContextForPrompt(await buildUserContext())}\n\n` +
     `ACTIVE CAREER TRACKS:\n` +
     tracks.map((t) => `- ID ${t.id}: "${t.name}"${t.description ? ` — ${t.description}` : ""}`).join("\n") +
     jobContext +

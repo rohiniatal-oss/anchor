@@ -13,7 +13,7 @@
 import { llmJSON } from "./llm";
 import { storage } from "./storage";
 import type { Job, Hustle } from "@shared/schema";
-import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
+import { COACH_PREAMBLE } from "./userPromptProfile";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 function clean(value: unknown, max = 280): string {

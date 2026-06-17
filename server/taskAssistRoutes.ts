@@ -3,7 +3,7 @@ import { storage } from "./storage";
 import { routeCapture, sortOpenCaptures } from "./capture";
 import { buildTaskIntakeDefaults } from "./taskIntakeInference";
 import { legacyCategoryToRoute } from "./captureCompatibility";
-import { USER_PROFILE } from "./userPromptProfile";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 
 export function registerTaskAssistRoutes(app: Express) {
@@ -120,7 +120,7 @@ export function registerTaskAssistRoutes(app: Express) {
     const alreadyTracked = contacts.map((c) => `${c.who} [${c.sector}]`);
     try {
       const j = await llmJSON<{ who?: string; sector?: string; why?: string }>(
-        `User profile: ${USER_PROFILE}\n\n` +
+        `${formatContextForPrompt(await buildUserContext())}\n\n` +
         `TARGET ROLES:\n${targets.map(t => `- ${t}`).join("\n") || "None yet"}\n\n` +
         `ALREADY TRACKED (don't repeat):\n${alreadyTracked.map(c => `- ${c}`).join("\n") || "None"}\n\n` +
         `EXCLUDE: ${JSON.stringify(exclude)}\n\n` +

@@ -1,7 +1,6 @@
-import { USER_PROFILE } from "./userPromptProfile";
+import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
-import { COACH_PREAMBLE } from "./userPromptProfile";
 import type { CareerTrack, Contact, Job, NetworkGap } from "@shared/schema";
 
 export type ArchetypeKey =
@@ -106,9 +105,9 @@ export async function generateNetworkGaps(
     `${COACH_PREAMBLE}You are building a network strategy.\n${formatContextForPrompt(ctx)}\n\n` +
     `CAREER TRACK: "${track.name}"\n` +
     (track.description ? `Description: ${track.description}\n` : "") +
-    (track.whyItFits ? `Why it fits her: ${track.whyItFits}\n` : "") +
-    `\nEXISTING CONTACTS IN HER NETWORK:\n${contactSummary}\n\n` +
-    `Generate exactly 5-6 types of people she needs to build relationships with to break into "${track.name}" roles.\n` +
+    (track.whyItFits ? `Why it fits: ${track.whyItFits}\n` : "") +
+    `\nEXISTING CONTACTS IN THIS TRACK:\n${contactSummary}\n\n` +
+    `Generate exactly 5-6 types of people the user needs to build relationships with to break into "${track.name}" roles.\n` +
     `Use ONLY these archetype keys: recent_switcher, near_peer, recruiter, senior_decision_maker, connector, domain_expert\n\n` +
     `For each archetype, be specific to THIS track and the user's actual background (derive from the profile above).\n\n` +
     `Return ONLY a JSON array:\n` +
@@ -117,7 +116,7 @@ export async function generateNetworkGaps(
     `    "archetype": "recent_switcher",\n` +
     `    "priority": "high",\n` +
     `    "reason": "why this archetype matters for THIS track specifically",\n` +
-    `    "whyItMatters": "what Rohini gains from talking to this person",\n` +
+    `    "whyItMatters": "what the user gains from talking to this person",\n` +
     `    "whatToAsk": "the exact question or ask that works best",\n` +
     `    "suggestedSearches": ["search query 1", "search query 2", "search query 3"]\n` +
     `  }\n` +
@@ -168,7 +167,7 @@ export async function classifyContact(
 
   const prompt =
     `${COACH_PREAMBLE}You are classifying a contact for a career network.\n\n` +
-    `ABOUT THE USER: ${USER_PROFILE}\n\n` +
+    `ABOUT THE USER: ${formatContextForPrompt(await buildUserContext())}\n\n` +
     `ACTIVE CAREER TRACKS:\n` +
     tracks.map((t) => `- ID ${t.id}: "${t.name}"${t.description ? ` — ${t.description}` : ""}`).join("\n") +
     jobContext +
@@ -235,13 +234,9 @@ export async function computeRecommendedMove(
   // Deterministic defaults when no AI needed
   const warmth = contact.relationshipStrength || "cold";
   const arch = classification?.archetype;
-  // Use outreachedAt/repliedAt timestamps (not lastMessage which is free text)
-  const lastActivityMs = (contact as any).repliedAt || (contact as any).outreachedAt || null;
-  const daysSinceMessage = lastActivityMs
-    ? Math.floor((Date.now() - lastActivityMs) / 86400000)
-    : null;
   const hasReplied = contact.status === "replied";
   const hasMessaged = contact.status === "messaged" || contact.status === "replied";
+  const daysSinceMessage: number | null = null;
   const isOverdue = contact.nextFollowUpDate
     ? new Date(contact.nextFollowUpDate + "T00:00:00") < new Date()
     : false;
@@ -375,13 +370,13 @@ export async function draftOutreachMessage(
     (userContext ? `\nADDITIONAL CONTEXT: ${userContext}\n` : "") +
     (hasName ? `\nSearch for "${nameOrg}" to find what they are currently working on. Use that to open with something specific.\n` : "") +
     `\nTHINK BEFORE WRITING:\n` +
-    `1. What is the most credible opening given Rohini's background and this connection?\n` +
-    `2. What's genuinely interesting to this person about hearing from Rohini?\n` +
+    `1. What is the most credible opening given the user's background and this connection?\n` +
+    `2. What's genuinely interesting to this person about hearing from the user?\n` +
     `3. How does the ask (${move.moveType}) land naturally given the relationship warmth (${contact.relationshipStrength})?\n` +
     `4. What specific detail makes this feel researched, not templated?\n\n` +
     `WRITE THE MESSAGE:\n` +
     `- 100-140 words maximum\n` +
-    `- First person as Rohini\n` +
+    `- First person as the user\n` +
     `- No salutation (no "Hi [Name]") — just the body text\n` +
     `- No sign-off — just the body\n` +
     `- Open with something specific and real (NOT "I hope you're well")\n` +

@@ -23,7 +23,7 @@ import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } f
 import { syncGapRecommendations } from "./gapRecommendations";
 import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
-import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
+import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 

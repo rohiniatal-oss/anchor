@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { storage } from "./storage";
 import type { Task } from "@shared/schema";
 import { buildCaptureTaskPatch } from "./captureTaskRouting";
-import { USER_PROFILE } from "./userPromptProfile";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { llmJSON, MODEL_LIGHT } from "./llm";
 
 async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof" | "network"): Promise<Record<string, string>> {
@@ -15,7 +15,7 @@ async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof
       ? `Fields: title (clean), nextStep (a concrete first move that produces something — not "think about it" but "write the one-sentence thesis").`
       : `Fields: who (specific person type, not "someone in the industry"), why (what they can uniquely provide), askType (soft|referral|advice|reconnect|follow_up), nextStep (concrete first action to find or reach them).`;
   const result = await llmJSON<Record<string, string>>(
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${formatContextForPrompt(await buildUserContext())}\n\n` +
     `TASK: Resolve a brain-dump capture into structured data.\n\n` +
     `REASONING STEPS:\n` +
     `1. Read the capture text and the user's profile.\n` +

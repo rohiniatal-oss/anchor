@@ -148,6 +148,7 @@ export async function generateNetworkGaps(
 export async function classifyContact(
   contact: Contact,
   tracks: CareerTrack[],
+  jobs?: Job[],
 ): Promise<ContactClassificationResult[]> {
   if (!contact.who && !contact.targetOrg && !contact.targetRole) return [];
 
@@ -156,11 +157,21 @@ export async function classifyContact(
     .map(([k, v]) => `- ${k}: ${v.description}`)
     .join("\n");
 
+  const activeJobs = (jobs || []).filter((j) => j.status === "wishlist" || j.status === "applied" || j.status === "interviewing");
+  const companyMatch = contact.targetOrg
+    ? activeJobs.filter((j) => j.company && j.company.toLowerCase().includes(contact.targetOrg!.toLowerCase().slice(0, 30)))
+    : [];
+  const jobContext = activeJobs.length > 0
+    ? `\nACTIVE JOB TARGETS:\n` + activeJobs.slice(0, 10).map((j) => `- ${j.title}${j.company ? ` @ ${j.company}` : ""}${j.location ? ` (${j.location})` : ""}`).join("\n") +
+      (companyMatch.length > 0 ? `\n\n⚡ COMPANY MATCH: This contact works at ${contact.targetOrg} — the user is actively targeting roles there (${companyMatch.map(j => j.title).join(", ")}). Weight this heavily in relevance scoring.\n` : "")
+    : "";
+
   const prompt =
-    `${COACH_PREAMBLE}You are classifying a contact for Rohini's career network.\n\n` +
-    `ABOUT ROHINI: ${USER_PROFILE}\n\n` +
+    `${COACH_PREAMBLE}You are classifying a contact for a career network.\n\n` +
+    `ABOUT THE USER: ${USER_PROFILE}\n\n` +
     `ACTIVE CAREER TRACKS:\n` +
     tracks.map((t) => `- ID ${t.id}: "${t.name}"${t.description ? ` — ${t.description}` : ""}`).join("\n") +
+    jobContext +
     `\n\nCONTACT:\n` +
     `Who/role: ${contact.who}\n` +
     (contact.name ? `Name: ${contact.name}\n` : "") +
@@ -172,6 +183,7 @@ export async function classifyContact(
     `Relationship warmth: ${contact.relationshipStrength}\n\n` +
     `ARCHETYPES:\n${archetypeDescriptions}\n\n` +
     `For each career track where this contact is relevant (relevance >= 2), classify them.\n` +
+    `If this contact works at or is connected to a company the user is targeting, score relevance highly.\n` +
     `Only include tracks where this person genuinely helps with that specific track.\n\n` +
     `Return ONLY a JSON array:\n` +
     `[\n` +

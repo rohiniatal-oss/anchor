@@ -111,6 +111,10 @@ async function completeTask(task: Task, day: string, extraPatch: Partial<Task> =
   } as any);
   await syncPlanItem(day, task, { status: "completed", completedAt });
   const completedMilestoneId = await advanceMilestoneForTask(task);
+  if (task.sourceType === "contact" && task.sourceId != null) {
+    const twoWeeks = new Date(completedAt + 14 * 86400000).toISOString().slice(0, 10);
+    await storage.updateContact(task.sourceId, { nextFollowUpDate: twoWeeks } as any).catch(() => {});
+  }
   await refreshDoneEnough(day);
   return { ...updated, completedMilestoneId };
 }

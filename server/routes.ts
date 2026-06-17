@@ -402,7 +402,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Prompts to address: ${scaffolding}\n\n` +
           `Milestones they've already completed:\n${completedSummary || "(none yet — write based on the domain)"}\n\n` +
           `Write a concrete starter synthesis — 3-4 bullet points connecting what they've learned to their background. ` +
-          `Make it specific: name the domain, name a concept they encountered, and connect it to their PE/consulting work. ` +
+          `Make it specific: name the domain, name a concept they encountered, and connect it to their actual work experience. ` +
           `Write it AS IF you are them, in first person, so they can edit it directly.\n` +
           `Return ONLY the bullet points, no preamble.`;
 

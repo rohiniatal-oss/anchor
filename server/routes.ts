@@ -21,6 +21,7 @@ import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
+import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
 import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats } from "./llm";
@@ -180,6 +181,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const p = insertJobSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const job = await storage.createJob(p.data);
+    if ((job.jdText || "").trim().length > 40) {
+      generateJobPrepArc(job).catch(() => {});
+    }
     res.json(job);
   });
   app.get("/api/jobs", async (_q, res) => res.json(await storage.getJobs()));

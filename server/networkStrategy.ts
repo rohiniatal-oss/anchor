@@ -110,7 +110,7 @@ export async function generateNetworkGaps(
     `\nEXISTING CONTACTS IN HER NETWORK:\n${contactSummary}\n\n` +
     `Generate exactly 5-6 types of people she needs to build relationships with to break into "${track.name}" roles.\n` +
     `Use ONLY these archetype keys: recent_switcher, near_peer, recruiter, senior_decision_maker, connector, domain_expert\n\n` +
-    `For each archetype, be specific to THIS track and HER background (ex-Bain, ex-TBI, targeting London/UAE).\n\n` +
+    `For each archetype, be specific to THIS track and the user's actual background (derive from the profile above).\n\n` +
     `Return ONLY a JSON array:\n` +
     `[\n` +
     `  {\n` +
@@ -353,10 +353,14 @@ export async function draftOutreachMessage(
   const nameOrg = [contact.name, contact.targetOrg].filter(Boolean).join(" at ");
 
   const ctx = await buildUserContext();
+  const winsContext = ctx.recentWins
+    ? `\nRECENT WINS (use as credibility hooks): ${ctx.recentWins}\n`
+    : "";
   const systemPrompt =
-    `${COACH_PREAMBLE}You are helping Rohini Atal draft a professional outreach message.\n\n` +
-    `ABOUT ROHINI: ${formatContextForPrompt(ctx)}\n` +
-    (track ? `She is pursuing: ${track.name}.\n` : "") +
+    `${COACH_PREAMBLE}You are helping draft a professional outreach message.\n\n` +
+    `ABOUT THE USER: ${formatContextForPrompt(ctx)}\n` +
+    winsContext +
+    (track ? `Pursuing: ${track.name}.\n` : "") +
     `\nABOUT THE CONTACT:\n` +
     `Who/role: ${contact.who}\n` +
     (contact.name ? `Name: ${contact.name}\n` : "") +

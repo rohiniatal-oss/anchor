@@ -639,6 +639,8 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     actionsToday: number;
     startsToday: number;
     streak: number;
+    yesterdayCompleted: number;
+    yesterdayTotal: number;
   }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
@@ -941,6 +943,19 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               <span className="text-foreground font-medium tabular-nums">{e.start}</span>{e.title}{i < events.length - 1 && <span className="opacity-40 ml-1">|</span>}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Yesterday recap — only shown when yesterday had a plan */}
+      {stats && stats.yesterdayTotal > 0 && !pinned && (
+        <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground" data-testid="yesterday-recap">
+          <span className="font-medium tabular-nums">{stats.yesterdayCompleted}/{stats.yesterdayTotal}</span>
+          <span>done yesterday{stats.yesterdayCompleted === stats.yesterdayTotal ? " — clean sweep" : stats.yesterdayCompleted === 0 ? " — fresh start today" : ""}</span>
+          {stats.streak > 1 && (
+            <span className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400">
+              <Flame className="w-3 h-3" /> {stats.streak}d streak
+            </span>
+          )}
         </div>
       )}
 

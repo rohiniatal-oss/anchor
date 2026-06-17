@@ -96,7 +96,15 @@ export function registerTaskAssistRoutes(app: Express) {
   app.get("/api/stats", async (_req, res) => {
     const weekAgo = Date.now() - 7 * 86400000;
     const dayAgo = Date.now() - 86400000;
-    const [wins, activity] = await Promise.all([storage.getWins(), storage.getActivityLog()]);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = yesterday.toISOString().slice(0, 10);
+    const [wins, activity, yesterdayPlan] = await Promise.all([
+      storage.getWins(), storage.getActivityLog(), storage.getPlanByDate(yesterdayKey),
+    ]);
+    const yesterdayItems = yesterdayPlan ? await storage.getPlanItems(yesterdayPlan.id) : [];
+    const yesterdayCompleted = yesterdayItems.filter((i: any) => i.status === "completed").length;
+    const yesterdayTotal = yesterdayItems.length;
     const thisWeek = wins.filter((w) => w.createdAt >= weekAgo);
     const weekActivity = activity.filter((a) => a.timestamp >= weekAgo);
     const todayActivity = activity.filter((a) => a.timestamp >= dayAgo);
@@ -113,6 +121,8 @@ export function registerTaskAssistRoutes(app: Express) {
       startsThisWeek: weekActivity.filter((a) => a.eventType === "started").length,
       blockedThisWeek: weekActivity.filter((a) => a.eventType === "blocked").length,
       streak: computeStreak(activity),
+      yesterdayCompleted,
+      yesterdayTotal,
     });
   });
 

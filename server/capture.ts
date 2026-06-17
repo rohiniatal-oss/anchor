@@ -1,48 +1,34 @@
 import type { Express } from "express";
 import { storage } from "./storage";
 import type { Task } from "@shared/schema";
-import OpenAI from "openai";
 import { buildCaptureTaskPatch } from "./captureTaskRouting";
 import { USER_PROFILE } from "./userPromptProfile";
+import { llmJSON } from "./llm";
 
-// Resolve a bare captured thought into REAL asset details before filing, so a
-// brain-dump like "read 80,000 hours career guide" becomes a Learn item WITH its
-// canonical URL, type, optional reusable result, and capability â€” context that then flows
-// through to the breakdown and everywhere else. Knowledge-grounded; safe empty
-// fallback so filing never blocks if the model is unavailable.
 async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof" | "network"): Promise<Record<string, string>> {
-  try {
-    const client = new OpenAI();
-    const ask =
-      kind === "learn"
-        ? `Resolve this learning capture. If it's a known public resource, give its CANONICAL url. Fields: title (clean), url (real canonical URL or ""), learnType (course|fellowship|book|podcast|resource|practice), category (short label), requiredOutput (optional reusable result, if there is an obvious one), capabilityBuilt (the skill it builds).`
-        : kind === "job"
-        ? `Resolve this into a real opportunity. Fields: title (clean role title), company (if implied else ""), location (if implied else ""), url (real careers/board URL if a known org else ""), nextStep (concrete first step, e.g. "open the board and shortlist 3 roles").`
-        : kind === "proof"
-        ? `Resolve this writing/build/proof capture. Fields: title (clean), nextStep (a concrete first move, e.g. "decide the angle: your specific take").`
-        : `Resolve this networking capture. Fields: who (who this person/type is), why (why reach them), askType (soft|referral|advice|reconnect|follow_up), nextStep (concrete first move).`;
-    const out = await client.responses.create({
-      model: "gpt_5_1",
-      input:
-        `User profile: ${USER_PROFILE} ` +
-        `${ask}\nUse real-world knowledge; NEVER invent a fake URL â€” use "" if unsure. ` +
-        `Capture: "${title}". Return ONLY a JSON object with those exact fields.`,
-    });
-    let text = (out.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    const j = JSON.parse(text);
-    return (j && typeof j === "object") ? j : {};
-  } catch {
-    return {};
-  }
+  const ask =
+    kind === "learn"
+      ? `Resolve this learning capture. If it's a known public resource, give its CANONICAL url. Fields: title (clean), url (real canonical URL or ""), learnType (course|fellowship|book|podcast|resource|practice), category (short label), requiredOutput (optional reusable result, if there is an obvious one), capabilityBuilt (the skill it builds).`
+      : kind === "job"
+      ? `Resolve this into a real opportunity. Fields: title (clean role title), company (if implied else ""), location (if implied else ""), url (real careers/board URL if a known org else ""), nextStep (concrete first step, e.g. "open the board and shortlist 3 roles").`
+      : kind === "proof"
+      ? `Resolve this writing/build/proof capture. Fields: title (clean), nextStep (a concrete first move, e.g. "decide the angle: your specific take").`
+      : `Resolve this networking capture. Fields: who (who this person/type is), why (why reach them), askType (soft|referral|advice|reconnect|follow_up), nextStep (concrete first move).`;
+  const result = await llmJSON<Record<string, string>>(
+    `User profile: ${USER_PROFILE} ` +
+    `${ask}\nUse real-world knowledge; NEVER invent a fake URL -- use "" if unsure. ` +
+    `Capture: "${title}". Return ONLY a JSON object with those exact fields.`,
+  );
+  return (result && typeof result === "object") ? result : {};
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// PHASE 4.7 â€” BRAIN DUMP AS UNIVERSAL CAPTURE
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// PHASE 4.7 â€" BRAIN DUMP AS UNIVERSAL CAPTURE
 // Brain Dump is the lossless front door: capture first, classify conservatively,
 // route only when there is enough signal, and never destroy the original thought.
 // No schema change: captures are still tasks with list="inbox" until routed;
 // object routes preserve the original row as list="captured" with route metadata.
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 export const CAPTURE_ROUTES = [
   "task", "today", "subtask", "job", "learn", "network", "proof",
@@ -184,7 +170,7 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
 
 // A capture has no slot/plan context, so we never fabricate a time block.
 // This matches the Phase 4.6a convention (/api/plan-items/:id/start): block is
-// derived from real slot context or left null â€” never hardcoded by guessing.
+// derived from real slot context or left null â€" never hardcoded by guessing.
 function routeToBlock(_route: CaptureRoute, _task?: Task): string | null {
   return null;
 }

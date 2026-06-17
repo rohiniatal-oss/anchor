@@ -22,7 +22,7 @@ import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } f
 import { syncGapRecommendations } from "./gapRecommendations";
 import { generateHustleArc } from "./learningCurriculum";
 import { USER_PROFILE } from "./userPromptProfile";
-import OpenAI from "openai";
+import { llm, llmUsageStats } from "./llm";
 
 const acceptRecommendationSchema = z.object({
   entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
@@ -82,7 +82,7 @@ function starterFallback(params: {
   const prompts = params.scaffolding.split("|").map((part) => part.trim()).filter(Boolean).slice(0, 3);
   if (params.milestoneType === "artifact") {
     const evidenceLine = params.completedCount > 0
-      ? `I've already done ${params.completedCount} prep step${params.completedCount === 1 ? "" : "s"}, so this draft should sound grounded rather than generic.`
+      ? `I've already done ${params.completedCount} learning step${params.completedCount === 1 ? "" : "s"}, so this draft should sound grounded rather than generic.`
       : "I'm using this draft to turn what I know so far into something concrete I can reuse.";
     return [
       `I'm building a clearer point of view on ${topic} and how it connects to the work I want to do.`,
@@ -92,7 +92,7 @@ function starterFallback(params: {
   }
   const bullets = [
     `- The main thing I am trying to understand about ${topic} is what matters most in practice, not just in theory.`,
-    `- ${params.completedCount > 0 ? `From the prep I have already done, I can see` : `My early read is`} that this overlaps with the kind of structured problem-solving and judgement I have used before.`,
+    `- ${params.completedCount > 0 ? `From the learning I have already done, I can see` : `My early read is`} that this overlaps with the kind of structured problem-solving and judgement I have used before.`,
     `- ${prompts[0] || `If I had to explain why ${topic} matters in an interview, I would focus on one clear tradeoff and one concrete example.`}`,
   ];
   return bullets.join("\n");
@@ -371,9 +371,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Return ONLY the bullet points, no preamble.`;
 
       try {
-        const client = new OpenAI();
-        const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-        const draft = (r.output_text || "").trim();
+        const draft = await llm(prompt);
         if (draft) return res.json({ draft });
       } catch {}
       res.json({
@@ -417,9 +415,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         `Return plain text, no markdown headers.`;
 
       try {
-        const client = new OpenAI();
-        const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-        const critique = (r.output_text || "").trim();
+        const critique = await llm(prompt);
         if (critique) return res.json({ critique });
       } catch {}
       res.json({

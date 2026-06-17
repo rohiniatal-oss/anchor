@@ -1,5 +1,5 @@
-import OpenAI from "openai";
 import { USER_PROFILE } from "./userPromptProfile";
+import { llm, llmJSON } from "./llm";
 import type { CareerTrack, Contact, Job, NetworkGap } from "@shared/schema";
 
 export type ArchetypeKey =
@@ -95,8 +95,6 @@ export async function generateNetworkGaps(
   track: CareerTrack,
   existingContacts: Contact[],
 ): Promise<NetworkGapResult[]> {
-  const client = new OpenAI();
-
   const contactSummary = existingContacts.length > 0
     ? existingContacts.map((c) => `- ${c.who}${c.targetOrg ? ` @ ${c.targetOrg}` : ""}${c.sector ? ` (${c.sector})` : ""}`).join("\n")
     : "None yet";
@@ -124,8 +122,8 @@ export async function generateNetworkGaps(
     `Make suggested searches concrete: org names, alumni networks, LinkedIn keywords specific to her background and the track. No generic queries.`;
 
   try {
-    const r = await client.responses.create({ model: "gpt-4.1", input: prompt });
-    const raw = extractJson(r.output_text || "");
+    const text = await llm(prompt, { model: "gpt-4.1" });
+    const raw = extractJson(text);
     if (!Array.isArray(raw)) return [];
     return raw
       .filter((item: any) => typeof item?.archetype === "string" && item.archetype in ARCHETYPE_META)
@@ -150,7 +148,6 @@ export async function classifyContact(
 ): Promise<ContactClassificationResult[]> {
   if (!contact.who && !contact.targetOrg && !contact.targetRole) return [];
 
-  const client = new OpenAI();
   const archetypeKeys = Object.keys(ARCHETYPE_META).join("|");
   const archetypeDescriptions = Object.entries(ARCHETYPE_META)
     .map(([k, v]) => `- ${k}: ${v.description}`)
@@ -186,8 +183,8 @@ export async function classifyContact(
     `Return [] if this person has no relevant connection to any track.`;
 
   try {
-    const r = await client.responses.create({ model: "gpt-4.1", input: prompt });
-    const raw = extractJson(r.output_text || "");
+    const text = await llm(prompt, { model: "gpt-4.1" });
+    const raw = extractJson(text);
     if (!Array.isArray(raw)) return [];
     const validTrackIds = new Set(tracks.map((t) => t.id));
     return raw
@@ -337,7 +334,6 @@ export async function draftOutreachMessage(
   track: CareerTrack | null,
   userContext: string,
 ): Promise<string> {
-  const client = new OpenAI();
   const hasName = !!(contact.name || "").trim();
   const nameOrg = [contact.name, contact.targetOrg].filter(Boolean).join(" at ");
 
@@ -376,18 +372,11 @@ export async function draftOutreachMessage(
 
   try {
     const tools: any[] = hasName ? [{ type: "web_search_preview" }] : [];
-    let r: any;
     try {
-      r = await client.responses.create({
-        model: "gpt-4.1",
-        input: systemPrompt,
-        ...(tools.length > 0 ? { tools } : {}),
-      });
+      return await llm(systemPrompt, { model: "gpt-4.1", tools });
     } catch {
-      // web_search_preview not available — retry without tools
-      r = await client.responses.create({ model: "gpt-4.1", input: systemPrompt });
+      return await llm(systemPrompt, { model: "gpt-4.1" });
     }
-    return (r.output_text || "").trim();
   } catch {
     return "";
   }

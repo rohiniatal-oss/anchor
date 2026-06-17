@@ -10,7 +10,7 @@
  * Also generates per-job prep arcs: orient → research → synthesise → artifact.
  */
 
-import OpenAI from "openai";
+import { llmJSON } from "./llm";
 import { storage } from "./storage";
 import type { Job, Hustle } from "@shared/schema";
 import { USER_PROFILE } from "./userPromptProfile";
@@ -62,7 +62,6 @@ export async function generateContactArchetypes(
   const existing = await storage.getRecommendationSubdivisions(recommendationId);
   if (existing.length > 0) return;
 
-  const client = new OpenAI();
   const prompt =
     `You are a networking strategist for a job-search tool. ` +
     `User profile: ${USER_PROFILE}\n\n` +
@@ -111,14 +110,8 @@ export async function generateContactArchetypes(
     `"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["..."],"subdivisionKey":"..."}],` +
     `"topContactTitle":"...","topContactWhy":"...","topAsk":"..."}`;
 
-  let parsed: { subdivisions?: unknown[]; milestones?: unknown[]; topContactTitle?: unknown; topContactWhy?: unknown; topAsk?: unknown } = {};
-  try {
-    const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-    const text = (r.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    try { parsed = JSON.parse(text); } catch { return; }
-  } catch {
-    return;
-  }
+  const parsed = await llmJSON<{ subdivisions?: unknown[]; milestones?: unknown[]; topContactTitle?: unknown; topContactWhy?: unknown; topAsk?: unknown }>(prompt);
+  if (!parsed) return;
 
   const rawSubs = Array.isArray(parsed.subdivisions) ? parseSubdivisions(parsed.subdivisions) : [];
   const rawMilestones = Array.isArray(parsed.milestones) ? parseMilestones(parsed.milestones) : [];
@@ -203,7 +196,6 @@ export async function generateLearningCurriculum(
   const existing = await storage.getRecommendationSubdivisions(recommendationId);
   if (existing.length > 0) return;
 
-  const client = new OpenAI();
   const prompt =
     `You are a learning-path designer for a job-search tool. ` +
     `User profile: ${USER_PROFILE}\n\n` +
@@ -258,14 +250,8 @@ export async function generateLearningCurriculum(
     `{"subdivisions":[{"label":"...","whyItMatters":"...","suggestedMaterials":["..."]}],` +
     `"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["question 1","question 2","question 3"],"subdivisionKey":"..."}]}`;
 
-  let parsed: { subdivisions?: unknown[]; milestones?: unknown[] } = {};
-  try {
-    const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-    const text = (r.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    try { parsed = JSON.parse(text); } catch { return; }
-  } catch {
-    return;
-  }
+  const parsed = await llmJSON<{ subdivisions?: unknown[]; milestones?: unknown[] }>(prompt);
+  if (!parsed) return;
 
   const rawSubs = Array.isArray(parsed.subdivisions) ? parseSubdivisions(parsed.subdivisions) : [];
   const rawMilestones = Array.isArray(parsed.milestones) ? parseMilestones(parsed.milestones) : [];
@@ -377,7 +363,6 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     hasJD ? `\nJob description:\n${job.jdText!.trim().slice(0, 1800)}` : "",
   ].filter(Boolean).join("\n");
 
-  const client = new OpenAI();
   const prompt =
     `You are a job-application coach for a senior strategy professional. ` +
     `User profile: ${USER_PROFILE}\n\n` +
@@ -417,14 +402,8 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     `Return ONLY valid JSON:\n` +
     `{"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["question 1","question 2","question 3"]}]}`;
 
-  let parsed: { milestones?: unknown[] } = {};
-  try {
-    const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-    const text = (r.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    try { parsed = JSON.parse(text); } catch { return; }
-  } catch {
-    return;
-  }
+  const parsed = await llmJSON<{ milestones?: unknown[] }>(prompt);
+  if (!parsed) return;
 
   const rawMilestones = Array.isArray(parsed.milestones) ? parseMilestones(parsed.milestones) : [];
   if (!rawMilestones.length) return;
@@ -512,7 +491,6 @@ export async function generateHustleArc(hustle: Hustle): Promise<void> {
     hustle.stage ? `Current stage: ${hustle.stage}` : "",
   ].filter(Boolean).join("\n");
 
-  const client = new OpenAI();
   const prompt =
     `You are a writing coach for a strategy professional building public proof assets. ` +
     `User profile: ${USER_PROFILE}\n\n` +
@@ -552,14 +530,8 @@ export async function generateHustleArc(hustle: Hustle): Promise<void> {
     `Return ONLY valid JSON:\n` +
     `{"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["question 1","question 2","question 3"]}]}`;
 
-  let parsed: { milestones?: unknown[] } = {};
-  try {
-    const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-    const text = (r.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    try { parsed = JSON.parse(text); } catch { return; }
-  } catch {
-    return;
-  }
+  const parsed = await llmJSON<{ milestones?: unknown[] }>(prompt);
+  if (!parsed) return;
 
   const rawMilestones = Array.isArray(parsed.milestones) ? parseMilestones(parsed.milestones) : [];
   if (!rawMilestones.length) return;

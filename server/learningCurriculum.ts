@@ -319,12 +319,24 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
   } as any);
 
   const hasJD = (job.jdText || "").trim().length > 40;
+
+  const [contacts, wins] = await Promise.all([storage.getContacts(), storage.getWins()]);
+  const relevantContacts = contacts.filter((c) =>
+    (job.relatedTrackId && c.relatedTrackId === job.relatedTrackId) ||
+    (job.company && c.targetOrg && c.targetOrg.toLowerCase().includes(job.company!.toLowerCase().slice(0, 30)))
+  );
+  const trackWins = job.relatedTrackId
+    ? wins.filter((w) => (w as any).trackId === job.relatedTrackId).slice(0, 5)
+    : [];
+
   const jobContext = [
     `Role: ${job.title}`,
     job.company ? `Company: ${job.company}` : "",
     job.location ? `Location: ${job.location}` : "",
     job.roleArchetype ? `Archetype: ${job.roleArchetype}` : "",
     hasJD ? `\nJob description:\n${job.jdText!.trim().slice(0, 1800)}` : "",
+    relevantContacts.length > 0 ? `\nExisting contacts at or related to this company/track:\n${relevantContacts.slice(0, 5).map((c) => `- ${c.who || c.name}${c.targetOrg ? ` (${c.targetOrg})` : ""} — ${c.status}`).join("\n")}` : "",
+    trackWins.length > 0 ? `\nRecent wins in this track:\n${trackWins.map((w) => `- ${w.text}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
 
   const ctx = formatContextForPrompt(await buildUserContext());

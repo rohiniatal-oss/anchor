@@ -57,11 +57,11 @@ app.get("/api/health", (_req, res) => {
   }
 });
 
+registerOptionalBasicAuth(app);
+
 app.get("/api/llm-usage", (_req, res) => {
   res.json(llmUsageStats());
 });
-
-registerOptionalBasicAuth(app);
 startOptionalSqliteBackups();
 
 export function log(message: string, source = "express") {

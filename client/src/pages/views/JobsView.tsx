@@ -708,7 +708,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
         <p className="text-xs text-muted-foreground mt-2">Probably skip for now: {j.note || "a stretch versus your background"}. Kept for reference.</p>
       ) : windowClosed ? (
         <div className="flex items-center justify-between mt-2">
-          <p className="text-xs text-muted-foreground">Watching for the next cycle.</p>
+          <p className="text-xs text-muted-foreground">{j.rejectReason ? `Passed: ${j.rejectReason}` : "Watching for the next cycle."}</p>
           {j.url && <a href={j.url} target="_blank" rel="noopener noreferrer" data-testid={`link-job-${j.id}`} className="text-muted-foreground hover:text-primary"><ExternalLink className="w-3.5 h-3.5" /></a>}
         </div>
       ) : (
@@ -779,6 +779,19 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
               <div className="flex items-center gap-1">
                 {idx > 0 && <button onClick={() => onMove(j, -1)} data-testid={`button-job-back-${j.id}`} className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-foreground hover-elevate">← back</button>}
                 {idx < JOB_COLS.length - 1 && <button onClick={() => onMove(j, 1)} data-testid={`button-job-fwd-${j.id}`} className="text-xs px-2 py-0.5 rounded text-primary font-medium hover-elevate">Move to {JOB_COLS[idx + 1].label} →</button>}
+                <button
+                  data-testid={`button-job-reject-${j.id}`}
+                  onClick={async () => {
+                    const reason = window.prompt("Why are you passing on this role? (optional)");
+                    if (reason === null) return;
+                    await apiRequest("POST", `/api/jobs/${j.id}/reject`, { reason });
+                    await mutateAndInvalidate("GET", "", {}, ["/api/jobs", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]);
+                    toast({ title: "Role dismissed.", description: reason ? `Reason: ${reason}` : "Moved to closed." });
+                  }}
+                  className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-destructive hover-elevate"
+                >
+                  <Ban className="w-3 h-3 inline mr-0.5" />Not for me
+                </button>
               </div>
               <button
                 onClick={() => setShowDetails((v) => !v)}

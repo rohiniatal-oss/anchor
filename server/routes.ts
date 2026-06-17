@@ -191,6 +191,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!updated) return res.status(404).json({ error: "Not found" });
     res.json(updated);
   });
+  app.post("/api/jobs/:id/reject", async (req, res) => {
+    const id = Number(req.params.id);
+    const reason = String(req.body?.reason || "").trim().slice(0, 300);
+    const updated = await storage.updateJob(id, { status: "closed", rejectReason: reason || "Not a fit" });
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    await storage.logActivity({ eventType: "rejected", sourceType: "job", sourceId: id, metadata: JSON.stringify({ reason }) });
+    res.json(updated);
+  });
   app.delete("/api/jobs/:id", async (req, res) => {
     await storage.deleteJob(Number(req.params.id));
     res.json({ ok: true });

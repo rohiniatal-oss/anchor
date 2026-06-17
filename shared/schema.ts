@@ -97,6 +97,7 @@ export const jobs = sqliteTable("jobs", {
   deadlineConfidence: text("deadline_confidence").notNull().default(""), // low|med|high
   applicationWindowStatus: text("application_window_status").notNull().default("open"), // open|rolling|closing|closed
   jdText: text("jd_text").notNull().default(""), // pasted job description text
+  rejectReason: text("reject_reason").notNull().default(""), // why the user passed on this role
   createdAt: integer("created_at").notNull(),
 });
 

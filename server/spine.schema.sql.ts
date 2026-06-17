@@ -369,4 +369,5 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE contacts ADD COLUMN nextActionType TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE contacts ADD COLUMN nextActionDue INTEGER`,
   `ALTER TABLE contacts ADD COLUMN nextActionDesc TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE jobs ADD COLUMN reject_reason TEXT NOT NULL DEFAULT ''`,
 ];

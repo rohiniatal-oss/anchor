@@ -1451,7 +1451,7 @@ export function planDay(
     };
   }
 
-  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s);
+  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s || a.c.sourceId - b.c.sourceId);
   const maxItems = budget < 45 ? 1
     : budget < 90 ? 1
     : (energy === "low" || mode === "low") ? Math.min(2, cands.length)
@@ -1562,7 +1562,7 @@ export function recommend(
   const cands = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts)].filter((c) => passesGates(c, context));
   const mode = pickDayMode(cands, energy, context);
   if (cands.length === 0) return { mode, pick: null, alternative: null };
-  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s);
+  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s || a.c.sourceId - b.c.sourceId);
   const pick = ranked[0].c;
   const alternative = ranked.map((r) => r.c).find((c) => !(c.source === pick.source && c.sourceId === pick.sourceId) && c.size === "quick") || null;
   return {

@@ -633,13 +633,13 @@ function jobMomentum(c: Candidate) {
   if (c.strategicValue != null) {
     const strategicBoost = Math.round((c.strategicValue / 100) * 16);
     s += strategicBoost;
-    if (strategicBoost >= 8) trace.push("strategically valuable role");
+    if (strategicBoost >= 8) trace.push("high-value role for your career direction");
   }
 
   if (c.frictionScore != null) {
     const frictionPenalty = Math.round((c.frictionScore / 100) * 18);
     s -= frictionPenalty;
-    if (frictionPenalty >= 8) trace.push("application friction penalty");
+    if (frictionPenalty >= 8) trace.push("application has some friction to work through");
   }
 
   const readiness = readinessMomentum(c.applicationReadiness || "none");
@@ -1096,7 +1096,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (c.fitScore !== null) {
     const fitBoost = Math.round((c.fitScore / 100) * 60);
     s += fitBoost;
-    if (fitBoost >= 35) trace.push("strong fit score");
+    if (fitBoost >= 35) trace.push("strong match for your background");
   }
 
   if (c.source === "job") {
@@ -1124,12 +1124,12 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   }
   if (context.laneUnlockMove && `${c.title} ${c.whyNow} ${c.sourceNote}`.toLowerCase().includes(context.laneUnlockMove.toLowerCase().slice(0, 18))) {
     s += 25;
-    trace.push("matches the spine unlock move");
+    trace.push("directly addresses the main gap right now");
   }
-  if (/direction/i.test(context.bottleneck) && isDirectionSignal(c)) { s += 35; trace.push("matches direction bottleneck"); }
+  if (/direction/i.test(context.bottleneck) && isDirectionSignal(c)) { s += 35; trace.push("helps clarify which direction to go"); }
   if (/application/i.test(context.bottleneck) && isApplicationLike(c)) { s += 30; trace.push("moves an application forward"); }
   if (/network/i.test(context.bottleneck) && isNetworkLike(c)) { s += 35; trace.push("moves a relationship path forward"); }
-  if (/learning|development/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("converts learning/development into track leverage"); }
+  if (/learning|development/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("builds knowledge that makes your applications stronger"); }
   if (c.source === "learn" && c.milestoneProgress && c.milestoneProgress.total > 0) {
     const ratio = c.milestoneProgress.done / c.milestoneProgress.total;
     if (ratio >= 0.8) { s += 35; trace.push("nearly finished curriculum — close it out"); }
@@ -1139,27 +1139,27 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (context.planningPosture === "capability") {
     if (isLearningLike(c)) {
       s += 22;
-      trace.push("capability posture favors learning that turns into reusable notes or practice");
+      trace.push("strengthening a key skill area right now pays off across roles");
     }
     if (isProofAsset(c) && c.sourceStatus === "testing") {
       s += 10;
-      trace.push("a live project or public-work item can package capability into something you can point to later");
+      trace.push("this project turns learning into something you can show");
     } else if (isProofAsset(c)) {
       s -= 10;
-      trace.push("idea-stage projects or public work stay secondary to learning output");
+      trace.push("learning comes first — projects can wait until there's more to show");
     }
   } else if (isProofAsset(c)) {
     if (context.planningPosture === "conversion") {
       s -= 14;
-      trace.push("projects or public work stay secondary while live conversion moves exist");
+      trace.push("active applications take priority over project work right now");
     } else if (context.planningPosture === "exploration") {
       s -= 18;
-      trace.push("projects or public work stay deferred while role uncertainty is still high");
+      trace.push("projects can wait while you're still narrowing which roles to target");
     }
   }
   if (context.recommendedExploration && `${c.title} ${c.sourceNote}`.toLowerCase().includes(context.recommendedExploration.toLowerCase().slice(0, 20))) {
     s += 30;
-    trace.push("matches active track from spine");
+    trace.push("aligns with your current focus area");
   }
 
   const actionCategory = candidateActionCategory(c, context);
@@ -1174,15 +1174,15 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
     s -= 18;
   }
   if (context.clarifyBeforePush && actionCategory === "decide") {
-    trace.push("the strongest roles still need clarification before more effort is worth it");
+    trace.push("worth confirming the role details before investing more effort");
   } else if (context.clarifyBeforePush && actionCategory === "pursue") {
-    trace.push("application work stays secondary until the missing role facts are confirmed");
+    trace.push("application work can wait until key role details are confirmed");
   } else if (context.planningPosture === "capability" && actionCategory === "develop") {
-    trace.push("the main bottleneck is a repeated weak area, so strengthening work is promoted");
+    trace.push("a repeated gap keeps coming up — addressing it now will help across roles");
   } else if (context.planningPosture === "capability" && actionCategory === "pursue") {
-    trace.push("live pursuit stays secondary until the shared weak area is less exposed");
+    trace.push("strengthening this area first will make your applications more competitive");
   } else if ((context.planningPosture === "conversion" || context.planningPosture === "interview") && actionCategory === "develop") {
-    trace.push("development stays secondary while the main bottleneck is conversion or interview work");
+    trace.push("active applications and interviews take priority right now");
   }
 
   const startability = startabilityMomentum(c);

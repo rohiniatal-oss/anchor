@@ -829,7 +829,7 @@ test("repeated capability pressure can promote development work ahead of saved r
     result.pick?.source === "learn" || result.pick?.jobTruthAction === "prove",
     "repeated capability pressure should surface a strengthening move"
   );
-  assert.ok(result.trace?.some((line: string) => /repeated weak area|strengthening work is promoted/i.test(line)));
+  assert.ok(result.trace?.some((line: string) => /repeated gap|help across roles/i.test(line)));
   assert.match(result.explanation.summary, /get stronger|clearer example|without stopping applications/i);
 });
 
@@ -914,7 +914,7 @@ test("clarify-first roles outrank learning and networking when the facts are sti
   const result = recommend([], jobs, learn, [], "medium", contacts);
   assert.equal(result.pick?.source, "job");
   assert.equal(result.pick?.jobTruthAction, "clarify");
-  assert.ok(result.trace?.some((line: string) => /clarification before more effort|missing role facts/i.test(line)));
+  assert.ok(result.trace?.some((line: string) => /confirming the role details|role details are confirmed/i.test(line)));
 });
 
 test("track-linked reference learning does not surface as a strategic candidate by itself", () => {

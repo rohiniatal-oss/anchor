@@ -410,6 +410,15 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
   const myClassifications = classifications.filter((cl) => cl.contactId === c.id);
   const bestCls = myClassifications.sort((a, b) => b.relevanceScore - a.relevanceScore)[0] ?? null;
 
+  const autoClassified = useRef(false);
+  useEffect(() => {
+    if (!bestCls && !classifying && !autoClassified.current && trackId != null) {
+      autoClassified.current = true;
+      const timer = setTimeout(() => reclassify(), (index ?? 0) * 300);
+      return () => clearTimeout(timer);
+    }
+  }, [bestCls, trackId]);
+
   useEffect(() => {
     if (bestCls && !recommendedMove && !loadingMove) {
       const timer = setTimeout(() => getRecommendedMove(), (index ?? 0) * 200);
@@ -482,11 +491,10 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
                 {bestCls.relevanceScore >= 4 && <span className="ml-0.5 opacity-70">{bestCls.relevanceScore}/5</span>}
               </span>
             )}
-            {!bestCls && (
-              <button onClick={reclassify} disabled={classifying} className="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-60">
-                {classifying ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Wand2 className="w-2.5 h-2.5" />}
-                {classifying ? "Figuring out…" : "Who is this for?"}
-              </button>
+            {!bestCls && classifying && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" />
+              </span>
             )}
             <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${STRENGTH_TONE[strength]}`}>{strength}</span>
             {overdue && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 text-[10px] font-semibold"><Clock className="w-2.5 h-2.5" /> overdue</span>}
@@ -532,16 +540,11 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
             <Wand2 className="w-3 h-3" /> Draft this message
           </button>
         </div>
-      ) : (
-        <button
-          onClick={getRecommendedMove}
-          disabled={loadingMove}
-          className="mt-2.5 text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 disabled:opacity-60"
-        >
-          {loadingMove ? <Loader2 className="w-3 h-3 animate-spin" /> : <Target className="w-3 h-3" />}
-          {loadingMove ? "Working on it…" : "What should I ask?"}
-        </button>
-      )}
+      ) : loadingMove ? (
+        <p className="mt-2.5 text-[11px] text-muted-foreground inline-flex items-center gap-1">
+          <Loader2 className="w-3 h-3 animate-spin" /> Working out your next move...
+        </p>
+      ) : null}
 
       {/* Draft panel */}
       {showDraftPanel && !draftOpen && (

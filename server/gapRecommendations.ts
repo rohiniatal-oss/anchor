@@ -68,6 +68,14 @@ export async function syncGapRecommendations(): Promise<void> {
     }
   }
 
+  // Auto-stale accepted recs whose context has drifted (user's situation changed)
+  const acceptedWithHash = recs.filter((r) => r.status === "accepted" && r.contextHash && r.source === "system");
+  for (const rec of acceptedWithHash) {
+    if (rec.contextHash !== ctxHash) {
+      await storage.updateRecommendation(rec.id, { status: "stale" });
+    }
+  }
+
   // Reload after staling so dedup below sees the updated state.
   const freshRecs = await storage.getRecommendations();
 

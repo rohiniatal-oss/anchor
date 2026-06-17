@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Plus, Check, CalendarDays, Loader2, Target, ChevronRight,
@@ -192,6 +192,14 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
     steps.length > 0 &&
     (avoided || pinned.size === "deep" || ["job", "learn", "contact", "hustle"].includes(String(pinned.sourceType || "")));
 
+  const autoTriggered = useRef(false);
+  useEffect(() => {
+    if (steps.length === 0 && !question && !breaking && !autoTriggered.current) {
+      autoTriggered.current = true;
+      breakdown();
+    }
+  }, [steps.length, question]);
+
   async function breakdown(context?: string) {
     setBreaking(true);
     try {
@@ -329,10 +337,13 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
       )}
       {steps.length === 0 && !question && (
         <div className="mt-2">
-          <p className="text-sm text-muted-foreground mb-2.5">Want me to break it into tiny steps so starting is easy?</p>
-          <Button size="sm" onClick={() => breakdown()} disabled={breaking} data-testid="button-breakdown-pinned">
-            {breaking ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wand2 className="w-4 h-4 mr-1" />} Break into tiny steps
-          </Button>
+          {breaking ? (
+            <p className="text-sm text-muted-foreground inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Breaking this into steps so starting is easy...</p>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => breakdown()} data-testid="button-breakdown-pinned">
+              <Wand2 className="w-4 h-4 mr-1" /> Try again
+            </Button>
+          )}
         </div>
       )}
       {workflowCtx?.currentStage && (

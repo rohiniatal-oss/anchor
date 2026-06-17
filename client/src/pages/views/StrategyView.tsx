@@ -220,7 +220,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       relatedTrackId: t.id,
       explicitDomainKey: topGapDomain as any,
       explicitDomainLabel: topGapLabel,
-      noteIntro: `Prep starter for ${t.name}.`,
+      noteIntro: `Learning focus for ${t.name}.`,
     });
     queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
     window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
@@ -324,18 +324,18 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             {needsPrepItem && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a first prep starter.</p>
+                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a learning focus.</p>
                   {prepStarter && !savedLearningRec && (
                     <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Start with: <span className="font-medium text-foreground">{prepStarter.title}</span>.</p>
                   )}
                 </div>
                 {savedLearningRec ? (
                   <Button size="sm" variant="outline" onClick={() => acceptRecommendation(savedLearningRec)} data-testid={`button-use-saved-learn-${t.slug}`}>
-                    <GraduationCap className="w-4 h-4 mr-1" /> Use saved prep starter
+                    <GraduationCap className="w-4 h-4 mr-1" /> Use saved learning item
                   </Button>
                 ) : (
                   <Button size="sm" variant="outline" onClick={() => openLearnDraftFromGap(t)} data-testid={`button-add-gap-learn-${t.slug}`}>
-                    <GraduationCap className="w-4 h-4 mr-1" /> Set up prep starter
+                    <GraduationCap className="w-4 h-4 mr-1" /> Start learning about
                   </Button>
                 )}
               </div>

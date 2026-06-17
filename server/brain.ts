@@ -522,17 +522,17 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         source: "goal",
         sourceId: 300 + index,
         taskId: null,
-        title: `Set up one prep starter for ${combination}`,
+        title: `Start learning about ${combination}`,
         category: "learning",
         size: "medium",
         deadline: "",
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `This live role type still needs more focused prep support: ${combination}. Set up one prep starter for it next.`,
+        sourceNote: `This live role type still needs more focused learning support: ${combination}. Start learning about it next.`,
         sourceStatus: "broad_parallel_pursuit_learning_support",
-        doneWhen: `One focused prep starter exists for ${combination}`,
-        whyNow: `the ${combination} path still needs more focused prep support`,
+        doneWhen: `One focused learning item exists for ${combination}`,
+        whyNow: `the ${combination} path still needs more focused learning support`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -1112,7 +1112,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (c.source === "goal") {
     s += 42;
     if (c.sourceStatus === "broad_parallel_pursuit_network_support") trace.push("some live role paths still need someone useful to reach out to");
-    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") trace.push("some live role paths still need focused prep support");
+    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") trace.push("some live role paths still need focused learning support");
     else trace.push("several role paths still need a real role before you narrow");
   }
 
@@ -1250,7 +1250,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
       return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Use Jobs or Learn to set up one prep starter, note, or resource for ${candidate.targetRole}.`;
+      if (candidate?.targetRole) return `Use Jobs or Learn to start learning about ${candidate.targetRole}.`;
       return broadPursuitMissingPrepFirstStep(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1288,7 +1288,7 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
       return broadPursuitMissingContactsStopRule();
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one prep starter.`;
+      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one learning focus.`;
       return broadPursuitMissingPrepStopRule();
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1326,7 +1326,7 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
       return broadPursuitMissingContactsSourceFrame(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `${candidate.targetRole} still needs more focused prep support, so the best move is to set up one prep starter for it now.`;
+      if (candidate?.targetRole) return `${candidate.targetRole} still needs more focused learning support, so the best move is to start learning about it now.`;
       return broadPursuitMissingPrepSourceFrame(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {

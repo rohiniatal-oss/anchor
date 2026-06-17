@@ -157,62 +157,62 @@ export function broadPursuitNextMissingContactPlanNote(combinations: string[] = 
 }
 
 export function broadPursuitMissingPrepUnlockMove() {
-  return "Set up one prep starter for each live role type still missing one.";
+  return "Start learning about each live role type still missing one.";
 }
 
 export function broadPursuitMissingPrepTitle() {
-  return "Set up one prep starter for each live path still missing one";
+  return "Start learning about each live path still missing one";
 }
 
 export function broadPursuitMissingPrepDoneWhen() {
-  return "One focused prep starter exists for each live role type that was missing one";
+  return "One focused learning item exists for each live role type that was missing one";
 }
 
 export function broadPursuitMissingPrepWhyNow() {
-  return "some live role types still need more focused prep support";
+  return "some live role types still need more focused learning support";
 }
 
 export function broadPursuitMissingPrepContextReason(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "some live paths");
-  return `Some live role types still need more focused prep support: ${missingText}. Set up one prep starter for each of those live paths next.`;
+  return `Some live role types still need more focused learning support: ${missingText}. Start learning about each of those live paths next.`;
 }
 
 export function broadPursuitMissingPrepSourceNote(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "the live role types still missing one");
-  return `These live role types still need more focused prep support: ${missingText}. Set up one prep starter for each one.`;
+  return `These live role types still need more focused learning support: ${missingText}. Start learning about each one.`;
 }
 
 export function broadPursuitMissingPrepFirstStep(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "the live paths still missing one");
-  return `Use Jobs or Learn to set up one prep starter, note, or resource for each live path still missing one: ${missingText}.`;
+  return `Use Jobs or Learn to start learning about each live path still missing one: ${missingText}.`;
 }
 
 export function broadPursuitMissingPrepStopRule() {
-  return "Stop after each live role type that was missing one now has one prep starter.";
+  return "Stop after each live role type that was missing one now has one learning focus.";
 }
 
 export function broadPursuitMissingPrepSourceFrame(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "the live paths still missing one");
-  return `Some live role types still need more focused prep support, so the best move is to set up one prep starter for each missing one: ${missingText}.`;
+  return `Some live role types still need more focused learning support, so the best move is to start learning about each missing one: ${missingText}.`;
 }
 
 export function broadPursuitMissingPrepPlanNote() {
-  return "You have live role types already, but some still need more focused prep support. Set that up before drifting into lower-value work.";
+  return "You have live role types already, but some still need more focused learning support. Set that up before drifting into lower-value work.";
 }
 
 export function broadPursuitNextMissingPrepTodayMustDo(combinations: string[] = []) {
-  const target = broadPursuitPathList(combinations, "the live path still missing prep", 1);
-  return `Set up the next prep starter for ${target}.`;
+  const target = broadPursuitPathList(combinations, "the live path still missing learning support", 1);
+  return `Start learning about ${target}.`;
 }
 
 export function broadPursuitNextMissingPrepStopRule(combinations: string[] = []) {
-  const target = broadPursuitPathList(combinations, "the live path still missing prep", 1);
-  return `Stop after ${target} has one prep starter.`;
+  const target = broadPursuitPathList(combinations, "the live path still missing learning support", 1);
+  return `Stop after ${target} has one learning focus.`;
 }
 
 export function broadPursuitNextMissingPrepPlanNote(combinations: string[] = []) {
-  const target = broadPursuitPathList(combinations, "the live path still missing prep", 1);
-  return `You have live role types already, but the next missing prep move is more focused prep support for ${target}. Add that before drifting into lower-value work.`;
+  const target = broadPursuitPathList(combinations, "the live path still missing learning support", 1);
+  return `You have live role types already, but the next missing learning move is more focused learning support for ${target}. Add that before drifting into lower-value work.`;
 }
 
 export function broadPursuitMissingSupportDetail(
@@ -224,7 +224,7 @@ export function broadPursuitMissingSupportDetail(
       ? `someone to reach out to: ${broadPursuitPathList(missingNetwork, "the live paths still missing outreach")}`
       : "",
     missingPrep.length > 0
-      ? `prep starter: ${broadPursuitPathList(missingPrep, "the live paths still missing prep")}`
+      ? `learning focus: ${broadPursuitPathList(missingPrep, "the live paths still missing learning support")}`
       : "",
   ].filter(Boolean);
   return parts.join(" | ");
@@ -235,7 +235,7 @@ export function broadPursuitMissingSupportContextReason(
   missingPrep: string[] = [],
 ) {
   const detail = broadPursuitMissingSupportDetail(missingNetwork, missingPrep);
-  return `Live roles already exist across the paths you are testing, but some still need outreach, more focused prep support, or both: ${detail}. Add the next missing support where it will unlock the strongest live role fastest, without losing momentum on the others.`;
+  return `Live roles already exist across the paths you are testing, but some still need outreach, more focused learning support, or both: ${detail}. Add the next missing support where it will unlock the strongest live role fastest, without losing momentum on the others.`;
 }
 
 export function broadPursuitMissingSupportTodayMustDo(
@@ -247,7 +247,7 @@ export function broadPursuitMissingSupportTodayMustDo(
 }
 
 export function broadPursuitMissingSupportStopRule() {
-  return "Stop after each live path has either someone real to reach out to, a prep starter, or both.";
+  return "Stop after each live path has either someone real to reach out to, a learning focus, or both.";
 }
 
 export function broadPursuitMissingSupportDecisionQuestion(
@@ -255,5 +255,5 @@ export function broadPursuitMissingSupportDecisionQuestion(
   missingPrep: string[] = [],
 ) {
   const detail = broadPursuitMissingSupportDetail(missingNetwork, missingPrep);
-  return `Which live paths still need outreach, more focused prep support, or both next: ${detail}?`;
+  return `Which live paths still need outreach, more focused learning support, or both next: ${detail}?`;
 }

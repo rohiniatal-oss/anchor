@@ -92,7 +92,7 @@ export function StrategyBuilderPanel() {
                 <div>
                   <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary"><Sparkles className="h-4 w-4" /> Strategy Builder</div>
                   <h2 className="mt-1 text-lg font-bold tracking-tight">What Anchor recommends next</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Suggested role types, people to reach out to, prep starters to add, and optional writing, project, or brand ideas. Nothing is added unless you accept it.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Suggested role types, people to reach out to, learning items to add, and optional writing, project, or brand ideas. Nothing is added unless you accept it.</p>
                 </div>
                 <button onClick={() => setOpen(false)} className="rounded-md p-1 text-muted-foreground hover:text-foreground"><X className="h-5 w-5" /></button>
               </div>

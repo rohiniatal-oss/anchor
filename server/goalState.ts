@@ -773,7 +773,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} notes, practice, or a short brief before the interview`
       : "interview and role preparation need practice that turns into something you can reuse"
     : missingLearningByLane.length > 0
-      ? `these live paths still need prep: ${missingLearningByLane.join("; ")}`
+      ? `these live paths still need learning support: ${missingLearningByLane.join("; ")}`
     : snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
       ? snapshot.proofSupportDemandCount > 0
         ? `no role-relevant learning plan is active yet, and ${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice`
@@ -790,16 +790,16 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
   const capabilityNextMoves = snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
     ? ["pick one requirement that feels weakest today", "start one learning item tied to that requirement", "decide whether notes, a brief, or an example would help later"]
     : missingLearningByLane.length > 0
-      ? [`add one prep step for ${missingLearningByLane[0]}`, "decide what notes, brief, or example would actually help across those roles", "turn upskilling into something you can use again later, not one-off prep"]
+      ? [`add one learning step for ${missingLearningByLane[0]}`, "decide what notes, brief, or example would actually help across those roles", "turn upskilling into something you can use again later, not one-off learning"]
     : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
-      ? ["finish one useful prep note, brief, or example for the current path", "turn that result into something you can use in interviews or applications", "save the notes or link so Anchor can refer back to it later"]
+      ? ["finish one useful learning note, brief, or example for the current path", "turn that result into something you can use in interviews or applications", "save the notes or link so Anchor can refer back to it later"]
     : snapshot.proofSupportDemandCount > 0
       ? ["pick one requirement for the current path that still feels weak today", "turn existing learning into a clearer example or talking point", "save one note, brief, or result so it is easy to reuse later"]
     : snapshot.learningOutputGapCount > 0
-      ? ["finish one useful note, brief, or practice result", "attach the notes or link to the learning item", "turn it into interview or job prep material"]
+      ? ["finish one useful note, brief, or practice result", "attach the notes or link to the learning item", "turn it into interview or job learning material"]
     : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0
           ? ["move one active learning item to concrete notes, a brief, or a practice result", "practice one scenario or framework", "capture the useful part in writing"]
-        : ["turn one learning item into interview or job prep material", "practice one scenario or framework", "choose the next area to strengthen"];
+        : ["turn one learning item into interview or job learning material", "practice one scenario or framework", "choose the next area to strengthen"];
 
   return [
     {
@@ -921,7 +921,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         snapshot.evidencedLearnCount ? `${snapshot.evidencedLearnCount} learning item(s) with notes or an output linked` : "no linked learning outputs yet",
         snapshot.learningOutputGapCount ? `${snapshot.learningOutputGapCount} learning item(s) still need notes or an output` : "learning outputs are in better shape",
         broadSupportCoverage && broadSupportCoverage.missing.length === 0
-          ? `${(broadSupportCoverage.prepSupported || broadSupportCoverage.learningSupported).length} live path${(broadSupportCoverage.prepSupported || broadSupportCoverage.learningSupported).length === 1 ? "" : "s"} with prep in place`
+          ? `${(broadSupportCoverage.prepSupported || broadSupportCoverage.learningSupported).length} live path${(broadSupportCoverage.prepSupported || broadSupportCoverage.learningSupported).length === 1 ? "" : "s"} with learning support in place`
           : "role coverage still comes before support for each role type",
         `${snapshot.proofSupportDemandCount} role${snapshot.proofSupportDemandCount === 1 ? "" : "s"} that could benefit from clearer examples or practice`,
       ],
@@ -1088,7 +1088,7 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
   const titles: Record<GoalTrajectoryStep["key"], Omit<GoalTrajectoryStep, "status">> = {
     "discover-fit": { key: "discover-fit", title: "Discover fit", description: "Figure out which kinds of roles genuinely fit your interests, strengths, and goals." },
     "narrow-lane": { key: "narrow-lane", title: "Narrow with evidence", description: "Keep plausible paths alive long enough to gather evidence, then narrow from real evidence instead of guesswork." },
-    "target-role": { key: "target-role", title: "Target live roles", description: "Turn plausible paths into real roles, prep, and selective applications." },
+    "target-role": { key: "target-role", title: "Target live roles", description: "Turn plausible paths into real roles, learning, and selective applications." },
     "prepare-interview": { key: "prepare-interview", title: "Prepare for interviews", description: "Build stories, examples, and role knowledge for live interview processes." },
     "capability-ramp": { key: "capability-ramp", title: "Prep for the role", description: "Strengthen weak spots for the interview and the job so you can perform strongly once hired." },
   };
@@ -1117,7 +1117,7 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
         return {
           mustDo: `Advance the strongest application move: ${snapshot.leadApplicationTruth?.nextMove || "push the most credible live role forward"}`,
           next: "Keep the broad portfolio warm while you push this application",
-          optional: "Add one missing contact or prep starter for a parallel path when done",
+          optional: "Add one missing contact or learning focus for a parallel path when done",
           stopRule: "Stop once the application move is done.",
         };
       }
@@ -1135,7 +1135,7 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
               coverage.missingNetworkSupport,
               coverage.missingPrepSupport,
             ),
-        next: "Keep live roles moving while you add the missing contact or prep starter.",
+        next: "Keep live roles moving while you add the missing contact or learning focus.",
         optional: "If useful, add one optional example/project idea that could help more than one role in the same path.",
         stopRule: focusNetwork
           ? broadPursuitNextMissingContactStopRule(coverage.missingNetworkSupport)

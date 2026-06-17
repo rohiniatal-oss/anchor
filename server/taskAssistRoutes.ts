@@ -7,20 +7,21 @@ import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 
 function computeStreak(activity: { eventType: string; timestamp: number }[]): number {
-  const completions = activity
-    .filter((a) => a.eventType === "completed")
-    .map((a) => {
-      const d = new Date(a.timestamp);
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    });
-  const uniqueDays = [...new Set(completions)].sort().reverse();
+  const dayKeys = new Set(
+    activity
+      .filter((a) => a.eventType === "completed")
+      .map((a) => {
+        const d = new Date(a.timestamp);
+        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      }),
+  );
   const today = new Date();
   let streak = 0;
-  for (let i = 0; i < uniqueDays.length; i++) {
-    const expected = new Date(today);
-    expected.setDate(expected.getDate() - i);
-    const key = `${expected.getFullYear()}-${expected.getMonth()}-${expected.getDate()}`;
-    if (uniqueDays[i] === key) streak++;
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (dayKeys.has(key)) streak++;
     else break;
   }
   return streak;

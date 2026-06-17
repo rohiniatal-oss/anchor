@@ -421,7 +421,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             )}
 
             {isLoadingDetail ? (
-              <p className="text-xs text-muted-foreground">Loading the subtopics and checkpoints for this suggestion...</p>
+              <p className="text-xs text-muted-foreground">Loading the topics and checkpoints for this suggestion...</p>
             ) : (
               <>
                 {subdivisions.length > 0 && (
@@ -438,7 +438,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                             )}
                             {materials.length > 0 && (
                               <div className="mt-2">
-                                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Starter materials</p>
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Suggested resources</p>
                                 <div className="mt-1 flex flex-wrap gap-1.5">
                                   {materials.map((material) => (
                                     <span key={material} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700">

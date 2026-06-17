@@ -192,6 +192,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const updated = await storage.updateJob(Number(req.params.id), p.data);
     if (!updated) return res.status(404).json({ error: "Not found" });
+    if (p.data.jdText && (p.data.jdText || "").trim().length > 40) {
+      generateJobPrepArc(updated).catch(() => {});
+    }
     res.json(updated);
   });
   app.post("/api/jobs/:id/reject", async (req, res) => {

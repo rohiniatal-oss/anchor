@@ -151,8 +151,8 @@ function JobStepRail({ j }: { j: Job }) {
     try {
       await mutateAndInvalidate("POST", `/api/jobs/${j.id}/steps/seed`, {}, ["/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
       await reloadInto();
-      toast({ title: "Steps generated.", description: "From the role's template — edit them to fit." });
-    } catch { toast({ title: "Couldn't generate steps", description: "Try again in a moment." }); }
+      toast({ title: "Readiness checklist ready.", description: "Based on the role — edit to fit." });
+    } catch { toast({ title: "Couldn't build the checklist right now.", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
 
@@ -243,7 +243,7 @@ function JobStepRail({ j }: { j: Job }) {
       ) : steps.length === 0 ? (
         <button onClick={seed} disabled={busy} data-testid={`button-seed-steps-${j.id}`}
           className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Generate steps
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Build readiness checklist
         </button>
       ) : (
         <div className="space-y-1">

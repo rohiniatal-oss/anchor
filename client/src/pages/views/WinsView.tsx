@@ -60,13 +60,17 @@ export default function WinsView() {
     return groups;
   }
 
+  const SOURCE_LABEL: Record<string, string> = { learn: "Learning", task: "Task", milestone: "Learning step", contact: "Networking", hustle: "Project" };
+
   function Row({ w }: { w: Win }) {
     const tid = summary?.trackByWinId[w.id];
     const trackName = tid && tid !== "untracked" ? trackNameById.get(tid) : undefined;
+    const sourceLabel = w.sourceEntityType ? SOURCE_LABEL[w.sourceEntityType] || w.sourceEntityType : null;
     return (
       <div className="group flex items-center gap-3 rounded-lg border border-card-border bg-card px-3.5 py-3" data-testid={`win-${w.id}`}>
         <Trophy className="w-4 h-4 text-primary shrink-0" />
         <span className="flex-1 text-sm">{w.text}</span>
+        {sourceLabel && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-primary/10 text-primary px-1.5 py-0.5">from {sourceLabel}</span>}
         {trackName && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid={`win-track-${w.id}`} title="Derived track">{trackName}</span>}
         {w.winCategory && <span className="hidden sm:inline-flex shrink-0 text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{WIN_CATEGORY_LABEL[w.winCategory as WinCategory] || w.winCategory}</span>}
         <span className="text-xs text-muted-foreground shrink-0">{dayLabel(w.createdAt)}</span>

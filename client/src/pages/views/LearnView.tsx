@@ -535,7 +535,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
               >
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Theme plan</p>
-                  <p className="mt-0.5 text-xs leading-snug text-foreground">Keep the topics, suggested resources, and checkpoints attached to this learning theme.</p>
+                  <p className="mt-0.5 text-xs leading-snug text-foreground">Keep the topics, suggested resources, and steps attached to this learning theme.</p>
                 </div>
                 {showCurriculum ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />}
               </button>
@@ -543,7 +543,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
               {showCurriculum && (
                 <div className="mt-3 space-y-3">
                   {isLoadingCurriculum ? (
-                    <p className="text-xs text-muted-foreground">Loading the topics and checkpoints for this theme...</p>
+                    <p className="text-xs text-muted-foreground">Loading the topics and steps for this theme...</p>
                   ) : (
                     <>
                       {(recommendationDetail?.subdivisions?.length ?? 0) > 0 && (

@@ -142,7 +142,7 @@ export default function BrainDumpView() {
           <div>
             <Button variant="outline" onClick={sortAll} disabled={sorting} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
               {sorting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-              {sorting ? "Sorting..." : "Sort these for me"}
+              {sorting ? "Working out where each one goes..." : "Sort these for me"}
             </Button>
             <p className="text-xs text-muted-foreground mt-1.5">
               I'll work out what each one probably is: something to do today, a learning item, part of something you've already saved, or just a note.
@@ -177,7 +177,7 @@ export default function BrainDumpView() {
                         disabled={suggestingId === t.id}
                       >
                         {suggestingId === t.id ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <ArrowRight className="w-3 h-3 mr-1" />}
-                        {suggestingId === t.id ? "Thinking..." : "Route"}
+                        {suggestingId === t.id ? "Thinking..." : "Suggest"}
                       </Button>
                     )}
                     {!tr && <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => applyRoute(t, "today", "Added to today")} data-testid={`button-addday-${t.id}`}>Add to day</Button>}

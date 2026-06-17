@@ -797,7 +797,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       {milestoneCapture && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-sm rounded-2xl bg-card border border-card-border p-5 shadow-xl">
-            <p className="text-sm font-semibold mb-1">Nice — milestone done.</p>
+            <p className="text-sm font-semibold mb-1">Nice — step complete.</p>
             <p className="text-xs text-muted-foreground mb-3">
               What's the one thing you'll actually carry from this? (Optional — but it builds your prep notes over time.)
             </p>

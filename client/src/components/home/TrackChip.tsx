@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { AlertTriangle, Compass } from "lucide-react";
 import type { CareerTrack } from "@shared/schema";
 

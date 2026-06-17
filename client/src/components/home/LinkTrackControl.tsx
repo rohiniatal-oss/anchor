@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { Link2 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";

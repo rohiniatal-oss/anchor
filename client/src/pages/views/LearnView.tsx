@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -536,7 +535,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
               >
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Theme plan</p>
-                  <p className="mt-0.5 text-xs leading-snug text-foreground">Keep the subtopics, starter materials, and checkpoints attached to this learning theme.</p>
+                  <p className="mt-0.5 text-xs leading-snug text-foreground">Keep the topics, suggested resources, and checkpoints attached to this learning theme.</p>
                 </div>
                 {showCurriculum ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />}
               </button>
@@ -544,14 +543,14 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
               {showCurriculum && (
                 <div className="mt-3 space-y-3">
                   {isLoadingCurriculum ? (
-                    <p className="text-xs text-muted-foreground">Loading the subtopics and checkpoints for this theme...</p>
+                    <p className="text-xs text-muted-foreground">Loading the topics and checkpoints for this theme...</p>
                   ) : (
                     <>
-                      {recommendationDetail?.subdivisions?.length > 0 && (
+                      {(recommendationDetail?.subdivisions?.length ?? 0) > 0 && (
                         <div>
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">What's inside</p>
                           <div className="mt-2 space-y-2">
-                            {recommendationDetail.subdivisions.map((subdivision) => {
+                            {recommendationDetail!.subdivisions.map((subdivision) => {
                               const materials = parseSuggestedMaterials(subdivision.suggestedMaterials);
                               return (
                                 <div key={subdivision.id} className="rounded-lg border border-card-border bg-card px-3 py-2.5">
@@ -573,20 +572,20 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
                         </div>
                       )}
 
-                      {recommendationDetail?.milestones?.length > 0 && (
+                      {(recommendationDetail?.milestones?.length ?? 0) > 0 && (
                         <div>
                           <div className="flex items-center justify-between">
                             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Checkpoints</p>
                             {(() => {
-                              const total = recommendationDetail.milestones.length;
-                              const done = recommendationDetail.milestones.filter((m: any) => m.status === "done").length;
+                              const total = recommendationDetail!.milestones.length;
+                              const done = recommendationDetail!.milestones.filter((m: any) => m.status === "done").length;
                               return total > 0 ? (
                                 <span className="text-[10px] text-muted-foreground">{done}/{total} done</span>
                               ) : null;
                             })()}
                           </div>
                           <div className="mt-2 space-y-2">
-                            {recommendationDetail.milestones.map((milestone: any) => {
+                            {recommendationDetail!.milestones.map((milestone: any) => {
                               const isDone = milestone.status === "done";
                               const isSkipped = milestone.status === "skipped";
                               const isActive = milestone.status === "active";

@@ -457,7 +457,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
     try {
       const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/recommend-move`, {}, []);
       if (r?.move) { setRecommendedMove(r.move); setMoveTrack(r.track ?? null); }
-    } catch { toast({ title: "Couldn't compute move.", description: "Try again." }); }
+    } catch { toast({ title: "Couldn't figure out the next move.", description: "Try again." }); }
     finally { setLoadingMove(false); }
   }
 
@@ -466,8 +466,8 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
     try {
       await mutateAndInvalidate("POST", `/api/networking/classify-contact/${c.id}`, {}, []);
       queryClient.invalidateQueries({ queryKey: ["/api/networking/classifications"] });
-      toast({ title: "Reclassified." });
-    } catch { toast({ title: "Couldn't classify.", description: "Try again." }); }
+      toast({ title: "Updated." });
+    } catch { toast({ title: "Couldn't update right now.", description: "Try again." }); }
     finally { setClassifying(false); }
   }
 
@@ -485,7 +485,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
             {!bestCls && (
               <button onClick={reclassify} disabled={classifying} className="inline-flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-60">
                 {classifying ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Wand2 className="w-2.5 h-2.5" />}
-                {classifying ? "Classifying…" : "Classify"}
+                {classifying ? "Figuring out…" : "Who is this for?"}
               </button>
             )}
             <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${STRENGTH_TONE[strength]}`}>{strength}</span>
@@ -504,6 +504,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
       <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
         <TrackChip trackId={trackId} tracks={tracks} />
         {(c.targetOrg || c.targetRole) && <span className="inline-flex items-center text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{[c.targetRole, c.targetOrg].filter(Boolean).join(" · ")}</span>}
+        {c.askType && c.askType !== "soft" && <span className="inline-flex items-center text-[10px] rounded-full bg-muted text-muted-foreground px-1.5 py-0.5">{ASK_TYPE_OPTIONS.find((o) => o.value === c.askType)?.label || c.askType}</span>}
         {c.nextFollowUpDate && <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${overdue ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-muted text-muted-foreground"}`}><CalendarDays className="w-2.5 h-2.5" />{formatDeadline(c.nextFollowUpDate)}</span>}
         {moveTrack && <span className="inline-flex items-center text-[10px] rounded-full bg-primary/10 text-primary px-1.5 py-0.5">{moveTrack.name}</span>}
       </div>
@@ -538,7 +539,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
           className="mt-2.5 text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 disabled:opacity-60"
         >
           {loadingMove ? <Loader2 className="w-3 h-3 animate-spin" /> : <Target className="w-3 h-3" />}
-          {loadingMove ? "Computing…" : "What should I ask?"}
+          {loadingMove ? "Working on it…" : "What should I ask?"}
         </button>
       )}
 

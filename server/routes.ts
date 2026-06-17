@@ -21,7 +21,7 @@ import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
 import { generateHustleArc } from "./learningCurriculum";
-import { USER_PROFILE } from "./userPromptProfile";
+import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats } from "./llm";
 
 const acceptRecommendationSchema = z.object({
@@ -356,7 +356,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       })));
 
       const prompt = milestoneType === "artifact"
-        ? `You are a job-search coach helping a candidate prepare a concrete piece of writing.\n` +
+        ? `${COACH_PREAMBLE}You are helping a candidate prepare a concrete piece of writing.\n` +
           `User profile: ${USER_PROFILE} ` +
           `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
           `They are working on: "${rec?.title || milestone.label}".\n` +
@@ -366,7 +366,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Write a concrete first draft they can edit — not a template with [BRACKETS], an actual specific attempt. ` +
           `Keep it tight (under 120 words). Make it specific to their background.\n` +
           `Return ONLY the draft text, no explanation.`
-        : `You are a learning coach helping a candidate synthesise what they've learned.\n` +
+        : `${COACH_PREAMBLE}You are helping a candidate synthesise what they've learned.\n` +
           `User profile: ${USER_PROFILE} ` +
           `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
           `They are working on: "${rec?.title || milestone.label}".\n` +
@@ -408,7 +408,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
 
       const prompt =
-        `You are a demanding but constructive coach reviewing a candidate's draft.\n` +
+        `${COACH_PREAMBLE}You are reviewing a candidate's draft — be demanding but constructive.\n` +
         `User profile: ${USER_PROFILE} Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
         `Task they completed: ${milestone.suggestedTaskTitle}\n` +
         `Done-when criteria: ${milestone.doneWhen}\n\n` +

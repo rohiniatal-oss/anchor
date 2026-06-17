@@ -125,7 +125,7 @@ function MiniTaskRow({ t }: { t: Task }) {
   const { toast } = useToast();
   async function toggle() {
     await mutateAndInvalidate("PATCH", `/api/tasks/${t.id}`, { done: true, status: "done" }, ["/api/tasks"]);
-    await mutateAndInvalidate("POST", "/api/wins", { text: t.title }, ["/api/wins", "/api/stats"]);
+    await mutateAndInvalidate("POST", "/api/wins", { text: t.title }, ["/api/wins", "/api/stats", "/api/wins/summary"]);
     toast({ title: "Nice - one down.", description: "Logged as a win too." });
   }
   async function pin() {
@@ -152,7 +152,7 @@ function DoneTaskRow({ t }: { t: Task }) {
     : t.category === "substack" || t.category === "hustle" || t.category === "afterline" ? "proof_asset"
     : t.sourceType === "contact" ? "network" : "admin";
   async function promote() {
-    await mutateAndInvalidate("POST", "/api/wins", { text: normalizeWinTitle(t.title), kind: "source", winCategory }, ["/api/wins", "/api/stats"]);
+    await mutateAndInvalidate("POST", "/api/wins", { text: normalizeWinTitle(t.title), kind: "source", winCategory }, ["/api/wins", "/api/stats", "/api/wins/summary"]);
     toast({ title: "Logged as a win.", description: `Filed under ${WIN_CATEGORY_LABEL[winCategory]}.` });
   }
   return (
@@ -223,7 +223,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
   // Completion goes through the real endpoint: marks done, logs a win, updates the
   // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
-    const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/stats", "/api/jobs"]);
+    const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/wins/summary", "/api/stats", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
     toast({ title: "Done - and logged as a win", description: "That's momentum. Pick your next thing when ready." });
     if (res?.completedMilestoneId) {
       onMilestoneCompleted(res.completedMilestoneId, pinned.title, synthDraft || undefined);

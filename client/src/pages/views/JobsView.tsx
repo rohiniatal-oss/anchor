@@ -87,7 +87,7 @@ function ApplicationReadinessBar({ j, expanded }: { j: Job; expanded: boolean })
   async function setReadiness(stageKey: string) {
     const clickedIdx = READINESS_ORDER.indexOf(stageKey);
     const newKey = clickedIdx === currentIdx ? (READINESS_ORDER[clickedIdx - 1] ?? "none") : stageKey;
-    await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { applicationReadiness: newKey }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { applicationReadiness: newKey }, ["/api/jobs", "/api/jobs/truth-strips", ...GOAL_SPINE_QUERY_KEYS]);
     const label = READINESS_STAGES.find((s) => s.key === newKey)?.label;
     toast({ title: newKey === "none" ? "Checklist cleared." : `Marked: ${label}` });
   }
@@ -654,11 +654,11 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
     if (gated || windowClosed) return null;
     if (j.status === "wishlist") return {
       label: "Mark applied", icon: CheckCircle2,
-      run: async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/strategy/diagnostics", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); },
+      run: async () => { await mutateAndInvalidate("POST", `/api/jobs/${j.id}/mark-submitted`, {}, ["/api/jobs", "/api/jobs/truth-strips", "/api/strategy/diagnostics", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]); toast({ title: "Marked as applied.", description: "Moved to Applied — nice." }); },
     };
     return {
       label: "Log progress", icon: Trophy,
-      run: async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats"]); toast({ title: "Logged as a win.", description: "Application progress counts." }); },
+      run: async () => { await mutateAndInvalidate("POST", "/api/wins", { text: `Applied: ${j.title}${j.company ? " @ " + j.company : ""}`, kind: "source", winCategory: "job_progress" }, ["/api/wins", "/api/stats", "/api/wins/summary"]); toast({ title: "Logged as a win.", description: "Application progress counts." }); },
     };
   })();
   const truthPrimary = (() => {
@@ -784,7 +784,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
                     const reason = window.prompt("Why are you passing on this role? (optional)");
                     if (reason === null) return;
                     await apiRequest("POST", `/api/jobs/${j.id}/reject`, { reason });
-                    await mutateAndInvalidate("GET", "", {}, ["/api/jobs", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]);
+                    await mutateAndInvalidate("GET", "", {}, ["/api/jobs", "/api/jobs/truth-strips", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]);
                     toast({ title: "Role dismissed.", description: reason ? `Reason: ${reason}` : "Moved to closed." });
                   }}
                   className="text-xs px-1.5 py-0.5 rounded text-muted-foreground hover:text-destructive hover-elevate"
@@ -837,7 +837,7 @@ export function JobsView() {
   const selectedLaneGuide = selectedLane ? laneGuideForCombination(selectedLane) : null;
   async function add() {
     if (!form.title.trim()) return;
-    await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    await mutateAndInvalidate("POST", "/api/jobs", { ...form, status: "wishlist", flag: "" }, ["/api/jobs", "/api/jobs/truth-strips", ...GOAL_SPINE_QUERY_KEYS]);
     toast({
       title: "Role saved.",
       description: "It stays in Jobs for now. Use the readiness rail when you decide to work this one.",
@@ -861,9 +861,9 @@ export function JobsView() {
   async function move(j: Job, dir: 1 | -1) {
     const idx = JOB_COLS.findIndex((c) => c.id === j.status);
     const next = JOB_COLS[idx + dir];
-    if (next) await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { status: next.id }, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    if (next) await mutateAndInvalidate("PATCH", `/api/jobs/${j.id}`, { status: next.id }, ["/api/jobs", "/api/jobs/truth-strips", ...GOAL_SPINE_QUERY_KEYS]);
   }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/jobs/${id}`, undefined, ["/api/jobs", ...GOAL_SPINE_QUERY_KEYS]); }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/jobs/${id}`, undefined, ["/api/jobs", "/api/jobs/truth-strips", ...GOAL_SPINE_QUERY_KEYS]); }
   async function acceptRecommendation(rec: RecommendationItem) {
     const entityType = rec.collection === "network-targets" ? "contact" : "learn";
     await mutateAndInvalidate("POST", `/api/recommendations/${rec.id}/accept`, { entityType }, [

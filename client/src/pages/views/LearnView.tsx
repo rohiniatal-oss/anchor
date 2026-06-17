@@ -339,7 +339,7 @@ export function ProofAssetsView() {
   const [form, setForm] = useState({ title: "", note: "", coreClaim: "", contentPillar: "" });
   async function add() {
     if (!form.title.trim()) return;
-    await mutateAndInvalidate("POST", "/api/hustles", { ...form, stage: "idea" }, ["/api/hustles"]);
+    await mutateAndInvalidate("POST", "/api/hustles", { ...form, stage: "idea" }, ["/api/hustles", ...GOAL_SPINE_QUERY_KEYS]);
     toast({
       title: "Saved.",
       description: "I also started a step-by-step arc for this so it is easier to move from idea to output.",
@@ -349,9 +349,9 @@ export function ProofAssetsView() {
   async function move(h: Hustle, dir: 1 | -1) {
     const idx = HUSTLE_STAGES.findIndex((s) => s.id === h.stage);
     const next = HUSTLE_STAGES[idx + dir];
-    if (next) await mutateAndInvalidate("PATCH", `/api/hustles/${h.id}`, { stage: next.id }, ["/api/hustles"]);
+    if (next) await mutateAndInvalidate("PATCH", `/api/hustles/${h.id}`, { stage: next.id }, ["/api/hustles", ...GOAL_SPINE_QUERY_KEYS]);
   }
-  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/hustles/${id}`, undefined, ["/api/hustles"]); }
+  async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/hustles/${id}`, undefined, ["/api/hustles", ...GOAL_SPINE_QUERY_KEYS]); }
 
   const grouped = HUSTLE_STAGES.map((stage) => ({ stage, items: hustles.filter((h) => h.stage === stage.id) }));
   const active = grouped.filter((g) => g.items.length > 0);

@@ -48,8 +48,9 @@ export default function BrainDumpView() {
 
   const autoSorted = useRef(false);
   useEffect(() => {
-    if (inbox.length > 0 && !isLoading && !sorting && !autoSorted.current && Object.keys(triage).length === 0) {
-      autoSorted.current = true;
+    if (isLoading || autoSorted.current) return;
+    autoSorted.current = true;
+    if (inbox.length > 0 && !sorting && Object.keys(triage).length === 0) {
       sortAll();
     }
   }, [inbox.length, isLoading]);
@@ -159,7 +160,7 @@ export default function BrainDumpView() {
                   Accept all suggestions
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={() => { autoSorted.current = false; sortAll(); }} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
+              <Button variant="outline" size="sm" onClick={sortAll} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
                 <Wand2 className="w-4 h-4" /> Re-sort
               </Button>
             </div>

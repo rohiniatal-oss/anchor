@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Plus, Check, CalendarDays, Loader2, Target, ChevronRight,
   Pin, Wand2, MoveRight, MoonStar, Trophy, Briefcase, Users, GraduationCap,
-  X, Sparkles, ExternalLink,
+  X, Sparkles, ExternalLink, Flame, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -636,6 +636,9 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     networkThisWeek: number;
     learningThisWeek: number;
     proofAssetThisWeek: number;
+    actionsToday: number;
+    startsToday: number;
+    streak: number;
   }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
@@ -830,13 +833,29 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       )}
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
       {!activeGoal && <p className="text-sm text-muted-foreground mt-1 mb-3">{introLine}</p>}
-      {stats && stats.doneThisWeek > 0 && (
+      {stats && (stats.doneThisWeek > 0 || stats.actionsToday > 0 || stats.streak > 1) && (
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Trophy className="w-3.5 h-3.5 text-primary" />
-            <span className="font-semibold text-foreground tabular-nums">{stats.doneThisWeek}</span>
-            {stats.doneThisWeek === 1 ? "win" : "wins"} this week
-          </span>
+          {stats.streak > 1 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Flame className="w-3.5 h-3.5 text-orange-500" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.streak}</span>
+              day streak
+            </span>
+          )}
+          {stats.actionsToday > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Zap className="w-3.5 h-3.5 text-primary" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.actionsToday}</span>
+              done today
+            </span>
+          )}
+          {stats.doneThisWeek > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Trophy className="w-3.5 h-3.5 text-primary" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.doneThisWeek}</span>
+              {stats.doneThisWeek === 1 ? "win" : "wins"} this week
+            </span>
+          )}
           {stats.jobProgressThisWeek > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <Briefcase className="w-3.5 h-3.5 text-primary" />

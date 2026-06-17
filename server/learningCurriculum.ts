@@ -181,7 +181,8 @@ export async function generateLearningCurriculum(
   const ctx = formatContextForPrompt(await buildUserContext());
 
   const allRecs = await storage.getRecommendations();
-  const trackRecs = allRecs.filter((r) => r.linkedTrackId != null && r.linkedTrackId === (allRecs.find((x) => x.id === recommendationId)?.linkedTrackId) && r.id !== recommendationId);
+  const currentTrackId = allRecs.find((x) => x.id === recommendationId)?.linkedTrackId ?? null;
+  const trackRecs = currentTrackId == null ? [] : allRecs.filter((r) => r.linkedTrackId === currentTrackId && r.id !== recommendationId);
   const trackRecIds = trackRecs.map((r) => r.id);
   const priorMilestones = trackRecIds.length > 0 ? await storage.getRecommendationMilestonesForRecommendationIds(trackRecIds) : [];
   const priorNotes = priorMilestones
@@ -356,7 +357,7 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
   const priorNotes = priorMilestones
     .filter((m) => (m as any).completionNote)
     .map((m) => `- ${m.label}: "${(m as any).completionNote}"`)
-    .slice(0, 6);
+    .slice(0, 8);
 
   const jobContext = [
     `Role: ${job.title}`,

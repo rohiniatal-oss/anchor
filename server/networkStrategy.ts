@@ -103,7 +103,7 @@ export async function generateNetworkGaps(
 
   const ctx = await buildUserContext();
   const prompt =
-    `${COACH_PREAMBLE}You are building a network strategy for ${formatContextForPrompt(ctx)}\n\n` +
+    `${COACH_PREAMBLE}You are building a network strategy.\n${formatContextForPrompt(ctx)}\n\n` +
     `CAREER TRACK: "${track.name}"\n` +
     (track.description ? `Description: ${track.description}\n` : "") +
     (track.whyItFits ? `Why it fits her: ${track.whyItFits}\n` : "") +

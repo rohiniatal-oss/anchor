@@ -11,6 +11,7 @@ import {
   insertTaskSchema, insertJobSchema,
   insertLearnSchema, insertHustleSchema, insertWinSchema, insertContactSchema,
   insertRecommendationSchema, insertRecommendationSubdivisionSchema, insertRecommendationMilestoneSchema,
+  insertCareerTrackSchema,
 } from "@shared/schema";
 import { migrateFellowshipLearnRows } from "./fellowshipMigration";
 import { registerPlanningRoutes } from "./planningRoutes";
@@ -159,11 +160,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }));
     res.json(repaired);
   });
-  app.post("/api/tasks", async (req, res) => {
-    const p = insertTaskSchema.safeParse(req.body);
-    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
-    res.json(await storage.createTask(p.data));
-  });
+  // POST /api/tasks is handled by sprint2.ts (enrichTaskInput with estimates,
+  // track inference, and activity logging). Do not duplicate here.
   app.patch("/api/tasks/:id", async (req, res) => {
     const p = insertTaskSchema.partial().safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
@@ -635,8 +633,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(updated);
   });
 
-  // Career tracks list (for the in-card Link track control).
+  // Career tracks CRUD.
   app.get("/api/career-tracks", async (_req, res) => res.json(await storage.getCareerTracks()));
+  app.post("/api/career-tracks", async (req, res) => {
+    const p = insertCareerTrackSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    res.json(await storage.createCareerTrack(p.data));
+  });
+  app.patch("/api/career-tracks/:id", async (req, res) => {
+    const p = insertCareerTrackSchema.partial().safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const u = await storage.updateCareerTrack(Number(req.params.id), p.data);
+    if (!u) return res.status(404).json({ error: "Not found" });
+    res.json(u);
+  });
+  app.delete("/api/career-tracks/:id", async (req, res) => {
+    await storage.deleteCareerTrack(Number(req.params.id));
+    res.json({ ok: true });
+  });
 
   // ═══ P3.5: STRATEGY DIAGNOSTICS — per-track bottlenecks + unlinked bucket ═══
   app.get("/api/strategy/diagnostics", async (_req, res) => res.json({ tracks: await getTrackDiagnostics() }));

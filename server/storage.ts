@@ -165,6 +165,8 @@ export interface IStorage {
   getActivityLog(): Promise<ActivityLog[]>;
   getCareerTracks(): Promise<CareerTrack[]>;
   createCareerTrack(t: InsertCareerTrack): Promise<CareerTrack>;
+  updateCareerTrack(id: number, patch: Partial<InsertCareerTrack>): Promise<CareerTrack | undefined>;
+  deleteCareerTrack(id: number): Promise<void>;
   getDiscoverySession(id: number): Promise<DiscoverySession | undefined>;
   createDiscoverySession(session: InsertDiscoverySession): Promise<DiscoverySession>;
   updateDiscoverySession(id: number, patch: Partial<InsertDiscoverySession>): Promise<DiscoverySession | undefined>;

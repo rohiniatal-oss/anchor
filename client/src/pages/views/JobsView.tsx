@@ -472,7 +472,7 @@ function JobCapabilitySupport({
         description: taskToastDescription(r, "There's already an open task for this learning item."),
       });
     } catch {
-      toast({ title: "Couldn't create the prep task", description: "Try again in a moment." });
+      toast({ title: "Couldn't create the learning task", description: "Try again in a moment." });
     } finally {
       setBusyId(null);
     }
@@ -484,7 +484,7 @@ function JobCapabilitySupport({
       relatedTrackId: trackId,
       track,
       noteIntro: `Build familiarity with ${track?.name || "this role type"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
-      fallbackTitle: `${track?.name || j.title} prep`,
+      fallbackTitle: `${track?.name || j.title} learning`,
     });
     queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
     window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
@@ -641,7 +641,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
       relatedTrackId: trackId,
       track,
       noteIntro: `Build familiarity with ${track?.name || "this role type"} while pursuing ${j.title}${j.company ? ` @ ${j.company}` : ""}.`,
-      fallbackTitle: `${track?.name || j.title} prep`,
+      fallbackTitle: `${track?.name || j.title} learning`,
     });
     queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
     window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
@@ -683,7 +683,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
         ? { label: "Clarify role", icon: ExternalLink, run: async () => openRoleSource() }
         : { label: "Clarify role", icon: Compass, run: createJobNextTask };
     }
-    if (truth.action === "prepare") return { label: "Create prep task", icon: FileText, run: createJobNextTask };
+    if (truth.action === "prepare") return { label: "Create learning task", icon: FileText, run: createJobNextTask };
     if (truth.action === "follow_up") return { label: "Create follow-up task", icon: MessageSquare, run: createJobNextTask };
     if (truth.action === "apply") return { label: "Create application task", icon: CheckCircle2, run: createJobNextTask };
     return null;

@@ -46,9 +46,11 @@ export async function buildUserContext(): Promise<UserContext> {
   const planning = [...evidence.byTrack.values()].filter((e) => e.producingVsPlanning === "planning").length;
   const idle = [...evidence.byTrack.values()].filter((e) => e.producingVsPlanning === "idle").length;
 
+  const activeTrackIds = new Set<number | null>(activeTracks.map((t) => t.id));
+  const activeJobs = jobs.filter((j) => activeTrackIds.has(getTrackId("jobs", j)));
   const phase = activeTracks.length === 0
     ? "exploration"
-    : liveJobCount(jobs) === 0
+    : liveJobCount(activeJobs) === 0
     ? "fit-discovery"
     : "active-pursuit";
 

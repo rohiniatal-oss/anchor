@@ -1,6 +1,7 @@
 import { USER_PROFILE } from "./userPromptProfile";
 import { llm, llmJSON } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
+import { COACH_PREAMBLE } from "./userPromptProfile";
 import type { CareerTrack, Contact, Job, NetworkGap } from "@shared/schema";
 
 export type ArchetypeKey =
@@ -102,7 +103,7 @@ export async function generateNetworkGaps(
 
   const ctx = await buildUserContext();
   const prompt =
-    `You are building a network strategy for ${formatContextForPrompt(ctx)}\n\n` +
+    `${COACH_PREAMBLE}You are building a network strategy for ${formatContextForPrompt(ctx)}\n\n` +
     `CAREER TRACK: "${track.name}"\n` +
     (track.description ? `Description: ${track.description}\n` : "") +
     (track.whyItFits ? `Why it fits her: ${track.whyItFits}\n` : "") +
@@ -156,7 +157,7 @@ export async function classifyContact(
     .join("\n");
 
   const prompt =
-    `You are classifying a contact for Rohini's career network.\n\n` +
+    `${COACH_PREAMBLE}You are classifying a contact for Rohini's career network.\n\n` +
     `ABOUT ROHINI: ${USER_PROFILE}\n\n` +
     `ACTIVE CAREER TRACKS:\n` +
     tracks.map((t) => `- ID ${t.id}: "${t.name}"${t.description ? ` — ${t.description}` : ""}`).join("\n") +
@@ -341,7 +342,7 @@ export async function draftOutreachMessage(
 
   const ctx = await buildUserContext();
   const systemPrompt =
-    `You are helping Rohini Atal draft a professional outreach message.\n\n` +
+    `${COACH_PREAMBLE}You are helping Rohini Atal draft a professional outreach message.\n\n` +
     `ABOUT ROHINI: ${formatContextForPrompt(ctx)}\n` +
     (track ? `She is pursuing: ${track.name}.\n` : "") +
     `\nABOUT THE CONTACT:\n` +

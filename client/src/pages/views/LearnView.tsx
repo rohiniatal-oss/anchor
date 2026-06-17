@@ -964,7 +964,7 @@ export function LearnView() {
   return (
       <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Learn" sub="Courses, reading, and prep that make future roles and interviews feel easier. Brand work like Substack belongs below under Writing, Projects, and Brand, not under Learn." />
+        <SectionHeading title="Learn" sub="Courses, reading, and learning that make future roles and interviews feel easier. Brand work like Substack belongs below under Writing, Projects, and Brand, not under Learn." />
         <Button onClick={() => {
           if (showForm) {
             setShowForm(false);

@@ -23,6 +23,7 @@ import { syncGapRecommendations } from "./gapRecommendations";
 import { generateHustleArc } from "./learningCurriculum";
 import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats } from "./llm";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 const acceptRecommendationSchema = z.object({
   entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
@@ -355,9 +356,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         completionNote: (m as any).completionNote,
       })));
 
+      const ctx = await buildUserContext();
+      const userCtx = formatContextForPrompt(ctx);
       const prompt = milestoneType === "artifact"
         ? `${COACH_PREAMBLE}You are helping a candidate prepare a concrete piece of writing.\n` +
-          `User profile: ${USER_PROFILE} ` +
+          `${userCtx} ` +
           `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
           `They are working on: "${rec?.title || milestone.label}".\n` +
           `The task: ${milestone.suggestedTaskTitle}\n` +
@@ -367,7 +370,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Keep it tight (under 120 words). Make it specific to their background.\n` +
           `Return ONLY the draft text, no explanation.`
         : `${COACH_PREAMBLE}You are helping a candidate synthesise what they've learned.\n` +
-          `User profile: ${USER_PROFILE} ` +
+          `${userCtx} ` +
           `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
           `They are working on: "${rec?.title || milestone.label}".\n` +
           `The synthesis task: ${milestone.suggestedTaskTitle}\n` +
@@ -407,9 +410,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         doneWhen: milestone.doneWhen,
       });
 
+      const critiqueCtx = await buildUserContext();
       const prompt =
         `${COACH_PREAMBLE}You are reviewing a candidate's draft — be demanding but constructive.\n` +
-        `User profile: ${USER_PROFILE} Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
+        `${formatContextForPrompt(critiqueCtx)} Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
         `Task they completed: ${milestone.suggestedTaskTitle}\n` +
         `Done-when criteria: ${milestone.doneWhen}\n\n` +
         `Their draft:\n"""\n${draft}\n"""\n\n` +

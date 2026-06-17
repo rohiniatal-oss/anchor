@@ -26,18 +26,18 @@ export function llmUsageStats() {
 
 export async function llm(input: string, opts: LlmOptions = {}): Promise<string> {
   const model = opts.model || DEFAULT_MODEL;
-  const retries = opts.retries ?? MAX_RETRIES;
+  const retries = Math.max(0, opts.retries ?? MAX_RETRIES);
   const client = getClient();
 
-  let lastError: unknown;
+  let lastError: unknown = new Error("llm call failed");
   for (let attempt = 0; attempt <= retries; attempt++) {
+    _totalCalls++;
     try {
       const r = await client.responses.create({
         model,
         input,
         ...(opts.tools?.length ? { tools: opts.tools } : {}),
       });
-      _totalCalls++;
       if (r.usage) {
         _totalInputTokens += r.usage.input_tokens || 0;
         _totalOutputTokens += r.usage.output_tokens || 0;

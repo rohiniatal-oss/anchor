@@ -44,7 +44,7 @@ export function learningGapPrepStarter(
   domainLabel: string,
 ): LearningGapPrepStarter {
   return STARTERS[domain] || {
-    title: `${domainLabel} prep`,
+    title: `${domainLabel} learning`,
     note: `Get more concrete in ${domainLabel} so you can explain it more clearly.`,
     optionalResult: "a short note or example you can reuse later",
   };

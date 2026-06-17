@@ -61,7 +61,7 @@ export function broadPursuitMissingRolesPlanSummary() {
 
 export function broadPursuitMissingRolesPlannerNote(combinations: string[] = []) {
   const missingText = broadPursuitPathList(combinations, "the paths still missing one");
-  return `You are testing several paths in parallel. Each missing path still needs one real role or application move before narrowing: ${missingText}.`;
+  return `You are testing several paths in parallel. Each missing path needs one real role or application move before narrowing: ${missingText}.`;
 }
 
 export function broadPursuitMissingRolesSupportingReasons(combinations: string[] = []) {
@@ -94,7 +94,7 @@ export function broadPursuitNextMissingRoleStopRule(combinations: string[] = [])
 
 export function broadPursuitNextMissingRolePlanNote(combinations: string[] = []) {
   const target = combinations.length ? combinations[combinations.length - 1] : "the next missing path";
-  return `You are testing several paths in parallel, but one missing path still needs a real role or application step: ${target}. Do that before drifting back into abstract comparison.`;
+  return `You are testing several paths in parallel, but ${target} has no real role or application step yet. Do that before drifting back into abstract comparison.`;
 }
 
 export function broadPursuitMissingContactsUnlockMove() {

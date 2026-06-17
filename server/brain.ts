@@ -275,7 +275,7 @@ function startabilityMomentum(c: Candidate) {
 
   if (c.source === "task" && taskStillNeedsClarifying(c)) {
     score -= 14;
-    trace.push("still needs a clearer first step before it should lead");
+    trace.push("needs a clearer first step before it should lead");
   }
 
   return { score, trace };
@@ -446,14 +446,14 @@ function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
     skipped: 0,
     sourceUrl: "",
     sourceNote: combination
-      ? `This path still needs a real role: ${combination}. Add one real role or application move for it next.`
+      ? `The ${combination} path has no real role yet. Add one concrete role or application move for it next.`
       : broadPursuitMissingRolesSourceNote(context?.broadPursuitMissingCombinations || []),
     sourceStatus: "broad_parallel_pursuit",
     doneWhen: combination
       ? `One concrete role or application move exists for the missing path: ${combination}`
       : broadPursuitMissingRolesDoneWhen(),
     whyNow: combination
-      ? `the ${combination} path still needs a real opening`
+      ? `the ${combination} path has no real opening yet`
       : broadPursuitMissingRolesWhyNow(),
     fitScore: null,
     blocked: false,
@@ -491,10 +491,10 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `This live role type still needs someone useful to reach out to: ${combination}. Add one contact or outreach path for it next.`,
+        sourceNote: `The ${combination} path has no contacts yet. Add one useful contact or outreach path for it next.`,
         sourceStatus: "broad_parallel_pursuit_network_support",
         doneWhen: `One useful contact or outreach path exists for ${combination}`,
-        whyNow: `the ${combination} path still needs someone useful to reach out to`,
+        whyNow: `the ${combination} path has no contacts yet`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -529,10 +529,10 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `This live role type still needs more focused learning support: ${combination}. Start learning about it next.`,
+        sourceNote: `The ${combination} path has no learning resources yet. Start learning about it next.`,
         sourceStatus: "broad_parallel_pursuit_learning_support",
         doneWhen: `One focused learning item exists for ${combination}`,
-        whyNow: `the ${combination} path still needs more focused learning support`,
+        whyNow: `the ${combination} path has no learning resources yet`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -1319,14 +1319,14 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
-      return `${candidate.targetRole} still needs a real role or application move, so that is the best next move now.`;
+      return `${candidate.targetRole} has no real role or application move yet — adding one is the best next move.`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
-      if (candidate?.targetRole) return `${candidate.targetRole} still needs someone useful to reach out to, so the best move is to add one contact path for it now.`;
+      if (candidate?.targetRole) return `${candidate.targetRole} has no contacts yet — add one useful person to reach out to.`;
       return broadPursuitMissingContactsSourceFrame(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `${candidate.targetRole} still needs more focused learning support, so the best move is to start learning about it now.`;
+      if (candidate?.targetRole) return `${candidate.targetRole} has no learning resources yet — start learning about it now.`;
       return broadPursuitMissingPrepSourceFrame(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {

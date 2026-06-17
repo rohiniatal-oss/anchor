@@ -14,7 +14,8 @@ import {
 export function registerNetworkStrategyRoutes(app: Express) {
   // GET /api/networking/gaps — all stored gaps (optionally filter by trackId)
   app.get("/api/networking/gaps", async (req, res) => {
-    const trackId = req.query.trackId ? Number(req.query.trackId) : undefined;
+    const rawTrackId = typeof req.query.trackId === "string" ? req.query.trackId.trim() : "";
+    const trackId = rawTrackId === "" ? undefined : Number(rawTrackId);
     if (trackId !== undefined && !Number.isFinite(trackId)) return res.status(400).json({ error: "Bad trackId" });
     const gaps = await storage.getNetworkGaps(trackId);
     res.json({ gaps });

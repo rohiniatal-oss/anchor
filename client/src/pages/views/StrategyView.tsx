@@ -92,10 +92,10 @@ type RecommendationDetail = RecommendationItem & {
 };
 
 const PVP_META: Record<"producing" | "balanced" | "planning" | "idle", { label: string; cls: string }> = {
-  producing: { label: "Producing", cls: "bg-primary/10 text-primary" },
-  balanced: { label: "Balanced", cls: "bg-slate-100 text-slate-600" },
-  planning: { label: "Planning, not producing", cls: "bg-slate-200 text-slate-700" },
-  idle: { label: "Idle", cls: "bg-muted text-muted-foreground" },
+  producing: { label: "Active progress", cls: "bg-primary/10 text-primary" },
+  balanced: { label: "Steady pace", cls: "bg-slate-100 text-slate-600" },
+  planning: { label: "In research mode", cls: "bg-slate-200 text-slate-700" },
+  idle: { label: "Not started yet", cls: "bg-muted text-muted-foreground" },
 };
 function EvidenceChips({ ev }: { ev: NonNullable<TrackDiagnostic["evidence"]> }) {
   const pvp = PVP_META[ev.producingVsPlanning];
@@ -121,12 +121,12 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
       </span>
       {lg.gapCount > 0 && (
         <span className="inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid="capability-gap">
-          {lg.gapCount} area{lg.gapCount === 1 ? "" : "s"} still needs support{lg.topGapLabel ? ` | ${lg.topGapLabel}` : ""}
+          {lg.gapCount} area{lg.gapCount === 1 ? "" : "s"} to develop{lg.topGapLabel ? ` | ${lg.topGapLabel}` : ""}
         </span>
       )}
       {lg.gapCount > 0 && lg.topGapLabel && (
         <span className={`inline-flex shrink-0 text-[10px] rounded-full px-1.5 py-0.5 ${lg.topGapHasResource ? "bg-slate-100 text-slate-600" : "bg-slate-200 text-slate-700"}`} data-testid="capability-resource">
-          {lg.topGapHasResource ? "learning item saved" : "needs first learning item"}
+          {lg.topGapHasResource ? "learning resource added" : "add a learning resource"}
         </span>
       )}
     </div>
@@ -292,7 +292,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           <div className="mt-2.5 space-y-2">
             {needsFirstRole && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">No live role saved yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
+                <p className="text-xs text-muted-foreground leading-snug">Find a real <span className="font-medium text-foreground">{t.name}</span> opening to target.</p>
                 <Button size="sm" variant="outline" onClick={() => openTrackTab("jobs")} data-testid={`button-add-gap-job-${t.slug}`}>
                   <Briefcase className="w-4 h-4 mr-1" /> Add role
                 </Button>
@@ -300,7 +300,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             )}
             {needsContactPath && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">No one to reach out to yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
+                <p className="text-xs text-muted-foreground leading-snug">Add someone who can help with <span className="font-medium text-foreground">{t.name}</span>.</p>
                 {savedContactRec ? (
                   <Button size="sm" variant="outline" onClick={() => acceptRecommendation(savedContactRec)} data-testid={`button-use-saved-contact-${t.slug}`}>
                     <Users className="w-4 h-4 mr-1" /> Use saved suggestion
@@ -314,7 +314,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             )}
             {needsContactFollowThrough && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">You have contacts for <span className="font-medium text-foreground">{t.name}</span> — check if any need a follow-up or a clearer ask.</p>
+                <p className="text-xs text-muted-foreground leading-snug">You have contacts for <span className="font-medium text-foreground">{t.name}</span> — time to follow up or sharpen your ask.</p>
                 <Button size="sm" variant="outline" onClick={() => openTrackTab("network")} data-testid={`button-open-gap-contact-${t.slug}`}>
                   <Users className="w-4 h-4 mr-1" /> Open network
                 </Button>
@@ -323,7 +323,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             {needsPrepItem && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a learning focus.</p>
+                  <p className="text-xs text-muted-foreground leading-snug">Start learning about <span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span>.</p>
                   {prepStarter && !savedLearningRec && (
                     <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Start with: <span className="font-medium text-foreground">{prepStarter.title}</span>.</p>
                   )}

@@ -94,11 +94,12 @@ export function registerTaskAssistRoutes(app: Express) {
   });
 
   app.get("/api/stats", async (_req, res) => {
-    const weekAgo = Date.now() - 7 * 86400000;
-    const dayAgo = Date.now() - 86400000;
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayKey = yesterday.toISOString().slice(0, 10);
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 86400000;
+    const weekAgo = startOfToday - 7 * 86400000;
+    const y = new Date(startOfYesterday);
+    const yesterdayKey = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
     const [wins, activity, yesterdayPlan] = await Promise.all([
       storage.getWins(), storage.getActivityLog(), storage.getPlanByDate(yesterdayKey),
     ]);
@@ -107,7 +108,7 @@ export function registerTaskAssistRoutes(app: Express) {
     const yesterdayTotal = yesterdayItems.length;
     const thisWeek = wins.filter((w) => w.createdAt >= weekAgo);
     const weekActivity = activity.filter((a) => a.timestamp >= weekAgo);
-    const todayActivity = activity.filter((a) => a.timestamp >= dayAgo);
+    const todayActivity = activity.filter((a) => a.timestamp >= startOfToday);
     res.json({
       doneThisWeek: thisWeek.length,
       jobProgressThisWeek: thisWeek.filter((w) => w.winCategory === "job_progress").length,

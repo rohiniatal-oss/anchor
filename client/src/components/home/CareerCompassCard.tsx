@@ -273,17 +273,17 @@ export function CareerCompassCard({
           <div className="mt-2 space-y-1">
             {firstMissingRole && (
               <p className="text-xs text-muted-foreground">
-                Still missing a live role for <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingRole)}</span>.
+                Find a real opening for <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingRole)}</span>.
               </p>
             )}
             {firstMissingNetwork && (
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingNetwork)}</span> still needs someone useful to reach out to.
+                Add a contact for <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingNetwork)}</span>.
               </p>
             )}
             {firstMissingPrep && (
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> still needs a learning focus if you want clearer interview or application support.
+                Start learning about <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> to sharpen your interviews and applications.
               </p>
             )}
           </div>

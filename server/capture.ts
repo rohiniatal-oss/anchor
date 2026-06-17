@@ -286,67 +286,47 @@ export async function routeCapture(id: number, rawRoute: string) {
   }
 
   if (route === "job") {
-    try {
-      const d = await resolveAssetDetails(task.title, "job");
-      const created = await storage.createJob({
-        title: d.title || task.title, company: d.company || "", location: d.location || "", url: d.url || "",
-        note: "Captured in brain dump", nextStep: d.nextStep || "Check requirements and next action", status: "wishlist",
-      } as any);
-      await markCaptureRouted(task, route, "job", created.id, reason);
-      return { status: 200, body: { moved: "job", route, job: created, reason } };
-    } catch {
-      const created = await storage.createJob({ title: task.title, company: "", location: "", url: "", note: "Captured in brain dump", nextStep: "Check requirements and next action", status: "wishlist" } as any);
-      await markCaptureRouted(task, route, "job", created.id, reason);
-      return { status: 200, body: { moved: "job", route, job: created, reason } };
-    }
+    let d: Record<string, string> = {};
+    try { d = await resolveAssetDetails(task.title, "job"); } catch { /* use defaults */ }
+    const created = await storage.createJob({
+      title: d.title || task.title, company: d.company || "", location: d.location || "", url: d.url || "",
+      note: "Captured in brain dump", nextStep: d.nextStep || "Check requirements and next action", status: "wishlist",
+    } as any);
+    await markCaptureRouted(task, route, "job", created.id, reason);
+    return { status: 200, body: { moved: "job", route, job: created, reason } };
   }
 
   if (route === "learn") {
-    try {
-      const d = await resolveAssetDetails(task.title, "learn");
-      const created = await storage.createLearn({
-        title: d.title || task.title, category: d.category || "", cost: "", url: d.url || "", note: "Captured in brain dump",
-        done: false, active: false, type: d.learnType || "resource", learnStatus: "open",
-        requiredOutput: d.requiredOutput || "", capabilityBuilt: d.capabilityBuilt || "",
-      } as any);
-      await markCaptureRouted(task, route, "learn", created.id, reason);
-      return { status: 200, body: { moved: "learn", route, learn: created, reason } };
-    } catch {
-      const created = await storage.createLearn({ title: task.title, category: "", cost: "", url: "", note: "Captured in brain dump", done: false, active: false, type: "resource", learnStatus: "open" } as any);
-      await markCaptureRouted(task, route, "learn", created.id, reason);
-      return { status: 200, body: { moved: "learn", route, learn: created, reason } };
-    }
+    let d: Record<string, string> = {};
+    try { d = await resolveAssetDetails(task.title, "learn"); } catch { /* use defaults */ }
+    const created = await storage.createLearn({
+      title: d.title || task.title, category: d.category || "", cost: "", url: d.url || "", note: "Captured in brain dump",
+      done: false, active: false, type: d.learnType || "resource", learnStatus: "open",
+      requiredOutput: d.requiredOutput || "", capabilityBuilt: d.capabilityBuilt || "",
+    } as any);
+    await markCaptureRouted(task, route, "learn", created.id, reason);
+    return { status: 200, body: { moved: "learn", route, learn: created, reason } };
   }
 
   if (route === "network") {
-    try {
-      const d = await resolveAssetDetails(task.title, "network");
-      const created = await storage.createContact({
-        name: "", who: d.who || task.title, sector: "", why: d.why || "Captured in brain dump", status: "to_contact",
-        relationshipStrength: "cold", askType: d.askType || "soft",
-      } as any);
-      await markCaptureRouted(task, route, "contact", created.id, reason);
-      return { status: 200, body: { moved: "network", route, contact: created, reason } };
-    } catch {
-      const created = await storage.createContact({ name: "", who: task.title, sector: "", why: "Captured in brain dump", status: "to_contact", relationshipStrength: "cold", askType: "soft" } as any);
-      await markCaptureRouted(task, route, "contact", created.id, reason);
-      return { status: 200, body: { moved: "network", route, contact: created, reason } };
-    }
+    let d: Record<string, string> = {};
+    try { d = await resolveAssetDetails(task.title, "network"); } catch { /* use defaults */ }
+    const created = await storage.createContact({
+      name: "", who: d.who || task.title, sector: "", why: d.why || "Captured in brain dump", status: "to_contact",
+      relationshipStrength: "cold", askType: d.askType || "soft",
+    } as any);
+    await markCaptureRouted(task, route, "contact", created.id, reason);
+    return { status: 200, body: { moved: "network", route, contact: created, reason } };
   }
 
   if (route === "proof") {
-    try {
-      const d = await resolveAssetDetails(task.title, "proof");
-      const created = await storage.createHustle({
-        title: d.title || task.title, note: "Captured in brain dump", nextStep: d.nextStep || "Define the smallest useful piece", stage: "idea",
-      } as any);
-      await markCaptureRouted(task, route, "hustle", created.id, reason);
-      return { status: 200, body: { moved: "proof", route, hustle: created, reason } };
-    } catch {
-      const created = await storage.createHustle({ title: task.title, note: "Captured in brain dump", nextStep: "Define the smallest useful piece", stage: "idea" } as any);
-      await markCaptureRouted(task, route, "hustle", created.id, reason);
-      return { status: 200, body: { moved: "proof", route, hustle: created, reason } };
-    }
+    let d: Record<string, string> = {};
+    try { d = await resolveAssetDetails(task.title, "proof"); } catch { /* use defaults */ }
+    const created = await storage.createHustle({
+      title: d.title || task.title, note: "Captured in brain dump", nextStep: d.nextStep || "Define the smallest useful piece", stage: "idea",
+    } as any);
+    await markCaptureRouted(task, route, "hustle", created.id, reason);
+    return { status: 200, body: { moved: "proof", route, hustle: created, reason } };
   }
 
   return { status: 400, body: { error: "Unhandled route" } };

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { ListChecks, Loader2, Plus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";

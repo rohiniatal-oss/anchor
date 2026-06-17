@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -384,7 +383,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
   const [showHistory, setShowHistory] = useState(false);
   const [loggingType, setLoggingType] = useState<string | null>(null);
 
-  const { data: interactions = [] } = useQuery({
+  const { data: interactions = [] } = useQuery<any[]>({
     queryKey: [`/api/contacts/${c.id}/interactions`],
     enabled: showHistory,
   });

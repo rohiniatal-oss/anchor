@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { Briefcase, GraduationCap, Users, ListChecks, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { buildPrepStarterDraft } from "@/lib/learnStarter";

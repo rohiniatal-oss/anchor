@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -1009,7 +1008,7 @@ export function JobsView() {
                 <div className="mb-4">
                   <GroupLabel count={openFellowships.length}><Compass className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Open / apply now</GroupLabel>
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {openFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                    {openFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
                   </div>
                 </div>
               )}
@@ -1017,7 +1016,7 @@ export function JobsView() {
                 <div>
                   <GroupLabel count={watchFellowships.length}><CalendarDays className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Watch / closed for 2026</GroupLabel>
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} onMove={move} onRemove={() => remove(j.id)} />)}
+                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
                   </div>
                 </div>
               )}

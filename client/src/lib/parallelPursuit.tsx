@@ -1,4 +1,3 @@
-// @ts-nocheck - parallel pursuit components
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GOAL_WORKSTREAM, goalWorkstreamLabel } from "@shared/goalWorkstreams";

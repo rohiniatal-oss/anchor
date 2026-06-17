@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -1042,9 +1041,9 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                             <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
                               {preShrunk ? "First tiny step" : "Smallest useful move"}
                             </p>
-                            {it.explanation?.nextCheckpoint?.totalMilestones > 0 && (
+                            {(it.explanation?.nextCheckpoint?.totalMilestones ?? 0) > 0 && (
                               <span className="text-[10px] font-medium text-primary/60 shrink-0">
-                                {it.explanation.nextCheckpoint.doneCount}/{it.explanation.nextCheckpoint.totalMilestones} done
+                                {it.explanation!.nextCheckpoint!.doneCount}/{it.explanation!.nextCheckpoint!.totalMilestones} done
                               </span>
                             )}
                           </div>

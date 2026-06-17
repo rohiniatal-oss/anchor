@@ -1,4 +1,5 @@
 import type { WinCategory } from "@shared/domainState";
+export type { WinCategory };
 
 export type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string } };
 

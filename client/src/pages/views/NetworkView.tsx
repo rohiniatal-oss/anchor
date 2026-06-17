@@ -845,6 +845,7 @@ export function NetworkView() {
 
   const byLane = new Map<string, Contact[]>(ALL_LANE_KEYS.map((k) => [k, []]));
   for (const c of contacts) byLane.get(laneForSourceNetwork(c.sourceNetwork))!.push(c);
+  const overdueContacts = contacts.filter(isFollowUpOverdue);
   const populatedLaneKeys = ALL_LANE_KEYS.filter((k) => byLane.get(k)!.length > 0);
   const quietLaneKeys = NETWORK_LANES.map((lane) => lane.key).filter((key) => byLane.get(key)!.length === 0);
 
@@ -978,7 +979,6 @@ export function NetworkView() {
       ) : (
         <div className="space-y-6">
           {(() => {
-            const overdueContacts = contacts.filter(isFollowUpOverdue);
             if (overdueContacts.length === 0) return null;
             return (
               <div>

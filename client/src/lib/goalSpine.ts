@@ -753,7 +753,7 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
   if (missingPrepSupport.length > 0) {
     lines.push({
       key: "prep",
-      label: "Need prep",
+      label: "Need learning",
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
       text: compactLanePreview(missingPrepSupport, "Every active role type has a learning focus."),
     });

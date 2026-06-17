@@ -675,7 +675,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
       return supportItems[0]
         ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
         : savedLearningRec
-          ? { label: "Use saved starter", icon: GraduationCap, run: async () => onAcceptRecommendation(savedLearningRec) }
+          ? { label: "Use saved learning item", icon: GraduationCap, run: async () => onAcceptRecommendation(savedLearningRec) }
           : { label: "Start learning about", icon: GraduationCap, run: async () => openLearnIntake() };
     }
     if (truth.action === "clarify") {

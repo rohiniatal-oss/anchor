@@ -786,7 +786,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
                 data-testid={`button-job-details-${j.id}`}
               >
                 {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                {showDetails ? "Hide details" : "See steps, contacts & prep"}
+                {showDetails ? "Hide details" : "See steps, contacts & learning"}
               </button>
               {showDetails && (
                 <>

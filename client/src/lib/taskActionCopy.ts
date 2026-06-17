@@ -4,14 +4,14 @@ type TaskActionEntity = Exclude<TrackedEntity, "tasks">;
 
 export function taskActionLabelForEntity(entity: TaskActionEntity): string {
   if (entity === "jobs") return "Plan next job step";
-  if (entity === "learn") return "Plan next prep step";
+  if (entity === "learn") return "Plan next learning step";
   if (entity === "contacts") return "Plan outreach step";
   return "Plan project step";
 }
 
 export function taskCreatedLabelForEntity(entity: TaskActionEntity): string {
   if (entity === "jobs") return "Job step added.";
-  if (entity === "learn") return "Prep step added.";
+  if (entity === "learn") return "Learning step added.";
   if (entity === "contacts") return "Outreach step added.";
   return "Project step added.";
 }

@@ -44,7 +44,7 @@ export function categoryForPlanItem(item: {
   if (item.sourceType === "goal") {
     const text = `${item.title || ""} ${item.whySelected || ""} ${item.doneWhen || ""}`.toLowerCase();
     if (/contact|outreach|reach out|message|network/i.test(text)) return "admin";
-    if (/prep item|prep support|learn|learning/i.test(text)) return "learning";
+    if (/learning focus|learning support|learn|learning/i.test(text)) return "learning";
     return "job";
   }
   return "admin";

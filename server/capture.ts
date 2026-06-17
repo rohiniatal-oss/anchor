@@ -146,7 +146,7 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
 
   // Learning / resources.
   if (has(t, /\b(read|study|learn about|course|book|article|podcast|lecture|syllabus|resource|watch|module|class|curriculum)\b/)) {
-    return suggestion(id, "learn", "high", "This is something to study, practise, or turn into prep");
+    return suggestion(id, "learn", "high", "This is something to study, practise, or build knowledge from");
   }
 
   // Decision / research is not automatically Learn: it is a thinking task until it

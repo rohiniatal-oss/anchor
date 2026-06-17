@@ -564,13 +564,13 @@ function secondaryComparisonDetail(goal: CareerGoalT, workstream: GoalWorkstream
   }
   const mode = goalModeInfo(goal);
   if (mode.key === "convert" && workstream.name === GOAL_WORKSTREAM.PREP_UPSKILLING) {
-    return "Prep stays secondary while live roles already need concrete follow-through.";
+    return "Learning stays secondary while live roles already need concrete follow-through.";
   }
   if (mode.key === "convert" && workstream.name === GOAL_WORKSTREAM.DIRECTION) {
     return "Further comparison stays secondary because real opportunities are already giving you better evidence.";
   }
   if (mode.key === "options" && workstream.name === GOAL_WORKSTREAM.PREP_UPSKILLING) {
-    return "Prep stays secondary until there are more concrete roles or conversations to support.";
+    return "Learning stays secondary until there are more concrete roles or conversations to support.";
   }
   if (mode.key === "explore" && workstream.name === GOAL_WORKSTREAM.APPLICATIONS) {
     return "Applications stays secondary because role direction is not clear enough yet.";

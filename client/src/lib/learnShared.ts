@@ -12,11 +12,11 @@ export const LEARN_STATUS_LABEL: Record<LearnStatus, string> = {
 };
 
 export function learnTaskActionLabel(outputState: LearnOutputState): string {
-  return outputState === "reference" ? "Plan next prep step" : "Plan finishing step";
+  return outputState === "reference" ? "Plan next learning step" : "Plan finishing step";
 }
 
 export function learnTaskCreatedLabel(outputState: LearnOutputState): string {
-  return outputState === "reference" ? "Prep step added." : "Finishing step added.";
+  return outputState === "reference" ? "Learning step added." : "Finishing step added.";
 }
 
 export function parseIdList(raw: string): number[] {

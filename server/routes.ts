@@ -209,6 +209,24 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     await storage.deleteJob(Number(req.params.id));
     res.json({ ok: true });
   });
+  app.patch("/api/learn/:id", async (req, res) => {
+    const p = insertLearnSchema.partial().safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const id = Number(req.params.id);
+    const before = (await storage.getLearn()).find((l) => l.id === id);
+    const updated = await storage.updateLearn(id, p.data);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    if ((p.data.done === true || p.data.learnStatus === "done") && before && !before.done) {
+      await storage.createWin({
+        text: updated.title,
+        kind: "planned",
+        winCategory: "learning",
+        trackId: updated.relatedTrackId ?? null,
+      } as any);
+      await storage.logActivity({ eventType: "completed", sourceType: "learn", sourceId: id } as any);
+    }
+    res.json(updated);
+  });
   crud(app, "learn", () => storage.getLearn(), insertLearnSchema,
     (d) => storage.createLearn(d), (id, d) => storage.updateLearn(id, d), (id) => storage.deleteLearn(id));
   // Custom POST /api/hustles: same as crud but fires hustle arc generation.

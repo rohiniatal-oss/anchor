@@ -369,7 +369,7 @@ export type StrategyFrontDoor = {
 
 // Cross-cutting insights READ OFF the diagnostics (single engine). Highest-signal
 // first, capped at 3, calm and never fabricated.
-export function deriveInsights(tracks: TrackDiagnostic[], activitySignal?: string): StrategyInsight[] {
+export function deriveInsights(tracks: TrackDiagnostic[], activitySignal?: string, rejectedJobs?: Job[]): StrategyInsight[] {
   const out: StrategyInsight[] = [];
   const active = tracks.filter((t) => t.status === "active");
 
@@ -408,20 +408,50 @@ export function deriveInsights(tracks: TrackDiagnostic[], activitySignal?: strin
     }
   }
 
+  if (rejectedJobs && rejectedJobs.length >= 2) {
+    const reasons = rejectedJobs
+      .map((j) => (j.rejectReason || "").trim().toLowerCase())
+      .filter(Boolean);
+    if (reasons.length >= 2) {
+      const freq = new Map<string, number>();
+      for (const r of reasons) {
+        for (const [pattern, label] of REJECTION_PATTERNS) {
+          if (pattern.test(r)) freq.set(label, (freq.get(label) || 0) + 1);
+        }
+      }
+      const top = [...freq.entries()].sort((a, b) => b[1] - a[1]).find(([, count]) => count >= 2);
+      if (top) {
+        out.push({ kind: "learning", text: `${top[1]} rejected roles cite "${top[0]}" as a factor. This may be a capability gap worth addressing directly — through learning, proof assets, or reframing.` });
+      }
+    }
+  }
+
   if (out.length === 0 && active.length)
     out.push({ kind: "focus", text: `Most of the focus is on ${active[0].name}. Keep that moving and let the rest stay light.` });
 
   return out.slice(0, 3);
 }
 
+const REJECTION_PATTERNS: [RegExp, string][] = [
+  [/experience|years|seniority|senior|junior/, "experience level"],
+  [/visa|sponsor|right to work|work permit/, "visa/sponsorship"],
+  [/technical|coding|programming|engineer/, "technical skills"],
+  [/salary|compensation|pay/, "compensation"],
+  [/location|remote|relocation|relocate/, "location"],
+  [/sector|industry|domain/, "sector experience"],
+  [/overqualified|too senior/, "overqualification"],
+  [/culture|fit|values/, "culture fit"],
+];
+
 export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
-  const [tracks, unlinked, evidence, learningGaps, userCtx] = await Promise.all([
-    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(), computeLearningGaps(), buildUserContext(),
+  const [tracks, unlinked, evidence, learningGaps, userCtx, jobs] = await Promise.all([
+    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(), computeLearningGaps(), buildUserContext(), storage.getJobs(),
   ]);
+  const rejected = jobs.filter((j) => j.status === "rejected" && j.rejectReason);
   return {
     tracks,
     topThree: tracks.slice(0, 3),
-    insights: deriveInsights(tracks, userCtx.activitySignal),
+    insights: deriveInsights(tracks, userCtx.activitySignal, rejected),
     unlinked,
     evidence,
     learningGap: topLearningGapSignal(learningGaps.tracks),

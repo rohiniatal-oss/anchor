@@ -6,18 +6,26 @@ import { USER_PROFILE } from "./userPromptProfile";
 import { llmJSON, MODEL_LIGHT } from "./llm";
 
 async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof" | "network"): Promise<Record<string, string>> {
-  const ask =
+  const fieldSpec =
     kind === "learn"
-      ? `Resolve this learning capture. If it's a known public resource, give its CANONICAL url. Fields: title (clean), url (real canonical URL or ""), learnType (course|fellowship|book|podcast|resource|practice), category (short label), requiredOutput (optional reusable result, if there is an obvious one), capabilityBuilt (the skill it builds).`
+      ? `Fields: title (clean name), url (real canonical URL or ""), learnType (course|fellowship|book|podcast|resource|practice), category (short label), requiredOutput (the reusable artifact this produces — e.g. "a framework for evaluating AI governance proposals" — or "" if none), capabilityBuilt (the specific skill it builds).`
       : kind === "job"
-      ? `Resolve this into a real opportunity. Fields: title (clean role title), company (if implied else ""), location (if implied else ""), url (real careers/board URL if a known org else ""), nextStep (concrete first step, e.g. "open the board and shortlist 3 roles").`
+      ? `Fields: title (clean role title), company (if implied else ""), location (if implied else ""), url (real careers/board URL if a known org else ""), nextStep (the single concrete first action — not "research the company" but "open [specific URL] and read the team page").`
       : kind === "proof"
-      ? `Resolve this writing/build/proof capture. Fields: title (clean), nextStep (a concrete first move, e.g. "decide the angle: your specific take").`
-      : `Resolve this networking capture. Fields: who (who this person/type is), why (why reach them), askType (soft|referral|advice|reconnect|follow_up), nextStep (concrete first move).`;
+      ? `Fields: title (clean), nextStep (a concrete first move that produces something — not "think about it" but "write the one-sentence thesis").`
+      : `Fields: who (specific person type, not "someone in the industry"), why (what they can uniquely provide), askType (soft|referral|advice|reconnect|follow_up), nextStep (concrete first action to find or reach them).`;
   const result = await llmJSON<Record<string, string>>(
-    `User profile: ${USER_PROFILE} ` +
-    `${ask}\nUse real-world knowledge; NEVER invent a fake URL -- use "" if unsure. ` +
-    `Capture: "${title}". Return ONLY a JSON object with those exact fields.`,
+    `User profile: ${USER_PROFILE}\n\n` +
+    `TASK: Resolve a brain-dump capture into structured data.\n\n` +
+    `REASONING STEPS:\n` +
+    `1. Read the capture text and the user's profile.\n` +
+    `2. Determine what this capture actually refers to — is it a specific known thing (a real course, a real person, a real company) or a vague intent?\n` +
+    `3. If it's a known entity, use your real-world knowledge to fill in details (canonical URLs, full names, locations). If it's vague, clean up the title and focus on a concrete next step.\n` +
+    `4. For nextStep fields: the step must be physically doable in under 5 minutes and produce a visible result. "Open X" or "Search Y" or "Write Z" — never "think about" or "consider".\n\n` +
+    `${fieldSpec}\n\n` +
+    `IMPORTANT: Never invent a fake URL — use "" if unsure. Only use URLs you're confident are real.\n\n` +
+    `Capture: "${title}"\n` +
+    `Return ONLY a JSON object with those exact fields.`,
     { model: MODEL_LIGHT },
   );
   return (result && typeof result === "object") ? result : {};

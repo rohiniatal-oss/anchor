@@ -10,16 +10,20 @@ export type UserContext = {
   trackSummaries: string;
   recentWins: string;
   activitySignal: string;
+  activeLearning: string;
+  proofAssets: string;
 };
 
 export async function buildUserContext(): Promise<UserContext> {
-  const [profile, tracks, jobs, contacts, wins, evidence] = await Promise.all([
+  const [profile, tracks, jobs, contacts, wins, evidence, learns, hustles] = await Promise.all([
     storage.getProfile(),
     storage.getCareerTracks(),
     storage.getJobs(),
     storage.getContacts(),
     storage.getWins(),
     computeEvidence(),
+    storage.getLearn(),
+    storage.getHustles(),
   ]);
 
   const cv = profile?.cvText || null;
@@ -56,7 +60,19 @@ export async function buildUserContext(): Promise<UserContext> {
 
   const activitySignal = `${producing} tracks producing, ${planning} planning, ${idle} idle`;
 
-  return { profile: USER_PROFILE, cv, phase, trackSummaries, recentWins, activitySignal };
+  const activeLearnItems = learns.filter((l) => l.active && !l.done);
+  const activeLearning = activeLearnItems
+    .slice(0, 6)
+    .map((l) => `${l.title}${l.capabilityBuilt ? ` (building: ${l.capabilityBuilt})` : ""}`)
+    .join("; ");
+
+  const activeHustles = hustles.filter((h) => h.stage !== "done" && h.stage !== "abandoned");
+  const proofAssets = activeHustles
+    .slice(0, 4)
+    .map((h) => `${h.title}${h.coreClaim ? ` — "${h.coreClaim}"` : ""}${h.stage ? ` [${h.stage}]` : ""}`)
+    .join("; ");
+
+  return { profile: USER_PROFILE, cv, phase, trackSummaries, recentWins, activitySignal, activeLearning, proofAssets };
 }
 
 function liveJobCount(jobs: any[]) {
@@ -65,10 +81,12 @@ function liveJobCount(jobs: any[]) {
 
 export function formatContextForPrompt(ctx: UserContext): string {
   const parts = [`User profile: ${ctx.profile}`];
-  if (ctx.cv) parts.push(`CV summary available.`);
-  parts.push(`Phase: ${ctx.phase}.`);
+  if (ctx.cv) parts.push(`\nCV (abbreviated): ${ctx.cv.slice(0, 1200)}`);
+  parts.push(`\nPhase: ${ctx.phase}.`);
   if (ctx.trackSummaries) parts.push(`Active tracks: ${ctx.trackSummaries}.`);
   if (ctx.recentWins) parts.push(`Recent wins: ${ctx.recentWins}.`);
+  if (ctx.activeLearning) parts.push(`Currently learning: ${ctx.activeLearning}.`);
+  if (ctx.proofAssets) parts.push(`Proof assets in progress: ${ctx.proofAssets}.`);
   parts.push(`Activity: ${ctx.activitySignal}.`);
-  return parts.join(" ");
+  return parts.join("\n");
 }

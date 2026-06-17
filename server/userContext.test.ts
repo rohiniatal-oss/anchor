@@ -98,7 +98,7 @@ test("formatContextForPrompt includes all context sections", async () => {
   assert.ok(prompt.includes("Activity:"));
 });
 
-test("formatContextForPrompt includes CV mention when present", async () => {
+test("formatContextForPrompt includes CV text when present", async () => {
   const { formatContextForPrompt } = await import("./userContext");
   const ctx: import("./userContext").UserContext = {
     profile: "Test user",
@@ -107,9 +107,11 @@ test("formatContextForPrompt includes CV mention when present", async () => {
     trackSummaries: "",
     recentWins: "",
     activitySignal: "0 tracks producing, 0 planning, 0 idle",
+    activeLearning: "",
+    proofAssets: "",
   };
   const prompt = formatContextForPrompt(ctx);
-  assert.ok(prompt.includes("CV summary available"));
+  assert.ok(prompt.includes("Some CV text"));
 });
 
 test("formatContextForPrompt omits CV mention when null", async () => {
@@ -121,6 +123,8 @@ test("formatContextForPrompt omits CV mention when null", async () => {
     trackSummaries: "",
     recentWins: "",
     activitySignal: "0 tracks producing, 0 planning, 0 idle",
+    activeLearning: "",
+    proofAssets: "",
   };
   const prompt = formatContextForPrompt(ctx);
   assert.ok(!prompt.includes("CV"));

@@ -65,48 +65,28 @@ export async function generateContactArchetypes(
 
   const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
-    `${COACH_PREAMBLE}You are a networking strategist for a job-search tool. ` +
+    `${COACH_PREAMBLE}You are designing a networking strategy for someone job-searching.\n\n` +
     `${ctx}\n\n` +
-    `Target role path: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
-    `The user has live job roles saved in this area but no contacts yet.\n\n` +
-    `=== STEP 1: Contact archetypes ===\n` +
-    `Generate 2-3 SPECIFIC person types — not generic "someone in the industry".\n` +
-    `Think: who specifically in ${trackName} could give a referral, reality-check the path, or make an introduction?\n` +
-    `For each: label (<70 chars, e.g. "Former FCO diplomat now in AI governance advisory"), ` +
-    `whyItMatters (<160 chars — exactly how this specific person type helps, not "they have connections"), ` +
-    `suggestedMaterials (1-2 specific angles for finding and approaching them — a real LinkedIn search query, ` +
-    `a specific event, an alumni network, a publication where they'd write).\n\n` +
+    `TARGET: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
+    `The user has job roles saved in this area but no contacts yet.\n\n` +
+    `REASONING BEFORE YOU DESIGN (do this silently):\n` +
+    `1. WHO ACTUALLY HIRES FOR ${trackArchetype || "advisory/strategy"} ROLES? Not "people in the industry" — the specific decision-makers, team leads, or internal advocates.\n` +
+    `2. WHAT'S THE USER'S WARM PATH? Look at their background. What former employers, alumni networks, professional communities, or shared experiences could connect them to someone in "${trackName}"?\n` +
+    `3. WHAT'S THE CREDIBLE ASK? Given their background, what could they genuinely offer in a conversation (not just "I'm interested in your field") that would make someone want to reply?\n\n` +
+    `=== STEP 1: Contact archetypes (2-3) ===\n` +
+    `Specific person types — described by role + where they'd be found.\n` +
+    `For each:\n` +
+    `- label (<70 chars — e.g. "Head of strategy at a target org who came from consulting")\n` +
+    `- whyItMatters (<160 chars — not "they have connections" but exactly what this person can provide: a referral, an inside view of the hiring process, a reality check on the role)\n` +
+    `- suggestedMaterials (1-2 concrete ways to find them: a LinkedIn search query with specific terms, an alumni directory, a professional event, a publication they'd contribute to)\n\n` +
     `=== STEP 2: Milestone arc (4 milestones) ===\n` +
-    `Follow this arc with the same rigour as a learning curriculum:\n\n` +
-    `MILESTONE 1 — ORIENT (milestoneType: "content"):\n` +
-    `Understand the landscape of who's actually in this space — not who should be contacted yet.\n` +
-    `suggestedTaskTitle: a specific search or read to map the space, e.g. "Search LinkedIn for [specific title] + [geography] — note 5 real people and what they actually do".\n` +
-    `scaffolding: 2-3 questions to guide the search, e.g. "What title do they actually use? | What's their typical career path — government then advisory, or the reverse? | Which organisations keep coming up?"\n` +
-    `doneWhen: has mapped 5+ real people in this archetype by name, employer, and career path — enough to see a pattern.\n\n` +
-    `MILESTONE 2 — IDENTIFY (milestoneType: "content"):\n` +
-    `Narrow to 2-3 specific people worth contacting and research them individually.\n` +
-    `suggestedTaskTitle: look up 2-3 specific individuals — their background, recent work, and one thing that connects to the user's own experience.\n` +
-    `scaffolding: "What's the one thing they've done that's most relevant to what you're trying to do? | ` +
-    `Is there any overlap with your work — same geography, same institution, same kind of deal? | ` +
-    `What could you credibly ask them that they'd find worth answering?"\n` +
-    `doneWhen: has 2-3 specific people selected, with a clear reason for each and one genuine connection point.\n\n` +
-    `MILESTONE 3 — SYNTHESISE HOOK (milestoneType: "synthesis"):\n` +
-    `No new research. Craft the specific reason to reach out — the hook from the user's background that makes this outreach credible.\n` +
-    `suggestedTaskTitle: "Draft 2-3 versions of why YOU specifically are reaching out — what's the genuine connection between your work and theirs?"\n` +
-    `scaffolding: "What's the one thing in your background that would make them willing to reply? | ` +
-    `What's the specific thing you want from the conversation — one question you'd definitely want answered? | ` +
-    `How is your background relevant to what they do — not 'I'm interested in your field' but a real overlap?"\n` +
-    `doneWhen: has written a specific hook sentence that references something real in their background and something real in the contact's work.\n\n` +
-    `MILESTONE 4 — ARTIFACT: THE MESSAGE (milestoneType: "artifact"):\n` +
-    `Write the actual first message — not a template, a real draft.\n` +
-    `suggestedTaskTitle: "Draft the first message to your top contact — subject line, 3-sentence body, specific ask".\n` +
-    `scaffolding: "Line 1: one sentence showing you know something specific about their work. ` +
-    `Line 2: one sentence on why YOUR background makes this a conversation worth having for them, not just you. ` +
-    `Line 3: a specific, bounded ask (15-min call, one question by email, introduction to someone). ` +
-    `Keep it under 100 words — shorter is better."\n` +
-    `doneWhen: has a complete message she could send today — not a draft, a send-ready message.\n\n` +
-    `Also return topContactTitle (<80 chars), topContactWhy (<160 chars), ` +
-    `topAsk (exact opening line for a cold message, <200 chars).\n\n` +
+    `MAP → RESEARCH → CRAFT HOOK → SEND MESSAGE\n\n` +
+    `Milestone 1 — MAP (milestoneType: "content"): Search and list 5+ real people in this archetype. suggestedTaskTitle must be a specific search action. doneWhen: has a list of real names, not types.\n` +
+    `Milestone 2 — RESEARCH (milestoneType: "content"): Pick 2-3 and learn what they're actually working on. doneWhen: can name one specific thing about each.\n` +
+    `Milestone 3 — CRAFT HOOK (milestoneType: "synthesis"): No new research. Write the specific reason to reach out — the overlap between the user's work and the contact's. doneWhen: has a one-sentence hook that references something real on both sides.\n` +
+    `Milestone 4 — SEND (milestoneType: "artifact"): Write the actual message. 3 sentences, under 100 words, specific ask. doneWhen: message is send-ready.\n\n` +
+    `Each milestone needs: label, milestoneType, suggestedTaskTitle (concrete action), scaffolding (2-3 guiding questions), doneWhen (specific test).\n\n` +
+    `Also return topContactTitle (<80 chars), topContactWhy (<160 chars), topAsk (opening line for a cold message, <200 chars).\n\n` +
     `Return ONLY valid JSON:\n` +
     `{"subdivisions":[{"label":"...","whyItMatters":"...","suggestedMaterials":["..."]}],` +
     `"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["..."],"subdivisionKey":"..."}],` +
@@ -200,54 +180,35 @@ export async function generateLearningCurriculum(
 
   const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
-    `${COACH_PREAMBLE}You are a learning-path designer for a job-search tool. ` +
+    `${COACH_PREAMBLE}You are designing a learning path for someone job-searching.\n\n` +
     `${ctx}\n\n` +
-    `Target role path: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
-    `Capability gap to close: "${domainLabel}".\n\n` +
-    `CALIBRATION — what NOT to assign:\n` +
-    `Read the user profile above carefully. Identify what they already know from their background and skip those. ` +
-    `Focus ONLY on what is genuinely new for them: domain vocabulary they wouldn't have, ` +
-    `regulatory or institutional knowledge specific to this field, live debates, and how the field works in practice.\n\n` +
-    `=== STEP 1: Subtopics ===\n` +
-    `Generate 3-4 subtopics covering "${domainLabel}" from the angle most useful for ${trackArchetype || "advisory/strategy"} roles.\n` +
-    `For each: label (<60 chars), whyItMatters (<140 chars — specific to ${trackName}, not generic), ` +
-    `suggestedMaterials (2-3 items: use real titles you're confident exist. If unsure of an exact title, give the search query instead — e.g. "search: [topic] podcast practitioner" — so the user finds the right thing rather than chasing a hallucinated title).\n\n` +
-    `=== STEP 2: Milestone arc ===\n` +
-    `Generate 6-8 milestones following this arc:\n\n` +
-    `ARC STAGE 1 — ORIENT (1-2 milestones, milestoneType: "content"):\n` +
-    `Goal: understand the landscape — who are the key actors, what's settled, what's contested.\n` +
-    `suggestedTaskTitle: name a specific orientation resource (overview article, short book chapter, podcast episode).\n` +
-    `scaffolding: 2-3 questions to hold in mind while reading, e.g. "Who are the main institutions? What's the biggest unresolved tension?"\n` +
-    `doneWhen: can describe the landscape in 3 sentences — the main actors, the key debate, and one thing that surprises someone from outside the field.\n\n` +
-    `ARC STAGE 2 — MECHANISM (1-2 milestones, milestoneType: "content"):\n` +
-    `Goal: understand how it actually works in practice — the regulatory text, a real case, a primary source.\n` +
-    `suggestedTaskTitle: name a specific primary or practitioner source.\n` +
-    `scaffolding: 2-3 questions focused on mechanism, e.g. "How does this work in practice vs. in theory? Where does it break down?"\n` +
-    `doneWhen: can explain the mechanism to someone with a consulting background without using jargon.\n\n` +
-    `ARC STAGE 3 — SYNTHESISE (1 milestone, milestoneType: "synthesis"):\n` +
-    `No new reading. Pure reflection. The task is to connect what's been read to the user's existing background.\n` +
-    `suggestedTaskTitle: a specific reflection prompt, e.g. "Write 3 bullet points connecting [domain] to a deal or project you've worked on".\n` +
-    `scaffolding: 3 prompts to help them draft the synthesis, e.g. ` +
-    `"What's the closest equivalent dynamic you saw in PE or consulting? | What's genuinely new that you didn't expect? | ` +
-    `What would you say if asked about this in an interview tomorrow?"\n` +
-    `doneWhen: has written at least 3 bullets connecting this domain to their own experience, with at least one concrete example.\n\n` +
-    `ARC STAGE 4 — POSITION (1 milestone, milestoneType: "content"):\n` +
-    `Goal: go deeper on the main live debate in this field and form a genuine view.\n` +
-    `suggestedTaskTitle: name a specific source representing a contested position (paper, debate, op-ed, policy document).\n` +
-    `scaffolding: questions that push toward an opinion, e.g. "What's the strongest argument on each side? Which do you find more convincing and why?"\n` +
-    `doneWhen: can state an actual position on the main debate and defend it with one specific piece of evidence.\n\n` +
-    `ARC STAGE 5 — TRANSFER (1 milestone, milestoneType: "content"):\n` +
-    `Goal: connect to her specific target context — a country, sector, or role she's actually pursuing.\n` +
-    `suggestedTaskTitle: name a specific source about ${domainLabel} applied to a geography or sector directly relevant to the user's target roles (derive from their profile above).\n` +
-    `scaffolding: questions grounding it in their specific context — what geographies and sectors are they targeting? How does this domain play out differently there?\n` +
-    `doneWhen: can give one specific example of how this domain plays out in a context directly relevant to their target roles.\n\n` +
-    `ARC STAGE 6 — ARTIFACT (1 milestone, milestoneType: "artifact"):\n` +
-    `Goal: produce something reusable she'll actually keep.\n` +
-    `suggestedTaskTitle: a specific drafting task — e.g. "Draft the 2 sentences you'd use in a ${trackName} cover letter to show you understand ${domainLabel}", ` +
-    `or "Write a 90-second verbal answer to: 'What's your take on [main debate in ${domainLabel}]?'".\n` +
-    `scaffolding: a template + what makes a strong answer, e.g. "Start with your position, then one piece of evidence, then connect it to your background — ` +
-    `what's the one thing from your professional experience that makes your take distinctive?"\n` +
-    `doneWhen: has a concrete piece of text she would actually use — a cover letter sentence, an interview answer, or a positioning statement.\n\n` +
+    `TARGET: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
+    `CAPABILITY GAP: "${domainLabel}".\n\n` +
+    `REASONING BEFORE YOU DESIGN (do this silently):\n` +
+    `1. WHAT DOES THE USER ALREADY KNOW? Read their profile. What from their background already overlaps with "${domainLabel}"? What's adjacent? What's genuinely foreign?\n` +
+    `2. WHAT KIND OF DOMAIN IS THIS?\n` +
+    `   - Technical/regulatory (e.g. AI governance, tax law) → needs vocabulary + mechanisms + live debates\n` +
+    `   - Skill/practice (e.g. interview prep, public speaking) → needs repetition + feedback + scenarios\n` +
+    `   - Sector knowledge (e.g. fintech landscape, healthcare market) → needs actors + dynamics + recent developments\n` +
+    `   - Craft (e.g. writing, data analysis) → needs doing, not reading\n` +
+    `3. HOW WILL THEY USE THIS KNOWLEDGE? In interviews? In cover letters? To sound credible in a meeting? To actually do the job? This determines what the artifact should be.\n` +
+    `4. WHAT CAN YOU SKIP? If their background already covers adjacent ground, start further along. A former consultant doesn't need "learn what a framework is." A former investor doesn't need "learn what due diligence means."\n\n` +
+    `=== STEP 1: Subtopics (3-4) ===\n` +
+    `Break "${domainLabel}" into the 3-4 angles most useful for someone pursuing ${trackArchetype || "advisory/strategy"} roles.\n` +
+    `For each:\n` +
+    `- label (<60 chars)\n` +
+    `- whyItMatters (<140 chars — specific to ${trackName}. Not "this is important" but "without this you can't credibly discuss X in an interview")\n` +
+    `- suggestedMaterials (2-3 items: real titles you're confident exist. If unsure of a title, give a search query instead — "search: [topic] [format]" — so they find the right thing rather than chasing a hallucinated title)\n\n` +
+    `=== STEP 2: Milestone arc (5-7 milestones) ===\n` +
+    `Design an arc adapted to the DOMAIN TYPE you identified above. Not every domain needs the same arc.\n\n` +
+    `RULES:\n` +
+    `- Each milestone has a milestoneType: "content" (read/watch/research), "synthesis" (no new input — reflect, connect, draft), or "artifact" (produce something reusable)\n` +
+    `- At least one "synthesis" milestone where they stop consuming and connect to their own experience\n` +
+    `- The FINAL milestone must be "artifact" — something they'd actually use (a cover letter sentence, an interview answer, a positioning statement, a framework they can reference)\n` +
+    `- suggestedTaskTitle must be concrete and physically doable — "Read [specific thing]" or "Write [specific output]", never "Understand X" or "Explore Y"\n` +
+    `- scaffolding: 2-3 questions that guide HOW to engage with the material (not what to think, but what to look for)\n` +
+    `- doneWhen: a specific test — "can explain X without jargon" or "has written Y" — not "feels confident"\n` +
+    `- Skip anything the user would already know from their background\n\n` +
     `=== OUTPUT FORMAT ===\n` +
     `Return ONLY valid JSON:\n` +
     `{"subdivisions":[{"label":"...","whyItMatters":"...","suggestedMaterials":["..."]}],` +
@@ -358,51 +319,49 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
   } as any);
 
   const hasJD = (job.jdText || "").trim().length > 40;
+
+  const [contacts, wins] = await Promise.all([storage.getContacts(), storage.getWins()]);
+  const relevantContacts = contacts.filter((c) =>
+    (job.relatedTrackId && c.relatedTrackId === job.relatedTrackId) ||
+    (job.company && c.targetOrg && c.targetOrg.toLowerCase().includes(job.company!.toLowerCase().slice(0, 30)))
+  );
+  const trackWins = job.relatedTrackId
+    ? wins.filter((w) => (w as any).trackId === job.relatedTrackId).slice(0, 5)
+    : [];
+
   const jobContext = [
     `Role: ${job.title}`,
     job.company ? `Company: ${job.company}` : "",
     job.location ? `Location: ${job.location}` : "",
     job.roleArchetype ? `Archetype: ${job.roleArchetype}` : "",
     hasJD ? `\nJob description:\n${job.jdText!.trim().slice(0, 1800)}` : "",
+    relevantContacts.length > 0 ? `\nExisting contacts at or related to this company/track:\n${relevantContacts.slice(0, 5).map((c) => `- ${c.who || c.name}${c.targetOrg ? ` (${c.targetOrg})` : ""} — ${c.status}`).join("\n")}` : "",
+    trackWins.length > 0 ? `\nRecent wins in this track:\n${trackWins.map((w) => `- ${w.text}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
 
   const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
-    `${COACH_PREAMBLE}You are a job-application coach for a senior strategy professional. ` +
+    `${COACH_PREAMBLE}You are a job-application coach.\n\n` +
     `${ctx}\n\n` +
     `${jobContext}\n\n` +
-    `Generate a 4-milestone learning arc for this specific role. ` +
-    `Each milestone must be concrete and role-specific — not generic advice.\n\n` +
-    `MILESTONE 1 — ORIENT (milestoneType: "content"):\n` +
-    `Read and map the role. If a JD is provided, extract the 3 requirements where the user is STRONGEST and the 2 where she is WEAKEST. ` +
-    `If no JD: research what this type of role typically requires at this company/organisation.\n` +
-    `suggestedTaskTitle: a specific task, e.g. "Read the ${job.title} JD — highlight 3 strengths and 2 gaps"\n` +
-    `scaffolding: 3 questions, e.g. "What are the 2-3 requirements where your professional background directly applies? | ` +
-    `Where is the biggest gap — technical depth, sector knowledge, or seniority signal? | ` +
-    `What's the one thing they seem to value most that you'll need to make credible?"\n` +
-    `doneWhen: has identified 3 specific requirements they can speak to directly and 1-2 gaps to address.\n\n` +
-    `MILESTONE 2 — RESEARCH (milestoneType: "content"):\n` +
-    `Understand the employer — not just what they say on their website.\n` +
-    `suggestedTaskTitle: a specific research task, e.g. "Look up ${job.company || "the organisation"}'s recent news, the team, and any relevant LinkedIn profiles"\n` +
-    `scaffolding: "What have they actually been working on in the last 6-12 months — any news, hires, strategic announcements? | ` +
-    `Who would be interviewing or managing this role — what's their background? | ` +
-    `What does this company actually care about that the JD doesn't say explicitly?"\n` +
-    `doneWhen: has 3 specific facts about the organisation that she could reference naturally in an interview.\n\n` +
-    `MILESTONE 3 — SYNTHESISE (milestoneType: "synthesis"):\n` +
-    `No new research. Map existing experience to requirements. Pure reflection.\n` +
-    `suggestedTaskTitle: "Write how your 3 strongest experiences map to the 3 requirements you flagged — one sentence each"\n` +
-    `scaffolding: "For each of the 3 requirements you flagged: what's the ONE story from your past that shows this most clearly? | ` +
-    `What's the specific outcome or number you can cite? | ` +
-    `What's the gap you'll need to address honestly — and what's the honest reframe (learning curve vs. irrelevant vs. actually covered)?"\n` +
-    `doneWhen: has written 3 experience-to-requirement mappings, each with a specific example and outcome.\n\n` +
-    `MILESTONE 4 — ARTIFACT (milestoneType: "artifact"):\n` +
-    `Produce the opening narrative — the "why me, why them, why now" angle she'd actually use.\n` +
-    `suggestedTaskTitle: "Draft the opening 2-3 sentences: why ${job.company || "this organisation"} now, and what specifically in your background makes you the right hire"\n` +
-    `scaffolding: "Sentence 1: one thing specific about ${job.company || "them"} that you find genuinely compelling (not generic). ` +
-    `Sentence 2: the one thread in your background that maps directly to what they need (derive from the user profile above). ` +
-    `Sentence 3: what you'd bring that a typical candidate from outside your background wouldn't. ` +
-    `Keep it under 80 words. Read it aloud — if it sounds like a template, rewrite it."\n` +
-    `doneWhen: has a complete opening narrative she would actually use — not a draft, a real version she'd send.\n\n` +
+    `REASONING BEFORE YOU DESIGN (do this silently):\n` +
+    `1. WHAT KIND OF ROLE IS THIS? Entry-level execution, mid-level specialist, senior leadership, advisory? This determines what interviewers will probe — technical depth, stakeholder management, strategic vision, or cultural fit.\n` +
+    `2. WHERE IS THE USER STRONGEST? Read their profile and the role requirements. Find the 2-3 specific overlaps where their past experience directly maps. These are the stories to build around.\n` +
+    `3. WHERE IS THE REAL GAP? Not the cosmetic ones. What would make an interviewer pause — a sector they haven't worked in, a technical skill they claim but can't demonstrate, a seniority jump, a career-change narrative?\n` +
+    `4. WHAT DOES THIS EMPLOYER ACTUALLY WANT? If a JD is provided, read between the lines: what's listed first, what's repeated, what's marked "preferred"? If no JD, reason from the company and role type.\n` +
+    `5. WHAT'S THE APPLICATION ANGLE? Given the user's background, what's the unique value proposition that a standard candidate from within the industry wouldn't have?\n\n` +
+    `Generate a 4-milestone learning arc for this specific role.\n` +
+    `Each milestone must be concrete and role-specific — not generic career advice.\n\n` +
+    `MILESTONE STRUCTURE:\n` +
+    `1. ORIENT (milestoneType: "content") — Map the role to the user's profile. ${hasJD ? "Extract strengths and gaps from the JD." : "Research what this role typically requires at this type of organisation."} suggestedTaskTitle must be a specific action.\n` +
+    `2. RESEARCH (milestoneType: "content") — Understand the employer beyond the careers page: recent activity, team composition, strategic direction, what they actually care about.\n` +
+    `3. SYNTHESISE (milestoneType: "synthesis") — No new research. Map existing experience to requirements — one specific story per requirement, with concrete outcomes.\n` +
+    `4. ARTIFACT (milestoneType: "artifact") — Produce the "why me + why them + why now" opening narrative. Under 80 words, specific enough that it couldn't apply to another company.\n\n` +
+    `RULES:\n` +
+    `- suggestedTaskTitle: physically doable action, not "Understand X" or "Explore Y"\n` +
+    `- scaffolding: 2-3 guiding questions per milestone — what to look for, not what to think\n` +
+    `- doneWhen: a specific test ("has written X", "can name 3 specific facts") — not "feels prepared"\n` +
+    `- Reference the ACTUAL role title, company name, and user's real background in your output\n\n` +
     `Return ONLY valid JSON:\n` +
     `{"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["question 1","question 2","question 3"]}]}`;
 
@@ -497,41 +456,27 @@ export async function generateHustleArc(hustle: Hustle): Promise<void> {
 
   const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
-    `${COACH_PREAMBLE}You are a writing coach for a strategy professional building public proof assets. ` +
+    `${COACH_PREAMBLE}You are a writing and execution coach helping someone build a public proof asset.\n\n` +
     `${ctx}\n\n` +
     `${context}\n\n` +
-    `Generate a 4-milestone execution arc to take this from idea to published proof asset. ` +
+    `REASONING BEFORE YOU DESIGN (do this silently):\n` +
+    `1. WHAT KIND OF PROOF ASSET IS THIS? A written piece (article, case study, analysis)? A tool or template? A portfolio piece? A talk or presentation? The execution arc depends on the format.\n` +
+    `2. WHAT'S THE USER'S CREDIBILITY ANGLE? Read their profile. What specific experience gives them the right to produce this? A proof asset without a credible author is noise.\n` +
+    `3. WHO IS THE AUDIENCE — AND WHAT DO THEY ALREADY KNOW? ${hustle.audience ? `The intended audience is "${hustle.audience}". ` : ""}If the audience is hiring managers, the asset needs to demonstrate thinking. If it's peers, it needs to challenge conventional wisdom. If it's a broader public, it needs a hook.\n` +
+    `4. WHAT EXISTS ALREADY? What comparable pieces, tools, or resources are out there? The asset needs a clear gap it fills — the user's unique take, not a rehash.\n` +
+    `5. WHAT MAKES THIS PUBLISHABLE vs. A DRAFT? For this specific format, what's the minimum bar — is it length, polish, a specific structure, external validation, or just shipping it?\n\n` +
+    `Generate a 4-milestone execution arc to take this from idea to published proof asset.\n` +
     `Be specific to THIS piece — not generic writing advice.\n\n` +
-    `MILESTONE 1 — ORIENT (milestoneType: "content"):\n` +
-    `Research the space before writing. Find 2-3 pieces already written on this topic.\n` +
-    `suggestedTaskTitle: e.g. "Search for existing ${hustle.title.toLowerCase()} pieces — note what's missing"\n` +
-    `scaffolding: "What's the best existing piece on this — and what's wrong with it or missing from it? | ` +
-    `What's the ONE angle that nobody has taken? | ` +
-    `What would make someone who already knows this topic share it anyway?"\n` +
-    `doneWhen: has read 2-3 comparable pieces and can state the specific gap this piece fills.\n\n` +
-    `MILESTONE 2 — DRAFT (milestoneType: "content"):\n` +
-    `Write a complete first draft — done, not perfect. Get it out.\n` +
-    `suggestedTaskTitle: "Write a full first draft of ${hustle.title} — aim for 80% there in one sitting"\n` +
-    `scaffolding: ` +
-    `"${hustle.coreClaim ? `Start from the core claim: ${hustle.coreClaim}. ` : "Start with the one thing you most want the reader to leave with. "}` +
-    `Write the intro first, then the 3 most important points, then the outro. ` +
-    `Don't edit as you go — just write. ` +
-    `What's the one story or example that makes this real?"\n` +
-    `doneWhen: has a complete first draft — every section exists, even if rough.\n\n` +
-    `MILESTONE 3 — SYNTHESISE (milestoneType: "synthesis"):\n` +
-    `No rewriting. Just read it and identify what's actually working.\n` +
-    `suggestedTaskTitle: "Read the draft aloud — mark what lands and what feels forced"\n` +
-    `scaffolding: "What's the ONE paragraph you'd save if you had to cut everything else? | ` +
-    `What's the thing you're most embarrassed to have written — what does that reveal? | ` +
-    `What do you actually believe that you're NOT saying directly?"\n` +
-    `doneWhen: has annotated the draft with 3 things to keep and 2 things to cut or rewrite.\n\n` +
-    `MILESTONE 4 — ARTIFACT (milestoneType: "artifact"):\n` +
-    `Produce the publish-ready version and the pitch line.\n` +
-    `suggestedTaskTitle: "Final edit of ${hustle.title} — and write the one-sentence pitch for it"\n` +
-    `scaffolding: "Open with the strongest line you have — not a question, not a preamble, just the thing. ` +
-    `Cut anything that doesn't earn its place. ` +
-    `Pitch line: I wrote [title] because [specific reason]. It argues [specific claim]. It's for [specific reader].\n` +
-    `doneWhen: has a version she'd actually publish today, and a one-sentence pitch she'd use to share it.\n\n` +
+    `MILESTONE STRUCTURE:\n` +
+    `1. ORIENT (milestoneType: "content") — Research what exists, find the gap. Not "brainstorm ideas" — find 2-3 comparable pieces and identify what's missing or wrong.\n` +
+    `2. DRAFT (milestoneType: "content") — Produce a complete first version. Done, not perfect. The goal is getting it all down, not polishing.\n` +
+    `3. SYNTHESISE (milestoneType: "synthesis") — No new work. Read what exists. Identify what's actually working and what needs to go. Pure editing judgment.\n` +
+    `4. ARTIFACT (milestoneType: "artifact") — The publish-ready version + a one-sentence pitch: "I wrote [title] because [reason]. It argues [claim]. It's for [reader]."\n\n` +
+    `RULES:\n` +
+    `- suggestedTaskTitle: physically doable action — "Write the full first draft" not "Develop the concept"\n` +
+    `- scaffolding: 2-3 guiding questions per milestone — what to look for or challenge, not instructions\n` +
+    `- doneWhen: a specific test ("has a complete draft", "has annotated 3 keeps and 2 cuts") — not "feels good about it"\n` +
+    `- Reference the ACTUAL asset title and the user's real background in your output\n\n` +
     `Return ONLY valid JSON:\n` +
     `{"milestones":[{"label":"...","milestoneType":"content|synthesis|artifact","doneWhen":"...","suggestedTaskTitle":"...","scaffolding":["question 1","question 2","question 3"]}]}`;
 

@@ -365,7 +365,7 @@ test("planner surfaces missing broad-pursuit contact support once live role type
   assert.equal(result.plan[0].candidate.source, "goal");
   assert.match(result.plan[0].candidate.title, /contact/i);
   assert.match(result.plan[0].explanation.firstStep, /Open Network/i);
-  assert.match(result.note, /outreach, more focused prep support, or both/i);
+  assert.match(result.note, /outreach, more focused learning support, or both/i);
 });
 
 test("planner surfaces missing broad-pursuit prep support after contact support exists", () => {
@@ -418,9 +418,9 @@ test("planner surfaces missing broad-pursuit prep support after contact support 
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, contacts as any, tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /prep starter/i);
+  assert.match(result.plan[0].candidate.title, /learning/i);
   assert.match(result.plan[0].explanation.firstStep, /Jobs or Learn/i);
-  assert.match(result.note, /prep starter|focused prep support/i);
+  assert.match(result.note, /learning focus|learning support/i);
 });
 
 test("planner describes mixed broad-pursuit support gaps without hiding prep behind outreach", () => {
@@ -489,8 +489,8 @@ test("planner describes mixed broad-pursuit support gaps without hiding prep beh
   ] as any;
 
   const result = planDay([], jobs as any, [], learn as any, "medium", { remainingMinutes: 240 }, contacts as any, tracks);
-  assert.match(result.note, /outreach, more focused prep support, or both/i);
-  assert.ok(result.plan.some((item) => /prep starter/i.test(item.candidate.title)), "prep support should stay visible alongside outreach gaps");
+  assert.match(result.note, /outreach, more focused learning support, or both/i);
+  assert.ok(result.plan.some((item) => /learning/i.test(item.candidate.title)), "learning support should stay visible alongside outreach gaps");
 });
 
 test("planner keeps a real application move ahead of broad-pursuit support gaps", () => {

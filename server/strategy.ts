@@ -207,8 +207,8 @@ export function diagnoseTrack(
     const step = lg.sequence.find((s) => s.gapDomain === topGap.domain && s.learnId !== null);
     bottleneck = "learning";
     bottleneckLabel = learningGap === 1
-      ? `This track still needs prep in ${topGap.label}`
-      : `${learningGap} prep areas still need coverage`;
+      ? `This track still needs learning support in ${topGap.label}`
+      : `${learningGap} learning areas still need coverage`;
     recommendedMove = step
       ? `Build ${topGap.label}: do the next step on "${step.title}"`
       : learningGapRecommendedMove(topGap.domain, topGap.label);

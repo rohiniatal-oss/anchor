@@ -200,7 +200,7 @@ test("broad parallel pursuit tracks missing network and learning support after l
   assert.ok(state.broadPursuitCoverage.networkSupported.includes("Geopolitics / geopolitical advisory x Ops / chief of staff"));
   assert.ok(state.broadPursuitCoverage.missingNetworkSupport.includes("AI / technology strategy x Ops / chief of staff"));
   assert.ok(state.broadPursuitCoverage.missingPrepSupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
-  assert.match(state.decisionQuestion, /need outreach, more focused prep support, or both next/i);
+  assert.match(state.decisionQuestion, /need outreach, more focused learning support, or both next/i);
   assert.match(state.todayPlan.mustDo, /Add the next missing support move for the strongest live path/i);
   assert.match(state.todayPlan.mustDo, /AI \/ technology strategy x Ops \/ chief of staff/i);
   assert.match(state.todayPlan.mustDo, /Geopolitics \/ geopolitical advisory x Strategy \/ advisory/i);

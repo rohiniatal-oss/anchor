@@ -66,7 +66,7 @@ export type CaptureSuggestion = {
 const ROUTE_LABEL: Record<CaptureRoute, string> = {
   task: "Task",
   today: "Today",
-  subtask: "Subtask",
+  subtask: "Part of existing work",
   job: "Jobs",
   learn: "Learn",
   network: "Network",
@@ -76,7 +76,7 @@ const ROUTE_LABEL: Record<CaptureRoute, string> = {
   decision: "Decision",
   note: "Note",
   duplicate: "Duplicate",
-  parking_lot: "Parking Lot",
+  parking_lot: "Parked",
   keep: "Keep in Brain Dump",
 };
 
@@ -247,8 +247,8 @@ export async function routeCapture(id: number, rawRoute: string) {
       list: "inbox",
       sourceStatus: "needs_parent",
       sourceNote: reason,
-      doneWhen: "This is attached to the right parent item",
-      minimumOutcome: "This is attached to the right parent item",
+      doneWhen: "Linked to the right job, learning item, or project",
+      minimumOutcome: "Linked to the right job, learning item, or project",
     }) as any);
     return { status: 200, body: { moved: "subtask", route, task: updated, reason, question: inferred.question } };
   }

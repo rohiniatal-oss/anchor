@@ -475,8 +475,9 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
     try {
       await mutateAndInvalidate("POST", `/api/networking/classify-contact/${c.id}`, {}, []);
       queryClient.invalidateQueries({ queryKey: ["/api/networking/classifications"] });
-      toast({ title: "Updated." });
-    } catch { toast({ title: "Couldn't update right now.", description: "Try again." }); }
+    } catch {
+      autoClassified.current = false;
+    }
     finally { setClassifying(false); }
   }
 
@@ -544,6 +545,13 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
         <p className="mt-2.5 text-[11px] text-muted-foreground inline-flex items-center gap-1">
           <Loader2 className="w-3 h-3 animate-spin" /> Working out your next move...
         </p>
+      ) : bestCls ? (
+        <button
+          onClick={getRecommendedMove}
+          className="mt-2.5 text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+        >
+          <Target className="w-3 h-3" /> What should I ask?
+        </button>
       ) : null}
 
       {/* Draft panel */}

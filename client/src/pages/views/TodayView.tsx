@@ -192,13 +192,13 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
     steps.length > 0 &&
     (avoided || pinned.size === "deep" || ["job", "learn", "contact", "hustle"].includes(String(pinned.sourceType || "")));
 
-  const autoTriggered = useRef(false);
+  const autoTriggered = useRef<number | null>(null);
   useEffect(() => {
-    if (steps.length === 0 && !question && !breaking && !autoTriggered.current) {
-      autoTriggered.current = true;
+    if (steps.length === 0 && !question && !breaking && autoTriggered.current !== pinned.id) {
+      autoTriggered.current = pinned.id;
       breakdown();
     }
-  }, [steps.length, question]);
+  }, [steps.length, question, pinned.id]);
 
   async function breakdown(context?: string) {
     setBreaking(true);

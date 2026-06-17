@@ -937,10 +937,10 @@ export function NetworkView() {
           </button>
           {showMoreContactFields && (
             <div className="grid gap-2 sm:grid-cols-2">
-              <Input placeholder="Target role" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} />
+              <Input placeholder="Their role" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} />
               <Input type="date" value={form.nextFollowUpDate} onChange={(e) => setForm({ ...form, nextFollowUpDate: e.target.value })} />
               <Input placeholder="Why this person matters" value={form.why} onChange={(e) => setForm({ ...form, why: e.target.value })} className="sm:col-span-2" />
-              <Input placeholder="Network source / sector" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" />
+              <Input placeholder="How you're connected / sector" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" />
               {tracks.length > 0 && (
                 <div className="sm:col-span-2">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to role type</p>

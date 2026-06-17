@@ -965,7 +965,7 @@ export function JobsView() {
               <Input placeholder="Deadline (YYYY-MM-DD)" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} data-testid="input-job-deadline" />
               <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} data-testid="input-job-location" />
               <div className="sm:col-span-2">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Role type (shapes the readiness checklist)</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Role type</p>
                 <div className="flex flex-wrap gap-1.5">
                   {JOB_ARCHETYPE_OPTIONS.map((option) => (
                     <button key={option.value} type="button" onClick={() => setForm({ ...form, roleArchetype: option.value })}

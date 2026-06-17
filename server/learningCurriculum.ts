@@ -14,6 +14,7 @@ import { llmJSON } from "./llm";
 import { storage } from "./storage";
 import type { Job, Hustle } from "@shared/schema";
 import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 function clean(value: unknown, max = 280): string {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -62,9 +63,10 @@ export async function generateContactArchetypes(
   const existing = await storage.getRecommendationSubdivisions(recommendationId);
   if (existing.length > 0) return;
 
+  const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
     `${COACH_PREAMBLE}You are a networking strategist for a job-search tool. ` +
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${ctx}\n\n` +
     `Target role path: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
     `The user has live job roles saved in this area but no contacts yet.\n\n` +
     `=== STEP 1: Contact archetypes ===\n` +
@@ -196,9 +198,10 @@ export async function generateLearningCurriculum(
   const existing = await storage.getRecommendationSubdivisions(recommendationId);
   if (existing.length > 0) return;
 
+  const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
     `${COACH_PREAMBLE}You are a learning-path designer for a job-search tool. ` +
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${ctx}\n\n` +
     `Target role path: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
     `Capability gap to close: "${domainLabel}".\n\n` +
     `CALIBRATION — what NOT to assign:\n` +
@@ -363,9 +366,10 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     hasJD ? `\nJob description:\n${job.jdText!.trim().slice(0, 1800)}` : "",
   ].filter(Boolean).join("\n");
 
+  const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
     `${COACH_PREAMBLE}You are a job-application coach for a senior strategy professional. ` +
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${ctx}\n\n` +
     `${jobContext}\n\n` +
     `Generate a 4-milestone learning arc for this specific role. ` +
     `Each milestone must be concrete and role-specific — not generic advice.\n\n` +
@@ -491,9 +495,10 @@ export async function generateHustleArc(hustle: Hustle): Promise<void> {
     hustle.stage ? `Current stage: ${hustle.stage}` : "",
   ].filter(Boolean).join("\n");
 
+  const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
     `${COACH_PREAMBLE}You are a writing coach for a strategy professional building public proof assets. ` +
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${ctx}\n\n` +
     `${context}\n\n` +
     `Generate a 4-milestone execution arc to take this from idea to published proof asset. ` +
     `Be specific to THIS piece — not generic writing advice.\n\n` +

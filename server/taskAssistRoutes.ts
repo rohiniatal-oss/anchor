@@ -4,7 +4,7 @@ import { routeCapture, sortOpenCaptures } from "./capture";
 import { buildTaskIntakeDefaults } from "./taskIntakeInference";
 import { legacyCategoryToRoute } from "./captureCompatibility";
 import { USER_PROFILE } from "./userPromptProfile";
-import { llm, llmJSON } from "./llm";
+import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 
 export function registerTaskAssistRoutes(app: Express) {
   app.post("/api/unstick", async (req, res) => {
@@ -20,6 +20,7 @@ export function registerTaskAssistRoutes(app: Express) {
         'Someone with ADHD is stuck and can\'t start this step: "' + step + '".' + stageCtx +
         " Give ONE tiny physical 60-second action to break the freeze (e.g. 'Open a blank doc and type one sentence')." +
         " Warm, one short sentence, no preamble. Return just the sentence.",
+        { model: MODEL_LIGHT },
       );
       const hint = raw.replace(/^["']|["']$/g, "");
       res.json({ hint: hint || "Set a 2-minute timer and just open the first thing." });
@@ -117,6 +118,7 @@ export function registerTaskAssistRoutes(app: Express) {
         `Given her TARGET ROLES below, suggest ONE specific *kind of person* to reach - tied to those exact orgs/sectors - that would most move her hunt. Reason strategically: which warm route (ex-TBI, ex-Bain, ex-Abraaj, LSR/Delhi alum, someone already at the target org or its sector) best unlocks these roles. Describe them by TYPE + WHERE (no invented names).\n\n` +
         `TARGET ROLES: ${JSON.stringify(targets)}\nALREADY TRACKED (don't repeat): ${JSON.stringify(alreadyTracked)}\nEXCLUDE: ${JSON.stringify(exclude)}\n\n` +
         `Return ONLY one JSON object: {"who":"<person type + where, e.g. 'ex-Bain colleague now in AI policy'>","sector":"<short sector tag>","why":"<one tight sentence on why this unlocks a target role>"}.`,
+        { model: MODEL_LIGHT },
       );
       if (!j || typeof j.who !== "string") return res.json({ suggestion: null });
       res.json({

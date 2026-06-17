@@ -3,7 +3,7 @@ import { storage } from "./storage";
 import type { Task } from "@shared/schema";
 import { buildCaptureTaskPatch } from "./captureTaskRouting";
 import { USER_PROFILE } from "./userPromptProfile";
-import { llmJSON } from "./llm";
+import { llmJSON, MODEL_LIGHT } from "./llm";
 
 async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof" | "network"): Promise<Record<string, string>> {
   const ask =
@@ -18,6 +18,7 @@ async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof
     `User profile: ${USER_PROFILE} ` +
     `${ask}\nUse real-world knowledge; NEVER invent a fake URL -- use "" if unsure. ` +
     `Capture: "${title}". Return ONLY a JSON object with those exact fields.`,
+    { model: MODEL_LIGHT },
   );
   return (result && typeof result === "object") ? result : {};
 }

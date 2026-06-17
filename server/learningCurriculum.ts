@@ -211,7 +211,7 @@ export async function generateLearningCurriculum(
     `=== STEP 1: Subtopics ===\n` +
     `Generate 3-4 subtopics covering "${domainLabel}" from the angle most useful for ${trackArchetype || "advisory/strategy"} roles.\n` +
     `For each: label (<60 chars), whyItMatters (<140 chars — specific to ${trackName}, not generic), ` +
-    `suggestedMaterials (2-3 specific real items: books, newsletters, podcasts, courses a busy practitioner would actually use).\n\n` +
+    `suggestedMaterials (2-3 items: use real titles you're confident exist. If unsure of an exact title, give the search query instead — e.g. "search: [topic] podcast practitioner" — so the user finds the right thing rather than chasing a hallucinated title).\n\n` +
     `=== STEP 2: Milestone arc ===\n` +
     `Generate 6-8 milestones following this arc:\n\n` +
     `ARC STAGE 1 — ORIENT (1-2 milestones, milestoneType: "content"):\n` +

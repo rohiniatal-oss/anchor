@@ -8,6 +8,7 @@ import { learningGapRecommendedMove } from "@shared/learningGapSuggestions";
 import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evidence";
 import { computeLearningGaps, topLearningGapSignal, type TrackLearningGap, type LearningGapSignal } from "./learningStrategy";
+import { buildUserContext } from "./userContext";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the bottleneck types, and a
@@ -368,7 +369,7 @@ export type StrategyFrontDoor = {
 
 // Cross-cutting insights READ OFF the diagnostics (single engine). Highest-signal
 // first, capped at 3, calm and never fabricated.
-export function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
+export function deriveInsights(tracks: TrackDiagnostic[], activitySignal?: string): StrategyInsight[] {
   const out: StrategyInsight[] = [];
   const active = tracks.filter((t) => t.status === "active");
 
@@ -396,6 +397,17 @@ export function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
   if (learningTrack && learningTrack.learningGap?.recommendedMove)
     out.push({ kind: "learning", text: `${learningTrack.name}: ${learningTrack.learningGap.recommendedMove}.` });
 
+  if (activitySignal) {
+    const match = activitySignal.match(/(\d+) producing.*?(\d+) planning.*?(\d+) idle/);
+    if (match) {
+      const [, producing, planning, idle] = match.map(Number);
+      if (producing === 0 && planning > 0)
+        out.push({ kind: "momentum", text: `All ${planning} active track${planning > 1 ? "s are" : " is"} in planning mode — none producing. Pick one and ship something small to build momentum.` });
+      if (idle > 1)
+        out.push({ kind: "focus", text: `${idle} tracks are idle. Consider pausing or archiving them to focus energy on what's moving.` });
+    }
+  }
+
   if (out.length === 0 && active.length)
     out.push({ kind: "focus", text: `Most of the focus is on ${active[0].name}. Keep that moving and let the rest stay light.` });
 
@@ -403,13 +415,13 @@ export function deriveInsights(tracks: TrackDiagnostic[]): StrategyInsight[] {
 }
 
 export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
-  const [tracks, unlinked, evidence, learningGaps] = await Promise.all([
-    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(), computeLearningGaps(),
+  const [tracks, unlinked, evidence, learningGaps, userCtx] = await Promise.all([
+    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(), computeLearningGaps(), buildUserContext(),
   ]);
   return {
     tracks,
     topThree: tracks.slice(0, 3),
-    insights: deriveInsights(tracks),
+    insights: deriveInsights(tracks, userCtx.activitySignal),
     unlinked,
     evidence,
     learningGap: topLearningGapSignal(learningGaps.tracks),

@@ -31,7 +31,7 @@ export function laneFocusAreaLabel(
 ): string {
   if (lane === LANE_NAME.APPLICATIONS) return "applications";
   if (lane === LANE_NAME.NETWORK) return "networking";
-  if (lane === LANE_NAME.LEARNING_DEVELOPMENT) return "learning and prep";
+  if (lane === LANE_NAME.LEARNING_DEVELOPMENT) return "learning and development";
   if (lane === LANE_NAME.PROOF_ASSETS) return options?.proofLabel || "projects and public work";
   if (lane === LANE_NAME.DIRECTION) return "direction";
   return "stability";

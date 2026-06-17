@@ -1,8 +1,9 @@
 import type { Express } from "express";
-import OpenAI from "openai";
+import { llm, llmJSON } from "./llm";
 import type { Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { deterministicUnstickStep } from "./planningFeedback";
+import { COACH_PREAMBLE } from "./userPromptProfile";
 
 type WorkObject = "Artifact" | "Decision" | "Knowledge" | "Capability" | "Pipeline" | "Problem";
 type WorkflowKind = "finite" | "continuous";
@@ -218,8 +219,8 @@ function goalNeedsNetworkSupport(text: string) {
   return /\b(contact|outreach|reach out|network|message|referral|advice ask|reconnect)\b/i.test(text);
 }
 
-function goalNeedsPrepSupport(text: string) {
-  return /\b(prep item|prep support|learning support|support item|learn|learning|study|read|resource)\b/i.test(text);
+function goalNeedsLearningSupport(text: string) {
+  return /\b(learning focus|learning support|support item|learn|learning|study|read|resource)\b/i.test(text);
 }
 
 function looksMetaStep(text: string) {
@@ -242,7 +243,7 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
   if (bundle.sourceKind === "goal") {
     if (goalNeedsNetworkSupport(text)) return "Open Network and add one person you could realistically reach out to for this path";
-    if (goalNeedsPrepSupport(text)) return "Use Jobs or Learn to start learning about this path";
+    if (goalNeedsLearningSupport(text)) return "Use Jobs or Learn to start learning about this path";
     if (workflowState?.currentStage === "Define target") return "Open Jobs and look at the first path that still has no saved role";
     if (workflowState?.currentStage === "Build list") return laneSpecificSearchMove(text) || "Open Jobs and save the first real role for one path that is still missing one";
     if (workflowState?.currentStage === "Execute next batch") return "Open the saved role and take the next concrete pipeline action";
@@ -384,7 +385,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     return [
       l?.url ? `Open ${prepLabel} and read the most relevant section` : `Read your notes on ${prepLabel} and find the most relevant part`,
       `Write the key insight in your own words`,
-      requiredOutput ? `Draft: ${requiredOutput}` : `Draft a short summary, note, or interview prep note`,
+      requiredOutput ? `Draft: ${requiredOutput}` : `Draft a short summary, note, or interview learning note`,
       `Note what you still need or what to do with this next`,
     ];
   }
@@ -429,7 +430,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       `Draft the message or save who you should contact next`,
       `Note which live path still lacks outreach support after this`,
     ];
-    if (goalNeedsPrepSupport(text)) return [
+    if (goalNeedsLearningSupport(text)) return [
       `Use Jobs or Learn to start learning about this live role path`,
       `Pick the one note, brief, or example that would help this path most`,
       `Write a short note on how you would use that learning later`,
@@ -704,38 +705,35 @@ export function registerTaskBreakdownRoutes(app: Express) {
     let steps: BreakdownStep[] = [];
     let workflowState: WorkflowState | undefined;
     try {
-      const client = new OpenAI();
-      const r = await client.responses.create({
-        model: "gpt_5_1",
-        input:
-          `You are Anchor's workflow-state decomposition engine. Do not jump from task title to steps.\n\n` +
-          `Use exactly this logic:\n` +
-          `1. Read inherited parent workflow first, if present.\n` +
-          `2. Classify the specific task intent as Artifact, Decision, Knowledge, Capability, Pipeline, or Problem.\n` +
-          `3. Decide whether the workflow is finite or continuous.\n` +
-          `4. Locate ONE current stage and define its output.\n` +
-          `5. Define completion criteria for that stage.\n` +
-          `6. Break down only the current stage into discrete actions.\n` +
-          `7. Define the advance condition and next stage.\n\n` +
-          `Prefer inherited workflow context over rediscovering from scratch, but let task intent refine the stage. Do not imply the parent has progressed; only provide the next workflow hint. ` +
-          `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
-          `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
-          `${bundle.playbook ? `Relevant playbook: ${bundle.playbook}\n` : ""}` +
-          `${bundle.parentContext ? `Parent workflow context: ${bundle.parentContext}\n` : ""}` +
-          `Default work object if uncertain: ${fallbackObject}\n` +
-          `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
-          `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
-          `${context ? `User context: ${context}\n` : ""}` +
-          `${bundle.cvText && bundle.jdText ? (
-            `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
-            `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +
-            `IMPORTANT: For Build materials steps, quote the 2-3 most relevant existing CV bullets exactly, ` +
-            `then write a specific improved version using the job's language. ` +
-            `Step format: "Rewrite: \\"[exact existing bullet]\\" → \\"[improved version]\\"". ` +
-            `Steps must reference real content from the CV and JD above, not generic advice.\n`
-          ) : ""}`,
-      });
-      const parsed = parseBreakdown(r.output_text || "", fallbackObject, bundle.parentWorkflow);
+      const raw = await llm(
+        `${COACH_PREAMBLE}You are Anchor's workflow-state decomposition engine. Do not jump from task title to steps.\n\n` +
+        `Use exactly this logic:\n` +
+        `1. Read inherited parent workflow first, if present.\n` +
+        `2. Classify the specific task intent as Artifact, Decision, Knowledge, Capability, Pipeline, or Problem.\n` +
+        `3. Decide whether the workflow is finite or continuous.\n` +
+        `4. Locate ONE current stage and define its output.\n` +
+        `5. Define completion criteria for that stage.\n` +
+        `6. Break down only the current stage into discrete actions.\n` +
+        `7. Define the advance condition and next stage.\n\n` +
+        `Prefer inherited workflow context over rediscovering from scratch, but let task intent refine the stage. Do not imply the parent has progressed; only provide the next workflow hint. ` +
+        `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
+        `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
+        `${bundle.playbook ? `Relevant playbook: ${bundle.playbook}\n` : ""}` +
+        `${bundle.parentContext ? `Parent workflow context: ${bundle.parentContext}\n` : ""}` +
+        `Default work object if uncertain: ${fallbackObject}\n` +
+        `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
+        `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
+        `${context ? `User context: ${context}\n` : ""}` +
+        `${bundle.cvText && bundle.jdText ? (
+          `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
+          `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +
+          `IMPORTANT: For Build materials steps, quote the 2-3 most relevant existing CV bullets exactly, ` +
+          `then write a specific improved version using the job's language. ` +
+          `Step format: "Rewrite: \\"[exact existing bullet]\\" → \\"[improved version]\\"". ` +
+          `Steps must reference real content from the CV and JD above, not generic advice.\n`
+        ) : ""}`,
+      );
+      const parsed = parseBreakdown(raw, fallbackObject, bundle.parentWorkflow);
       question = parsed.question || "";
       steps = parsed.steps;
       workflowState = parsed.workflowState;

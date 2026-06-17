@@ -494,7 +494,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
         await apiRequest("PATCH", `/api/recommendation-milestones/${milestoneId}`, { status: "active" });
       }
       await refreshCurriculum();
-      toast({ title: "Set as the next prep step.", description: openLearnTask ? "Finish the current open prep task first; after that, this checkpoint will be next." : "The next prep task will use this checkpoint." });
+      toast({ title: "Set as the next learning step.", description: openLearnTask ? "Finish the current open learning task first; after that, this checkpoint will be next." : "The next learning task will use this checkpoint." });
     } catch {
       toast({ title: "Couldn't set the next checkpoint", description: "Try again in a moment." });
     } finally {
@@ -964,7 +964,7 @@ export function LearnView() {
   return (
       <div>
       <div className="flex items-start justify-between gap-4">
-        <SectionHeading title="Learn" sub="Courses, reading, and prep that make future roles and interviews feel easier. Brand work like Substack belongs below under Writing, Projects, and Brand, not under Learn." />
+        <SectionHeading title="Learn" sub="Courses, reading, and learning that make future roles and interviews feel easier. Brand work like Substack belongs below under Writing, Projects, and Brand, not under Learn." />
         <Button onClick={() => {
           if (showForm) {
             setShowForm(false);

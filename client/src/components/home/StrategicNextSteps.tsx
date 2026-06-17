@@ -133,7 +133,7 @@ function buildSteps(
         title: hasTaskTrail
           ? `Review the strongest role for "${track.name}"`
           : `Work the strongest role for "${track.name}"`,
-        detail: track.recommendedMove || track.bottleneckLabel || "A real role is close enough to work on now, so the next move should make it more ready rather than add more prep.",
+        detail: track.recommendedMove || track.bottleneckLabel || "A real role is close enough to work on now, so the next move should make it more ready rather than add more learning.",
         action: "Open jobs",
         mode: "do-now",
         onClick: () => onOpenTab("jobs"),

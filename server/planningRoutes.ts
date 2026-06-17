@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import OpenAI from "openai";
+import { llm, llmJSON } from "./llm";
 import { explainPersistedPlanItem, recommend, planDay } from "./brain";
 import { createNextTask } from "./nextTask";
 import { deterministicUnstickStep, prependStep } from "./planningFeedback";
@@ -44,7 +44,7 @@ export function categoryForPlanItem(item: {
   if (item.sourceType === "goal") {
     const text = `${item.title || ""} ${item.whySelected || ""} ${item.doneWhen || ""}`.toLowerCase();
     if (/contact|outreach|reach out|message|network/i.test(text)) return "admin";
-    if (/prep item|prep support|learn|learning/i.test(text)) return "learning";
+    if (/learning focus|learning support|learn|learning/i.test(text)) return "learning";
     return "job";
   }
   return "admin";
@@ -271,15 +271,10 @@ export function registerPlanningRoutes(app: Express) {
     let autoShrunk = false;
     if (skipped >= 2 && (!steps || steps === "[]")) {
       try {
-        const client = new OpenAI();
-        const out = await client.responses.create({
-          model: "gpt_5_1",
-          input: "Someone with ADHD keeps avoiding this task. Break it into 3-4 tiny steps, first one under 2 minutes and physical. " +
-            'Return ONLY a JSON array of strings. Task: "' + task.title + '"',
-        });
-        let text = (out.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-        let arr: string[] = [];
-        try { arr = JSON.parse(text); } catch { arr = []; }
+        const arr = await llmJSON<string[]>(
+          "Someone with ADHD keeps avoiding this task. Break it into 3-4 tiny steps, first one under 2 minutes and physical. " +
+          'Return ONLY a JSON array of strings. Task: "' + task.title + '"',
+        ) || [];
         if (arr.length) {
           steps = JSON.stringify(arr.slice(0, 4).map((x) => ({ text: x, done: false })));
           autoShrunk = true;

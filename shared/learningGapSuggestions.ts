@@ -18,22 +18,22 @@ const STARTERS: Record<CapabilityDomainKey, LearningGapPrepStarter> = {
     optionalResult: "a short brief you can talk through confidently",
   },
   comms: {
-    title: "Strategic writing and messaging prep",
+    title: "Strategic writing and messaging",
     note: "Sharpen how you explain an issue, recommendation, or tradeoff in a crisp way.",
     optionalResult: "talking points, a short memo, or a polished example",
   },
   policy: {
-    title: "Policy and regulation prep",
+    title: "Policy and regulation essentials",
     note: "Get clearer on the rules, tradeoffs, and one concrete example you can explain.",
     optionalResult: "a short policy note or comparison table",
   },
   product: {
-    title: "Execution and operating cadence prep",
+    title: "Execution and operating cadence",
     note: "Get more concrete on planning, coordination, and how work actually moves.",
     optionalResult: "a checklist, operating note, or decision example",
   },
   quant: {
-    title: "Data and analysis prep",
+    title: "Data and analysis fundamentals",
     note: "Work through one concrete example so the numbers feel usable rather than abstract.",
     optionalResult: "a worked example, metric walkthrough, or short analysis note",
   },
@@ -44,7 +44,7 @@ export function learningGapPrepStarter(
   domainLabel: string,
 ): LearningGapPrepStarter {
   return STARTERS[domain] || {
-    title: `${domainLabel} prep`,
+    title: `${domainLabel} learning`,
     note: `Get more concrete in ${domainLabel} so you can explain it more clearly.`,
     optionalResult: "a short note or example you can reuse later",
   };

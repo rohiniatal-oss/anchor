@@ -1,7 +1,8 @@
 import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { buildLaneOperatingModel, type LaneOperatingModel } from "./laneState";
-import OpenAI from "openai";
-import { USER_PROFILE } from "./userPromptProfile";
+import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
+import { llmJSON } from "./llm";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 export type RoleArchetypeRecommendation = {
   archetype: string;
@@ -135,7 +136,6 @@ function sanitizeRole(raw: any): RoleArchetypeRecommendation | null {
 
 async function getMarketGroundedArchetypes(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[]): Promise<RoleArchetypeRecommendation[] | null> {
   try {
-    const client = new OpenAI();
     const systemSnapshot = {
       savedRoles: jobs.slice(0, 25).map((j) => ({ title: j.title, company: j.company, location: j.location, note: j.note, fitScore: j.fitScore, status: j.status })),
       learning: learn.slice(0, 20).map((l) => ({ title: l.title, capabilityBuilt: l.capabilityBuilt, requiredOutput: l.requiredOutput, status: l.learnStatus })),
@@ -143,20 +143,15 @@ async function getMarketGroundedArchetypes(tasks: Task[], jobs: Job[], learn: Le
       contacts: contacts.slice(0, 20).map((c) => ({ who: c.who, targetRole: c.targetRole, why: c.why, status: c.status })),
       tasks: tasks.filter((t) => !t.done).slice(0, 25).map((t) => ({ title: t.title, category: t.category, sourceNote: t.sourceNote })),
     };
-    const r = await client.responses.create({
-      model: "gpt_5_1",
-      // The model should use its current market knowledge plus the user's saved
-      // system state. No fake employers/URLs; role archetypes and people types only.
-      input:
-        `You are the market-grounding strategy engine for a job-search operating system. ` +
-        `User profile: ${USER_PROFILE} ` +
-        `Using current labour-market patterns and the saved system snapshot, recommend 3-5 role archetypes to explore/convert/watch. ` +
-        `For each, return: archetype, priority (explore|convert|watch|pause), fitLogic, credibilityGap, capabilitySignal, peopleToFind (2-4 person TYPES, not names), resourceNeed, nextExperiment, marketSignal. ` +
-        `MarketSignal should summarize why this lane exists now, not cite URLs. Do not invent specific open roles or specific people. ` +
-        `Return ONLY JSON: {"roleArchetypes":[...]}. Snapshot: ${JSON.stringify(systemSnapshot)}`,
-    });
-    const text = (r.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    let parsed: any = {}; try { parsed = JSON.parse(text); } catch { parsed = {}; }
+    const ctx = await buildUserContext();
+    const parsed = await llmJSON<{ roleArchetypes?: any[] }>(
+      `${COACH_PREAMBLE}You are the market-grounding strategy engine for a job-search operating system. ` +
+      `${formatContextForPrompt(ctx)} ` +
+      `Using current labour-market patterns and the saved system snapshot, recommend 3-5 role archetypes to explore/convert/watch. ` +
+      `For each, return: archetype, priority (explore|convert|watch|pause), fitLogic, credibilityGap, capabilitySignal, peopleToFind (2-4 person TYPES, not names), resourceNeed, nextExperiment, marketSignal. ` +
+      `MarketSignal should summarize why this lane exists now, not cite URLs. Do not invent specific open roles or specific people. ` +
+      `Return ONLY JSON: {"roleArchetypes":[...]}. Snapshot: ${JSON.stringify(systemSnapshot)}`,
+    );
     const arr = Array.isArray(parsed?.roleArchetypes) ? parsed.roleArchetypes : [];
     const clean = arr.map(sanitizeRole).filter(Boolean) as RoleArchetypeRecommendation[];
     return clean.length ? clean : null;
@@ -235,7 +230,7 @@ function buildPlanShifts(laneModel: LaneOperatingModel, roleArchetypes: RoleArch
   const proof = laneModel.lanes.find((l) => l.name === "Proof assets");
   const network = laneModel.lanes.find((l) => l.name === "Network");
   const learning = laneModel.lanes.find((l) => l.name === "Learning");
-  if (applications?.stage === "premature") shifts.push({ action: "pause", target: "mass applications", reason: "Applications are premature until direction and prep are clearer." });
+  if (applications?.stage === "premature") shifts.push({ action: "pause", target: "mass applications", reason: "Applications are premature until direction and learning are clearer." });
   if (direction && ["empty", "exploring", "narrowing"].includes(direction.stage)) shifts.push({ action: "start", target: "real role gathering", reason: direction.bottleneck });
   if (proof && ["empty", "idea", "outlined"].includes(proof.stage)) shifts.push({ action: "start", target: "one optional writing or project example", reason: proof.bottleneck });
   if (network && network.stage === "empty") shifts.push({ action: "start", target: "targeted people map", reason: network.bottleneck });

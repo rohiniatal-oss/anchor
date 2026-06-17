@@ -6,7 +6,7 @@ export const GOAL_WORKSTREAM = {
   PROJECTS_PUBLIC_WORK: "Projects and public work",
   APPLICATIONS: "Applications",
   INTERVIEW_READINESS: "Interview readiness",
-  PREP_UPSKILLING: "Prep and upskilling",
+  PREP_UPSKILLING: "Learning and upskilling",
   ENERGY_STABILITY: "Energy and stability",
 } as const;
 

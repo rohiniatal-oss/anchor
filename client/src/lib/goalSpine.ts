@@ -330,7 +330,7 @@ export function goalMorningBrief(goal?: CareerGoalT | null): GoalMorningBriefT {
               : "The search picture is mixed";
 
   const intro = blocker === "access"
-    ? "A useful person move is probably worth more than extra solo prep right now."
+    ? "A useful person move is probably worth more than extra solo learning right now."
     : blocker === "clarify"
       ? "Confirm the role facts before you spend more effort. That should cut wasted motion."
       : blocker === "application"
@@ -340,7 +340,7 @@ export function goalMorningBrief(goal?: CareerGoalT | null): GoalMorningBriefT {
           : blocker === "assessment"
             ? "A live process exists, so today should help you prepare, not widen the search."
             : blocker === "targeting"
-              ? "You need a clearer set of real roles before more prep or networking will pay off."
+              ? "You need a clearer set of real roles before more learning or networking will pay off."
               : goalTodayIntroLine(goal);
 
   const bestUseText = blocker === "access"
@@ -564,13 +564,13 @@ function secondaryComparisonDetail(goal: CareerGoalT, workstream: GoalWorkstream
   }
   const mode = goalModeInfo(goal);
   if (mode.key === "convert" && workstream.name === GOAL_WORKSTREAM.PREP_UPSKILLING) {
-    return "Prep stays secondary while live roles already need concrete follow-through.";
+    return "Learning stays secondary while live roles already need concrete follow-through.";
   }
   if (mode.key === "convert" && workstream.name === GOAL_WORKSTREAM.DIRECTION) {
     return "Further comparison stays secondary because real opportunities are already giving you better evidence.";
   }
   if (mode.key === "options" && workstream.name === GOAL_WORKSTREAM.PREP_UPSKILLING) {
-    return "Prep stays secondary until there are more concrete roles or conversations to support.";
+    return "Learning stays secondary until there are more concrete roles or conversations to support.";
   }
   if (mode.key === "explore" && workstream.name === GOAL_WORKSTREAM.APPLICATIONS) {
     return "Applications stays secondary because role direction is not clear enough yet.";

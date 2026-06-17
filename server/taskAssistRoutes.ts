@@ -1,10 +1,10 @@
 import type { Express } from "express";
-import OpenAI from "openai";
 import { storage } from "./storage";
 import { routeCapture, sortOpenCaptures } from "./capture";
 import { buildTaskIntakeDefaults } from "./taskIntakeInference";
 import { legacyCategoryToRoute } from "./captureCompatibility";
 import { USER_PROFILE } from "./userPromptProfile";
+import { llm, llmJSON } from "./llm";
 
 export function registerTaskAssistRoutes(app: Express) {
   app.post("/api/unstick", async (req, res) => {
@@ -13,17 +13,15 @@ export function registerTaskAssistRoutes(app: Express) {
     const stageOutput = String(req.body?.stageOutput || "").trim();
     if (!step) return res.status(400).json({ error: "Need a step" });
     try {
-      const client = new OpenAI();
       const stageCtx = currentStage
         ? ` The broader task is in the "${currentStage}" stage — the goal for this stage is: ${stageOutput || "not specified"}.`
         : "";
-      const r = await client.responses.create({
-        model: "gpt_5_1",
-        input: 'Someone with ADHD is stuck and can\'t start this step: "' + step + '".' + stageCtx +
-          " Give ONE tiny physical 60-second action to break the freeze (e.g. 'Open a blank doc and type one sentence')." +
-          " Warm, one short sentence, no preamble. Return just the sentence.",
-      });
-      const hint = (r.output_text || "").trim().replace(/^["']|["']$/g, "");
+      const raw = await llm(
+        'Someone with ADHD is stuck and can\'t start this step: "' + step + '".' + stageCtx +
+        " Give ONE tiny physical 60-second action to break the freeze (e.g. 'Open a blank doc and type one sentence')." +
+        " Warm, one short sentence, no preamble. Return just the sentence.",
+      );
+      const hint = raw.replace(/^["']|["']$/g, "");
       res.json({ hint: hint || "Set a 2-minute timer and just open the first thing." });
     } catch {
       res.status(500).json({ error: "Couldn't think of one right now." });
@@ -114,18 +112,12 @@ export function registerTaskAssistRoutes(app: Express) {
       .map((j) => `${j.title} @ ${j.company} (${j.location})`);
     const alreadyTracked = contacts.map((c) => `${c.who} [${c.sector}]`);
     try {
-      const client = new OpenAI();
-      const out = await client.responses.create({
-        model: "gpt_5_1",
-        input:
-          `You plan warm networking for ${USER_PROFILE}\n\n` +
-          `Given her TARGET ROLES below, suggest ONE specific *kind of person* to reach - tied to those exact orgs/sectors - that would most move her hunt. Reason strategically: which warm route (ex-TBI, ex-Bain, ex-Abraaj, LSR/Delhi alum, someone already at the target org or its sector) best unlocks these roles. Describe them by TYPE + WHERE (no invented names).\n\n` +
-          `TARGET ROLES: ${JSON.stringify(targets)}\nALREADY TRACKED (don't repeat): ${JSON.stringify(alreadyTracked)}\nEXCLUDE: ${JSON.stringify(exclude)}\n\n` +
-          `Return ONLY one JSON object: {"who":"<person type + where, e.g. 'ex-Bain colleague now in AI policy'>","sector":"<short sector tag>","why":"<one tight sentence on why this unlocks a target role>"}.`,
-      });
-      let text = (out.output_text || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-      let j: any = {};
-      try { j = JSON.parse(text); } catch { j = {}; }
+      const j = await llmJSON<{ who?: string; sector?: string; why?: string }>(
+        `You plan warm networking for ${USER_PROFILE}\n\n` +
+        `Given her TARGET ROLES below, suggest ONE specific *kind of person* to reach - tied to those exact orgs/sectors - that would most move her hunt. Reason strategically: which warm route (ex-TBI, ex-Bain, ex-Abraaj, LSR/Delhi alum, someone already at the target org or its sector) best unlocks these roles. Describe them by TYPE + WHERE (no invented names).\n\n` +
+        `TARGET ROLES: ${JSON.stringify(targets)}\nALREADY TRACKED (don't repeat): ${JSON.stringify(alreadyTracked)}\nEXCLUDE: ${JSON.stringify(exclude)}\n\n` +
+        `Return ONLY one JSON object: {"who":"<person type + where, e.g. 'ex-Bain colleague now in AI policy'>","sector":"<short sector tag>","why":"<one tight sentence on why this unlocks a target role>"}.`,
+      );
       if (!j || typeof j.who !== "string") return res.json({ suggestion: null });
       res.json({
         suggestion: {

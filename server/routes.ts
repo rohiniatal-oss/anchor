@@ -21,8 +21,9 @@ import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
 import { generateHustleArc } from "./learningCurriculum";
-import { USER_PROFILE } from "./userPromptProfile";
-import OpenAI from "openai";
+import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
+import { llm, llmUsageStats } from "./llm";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 const acceptRecommendationSchema = z.object({
   entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
@@ -82,7 +83,7 @@ function starterFallback(params: {
   const prompts = params.scaffolding.split("|").map((part) => part.trim()).filter(Boolean).slice(0, 3);
   if (params.milestoneType === "artifact") {
     const evidenceLine = params.completedCount > 0
-      ? `I've already done ${params.completedCount} prep step${params.completedCount === 1 ? "" : "s"}, so this draft should sound grounded rather than generic.`
+      ? `I've already done ${params.completedCount} learning step${params.completedCount === 1 ? "" : "s"}, so this draft should sound grounded rather than generic.`
       : "I'm using this draft to turn what I know so far into something concrete I can reuse.";
     return [
       `I'm building a clearer point of view on ${topic} and how it connects to the work I want to do.`,
@@ -92,7 +93,7 @@ function starterFallback(params: {
   }
   const bullets = [
     `- The main thing I am trying to understand about ${topic} is what matters most in practice, not just in theory.`,
-    `- ${params.completedCount > 0 ? `From the prep I have already done, I can see` : `My early read is`} that this overlaps with the kind of structured problem-solving and judgement I have used before.`,
+    `- ${params.completedCount > 0 ? `From the learning I have already done, I can see` : `My early read is`} that this overlaps with the kind of structured problem-solving and judgement I have used before.`,
     `- ${prompts[0] || `If I had to explain why ${topic} matters in an interview, I would focus on one clear tradeoff and one concrete example.`}`,
   ];
   return bullets.join("\n");
@@ -189,6 +190,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const updated = await storage.updateJob(Number(req.params.id), p.data);
     if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json(updated);
+  });
+  app.post("/api/jobs/:id/reject", async (req, res) => {
+    const id = Number(req.params.id);
+    const reason = String(req.body?.reason || "").trim().slice(0, 300);
+    const updated = await storage.updateJob(id, { status: "closed", rejectReason: reason || "Not a fit" });
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    await storage.logActivity({ eventType: "rejected", sourceType: "job", sourceId: id, metadata: JSON.stringify({ reason }) });
     res.json(updated);
   });
   app.delete("/api/jobs/:id", async (req, res) => {
@@ -347,9 +356,11 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         completionNote: (m as any).completionNote,
       })));
 
+      const ctx = await buildUserContext();
+      const userCtx = formatContextForPrompt(ctx);
       const prompt = milestoneType === "artifact"
-        ? `You are a job-search coach helping a candidate prepare a concrete piece of writing.\n` +
-          `User profile: ${USER_PROFILE} ` +
+        ? `${COACH_PREAMBLE}You are helping a candidate prepare a concrete piece of writing.\n` +
+          `${userCtx} ` +
           `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
           `They are working on: "${rec?.title || milestone.label}".\n` +
           `The task: ${milestone.suggestedTaskTitle}\n` +
@@ -358,8 +369,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Write a concrete first draft they can edit — not a template with [BRACKETS], an actual specific attempt. ` +
           `Keep it tight (under 120 words). Make it specific to their background.\n` +
           `Return ONLY the draft text, no explanation.`
-        : `You are a learning coach helping a candidate synthesise what they've learned.\n` +
-          `User profile: ${USER_PROFILE} ` +
+        : `${COACH_PREAMBLE}You are helping a candidate synthesise what they've learned.\n` +
+          `${userCtx} ` +
           `Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n\n` +
           `They are working on: "${rec?.title || milestone.label}".\n` +
           `The synthesis task: ${milestone.suggestedTaskTitle}\n` +
@@ -371,9 +382,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Return ONLY the bullet points, no preamble.`;
 
       try {
-        const client = new OpenAI();
-        const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-        const draft = (r.output_text || "").trim();
+        const draft = await llm(prompt);
         if (draft) return res.json({ draft });
       } catch {}
       res.json({
@@ -401,9 +410,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         doneWhen: milestone.doneWhen,
       });
 
+      const critiqueCtx = await buildUserContext();
       const prompt =
-        `You are a demanding but constructive coach reviewing a candidate's draft.\n` +
-        `User profile: ${USER_PROFILE} Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
+        `${COACH_PREAMBLE}You are reviewing a candidate's draft — be demanding but constructive.\n` +
+        `${formatContextForPrompt(critiqueCtx)} Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
         `Task they completed: ${milestone.suggestedTaskTitle}\n` +
         `Done-when criteria: ${milestone.doneWhen}\n\n` +
         `Their draft:\n"""\n${draft}\n"""\n\n` +
@@ -417,9 +427,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         `Return plain text, no markdown headers.`;
 
       try {
-        const client = new OpenAI();
-        const r = await client.responses.create({ model: "gpt_5_1", input: prompt });
-        const critique = (r.output_text || "").trim();
+        const critique = await llm(prompt);
         if (critique) return res.json({ critique });
       } catch {}
       res.json({

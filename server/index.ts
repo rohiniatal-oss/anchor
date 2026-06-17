@@ -2,6 +2,7 @@ import "dotenv/config";
 import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
 import { registerRoutes } from "./routes";
+import { llmUsageStats } from "./llm";
 import { registerCaptureRoutes } from "./capture";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
@@ -57,6 +58,10 @@ app.get("/api/health", (_req, res) => {
 });
 
 registerOptionalBasicAuth(app);
+
+app.get("/api/llm-usage", (_req, res) => {
+  res.json(llmUsageStats());
+});
 startOptionalSqliteBackups();
 
 export function log(message: string, source = "express") {

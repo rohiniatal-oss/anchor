@@ -80,7 +80,7 @@ export async function createNextTask(args: { sourceType: NextTaskSourceType; sou
     const hasReusableResult = !!(l.requiredOutput && l.requiredOutput.trim());
     const title = recommendationMilestone?.suggestedTaskTitle?.trim() || nextLearnTaskTitle(l);
     const doneWhen = recommendationMilestone?.doneWhen?.trim()
-      || (hasReusableResult ? `${l.requiredOutput} exists` : "One useful note, practice step, or prep note exists");
+      || (hasReusableResult ? `${l.requiredOutput} exists` : "One useful note, practice step, or learning note exists");
     values = {
       ...base,
       title,

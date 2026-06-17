@@ -12,7 +12,9 @@ type LlmOptions = {
   retries?: number;
 };
 
-const DEFAULT_MODEL = "gpt_5_1";
+export const MODEL_PRIMARY = "gpt_5_1";
+export const MODEL_LIGHT = "gpt-4.1";
+const DEFAULT_MODEL = MODEL_PRIMARY;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 1000;
 

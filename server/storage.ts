@@ -27,7 +27,7 @@ import {
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, asc, desc, inArray } from "drizzle-orm";
+import { eq, asc, desc, inArray, and, or } from "drizzle-orm";
 import { templateForArchetype } from "@shared/jobTemplates";
 import { templateForProofAsset } from "@shared/proofAssetTemplates";
 import { SPINE_DDL, SPINE_MIGRATIONS } from "./spine.schema.sql";
@@ -210,7 +210,10 @@ export class DatabaseStorage implements IStorage {
   async getTasks() { return db.select().from(tasks).orderBy(asc(tasks.sort), asc(tasks.id)).all(); }
   async createTask(t: InsertTask) { return db.insert(tasks).values({ ...t, createdAt: Date.now() }).returning().get(); }
   async updateTask(id: number, patch: Partial<InsertTask>) { return db.update(tasks).set(patch).where(eq(tasks.id, id)).returning().get(); }
-  async deleteTask(id: number) { db.delete(tasks).where(eq(tasks.id, id)).run(); }
+  async deleteTask(id: number) {
+    this._cleanEntityLinks("task", id);
+    db.delete(tasks).where(eq(tasks.id, id)).run();
+  }
 
   async getEvents(day: string) { return db.select().from(events).where(eq(events.day, day)).orderBy(asc(events.start)).all(); }
   async replaceEventsForDay(day: string, items: InsertEvent[]) {
@@ -222,8 +225,9 @@ export class DatabaseStorage implements IStorage {
   async createJob(j: InsertJob) { return db.insert(jobs).values({ ...j, createdAt: Date.now() }).returning().get(); }
   async updateJob(id: number, patch: Partial<InsertJob>) { return db.update(jobs).set(patch).where(eq(jobs.id, id)).returning().get(); }
   async deleteJob(id: number) {
-    db.delete(jobs).where(eq(jobs.id, id)).run();
+    this._cleanEntityLinks("job", id);
     db.delete(jobPipelineSteps).where(eq(jobPipelineSteps.jobId, id)).run();
+    db.delete(jobs).where(eq(jobs.id, id)).run();
   }
 
   async getJobSteps(jobId: number) {
@@ -275,14 +279,18 @@ export class DatabaseStorage implements IStorage {
   }
   async createLearn(l: InsertLearn) { return db.insert(learn).values({ ...l, createdAt: Date.now() }).returning().get(); }
   async updateLearn(id: number, patch: Partial<InsertLearn>) { return db.update(learn).set(patch).where(eq(learn.id, id)).returning().get(); }
-  async deleteLearn(id: number) { db.delete(learn).where(eq(learn.id, id)).run(); }
+  async deleteLearn(id: number) {
+    this._cleanEntityLinks("learn", id);
+    db.delete(learn).where(eq(learn.id, id)).run();
+  }
 
   async getHustles() { return db.select().from(hustles).orderBy(desc(hustles.id)).all(); }
   async createHustle(h: InsertHustle) { return db.insert(hustles).values({ ...h, createdAt: Date.now() }).returning().get(); }
   async updateHustle(id: number, patch: Partial<InsertHustle>) { return db.update(hustles).set(patch).where(eq(hustles.id, id)).returning().get(); }
   async deleteHustle(id: number) {
-    db.delete(hustles).where(eq(hustles.id, id)).run();
+    this._cleanEntityLinks("hustle", id);
     db.delete(proofAssetSteps).where(eq(proofAssetSteps.hustleId, id)).run();
+    db.delete(hustles).where(eq(hustles.id, id)).run();
   }
 
   // ── Proof asset steps (P4.3) — mirror the job pipeline step methods exactly ──
@@ -333,6 +341,7 @@ export class DatabaseStorage implements IStorage {
   async createContact(ct: InsertContact) { return db.insert(contacts).values({ ...ct, createdAt: Date.now() }).returning().get(); }
   async updateContact(id: number, patch: Partial<InsertContact>) { return db.update(contacts).set(patch).where(eq(contacts.id, id)).returning().get(); }
   async deleteContact(id: number) {
+    this._cleanEntityLinks("contact", id);
     db.delete(contactClassifications).where(eq(contactClassifications.contactId, id)).run();
     db.delete(contactInteractions).where(eq(contactInteractions.contactId, id)).run();
     db.delete(contacts).where(eq(contacts.id, id)).run();
@@ -353,6 +362,23 @@ export class DatabaseStorage implements IStorage {
   async getActivityLog() { return db.select().from(activityLog).orderBy(desc(activityLog.timestamp)).all(); }
   async getCareerTracks() { return db.select().from(careerTracks).orderBy(desc(careerTracks.priority)).all(); }
   async createCareerTrack(t: InsertCareerTrack) { return db.insert(careerTracks).values({ ...t, createdAt: Date.now() }).returning().get(); }
+  async updateCareerTrack(id: number, patch: Partial<InsertCareerTrack>) { return db.update(careerTracks).set(patch).where(eq(careerTracks.id, id)).returning().get(); }
+  async deleteCareerTrack(id: number) {
+    db.update(tasks).set({ relatedTrackId: null } as any).where(eq(tasks.relatedTrackId, id)).run();
+    db.update(jobs).set({ relatedTrackId: null } as any).where(eq(jobs.relatedTrackId, id)).run();
+    db.update(learn).set({ relatedTrackId: null } as any).where(eq(learn.relatedTrackId, id)).run();
+    db.update(hustles).set({ proofAssetForTrack: null } as any).where(eq(hustles.proofAssetForTrack, id)).run();
+    db.update(contacts).set({ relatedTrackId: null } as any).where(eq(contacts.relatedTrackId, id)).run();
+    db.update(wins).set({ trackId: null } as any).where(eq(wins.trackId, id)).run();
+    db.delete(networkGaps).where(eq(networkGaps.trackId, id)).run();
+    const trackRecs = db.select().from(recommendations).where(eq(recommendations.linkedTrackId, id)).all();
+    for (const rec of trackRecs) {
+      db.delete(recommendationSubdivisions).where(eq(recommendationSubdivisions.recommendationId, rec.id)).run();
+      db.delete(recommendationMilestones).where(eq(recommendationMilestones.recommendationId, rec.id)).run();
+    }
+    db.delete(recommendations).where(eq(recommendations.linkedTrackId, id)).run();
+    db.delete(careerTracks).where(eq(careerTracks.id, id)).run();
+  }
   async getDiscoverySession(id: number) { return db.select().from(discoverySessions).where(eq(discoverySessions.id, id)).get(); }
   async createDiscoverySession(session: InsertDiscoverySession) {
     const now = Date.now();
@@ -423,6 +449,15 @@ export class DatabaseStorage implements IStorage {
   async deleteRecommendationMilestone(id: number) {
     db.delete(recommendationMilestones).where(eq(recommendationMilestones.id, id)).run();
   }
+  _cleanEntityLinks(type: string, id: number) {
+    db.delete(entityLinks).where(
+      or(
+        and(eq(entityLinks.fromType, type), eq(entityLinks.fromId, id)),
+        and(eq(entityLinks.toType, type), eq(entityLinks.toId, id)),
+      ),
+    ).run();
+  }
+
   async linkTrack(entity: TrackEntity, id: number, trackId: number | null) {
     const table = TRACK_TABLES[entity];
     const patch = entity === "hustles" ? { proofAssetForTrack: trackId } : { relatedTrackId: trackId };

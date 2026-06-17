@@ -391,8 +391,8 @@ function careerRoutePreviews(trackDrafts: DiscoveryTrackDraft[], laneNames: stri
         size: "quick",
       },
       supportAction: {
-        title: "Pick one small prep step for that weak requirement",
-        doneWhen: "One concrete prep step is chosen",
+        title: "Pick one small learning step for that weak requirement",
+        doneWhen: "One concrete learning step is chosen",
         firstStep: "Pick the smallest step that would make that requirement easier to talk about, show, or practise within a week.",
         category: "learning",
         size: "quick",

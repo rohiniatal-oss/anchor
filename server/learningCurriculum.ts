@@ -316,14 +316,14 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
   const existing = await storage.getRecommendations();
   if (existing.some((r) => r.linkedGapKey === gapKey)) return;
 
-  const recTitle = `Prep: ${job.title}${job.company ? ` at ${job.company}` : ""}`;
+  const recTitle = `Application learning: ${job.title}${job.company ? ` at ${job.company}` : ""}`;
   const rec = await storage.createRecommendation({
     collection: "job-prep-arc",
     kind: "job-prep",
     status: "accepted",
     source: "system",
     title: recTitle,
-    whySuggested: `Structured prep arc for ${job.title}${job.company ? ` at ${job.company}` : ""}.`,
+    whySuggested: `Structured learning arc for ${job.title}${job.company ? ` at ${job.company}` : ""}.`,
     linkedTrackId: job.relatedTrackId ?? null,
     linkedGapKey: gapKey,
     linkedCombination: "",
@@ -331,7 +331,7 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     sourceLabel: "Anchor",
     sourceUrl: job.url || job.sourceUrl || "",
     rankScore: 85,
-    rankReason: "Direct application prep",
+    rankReason: "Direct application learning",
     executionShape: "milestone-arc",
     acceptanceEntityType: "learn",
     acceptanceDraft: JSON.stringify({ jobId: job.id }),
@@ -349,7 +349,7 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     sourceType: "recommendation",
     sourceId: rec.id,
     relatedTrackId: job.relatedTrackId ?? undefined,
-    capabilityBuilt: `Application prep for ${job.title}`,
+    capabilityBuilt: `Application learning for ${job.title}`,
     requiredOutput: `Application-ready narrative for ${job.title}`,
     note: job.url ? `Role URL: ${job.url}` : "",
   } as any);
@@ -367,7 +367,7 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     `${COACH_PREAMBLE}You are a job-application coach for a senior strategy professional. ` +
     `User profile: ${USER_PROFILE}\n\n` +
     `${jobContext}\n\n` +
-    `Generate a 4-milestone prep arc for this specific role. ` +
+    `Generate a 4-milestone learning arc for this specific role. ` +
     `Each milestone must be concrete and role-specific — not generic advice.\n\n` +
     `MILESTONE 1 — ORIENT (milestoneType: "content"):\n` +
     `Read and map the role. If a JD is provided, extract the 3 requirements where the user is STRONGEST and the 2 where she is WEAKEST. ` +

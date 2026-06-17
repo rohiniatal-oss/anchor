@@ -72,7 +72,7 @@ function opportunityStateMeta(goal: CareerGoalT) {
             : blocker === "targeting"
               ? {
                   label: "What is slowing this down: targeting",
-                  detail: "The best next move is probably to add or compare real roles before doing more prep.",
+                  detail: "The best next move is probably to add or compare real roles before doing more learning.",
                   tone: "bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300",
                   Icon: Compass,
                 }
@@ -139,7 +139,7 @@ export function CareerCompassCard({
       subjectText: combination,
       relatedTrackId: null,
       noteIntro: `Make ${combination} easier to understand, explain, and prepare for.`,
-      fallbackTitle: `Prep for ${combination}`,
+      fallbackTitle: `Learning for ${combination}`,
     });
     queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
     window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);

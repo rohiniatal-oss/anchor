@@ -385,7 +385,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     return [
       l?.url ? `Open ${prepLabel} and read the most relevant section` : `Read your notes on ${prepLabel} and find the most relevant part`,
       `Write the key insight in your own words`,
-      requiredOutput ? `Draft: ${requiredOutput}` : `Draft a short summary, note, or interview prep note`,
+      requiredOutput ? `Draft: ${requiredOutput}` : `Draft a short summary, note, or interview learning note`,
       `Note what you still need or what to do with this next`,
     ];
   }

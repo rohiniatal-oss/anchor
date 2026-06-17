@@ -332,7 +332,11 @@ export class DatabaseStorage implements IStorage {
   async getContacts() { return db.select().from(contacts).orderBy(desc(contacts.id)).all(); }
   async createContact(ct: InsertContact) { return db.insert(contacts).values({ ...ct, createdAt: Date.now() }).returning().get(); }
   async updateContact(id: number, patch: Partial<InsertContact>) { return db.update(contacts).set(patch).where(eq(contacts.id, id)).returning().get(); }
-  async deleteContact(id: number) { db.delete(contacts).where(eq(contacts.id, id)).run(); }
+  async deleteContact(id: number) {
+    db.delete(contactClassifications).where(eq(contactClassifications.contactId, id)).run();
+    db.delete(contactInteractions).where(eq(contactInteractions.contactId, id)).run();
+    db.delete(contacts).where(eq(contacts.id, id)).run();
+  }
 
   async getPlanByDate(date: string) { return db.select().from(dayPlans).where(eq(dayPlans.date, date)).get(); }
   async getPlan(id: number) { return db.select().from(dayPlans).where(eq(dayPlans.id, id)).get(); }

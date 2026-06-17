@@ -230,7 +230,7 @@ function buildPlanShifts(laneModel: LaneOperatingModel, roleArchetypes: RoleArch
   const proof = laneModel.lanes.find((l) => l.name === "Proof assets");
   const network = laneModel.lanes.find((l) => l.name === "Network");
   const learning = laneModel.lanes.find((l) => l.name === "Learning");
-  if (applications?.stage === "premature") shifts.push({ action: "pause", target: "mass applications", reason: "Applications are premature until direction and prep are clearer." });
+  if (applications?.stage === "premature") shifts.push({ action: "pause", target: "mass applications", reason: "Applications are premature until direction and learning are clearer." });
   if (direction && ["empty", "exploring", "narrowing"].includes(direction.stage)) shifts.push({ action: "start", target: "real role gathering", reason: direction.bottleneck });
   if (proof && ["empty", "idea", "outlined"].includes(proof.stage)) shifts.push({ action: "start", target: "one optional writing or project example", reason: proof.bottleneck });
   if (network && network.stage === "empty") shifts.push({ action: "start", target: "targeted people map", reason: network.bottleneck });

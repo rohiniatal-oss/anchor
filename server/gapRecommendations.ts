@@ -102,7 +102,7 @@ export async function syncGapRecommendations(): Promise<void> {
         sourceLabel: "Anchor",
         sourceUrl: "",
         rankScore: lg.priority * 10,
-        rankReason: `${label} is a required prep area for ${lg.name}`,
+        rankReason: `${label} is a required learning area for ${lg.name}`,
         executionShape: "single-step",
         acceptanceEntityType: "learn",
         acceptanceDraft: JSON.stringify({

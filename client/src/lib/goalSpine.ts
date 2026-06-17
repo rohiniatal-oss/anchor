@@ -330,7 +330,7 @@ export function goalMorningBrief(goal?: CareerGoalT | null): GoalMorningBriefT {
               : "The search picture is mixed";
 
   const intro = blocker === "access"
-    ? "A useful person move is probably worth more than extra solo prep right now."
+    ? "A useful person move is probably worth more than extra solo learning right now."
     : blocker === "clarify"
       ? "Confirm the role facts before you spend more effort. That should cut wasted motion."
       : blocker === "application"
@@ -340,7 +340,7 @@ export function goalMorningBrief(goal?: CareerGoalT | null): GoalMorningBriefT {
           : blocker === "assessment"
             ? "A live process exists, so today should help you prepare, not widen the search."
             : blocker === "targeting"
-              ? "You need a clearer set of real roles before more prep or networking will pay off."
+              ? "You need a clearer set of real roles before more learning or networking will pay off."
               : goalTodayIntroLine(goal);
 
   const bestUseText = blocker === "access"

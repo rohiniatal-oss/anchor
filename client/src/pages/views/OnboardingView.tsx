@@ -87,7 +87,7 @@ const ROUTE_DECISION_COPY: Record<string, string> = {
   "broad-role-pursuit": "Start here if real openings will teach you faster than more abstract thinking.",
   "fit-clarification": "Start here if you still need to work out which role types are actually worth testing.",
   "warm-path-build": "Start here if the right conversation could speed things up more than another application.",
-  "capability-ramp": "Start here if one repeated weak spot needs focused prep before you push harder.",
+  "capability-ramp": "Start here if one repeated weak spot needs focused learning before you push harder.",
   "clarify-outcome": "Start here if the goal is still too fuzzy to plan well.",
   "reduce-friction": "Start here if one blocker is making everything harder than it should be.",
   "start-small-routine": "Start here if consistency matters more than one big push.",

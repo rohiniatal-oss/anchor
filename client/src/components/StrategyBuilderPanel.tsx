@@ -121,7 +121,7 @@ export function StrategyBuilderPanel() {
                                 <div className="flex flex-wrap items-center gap-2"><p className="text-sm font-semibold">{r.archetype}</p><Chip>{priorityLabel(r.priority)}</Chip></div>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Why it fits:</span> {r.fitLogic}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">What still needs work:</span> {r.credibilityGap}</p>
-                                <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Useful prep:</span> {r.capabilitySignal}</p>
+                                <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Useful learning:</span> {r.capabilitySignal}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Next test:</span> {r.nextExperiment}</p>
                               </div>
                               <AcceptButton label="Add role type" onClick={() => post("/api/strategy-builder/accept-role", r)} />

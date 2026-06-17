@@ -385,7 +385,7 @@ test("role-targeting can focus prep and upskilling when several serious roles sh
 
   const state = buildCareerGoalState([], jobs, [], learn, []);
   assert.equal(state.phase, "role-targeting");
-  assert.equal(state.recommendedFocus, "Prep and upskilling");
+  assert.equal(state.recommendedFocus, "Learning and upskilling");
   assert.equal(state.dayType, "capability-building");
   assert.equal(state.focusReasonCode, "repeated_capability_gap");
   assert.match(state.reason, /Prep and upskilling|learning/i);
@@ -523,7 +523,7 @@ test("prove-fit roles are surfaced as capability-building support, not direct ap
 
   const state = buildCareerGoalState([], jobs, []);
   const applications = state.workstreams.find((w) => w.name === "Applications")!;
-  const capability = state.workstreams.find((w) => w.name === "Prep and upskilling")!;
+  const capability = state.workstreams.find((w) => w.name === "Learning and upskilling")!;
   const proof = state.workstreams.find((w) => w.name === "Projects and public work")!;
   assert.equal(applications.nextMoveType, "wait");
   assert.match(applications.bottleneck, /upskilling edge|capability-building/i);
@@ -553,7 +553,7 @@ test("a single prove-fit role does not make prep the dominant planner focus", ()
   ] as any;
 
   const state = buildCareerGoalState([], jobs, []);
-  assert.notEqual(state.recommendedFocus, "Prep and upskilling");
+  assert.notEqual(state.recommendedFocus, "Learning and upskilling");
   assert.notEqual(state.focusReasonCode, "repeated_capability_gap");
   assert.notEqual(state.opportunityState.dominantBlocker, "capability");
 });

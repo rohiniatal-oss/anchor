@@ -414,6 +414,6 @@ export function learnPresetForLane(item: GoalPortfolioItemT, tracks: CareerTrack
     subjectText: item.combination,
     relatedTrackId: bestTrackForLane(item.combination, tracks),
     noteIntro: `Build familiarity with ${item.combination} while roles are still being added. ${guide.fitHint}`,
-    fallbackTitle: `${item.combination} prep`,
+    fallbackTitle: `${item.combination} learning`,
   });
 }

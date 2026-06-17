@@ -193,6 +193,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
     (avoided || pinned.size === "deep" || ["job", "learn", "contact", "hustle"].includes(String(pinned.sourceType || "")));
 
   const autoTriggered = useRef<number | null>(null);
+  const autoSynthTriggered = useRef<number | null>(null);
   useEffect(() => {
     if (steps.length === 0 && !question && !breaking && autoTriggered.current !== pinned.id) {
       autoTriggered.current = pinned.id;
@@ -277,6 +278,14 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
       setSynthError("Couldn't load a starter right now.");
     } finally { setSynthLoadingState(null); }
   }
+
+  useEffect(() => {
+    if (checkpoint && (checkpoint.milestoneType === "synthesis" || checkpoint.milestoneType === "artifact")
+      && !synthDraft && !synthLoadingState && autoSynthTriggered.current !== checkpoint.id) {
+      autoSynthTriggered.current = checkpoint.id;
+      getPinnedStarter();
+    }
+  }, [checkpoint?.id, checkpoint?.milestoneType, synthDraft, synthLoadingState]);
 
   async function getPinnedCritique() {
     if (!checkpoint || !synthDraft.trim()) return;

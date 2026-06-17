@@ -14,6 +14,7 @@ import { llmJSON } from "./llm";
 import { storage } from "./storage";
 import type { Job, Hustle } from "@shared/schema";
 import { USER_PROFILE, COACH_PREAMBLE } from "./userPromptProfile";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 function clean(value: unknown, max = 280): string {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -62,9 +63,10 @@ export async function generateContactArchetypes(
   const existing = await storage.getRecommendationSubdivisions(recommendationId);
   if (existing.length > 0) return;
 
+  const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
     `${COACH_PREAMBLE}You are a networking strategist for a job-search tool. ` +
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${ctx}\n\n` +
     `Target role path: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
     `The user has live job roles saved in this area but no contacts yet.\n\n` +
     `=== STEP 1: Contact archetypes ===\n` +
@@ -196,19 +198,20 @@ export async function generateLearningCurriculum(
   const existing = await storage.getRecommendationSubdivisions(recommendationId);
   if (existing.length > 0) return;
 
+  const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
     `${COACH_PREAMBLE}You are a learning-path designer for a job-search tool. ` +
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${ctx}\n\n` +
     `Target role path: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
     `Capability gap to close: "${domainLabel}".\n\n` +
     `CALIBRATION — what NOT to assign:\n` +
-    `This user already has: strategy frameworks, stakeholder comms, logical structuring, slide-writing, business-case thinking, ` +
-    `emerging-market investment analysis. Skip these. Focus on what is genuinely new: domain vocabulary, ` +
-    `regulatory landscape, key institutions and actors, live debates, and how the field works in practice.\n\n` +
+    `Read the user profile above carefully. Identify what they already know from their background and skip those. ` +
+    `Focus ONLY on what is genuinely new for them: domain vocabulary they wouldn't have, ` +
+    `regulatory or institutional knowledge specific to this field, live debates, and how the field works in practice.\n\n` +
     `=== STEP 1: Subtopics ===\n` +
     `Generate 3-4 subtopics covering "${domainLabel}" from the angle most useful for ${trackArchetype || "advisory/strategy"} roles.\n` +
     `For each: label (<60 chars), whyItMatters (<140 chars — specific to ${trackName}, not generic), ` +
-    `suggestedMaterials (2-3 specific real items: books, newsletters, podcasts, courses a busy practitioner would actually use).\n\n` +
+    `suggestedMaterials (2-3 items: use real titles you're confident exist. If unsure of an exact title, give the search query instead — e.g. "search: [topic] podcast practitioner" — so the user finds the right thing rather than chasing a hallucinated title).\n\n` +
     `=== STEP 2: Milestone arc ===\n` +
     `Generate 6-8 milestones following this arc:\n\n` +
     `ARC STAGE 1 — ORIENT (1-2 milestones, milestoneType: "content"):\n` +
@@ -235,15 +238,15 @@ export async function generateLearningCurriculum(
     `doneWhen: can state an actual position on the main debate and defend it with one specific piece of evidence.\n\n` +
     `ARC STAGE 5 — TRANSFER (1 milestone, milestoneType: "content"):\n` +
     `Goal: connect to her specific target context — a country, sector, or role she's actually pursuing.\n` +
-    `suggestedTaskTitle: name a specific source about ${domainLabel} applied to a geography or sector relevant to the user (KSA, UAE, London, development finance, etc.).\n` +
-    `scaffolding: questions grounding it in her context, e.g. "How does this play out differently in KSA vs. UK? What's the most relevant example for the roles you're pursuing?"\n` +
-    `doneWhen: can give one specific example of how this domain plays out in a context directly relevant to her target roles.\n\n` +
+    `suggestedTaskTitle: name a specific source about ${domainLabel} applied to a geography or sector directly relevant to the user's target roles (derive from their profile above).\n` +
+    `scaffolding: questions grounding it in their specific context — what geographies and sectors are they targeting? How does this domain play out differently there?\n` +
+    `doneWhen: can give one specific example of how this domain plays out in a context directly relevant to their target roles.\n\n` +
     `ARC STAGE 6 — ARTIFACT (1 milestone, milestoneType: "artifact"):\n` +
     `Goal: produce something reusable she'll actually keep.\n` +
     `suggestedTaskTitle: a specific drafting task — e.g. "Draft the 2 sentences you'd use in a ${trackName} cover letter to show you understand ${domainLabel}", ` +
     `or "Write a 90-second verbal answer to: 'What's your take on [main debate in ${domainLabel}]?'".\n` +
     `scaffolding: a template + what makes a strong answer, e.g. "Start with your position, then one piece of evidence, then connect it to your background — ` +
-    `what's the one thing from your Bain or PE work that makes your take distinctive?"\n` +
+    `what's the one thing from your professional experience that makes your take distinctive?"\n` +
     `doneWhen: has a concrete piece of text she would actually use — a cover letter sentence, an interview answer, or a positioning statement.\n\n` +
     `=== OUTPUT FORMAT ===\n` +
     `Return ONLY valid JSON:\n` +
@@ -363,9 +366,10 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     hasJD ? `\nJob description:\n${job.jdText!.trim().slice(0, 1800)}` : "",
   ].filter(Boolean).join("\n");
 
+  const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
     `${COACH_PREAMBLE}You are a job-application coach for a senior strategy professional. ` +
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${ctx}\n\n` +
     `${jobContext}\n\n` +
     `Generate a 4-milestone learning arc for this specific role. ` +
     `Each milestone must be concrete and role-specific — not generic advice.\n\n` +
@@ -373,10 +377,10 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     `Read and map the role. If a JD is provided, extract the 3 requirements where the user is STRONGEST and the 2 where she is WEAKEST. ` +
     `If no JD: research what this type of role typically requires at this company/organisation.\n` +
     `suggestedTaskTitle: a specific task, e.g. "Read the ${job.title} JD — highlight 3 strengths and 2 gaps"\n` +
-    `scaffolding: 3 questions, e.g. "What are the 2-3 requirements where your Bain/PE background directly applies? | ` +
+    `scaffolding: 3 questions, e.g. "What are the 2-3 requirements where your professional background directly applies? | ` +
     `Where is the biggest gap — technical depth, sector knowledge, or seniority signal? | ` +
     `What's the one thing they seem to value most that you'll need to make credible?"\n` +
-    `doneWhen: has identified 3 specific requirements she can speak to directly and 1-2 gaps she'll need to address.\n\n` +
+    `doneWhen: has identified 3 specific requirements they can speak to directly and 1-2 gaps to address.\n\n` +
     `MILESTONE 2 — RESEARCH (milestoneType: "content"):\n` +
     `Understand the employer — not just what they say on their website.\n` +
     `suggestedTaskTitle: a specific research task, e.g. "Look up ${job.company || "the organisation"}'s recent news, the team, and any relevant LinkedIn profiles"\n` +
@@ -395,8 +399,8 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     `Produce the opening narrative — the "why me, why them, why now" angle she'd actually use.\n` +
     `suggestedTaskTitle: "Draft the opening 2-3 sentences: why ${job.company || "this organisation"} now, and what specifically in your background makes you the right hire"\n` +
     `scaffolding: "Sentence 1: one thing specific about ${job.company || "them"} that you find genuinely compelling (not generic). ` +
-    `Sentence 2: the one thread in your background — Bain, PE, TBI, or KSA work — that maps directly to what they need. ` +
-    `Sentence 3: what you'd bring that someone with a purely academic or policy background wouldn't. ` +
+    `Sentence 2: the one thread in your background that maps directly to what they need (derive from the user profile above). ` +
+    `Sentence 3: what you'd bring that a typical candidate from outside your background wouldn't. ` +
     `Keep it under 80 words. Read it aloud — if it sounds like a template, rewrite it."\n` +
     `doneWhen: has a complete opening narrative she would actually use — not a draft, a real version she'd send.\n\n` +
     `Return ONLY valid JSON:\n` +
@@ -491,9 +495,10 @@ export async function generateHustleArc(hustle: Hustle): Promise<void> {
     hustle.stage ? `Current stage: ${hustle.stage}` : "",
   ].filter(Boolean).join("\n");
 
+  const ctx = formatContextForPrompt(await buildUserContext());
   const prompt =
     `${COACH_PREAMBLE}You are a writing coach for a strategy professional building public proof assets. ` +
-    `User profile: ${USER_PROFILE}\n\n` +
+    `${ctx}\n\n` +
     `${context}\n\n` +
     `Generate a 4-milestone execution arc to take this from idea to published proof asset. ` +
     `Be specific to THIS piece — not generic writing advice.\n\n` +

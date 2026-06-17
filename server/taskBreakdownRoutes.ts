@@ -4,6 +4,7 @@ import type { Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { deterministicUnstickStep } from "./planningFeedback";
 import { COACH_PREAMBLE } from "./userPromptProfile";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 type WorkObject = "Artifact" | "Decision" | "Knowledge" | "Capability" | "Pipeline" | "Problem";
 type WorkflowKind = "finite" | "continuous";
@@ -700,6 +701,7 @@ export function registerTaskBreakdownRoutes(app: Express) {
     const context = String(req.body?.context || "").slice(0, 500);
     const bundle = await buildSourceContext(task);
     const fallbackObject = (bundle.parentWorkflow?.workObject as WorkObject) || classifyWorkObject(task, bundle);
+    const userCtx = formatContextForPrompt(await buildUserContext());
 
     let question = "";
     let steps: BreakdownStep[] = [];
@@ -707,6 +709,7 @@ export function registerTaskBreakdownRoutes(app: Express) {
     try {
       const raw = await llm(
         `${COACH_PREAMBLE}You are Anchor's workflow-state decomposition engine. Do not jump from task title to steps.\n\n` +
+        `${userCtx}\n\n` +
         `Use exactly this logic:\n` +
         `1. Read inherited parent workflow first, if present.\n` +
         `2. Classify the specific task intent as Artifact, Decision, Knowledge, Capability, Pipeline, or Problem.\n` +

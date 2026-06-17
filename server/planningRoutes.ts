@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { llm, llmJSON } from "./llm";
+import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 import { explainPersistedPlanItem, recommend, planDay } from "./brain";
 import { createNextTask } from "./nextTask";
 import { deterministicUnstickStep, prependStep } from "./planningFeedback";
@@ -274,6 +274,7 @@ export function registerPlanningRoutes(app: Express) {
         const arr = await llmJSON<string[]>(
           "Someone with ADHD keeps avoiding this task. Break it into 3-4 tiny steps, first one under 2 minutes and physical. " +
           'Return ONLY a JSON array of strings. Task: "' + task.title + '"',
+          { model: MODEL_LIGHT },
         ) || [];
         if (arr.length) {
           steps = JSON.stringify(arr.slice(0, 4).map((x) => ({ text: x, done: false })));

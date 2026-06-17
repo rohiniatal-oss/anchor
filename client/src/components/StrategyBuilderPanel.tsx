@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Compass, Loader2, Plus, Sparkles, Users, BookOpen, FileText, Briefcase, X } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 
 type StrategyBuild = {
   headline: string;
@@ -21,9 +22,12 @@ type StrategyBuild = {
   weeklyShape?: Record<string, number>;
 };
 
-async function post(path: string, body: any) {
+async function post(path: string, body: any, extraKeys: string[] = []) {
   const res = await apiRequest("POST", path, body);
-  return res.json();
+  const json = await res.json();
+  const keys = [...GOAL_SPINE_QUERY_KEYS, ...extraKeys];
+  await Promise.all(keys.map((k) => queryClient.invalidateQueries({ queryKey: [k] })));
+  return json;
 }
 
 function Chip({ children }: { children: any }) {
@@ -124,7 +128,7 @@ export function StrategyBuilderPanel() {
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Useful learning:</span> {r.capabilitySignal}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Next test:</span> {r.nextExperiment}</p>
                               </div>
-                              <AcceptButton label="Add role type" onClick={() => post("/api/strategy-builder/accept-role", r)} />
+                              <AcceptButton label="Add role type" onClick={() => post("/api/strategy-builder/accept-role", r, ["/api/career-tracks", "/api/tasks"])} />
                             </div>
                           </div>
                         ))}
@@ -142,7 +146,7 @@ export function StrategyBuilderPanel() {
                                 <p className="mt-1 text-xs text-muted-foreground">{p.why}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Ask:</span> {p.ask}</p>
                               </div>
-                              <AcceptButton label="Add person type" onClick={() => post("/api/strategy-builder/accept-person", p)} />
+                              <AcceptButton label="Add person type" onClick={() => post("/api/strategy-builder/accept-person", p, ["/api/contacts"])} />
                             </div>
                           </div>
                         ))}
@@ -160,7 +164,7 @@ export function StrategyBuilderPanel() {
                                 <p className="mt-1 text-xs text-muted-foreground">{r.why}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Possible useful note:</span> {r.output}</p>
                               </div>
-                              <AcceptButton label="Create learning item" onClick={() => post("/api/strategy-builder/accept-resource", r)} />
+                              <AcceptButton label="Create learning item" onClick={() => post("/api/strategy-builder/accept-resource", r, ["/api/learn"])} />
                             </div>
                           </div>
                         ))}
@@ -178,7 +182,7 @@ export function StrategyBuilderPanel() {
                                 <p className="mt-1 text-xs text-muted-foreground">{p.need}</p>
                                 <p className="mt-1 text-xs text-muted-foreground"><span className="font-medium text-foreground">Done when:</span> {p.doneWhen}</p>
                               </div>
-                              <AcceptButton label="Add writing/project idea" onClick={() => post("/api/strategy-builder/accept-example", p)} />
+                              <AcceptButton label="Add writing/project idea" onClick={() => post("/api/strategy-builder/accept-example", p, ["/api/hustles"])} />
                             </div>
                           </div>
                         ))}

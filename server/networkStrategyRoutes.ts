@@ -62,9 +62,10 @@ export function registerNetworkStrategyRoutes(app: Express) {
     const contactId = Number(req.params.contactId);
     if (!Number.isFinite(contactId)) return res.status(400).json({ error: "Bad contactId" });
 
-    const [contacts, tracks] = await Promise.all([
+    const [contacts, tracks, jobs] = await Promise.all([
       storage.getContacts(),
       storage.getCareerTracks(),
+      storage.getJobs(),
     ]);
     const contact = contacts.find((c) => c.id === contactId);
     if (!contact) return res.status(404).json({ error: "Contact not found" });
@@ -73,7 +74,7 @@ export function registerNetworkStrategyRoutes(app: Express) {
     if (activeTracks.length === 0) return res.json({ classifications: [] });
 
     try {
-      const results = await classifyContact(contact, activeTracks);
+      const results = await classifyContact(contact, activeTracks, jobs);
       const stored = await storage.upsertContactClassifications(
         contactId,
         results.map((r) => ({

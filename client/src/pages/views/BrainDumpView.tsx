@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Loader2, Plus, Sparkles, Wand2, X } from "lucide-react";
 import { mutateAndInvalidate } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
+import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,7 +96,7 @@ export default function BrainDumpView() {
   }
 
   async function applyRoute(t: Task, route: string, label = "Done") {
-    await mutateAndInvalidate("POST", `/api/capture/${t.id}/route`, { route }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current"]);
+    await mutateAndInvalidate("POST", `/api/capture/${t.id}/route`, { route }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current", ...GOAL_SPINE_QUERY_KEYS]);
     setTriage((st) => { const n = { ...st }; delete n[t.id]; return n; });
     toast({ title: label });
   }
@@ -103,7 +104,7 @@ export default function BrainDumpView() {
   async function acceptAll() {
     const actionable = inbox.filter((t) => triage[t.id] && triage[t.id].route !== "keep");
     if (!actionable.length) return;
-    await Promise.all(actionable.map((t) => mutateAndInvalidate("POST", `/api/capture/${t.id}/route`, { route: triage[t.id].route }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current"])));
+    await Promise.all(actionable.map((t) => mutateAndInvalidate("POST", `/api/capture/${t.id}/route`, { route: triage[t.id].route }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current", ...GOAL_SPINE_QUERY_KEYS])));
     setTriage({});
     toast({ title: `Filed ${actionable.length} item${actionable.length > 1 ? "s" : ""}`, description: "Brain dump cleared of sorted items." });
   }

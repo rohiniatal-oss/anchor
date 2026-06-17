@@ -341,7 +341,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
             <p className="text-sm text-muted-foreground inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Breaking this into steps so starting is easy...</p>
           ) : (
             <Button size="sm" variant="outline" onClick={() => breakdown()} data-testid="button-breakdown-pinned">
-              <Wand2 className="w-4 h-4 mr-1" /> Try again
+              <Wand2 className="w-4 h-4 mr-1" /> Break into steps
             </Button>
           )}
         </div>

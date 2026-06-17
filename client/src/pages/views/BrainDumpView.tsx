@@ -20,7 +20,7 @@ const ROUTE_ACTION_LABEL: Record<string, string> = {
   job: "File under Jobs",
   learn: "File under Learning",
   network: "File under Network",
-  proof: "File under Projects / proof assets",
+  proof: "File under Projects",
   deadline: "Add a deadline",
   blocker: "Flag as blocked",
   decision: "Needs a decision",

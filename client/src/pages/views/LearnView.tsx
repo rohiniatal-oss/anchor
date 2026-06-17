@@ -260,7 +260,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
         ) : (
           <button onClick={seed} disabled={busy} data-testid={`button-seed-proof-steps-${h.id}`}
             className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
-            <Plus className="w-3.5 h-3.5" /> Generate steps
+            <Plus className="w-3.5 h-3.5" /> Build learning steps
           </button>
         )
       ) : (

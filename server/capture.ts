@@ -108,13 +108,13 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   // One-word / name-only items are usually people or vague reminders, but they are
   // not safely routeable without the user's intent.
   if (title.split(" ").length <= 2 && !has(t, /\b(read|study|apply|write|pay|book|send|message|call|email|course|job|role)\b/)) {
-    return suggestion(id, "keep", "low", "Too little context to route safely", "Is this a person, task, learning item, or idea?");
+    return suggestion(id, "keep", "low", "Not enough to work with yet", "Is this a person, task, learning item, or idea?");
   }
 
   // Source hygiene before destination routing: these are updates to existing work,
   // not standalone jobs/resources by default.
   if (has(t, /\b(blocked|stuck|waiting on|waiting for|can't|cannot|need from|depends on|no access|missing info|need info)\b/)) {
-    return suggestion(id, "blocker", "high", "This explains why an existing item cannot move");
+    return suggestion(id, "blocker", "high", "Something's stuck — this should link to the blocked item");
   }
 
   if (has(t, /\b(deadline|due|closes|closing|by\s+(mon|tue|wed|thu|fri|sat|sun|tomorrow|today|\d{1,2})|before\s+\d{1,2}|submit by)\b/)) {
@@ -122,46 +122,46 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
   }
 
   if (has(t, /\b(step|subtask|part of|for the role|for that job|for the application|for the memo|for substack|for course|under)\b/)) {
-    return suggestion(id, "subtask", "medium", "This sounds like a child action under an existing object", "Which job, learning item, or project/public-work item should this attach to?");
+    return suggestion(id, "subtask", "medium", "This sounds like part of something you're already working on", "Which job, learning item, or project does this belong to?");
   }
 
   if (has(t, /\b(already added|duplicate|same as|covered by|already have)\b/)) {
-    return suggestion(id, "duplicate", "high", "This appears to duplicate an existing item");
+    return suggestion(id, "duplicate", "high", "You may have already captured this");
   }
 
   if (has(t, /\b(note|remember|thought|insight|interesting|worth noting|quote|context)\b/)) {
-    return suggestion(id, "note", "medium", "This is context to preserve, not necessarily an action");
+    return suggestion(id, "note", "medium", "Worth remembering, not necessarily something to do");
   }
 
   if (has(t, /\b(someday|maybe|parking lot|later idea|not now|one day|could do)\b/)) {
-    return suggestion(id, "parking_lot", "high", "This is an idea to park rather than execute now");
+    return suggestion(id, "parking_lot", "high", "An idea for later, not right now");
   }
 
   // Applications / opportunities. Fellowships are things you apply to; courses are
   // Learn unless the capture explicitly says applying to a fellowship/program.
   if (has(t, /\b(fellowship|internship|job|role|posting|vacancy|interview|application|apply|cover letter|cv|resume|résumé)\b/)) {
-    return suggestion(id, "job", "high", "This is an opportunity or application workflow");
+    return suggestion(id, "job", "high", "This is a job or opportunity");
   }
 
   // Network. Person + relational action belongs in Network, not generic Tasks.
   if (has(t, /\b(message|dm|email|call|whatsapp|follow up|follow-up|intro|introduce|coffee|referral|reconnect|reach out|ask\s+.+\babout\b)\b/)) {
-    return suggestion(id, "network", "high", "This is a relationship or outreach action");
+    return suggestion(id, "network", "high", "This involves reaching out to someone");
   }
 
   // Proof assets. Production verbs beat consumption nouns.
   if (has(t, /\b(write|draft|publish|post|substack|memo|essay|article|build|ship|launch|prototype|portfolio|case study|forecast log)\b/)) {
-    return suggestion(id, "proof", "high", "This creates a memo, post, project, or other reusable public-facing work");
+    return suggestion(id, "proof", "high", "This is something to write, build, or publish");
   }
 
   // Learning / resources.
   if (has(t, /\b(read|study|learn about|course|book|article|podcast|lecture|syllabus|resource|watch|module|class|curriculum)\b/)) {
-    return suggestion(id, "learn", "high", "This is something to study, practise, or build knowledge from");
+    return suggestion(id, "learn", "high", "This is something to learn or study");
   }
 
   // Decision / research is not automatically Learn: it is a thinking task until it
   // becomes a resource or output.
   if (has(t, /\b(figure out|work out|decide|choose|clarify|think through|whether|what kind|what type|pros and cons|trade[- ]?off)\b/)) {
-    return suggestion(id, "decision", "medium", "This is a decision or research question, not a learning item yet");
+    return suggestion(id, "decision", "medium", "This needs thinking through before it becomes an action");
   }
 
   // Concrete execution verbs.
@@ -171,10 +171,10 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
 
   // If it sounds like a small to-do but has no domain signal, keep it as a task.
   if (title.length <= 80 && title.split(" ").length <= 8) {
-    return suggestion(id, "task", "medium", "This looks actionable but has no specialist destination");
+    return suggestion(id, "task", "medium", "Looks actionable — you can file it somewhere specific later");
   }
 
-  return suggestion(id, "keep", "low", "Not enough signal to route safely", "Should this become a task, learning item, contact, job, or project/public-work item?");
+  return suggestion(id, "keep", "low", "Not sure where this belongs", "Should this become a task, learning item, contact, job, or project?");
 }
 
 // A capture has no slot/plan context, so we never fabricate a time block.
@@ -289,7 +289,7 @@ export async function routeCapture(id: number, rawRoute: string) {
     const d = await resolveAssetDetails(task.title, "job");
     const created = await storage.createJob({
       title: d.title || task.title, company: d.company || "", location: d.location || "", url: d.url || "",
-      note: "From Brain Dump", nextStep: d.nextStep || "Check requirements and next action", status: "wishlist",
+      note: "Captured in brain dump", nextStep: d.nextStep || "Check requirements and next action", status: "wishlist",
     } as any);
     await markCaptureRouted(task, route, "job", created.id, reason);
     return { status: 200, body: { moved: "job", route, job: created, reason } };
@@ -298,7 +298,7 @@ export async function routeCapture(id: number, rawRoute: string) {
   if (route === "learn") {
     const d = await resolveAssetDetails(task.title, "learn");
     const created = await storage.createLearn({
-      title: d.title || task.title, category: d.category || "", cost: "", url: d.url || "", note: "From Brain Dump",
+      title: d.title || task.title, category: d.category || "", cost: "", url: d.url || "", note: "Captured in brain dump",
       done: false, active: false, type: d.learnType || "resource", learnStatus: "open",
       requiredOutput: d.requiredOutput || "", capabilityBuilt: d.capabilityBuilt || "",
     } as any);
@@ -309,7 +309,7 @@ export async function routeCapture(id: number, rawRoute: string) {
   if (route === "network") {
     const d = await resolveAssetDetails(task.title, "network");
     const created = await storage.createContact({
-      name: "", who: d.who || task.title, sector: "", why: d.why || "From Brain Dump", status: "to_contact",
+      name: "", who: d.who || task.title, sector: "", why: d.why || "Captured in brain dump", status: "to_contact",
       relationshipStrength: "cold", askType: d.askType || "soft",
     } as any);
     await markCaptureRouted(task, route, "contact", created.id, reason);
@@ -319,7 +319,7 @@ export async function routeCapture(id: number, rawRoute: string) {
   if (route === "proof") {
     const d = await resolveAssetDetails(task.title, "proof");
     const created = await storage.createHustle({
-      title: d.title || task.title, note: "From Brain Dump", nextStep: d.nextStep || "Define the smallest useful piece", stage: "idea",
+      title: d.title || task.title, note: "Captured in brain dump", nextStep: d.nextStep || "Define the smallest useful piece", stage: "idea",
     } as any);
     await markCaptureRouted(task, route, "hustle", created.id, reason);
     return { status: 200, body: { moved: "proof", route, hustle: created, reason } };

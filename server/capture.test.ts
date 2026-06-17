@@ -82,7 +82,7 @@ test("/api/capture/:id/suggest returns a suggestion for one capture without sort
   assert.equal(r.json.suggestion.id, urgent.id);
   assert.equal(r.json.suggestion.route, "network");
   assert.equal(r.json.suggestion.confidence, "high");
-  assert.match(r.json.suggestion.reason, /relationship|outreach/i);
+  assert.match(r.json.suggestion.reason, /reaching out/i);
 });
 
 test("routing to Network creates a contact and preserves the original capture", async () => {

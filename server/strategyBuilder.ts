@@ -2,6 +2,7 @@ import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { buildLaneOperatingModel, type LaneOperatingModel } from "./laneState";
 import { USER_PROFILE } from "./userPromptProfile";
 import { llmJSON } from "./llm";
+import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 export type RoleArchetypeRecommendation = {
   archetype: string;
@@ -142,9 +143,10 @@ async function getMarketGroundedArchetypes(tasks: Task[], jobs: Job[], learn: Le
       contacts: contacts.slice(0, 20).map((c) => ({ who: c.who, targetRole: c.targetRole, why: c.why, status: c.status })),
       tasks: tasks.filter((t) => !t.done).slice(0, 25).map((t) => ({ title: t.title, category: t.category, sourceNote: t.sourceNote })),
     };
+    const ctx = await buildUserContext();
     const parsed = await llmJSON<{ roleArchetypes?: any[] }>(
       `You are the market-grounding strategy engine for a job-search operating system. ` +
-      `User profile: ${USER_PROFILE} ` +
+      `${formatContextForPrompt(ctx)} ` +
       `Using current labour-market patterns and the saved system snapshot, recommend 3-5 role archetypes to explore/convert/watch. ` +
       `For each, return: archetype, priority (explore|convert|watch|pause), fitLogic, credibilityGap, capabilitySignal, peopleToFind (2-4 person TYPES, not names), resourceNeed, nextExperiment, marketSignal. ` +
       `MarketSignal should summarize why this lane exists now, not cite URLs. Do not invent specific open roles or specific people. ` +

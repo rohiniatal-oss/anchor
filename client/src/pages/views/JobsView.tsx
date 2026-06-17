@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Plus, Trash2, ExternalLink, CalendarDays, ChevronDown, ChevronUp, ChevronRight,
@@ -144,6 +144,7 @@ function JobStepRail({ j }: { j: Job }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [newLabel, setNewLabel] = useState("");
+  const autoSeeded = useRef(false);
   async function reloadInto() { await qc.invalidateQueries({ queryKey: stepsKey }); }
 
   async function seed() {
@@ -155,6 +156,12 @@ function JobStepRail({ j }: { j: Job }) {
     } catch { toast({ title: "Couldn't build the checklist right now.", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
+
+  useEffect(() => {
+    if (isLoading || autoSeeded.current) return;
+    autoSeeded.current = true;
+    if (steps.length === 0 && !busy) seed();
+  }, [isLoading, steps.length]);
 
   async function materialize(s: JobPipelineStep) {
     setBusy(true);
@@ -241,10 +248,16 @@ function JobStepRail({ j }: { j: Job }) {
       {isLoading ? (
         <p className="text-xs text-muted-foreground/60 py-1">Loading steps…</p>
       ) : steps.length === 0 ? (
-        <button onClick={seed} disabled={busy} data-testid={`button-seed-steps-${j.id}`}
-          className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Build readiness checklist
-        </button>
+        busy ? (
+          <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5 py-1">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Building readiness checklist…
+          </p>
+        ) : (
+          <button onClick={seed} disabled={busy} data-testid={`button-seed-steps-${j.id}`}
+            className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+            <Plus className="w-3.5 h-3.5" /> Build readiness checklist
+          </button>
+        )
       ) : (
         <div className="space-y-1">
           {steps.map((s, i) => (

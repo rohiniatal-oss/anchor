@@ -274,7 +274,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
       if (res?.draft) setSynthDraft(res.draft);
       setSynthError(res?.error || "");
     } catch {
-      setSynthError("The AI helper could not load a starter right now.");
+      setSynthError("Couldn't load a starter right now.");
     } finally { setSynthLoadingState(null); }
   }
 
@@ -287,7 +287,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
       if (res?.critique) setSynthCritique(res.critique);
       setSynthError(res?.error || "");
     } catch {
-      setSynthError("The AI helper could not critique this draft right now.");
+      setSynthError("Couldn't critique this draft right now.");
     } finally { setSynthLoadingState(null); }
   }
 
@@ -692,7 +692,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       if (res?.draft) setSynthDrafts((d) => ({ ...d, [itemId]: res.draft }));
       setSynthErrors((s) => ({ ...s, [itemId]: res?.error || "" }));
     } catch {
-      setSynthErrors((s) => ({ ...s, [itemId]: "The AI helper could not load a starter right now." }));
+      setSynthErrors((s) => ({ ...s, [itemId]: "Couldn't load a starter right now." }));
     } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
   }
   async function getCritique(itemId: number, milestoneId: number) {
@@ -705,7 +705,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       if (res?.critique) setSynthCritiques((c) => ({ ...c, [itemId]: res.critique }));
       setSynthErrors((s) => ({ ...s, [itemId]: res?.error || "" }));
     } catch {
-      setSynthErrors((s) => ({ ...s, [itemId]: "The AI helper could not critique this draft right now." }));
+      setSynthErrors((s) => ({ ...s, [itemId]: "Couldn't critique this draft right now." }));
     } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
   }
 

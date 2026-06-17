@@ -827,7 +827,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
               )}
               <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
                 nextTaskHint={taskPreviewHint(nextJobTaskTitle(j), openJobTask?.title)}
-                onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />
+                onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />
             </div>
           )}
         </>

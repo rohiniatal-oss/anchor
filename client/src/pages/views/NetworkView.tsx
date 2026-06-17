@@ -559,7 +559,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
         <div className="mt-2 rounded-lg border border-card-border bg-muted/40 p-3">
           <p className="text-xs font-medium mb-1">What do you know about them right now?</p>
           <p className="text-[11px] text-muted-foreground mb-2">
-            Paste anything — a LinkedIn headline, recent paper, something someone told you. Leave blank and the AI will search for them.
+            Paste anything — a LinkedIn headline, recent paper, something someone told you. Leave blank and we'll look them up.
           </p>
           <textarea
             value={draftContext}
@@ -649,7 +649,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
         >
           <Wand2 className="w-3.5 h-3.5" /> Message
         </button>
-        <button onClick={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("contacts")) })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <button onClick={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("contacts")) })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
           <ListChecks className="w-3.5 h-3.5" /> Tasks
         </button>
         <LinkTrackControl entity="contacts" id={c.id} trackId={trackId} tracks={tracks} />

@@ -98,7 +98,7 @@ export default function BrainDumpView() {
         setTriage((current) => ({ ...current, [taskId]: data.suggestion as CaptureSug }));
       }
     } catch {
-      toast({ title: "Couldn't suggest a route", description: "Try again in a moment." });
+      toast({ title: "Couldn't work that one out", description: "Try again in a moment." });
     } finally {
       setSuggestingId((current) => (current === taskId ? null : current));
     }

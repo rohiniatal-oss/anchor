@@ -17,7 +17,7 @@ export function LinkTrackControl({ entity, id, trackId, tracks }: { entity: Trac
   async function link(next: number | null) {
     await mutateAndInvalidate("PATCH", `/api/${entity}/${id}/link-track`, { trackId: next }, [ENTITY_QUERY[entity], "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", ...GOAL_SPINE_QUERY_KEYS]);
     setOpen(false);
-    toast({ title: next ? "Linked to role type." : "Unlinked.", description: next ? "It'll show up under this role type in Strategy." : "Removed from this role type." });
+    toast({ title: next ? "Filed under role type." : "Removed.", description: next ? "It'll show up under this role type in Strategy." : "No longer grouped under a role type." });
   }
   return (
     <Popover open={open} onOpenChange={setOpen}>

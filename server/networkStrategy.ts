@@ -1,5 +1,5 @@
 import { USER_PROFILE } from "./userPromptProfile";
-import { llm, llmJSON } from "./llm";
+import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import type { CareerTrack, Contact, Job, NetworkGap } from "@shared/schema";
@@ -125,7 +125,7 @@ export async function generateNetworkGaps(
     `Make suggested searches concrete: org names, alumni networks, LinkedIn keywords specific to her background and the track. No generic queries.`;
 
   try {
-    const text = await llm(prompt, { model: "gpt-4.1" });
+    const text = await llm(prompt, { model: MODEL_LIGHT });
     const raw = extractJson(text);
     if (!Array.isArray(raw)) return [];
     return raw
@@ -186,7 +186,7 @@ export async function classifyContact(
     `Return [] if this person has no relevant connection to any track.`;
 
   try {
-    const text = await llm(prompt, { model: "gpt-4.1" });
+    const text = await llm(prompt, { model: MODEL_LIGHT });
     const raw = extractJson(text);
     if (!Array.isArray(raw)) return [];
     const validTrackIds = new Set(tracks.map((t) => t.id));
@@ -377,9 +377,9 @@ export async function draftOutreachMessage(
   try {
     const tools: any[] = hasName ? [{ type: "web_search_preview" }] : [];
     try {
-      return await llm(systemPrompt, { model: "gpt-4.1", tools });
+      return await llm(systemPrompt, { model: MODEL_LIGHT, tools });
     } catch {
-      return await llm(systemPrompt, { model: "gpt-4.1" });
+      return await llm(systemPrompt, { model: MODEL_LIGHT });
     }
   } catch {
     return "";

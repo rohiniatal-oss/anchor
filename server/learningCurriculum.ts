@@ -179,13 +179,27 @@ export async function generateLearningCurriculum(
   if (existing.length > 0) return;
 
   const ctx = formatContextForPrompt(await buildUserContext());
+
+  const allRecs = await storage.getRecommendations();
+  const trackRecs = allRecs.filter((r) => r.linkedTrackId != null && r.linkedTrackId === (allRecs.find((x) => x.id === recommendationId)?.linkedTrackId) && r.id !== recommendationId);
+  const trackRecIds = trackRecs.map((r) => r.id);
+  const priorMilestones = trackRecIds.length > 0 ? await storage.getRecommendationMilestonesForRecommendationIds(trackRecIds) : [];
+  const priorNotes = priorMilestones
+    .filter((m) => (m as any).completionNote)
+    .map((m) => `- ${m.label}: "${(m as any).completionNote}"`)
+    .slice(0, 8);
+  const priorNotesBlock = priorNotes.length > 0
+    ? `\nPRIOR LEARNING NOTES (from earlier work on this track — build on these, don't repeat):\n${priorNotes.join("\n")}\n`
+    : "";
+
   const prompt =
     `${COACH_PREAMBLE}You are designing a learning path for someone job-searching.\n\n` +
     `${ctx}\n\n` +
     `TARGET: "${trackName}" (archetype: ${trackArchetype || "advisory/strategy"}).\n` +
-    `CAPABILITY GAP: "${domainLabel}".\n\n` +
+    `CAPABILITY GAP: "${domainLabel}".\n` +
+    `${priorNotesBlock}\n` +
     `REASONING BEFORE YOU DESIGN (do this silently):\n` +
-    `1. WHAT DOES THE USER ALREADY KNOW? Read their profile. What from their background already overlaps with "${domainLabel}"? What's adjacent? What's genuinely foreign?\n` +
+    `1. WHAT DOES THE USER ALREADY KNOW? Read their profile${priorNotes.length > 0 ? " and the prior learning notes above" : ""}. What from their background already overlaps with "${domainLabel}"? What's adjacent? What's genuinely foreign?\n` +
     `2. WHAT KIND OF DOMAIN IS THIS?\n` +
     `   - Technical/regulatory (e.g. AI governance, tax law) → needs vocabulary + mechanisms + live debates\n` +
     `   - Skill/practice (e.g. interview prep, public speaking) → needs repetition + feedback + scenarios\n` +
@@ -333,6 +347,17 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     ? wins.filter((w) => (w as any).trackId === job.relatedTrackId).slice(0, 5)
     : [];
 
+  const allRecs = await storage.getRecommendations();
+  const trackRecs = job.relatedTrackId
+    ? allRecs.filter((r) => r.linkedTrackId === job.relatedTrackId && r.id !== rec.id)
+    : [];
+  const trackRecIds = trackRecs.map((r) => r.id);
+  const priorMilestones = trackRecIds.length > 0 ? await storage.getRecommendationMilestonesForRecommendationIds(trackRecIds) : [];
+  const priorNotes = priorMilestones
+    .filter((m) => (m as any).completionNote)
+    .map((m) => `- ${m.label}: "${(m as any).completionNote}"`)
+    .slice(0, 6);
+
   const jobContext = [
     `Role: ${job.title}`,
     job.company ? `Company: ${job.company}` : "",
@@ -341,6 +366,7 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     hasJD ? `\nJob description:\n${job.jdText!.trim().slice(0, 1800)}` : "",
     relevantContacts.length > 0 ? `\nExisting contacts at or related to this company/track:\n${relevantContacts.slice(0, 5).map((c) => `- ${c.who || c.name}${c.targetOrg ? ` (${c.targetOrg})` : ""} — ${c.status}`).join("\n")}` : "",
     trackWins.length > 0 ? `\nRecent wins in this track:\n${trackWins.map((w) => `- ${w.text}`).join("\n")}` : "",
+    priorNotes.length > 0 ? `\nPrior learning notes (from earlier study on this track — build on these):\n${priorNotes.join("\n")}` : "",
   ].filter(Boolean).join("\n");
 
   const ctx = formatContextForPrompt(userCtx);

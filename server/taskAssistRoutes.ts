@@ -17,9 +17,15 @@ export function registerTaskAssistRoutes(app: Express) {
         ? ` The broader task is in the "${currentStage}" stage — the goal for this stage is: ${stageOutput || "not specified"}.`
         : "";
       const raw = await llm(
-        'Someone with ADHD is stuck and can\'t start this step: "' + step + '".' + stageCtx +
-        " Give ONE tiny physical 60-second action to break the freeze (e.g. 'Open a blank doc and type one sentence')." +
-        " Warm, one short sentence, no preamble. Return just the sentence.",
+        `The user is frozen on a task and can't start. Your job is to find the smallest physical action that breaks the freeze.\n\n` +
+        `STUCK ON: "${step}"${stageCtx}\n\n` +
+        `REASONING (do this silently, don't output it):\n` +
+        `1. What is the FIRST PHYSICAL thing they'd need to do? (open an app, pick up a pen, click a button)\n` +
+        `2. Can it be done in under 60 seconds?\n` +
+        `3. Does it produce something visible? (a cursor blinking, a tab open, one word typed)\n` +
+        `If the step is vague ("research X"), make it concrete ("open Google and type [specific query]").\n` +
+        `If the step is big ("write the report"), shrink it ("open a doc and type just the first sentence").\n\n` +
+        `OUTPUT: One warm sentence. The action, not the advice. No preamble.`,
         { model: MODEL_LIGHT },
       );
       const hint = raw.replace(/^["']|["']$/g, "");
@@ -114,10 +120,18 @@ export function registerTaskAssistRoutes(app: Express) {
     const alreadyTracked = contacts.map((c) => `${c.who} [${c.sector}]`);
     try {
       const j = await llmJSON<{ who?: string; sector?: string; why?: string }>(
-        `You plan warm networking for ${USER_PROFILE}\n\n` +
-        `Given her TARGET ROLES below, suggest ONE specific *kind of person* to reach - tied to those exact orgs/sectors - that would most move her hunt. Reason strategically: which warm route (ex-TBI, ex-Bain, ex-Abraaj, LSR/Delhi alum, someone already at the target org or its sector) best unlocks these roles. Describe them by TYPE + WHERE (no invented names).\n\n` +
-        `TARGET ROLES: ${JSON.stringify(targets)}\nALREADY TRACKED (don't repeat): ${JSON.stringify(alreadyTracked)}\nEXCLUDE: ${JSON.stringify(exclude)}\n\n` +
-        `Return ONLY one JSON object: {"who":"<person type + where, e.g. 'ex-Bain colleague now in AI policy'>","sector":"<short sector tag>","why":"<one tight sentence on why this unlocks a target role>"}.`,
+        `User profile: ${USER_PROFILE}\n\n` +
+        `TARGET ROLES:\n${targets.map(t => `- ${t}`).join("\n") || "None yet"}\n\n` +
+        `ALREADY TRACKED (don't repeat):\n${alreadyTracked.map(c => `- ${c}`).join("\n") || "None"}\n\n` +
+        `EXCLUDE: ${JSON.stringify(exclude)}\n\n` +
+        `TASK: Suggest ONE specific type of person who would most advance this job search.\n\n` +
+        `REASONING STEPS:\n` +
+        `1. Look at the target roles. Which specific companies, sectors, or functions appear?\n` +
+        `2. Look at the user's background. What alumni networks, former employers, or professional communities could they tap?\n` +
+        `3. Think about WHO is most likely to respond AND most useful: someone at a target company? A former colleague who moved into a target sector? An alumni connection in a relevant geography?\n` +
+        `4. Pick the single highest-leverage person type — specific enough to search for (not "someone in the industry"), described by role + where they'd be found.\n` +
+        `5. Explain WHY in one sentence: what specific target role does this person unlock, and how?\n\n` +
+        `Return ONLY one JSON object: {"who":"<person type + where>","sector":"<short sector tag>","why":"<one sentence: which target role this unlocks and how>"}`,
         { model: MODEL_LIGHT },
       );
       if (!j || typeof j.who !== "string") return res.json({ suggestion: null });

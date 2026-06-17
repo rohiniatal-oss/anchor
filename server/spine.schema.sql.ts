@@ -151,6 +151,8 @@ CREATE TABLE IF NOT EXISTS wins (
   kind TEXT NOT NULL DEFAULT 'manual',
   win_category TEXT NOT NULL DEFAULT 'mindset',
   track_id INTEGER,
+  source_entity_type TEXT,
+  source_entity_id INTEGER,
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS contacts (
@@ -272,6 +274,7 @@ CREATE TABLE IF NOT EXISTS recommendations (
   acceptance_entity_type TEXT NOT NULL DEFAULT '',
   acceptance_draft TEXT NOT NULL DEFAULT '{}',
   duplicate_of_id INTEGER,
+  context_hash TEXT,
   created_at INTEGER NOT NULL,
   reviewed_at INTEGER,
   accepted_at INTEGER,
@@ -370,4 +373,7 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE contacts ADD COLUMN nextActionDue INTEGER`,
   `ALTER TABLE contacts ADD COLUMN nextActionDesc TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE jobs ADD COLUMN reject_reason TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE wins ADD COLUMN source_entity_type TEXT`,
+  `ALTER TABLE wins ADD COLUMN source_entity_id INTEGER`,
+  `ALTER TABLE recommendations ADD COLUMN context_hash TEXT`,
 ];

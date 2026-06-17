@@ -101,6 +101,8 @@ async function completeTask(task: Task, day: string, extraPatch: Partial<Task> =
     kind: "planned",
     winCategory: winCategoryFor(task),
     trackId: task.relatedTrackId ?? null,
+    sourceEntityType: task.sourceType || "task",
+    sourceEntityId: task.sourceId ?? task.id,
   } as any);
   await storage.logActivity({
     eventType: "completed",

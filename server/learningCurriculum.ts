@@ -14,7 +14,7 @@ import { llmJSON } from "./llm";
 import { storage } from "./storage";
 import type { Job, Hustle } from "@shared/schema";
 import { COACH_PREAMBLE } from "./userPromptProfile";
-import { buildUserContext, formatContextForPrompt } from "./userContext";
+import { buildUserContext, formatContextForPrompt, contextFingerprint } from "./userContext";
 
 function clean(value: unknown, max = 280): string {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -280,6 +280,9 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
   const existing = await storage.getRecommendations();
   if (existing.some((r) => r.linkedGapKey === gapKey)) return;
 
+  const userCtx = await buildUserContext();
+  const ctxHash = contextFingerprint(userCtx);
+
   const recTitle = `Application learning: ${job.title}${job.company ? ` at ${job.company}` : ""}`;
   const rec = await storage.createRecommendation({
     collection: "job-prep-arc",
@@ -301,6 +304,7 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     acceptanceDraft: JSON.stringify({ jobId: job.id }),
     confidenceScore: null,
     duplicateOfId: null,
+    contextHash: ctxHash,
   });
 
   await storage.createLearn({
@@ -339,7 +343,7 @@ export async function generateJobPrepArc(job: Job): Promise<void> {
     trackWins.length > 0 ? `\nRecent wins in this track:\n${trackWins.map((w) => `- ${w.text}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
 
-  const ctx = formatContextForPrompt(await buildUserContext());
+  const ctx = formatContextForPrompt(userCtx);
   const prompt =
     `${COACH_PREAMBLE}You are a job-application coach.\n\n` +
     `${ctx}\n\n` +
@@ -408,6 +412,9 @@ export async function generateHustleArc(hustle: Hustle): Promise<void> {
   const existing = await storage.getRecommendations();
   if (existing.some((r) => r.linkedGapKey === gapKey)) return;
 
+  const userCtx = await buildUserContext();
+  const ctxHash = contextFingerprint(userCtx);
+
   const recTitle = `Build: ${hustle.title}`;
   const rec = await storage.createRecommendation({
     collection: "hustle-arc",
@@ -429,6 +436,7 @@ export async function generateHustleArc(hustle: Hustle): Promise<void> {
     acceptanceDraft: JSON.stringify({ hustleId: hustle.id }),
     confidenceScore: null,
     duplicateOfId: null,
+    contextHash: ctxHash,
   });
 
   await storage.createLearn({
@@ -454,7 +462,7 @@ export async function generateHustleArc(hustle: Hustle): Promise<void> {
     hustle.stage ? `Current stage: ${hustle.stage}` : "",
   ].filter(Boolean).join("\n");
 
-  const ctx = formatContextForPrompt(await buildUserContext());
+  const ctx = formatContextForPrompt(userCtx);
   const prompt =
     `${COACH_PREAMBLE}You are a writing and execution coach helping someone build a public proof asset.\n\n` +
     `${ctx}\n\n` +

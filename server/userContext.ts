@@ -79,6 +79,15 @@ function liveJobCount(jobs: any[]) {
   return jobs.filter(isJobLive).length;
 }
 
+export function contextFingerprint(ctx: UserContext): string {
+  const key = `${ctx.phase}|${ctx.trackSummaries}|${(ctx.cv || "").slice(0, 200)}|${ctx.activeLearning}|${ctx.proofAssets}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+  }
+  return hash.toString(36);
+}
+
 export function formatContextForPrompt(ctx: UserContext): string {
   const parts = [`User profile: ${ctx.profile}`];
   if (ctx.cv) parts.push(`\nCV (abbreviated): ${ctx.cv.slice(0, 1200)}`);

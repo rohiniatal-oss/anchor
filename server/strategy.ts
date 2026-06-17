@@ -8,7 +8,7 @@ import { learningGapRecommendedMove } from "@shared/learningGapSuggestions";
 import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, ProofAssetStep } from "@shared/schema";
 import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evidence";
 import { computeLearningGaps, topLearningGapSignal, type TrackLearningGap, type LearningGapSignal } from "./learningStrategy";
-import { buildUserContext } from "./userContext";
+import { buildUserContext, contextFingerprint } from "./userContext";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the bottleneck types, and a
@@ -365,6 +365,8 @@ export type StrategyFrontDoor = {
   // P5 — the single highest-priority active track with an open capability gap +
   // its recommended move. Null when no active track has a gap. Read-only.
   learningGap: LearningGapSignal | null;
+  staleRecommendations?: number;
+  contextHash?: string;
 };
 
 // Cross-cutting insights READ OFF the diagnostics (single engine). Highest-signal
@@ -444,10 +446,12 @@ const REJECTION_PATTERNS: [RegExp, string][] = [
 ];
 
 export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
-  const [tracks, unlinked, evidence, learningGaps, userCtx, jobs] = await Promise.all([
-    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(), computeLearningGaps(), buildUserContext(), storage.getJobs(),
+  const [tracks, unlinked, evidence, learningGaps, userCtx, jobs, recs] = await Promise.all([
+    getTrackDiagnostics(), getUnlinkedItems(), getEvidencePayload(), computeLearningGaps(), buildUserContext(), storage.getJobs(), storage.getRecommendations(),
   ]);
   const rejected = jobs.filter((j) => j.status === "rejected" && j.rejectReason);
+  const currentHash = contextFingerprint(userCtx);
+  const staleCount = recs.filter((r) => r.status === "accepted" && r.contextHash && r.contextHash !== currentHash).length;
   return {
     tracks,
     topThree: tracks.slice(0, 3),
@@ -455,6 +459,8 @@ export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
     unlinked,
     evidence,
     learningGap: topLearningGapSignal(learningGaps.tracks),
+    staleRecommendations: staleCount,
+    contextHash: currentHash,
   };
 }
 

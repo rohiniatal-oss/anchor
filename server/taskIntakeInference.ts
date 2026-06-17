@@ -1,3 +1,6 @@
+import { llmJSON, MODEL_LIGHT } from "./llm";
+import { storage } from "./storage";
+
 function containsAny(text: string, terms: string[]) {
   const t = (text || "").toLowerCase();
   return terms.some((term) => t.includes(term));
@@ -120,4 +123,44 @@ export function buildTaskIntakeDefaults(raw: {
     readiness: raw?.readiness || (raw?.blockerReason ? "blocked" : "ready"),
     status: raw?.status || "not_started",
   };
+}
+
+export async function llmEnrichTask(taskId: number): Promise<void> {
+  const task = (await storage.getTasks()).find((t) => t.id === taskId);
+  if (!task || task.estimateConfidence !== "low") return;
+  const result = await llmJSON<{
+    category?: string;
+    size?: string;
+    estimateMinutes?: number;
+    doneWhen?: string;
+    firstStep?: string;
+  }>(
+    `Classify this task for a job-searching professional.\n\n` +
+    `Task: "${task.title}"\n\n` +
+    `Return a JSON object:\n` +
+    `- category: one of "job", "learning", "substack", "health", "admin" (pick the best fit)\n` +
+    `- size: "quick" (under 15 min), "medium" (15-60 min), or "deep" (60+ min)\n` +
+    `- estimateMinutes: your best guess in minutes\n` +
+    `- doneWhen: a specific, testable completion criterion (not "feels done" but "has written X" or "has sent Y")\n` +
+    `- firstStep: the first physical action — something doable in under 2 minutes that produces a visible result`,
+    { model: MODEL_LIGHT },
+  );
+  if (!result) return;
+  const patch: any = {};
+  if (result.category && ["job", "learning", "substack", "health", "admin"].includes(result.category)) {
+    patch.category = result.category;
+  }
+  if (result.size && ["quick", "medium", "deep"].includes(result.size)) patch.size = result.size;
+  if (typeof result.estimateMinutes === "number" && result.estimateMinutes > 0) {
+    patch.estimateMinutes = result.estimateMinutes;
+    patch.estimateConfidence = "medium";
+    patch.estimateReason = "llm_enrichment";
+  }
+  if (result.doneWhen && result.doneWhen.length > 10) patch.doneWhen = result.doneWhen.slice(0, 300);
+  if (result.firstStep) {
+    patch.steps = JSON.stringify([{ text: result.firstStep.slice(0, 200), done: false }]);
+  }
+  if (Object.keys(patch).length > 0) {
+    await storage.updateTask(taskId, patch);
+  }
 }

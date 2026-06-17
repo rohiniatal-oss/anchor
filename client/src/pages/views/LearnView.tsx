@@ -833,7 +833,7 @@ export function LearnView() {
     if (pending) {
       const { starterLabel, starterWhy, ...draft } = pending;
       setForm({ ...EMPTY_LEARN_FORM, ...draft });
-      setStarterHint(starterLabel || starterWhy ? { label: starterLabel || draft.title || "Prep starter", why: starterWhy || "" } : null);
+      setStarterHint(starterLabel || starterWhy ? { label: starterLabel || draft.title || "Learning focus", why: starterWhy || "" } : null);
       setShowForm(true);
     }
   }, []);
@@ -848,7 +848,7 @@ export function LearnView() {
     const preset = learnPresetForLane(item, tracks);
     const { starterLabel, starterWhy, ...draft } = preset as LearnStarterPrefillT;
     setForm({ ...EMPTY_LEARN_FORM, ...draft });
-    setStarterHint(starterLabel || starterWhy ? { label: starterLabel || draft.title || "Prep starter", why: starterWhy || "" } : null);
+    setStarterHint(starterLabel || starterWhy ? { label: starterLabel || draft.title || "Learning focus", why: starterWhy || "" } : null);
     setSelectedLane(item.combination);
     setShowForm(true);
   }
@@ -980,8 +980,8 @@ export function LearnView() {
       {visibleSuggestions.length > 0 && (
         <div className="mb-5 space-y-3">
           <div className="rounded-xl border border-card-border bg-card p-4">
-            <p className="text-sm font-medium">Prep starters</p>
-            <p className="mt-1 text-xs text-muted-foreground">Anchor has already found these prep starters from your active role types and current gaps. Use one, save it for later, or hide it.</p>
+            <p className="text-sm font-medium">Suggested learning</p>
+            <p className="mt-1 text-xs text-muted-foreground">Anchor has already found these learning items from your active role types and current gaps. Use one, save it for later, or hide it.</p>
           </div>
           <SuggestedStarterList list={readySuggestions} title="Ready now" />
           <SuggestedStarterList list={savedSuggestions} title="Saved for later" />
@@ -1001,7 +1001,7 @@ export function LearnView() {
           )}
           {starterHint && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5" data-testid="learn-starter-hint">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Prep starter</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Learning focus</p>
               <p className="text-sm font-medium mt-1">{starterHint.label}</p>
               {starterHint.why && <p className="text-xs text-muted-foreground mt-1">{starterHint.why}</p>}
               <p className="text-xs text-muted-foreground mt-1">You can save this as-is, or tweak it first.</p>

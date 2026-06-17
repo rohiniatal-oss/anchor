@@ -15,11 +15,17 @@ type CaptureSug = { id: number; route: string; label: string; reason: string; co
 const ROUTE_ACTION_LABEL: Record<string, string> = {
   today: "Do today",
   task: "Keep as task",
+  subtask: "Link to existing work",
   job: "File under Jobs",
-  learn: "File under Learn / prep",
+  learn: "File under Learning",
   network: "File under Network",
   proof: "File under Projects / proof assets",
+  deadline: "Add a deadline",
+  blocker: "Flag as blocked",
   decision: "Needs a decision",
+  note: "Save as a note",
+  duplicate: "Already captured",
+  parking_lot: "Park for later",
   keep: "Keep here",
 };
 const CONFIDENCE_LABEL: Record<string, string> = {
@@ -138,7 +144,7 @@ export default function BrainDumpView() {
               {sorting ? "Sorting..." : "Sort these for me"}
             </Button>
             <p className="text-xs text-muted-foreground mt-1.5">
-              I'll work out what each one probably is: something to do today, a learning item, part of something you're already on, an idea, or just a note.
+              I'll work out what each one probably is: something to do today, a learning item, part of something you've already saved, or just a note.
             </p>
           </div>
           {Object.keys(triage).length > 0 && inbox.some((t) => triage[t.id] && triage[t.id].route !== "keep") && (

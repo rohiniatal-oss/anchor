@@ -493,16 +493,16 @@ function JobCapabilitySupport({
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-slate-50/70 dark:bg-slate-900/20 -mx-1 px-2 pb-2" data-testid={`capability-support-${j.id}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700 dark:text-slate-300 mb-1.5">
-        <Hammer className="w-3.5 h-3.5" /> Prep and learning
+        <Hammer className="w-3.5 h-3.5" /> Learning
       </div>
       {supportItems.length === 0 ? (
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
             {savedLearningRec
-              ? "Anchor already saved a useful prep starter for this track, so you can start from that instead of setting one up from scratch."
+              ? "Anchor already saved a useful learning item for this track, so you can start from that instead of setting one up from scratch."
               : needsPrep
-                ? "This role may need clearer prep support. Set up one prep starter if you want more focused help here."
-                : "No prep starter is linked to this role type yet. Set one up if you want extra support for this role or interview."}
+                ? "This role may need clearer learning support. Start learning about it if you want more focused help here."
+                : "No learning is linked to this role type yet. Set one up if you want extra support for this role or interview."}
           </p>
           {requiredDomains.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -520,7 +520,7 @@ function JobCapabilitySupport({
               className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
               data-testid={`button-use-saved-learn-from-job-${j.id}`}
             >
-              <GraduationCap className="w-3.5 h-3.5" /> Use saved prep starter
+              <GraduationCap className="w-3.5 h-3.5" /> Use saved learning item
             </button>
           ) : (
             <button
@@ -529,7 +529,7 @@ function JobCapabilitySupport({
               className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
               data-testid={`button-open-learn-from-job-${j.id}`}
             >
-              <GraduationCap className="w-3.5 h-3.5" /> Set up prep starter
+              <GraduationCap className="w-3.5 h-3.5" /> Start learning about
             </button>
           )}
         </div>
@@ -676,7 +676,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
         ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
         : savedLearningRec
           ? { label: "Use saved starter", icon: GraduationCap, run: async () => onAcceptRecommendation(savedLearningRec) }
-          : { label: "Set up prep starter", icon: GraduationCap, run: async () => openLearnIntake() };
+          : { label: "Start learning about", icon: GraduationCap, run: async () => openLearnIntake() };
     }
     if (truth.action === "clarify") {
       return j.url
@@ -867,7 +867,7 @@ export function JobsView() {
     ]);
     toast({
       title: entityType === "contact" ? "Added to your network." : "Added to your learning list.",
-      description: entityType === "contact" ? "This should make it easier to move the role with a real person path." : "This gives the role a concrete prep path instead of a blank starter.",
+      description: entityType === "contact" ? "This should make it easier to move the role with a real person who can help." : "This gives the role focused learning support instead of a blank starter.",
     });
   }
 

@@ -191,7 +191,7 @@ export function broadPursuitPrimarySummary(goal?: CareerGoalT | null) {
   const coverage = getBroadPursuitCoverage(goal);
   if (coverage.missing.length > 0) return "One real role per role type is enough to start seeing what is viable.";
   if (coverage.missingNetworkSupport.length > 0 || (coverage.missingPrepSupport || coverage.missingLearningSupport).length > 0) {
-    return "Keep the live role types moving while you add the missing contact or prep starter.";
+    return "Keep the live role types moving while you add the missing contact or learning support.";
   }
   return "Keep the strongest live role moving without dropping the other active paths.";
 }
@@ -700,33 +700,27 @@ export function combinationSupportState(goal: CareerGoalT, combination: string) 
 
 export function nextLaneGap(goal: CareerGoalT, combination: string) {
   const support = combinationSupportState(goal, combination);
-  if (!support.hasRole) {
+  if (support.fullySupported) {
     return {
-      label: "Needs first real role",
-      detail: "Save one real role for this target.",
-      tone: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+      label: "Well supported",
+      detail: support.hasExampleProjectSupport
+        ? "This target has a role, a contact, a learning focus, and an optional writing/project idea."
+        : "This target has a role, a contact, and a learning focus. Optional writing or project ideas can compound later.",
+      tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
     };
   }
-  if (!support.hasNetworkSupport) {
-    return {
-      label: "Needs first contact",
-      detail: "Add one contact who could help here.",
-      tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
-    };
-  }
-  if (!support.hasPrepSupport) {
-    return {
-      label: "Needs prep starter",
-      detail: "Set up one prep starter for this target.",
-      tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
-    };
-  }
+  const missing: string[] = [];
+  if (!support.hasRole) missing.push("a real role");
+  if (!support.hasNetworkSupport) missing.push("a contact");
+  if (!support.hasPrepSupport) missing.push("a learning focus");
   return {
-    label: "Well supported",
-    detail: support.hasExampleProjectSupport
-      ? "This target has a role, a contact, a prep starter, and an optional writing/project idea."
-      : "This target has a role, a contact, and a prep starter. Optional writing or project ideas can compound later.",
-    tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+    label: `Needs ${missing.join(" + ")}`,
+    detail: `Add any of these to strengthen this target: ${missing.join(", ")}.`,
+    tone: !support.hasRole
+      ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+      : !support.hasNetworkSupport
+        ? "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300"
+        : "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
   };
 }
 
@@ -761,7 +755,7 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
       key: "prep",
       label: "Need prep",
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
-      text: compactLanePreview(missingPrepSupport, "Every active role type has a prep starter."),
+      text: compactLanePreview(missingPrepSupport, "Every active role type has a learning focus."),
     });
   }
   if (lines.length === 0) {
@@ -769,7 +763,7 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
       key: "covered",
       label: "Covered",
       tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
-      text: "Each active role type has a real role, someone useful to reach out to, and a prep starter.",
+      text: "Each active role type has a real role, someone useful to reach out to, and a learning focus.",
     });
   }
   return lines;

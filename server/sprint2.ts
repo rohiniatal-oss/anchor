@@ -247,8 +247,8 @@ async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes
 }
 
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
-  const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
-    storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(),
+  const [tasks, jobs, learn, hustles, contacts, tracks, jobContactLinks] = await Promise.all([
+    storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(), storage.getAllJobContactLinks(),
   ]);
   const budget = await remainingBudgetFor(day, opts.availableMinutes ?? null);
   const memory = await planningMemoryFor(day);
@@ -256,10 +256,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   const broadPursuitCoverage = deriveBroadPursuitCoverage(tasks, jobs, [], learn, contacts, hustles, tracks);
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
   const missingCombinationText = broadPursuitCoverage.missing.join("; ");
-  // Pass the resolved remaining budget directly. Passing busyEquivalentMinutes as a
-  // bare number sent planDay down its wall-clock path (remainingDayMinutes - busy),
-  // which re-introduced clock dependence and ignored the explicit availableMinutes.
-  const result = planDay(tasks, jobs, learn, hustles, energy, { remainingMinutes: budget.remainingMinutes }, contacts, tracks);
+  const result = planDay(tasks, jobs, learn, hustles, energy, { remainingMinutes: budget.remainingMinutes }, contacts, tracks, new Map(), jobContactLinks);
   const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
   const corrected = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
   const correctedPlan = broadPursuitNeedsRealRoles

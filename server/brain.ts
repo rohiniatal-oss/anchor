@@ -100,6 +100,7 @@ export type Candidate = {
   followUpDate?: string;
   jobTruthAction?: JobTruthAction;
   milestoneProgress?: { done: number; total: number };
+  linkedContactNames?: string[];
 };
 
 type StrategicContext = {
@@ -901,8 +902,9 @@ function askTypeAlignment(c: Candidate, context: StrategicContext) {
 
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
-export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [], learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map()): Candidate[] {
+export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [], learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(), jobContactLinks: Record<number, number[]> = {}): Candidate[] {
   const out: Candidate[] = [];
+  const contactsById = new Map(contacts.map((c) => [c.id, c]));
 
   for (const t of tasks) {
     const isTodayTask = t.list === "today";
@@ -941,6 +943,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         deadlineConfidence: j.deadlineConfidence || "",
         narrativeAngle: j.narrativeAngle || "",
         jobTruthAction: truthAction,
+        linkedContactNames: (jobContactLinks[j.id] || []).map((id) => contactsById.get(id)).filter(Boolean).map((c) => c!.who || c!.name || "a contact"),
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
       });
     }
@@ -1259,7 +1262,10 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
     return "Open your job sources and add or apply to one real role in each active path before doing narrower comparison work.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "Open the role and draft the shortest message to someone who could help or refer you.";
+    if (candidate?.jobTruthAction === "warm") {
+      if (candidate.linkedContactNames?.length) return `Open the role and draft a message to ${candidate.linkedContactNames[0]} — they're already linked to this role.`;
+      return "Open the role and draft the shortest message to someone who could help or refer you.";
+    }
     if (candidate?.jobTruthAction === "prove") return "Open your strongest learning item or reusable example and make one weak requirement easier to back up.";
     if (candidate?.jobTruthAction === "clarify") return "Open the role and confirm the missing facts before spending more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "Open the role and send the polite follow-up or warm nudge.";
@@ -1297,7 +1303,10 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
     return "Stop after one concrete role or application move exists in each active path.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "Stop after one message to someone useful is drafted, sent, or scheduled.";
+    if (candidate?.jobTruthAction === "warm") {
+      if (candidate.linkedContactNames?.length) return `Stop after the message to ${candidate.linkedContactNames[0]} is drafted, sent, or scheduled.`;
+      return "Stop after one message to someone useful is drafted, sent, or scheduled.";
+    }
     if (candidate?.jobTruthAction === "prove") return "Stop after one weak requirement is easier to back up than it was before.";
     if (candidate?.jobTruthAction === "clarify") return "Stop after the key missing facts are confirmed.";
     if (candidate?.jobTruthAction === "follow_up") return "Stop after one follow-up or warm nudge is sent.";
@@ -1335,7 +1344,10 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
     return "You are testing several paths in parallel, so the best move is to turn each one into a real role or application move.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "This role looks promising, but the best next step is to reach out to someone useful before going in cold.";
+    if (candidate?.jobTruthAction === "warm") {
+      if (candidate.linkedContactNames?.length) return `This role looks promising — reach out to ${candidate.linkedContactNames[0]}, who's already linked to it.`;
+      return "This role looks promising, but the best next step is to reach out to someone useful before going in cold.";
+    }
     if (candidate?.jobTruthAction === "prove") return "This role looks promising, but you still need one clearer example you can point to before pushing harder.";
     if (candidate?.jobTruthAction === "clarify") return "This role needs one clarification pass before it deserves more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "This role is already moving, so follow-through matters most right now.";
@@ -1423,6 +1435,7 @@ export function planDay(
   energy: Energy, capacity: CapacityInput = 0,
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
   learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(),
+  jobContactLinks: Record<number, number[]> = {},
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const priorityCandidates: Candidate[] = [];
@@ -1431,7 +1444,7 @@ export function planDay(
   } else if (needsBroadPursuitSupportGoalCandidate(context)) {
     priorityCandidates.push(...buildBroadPursuitSupportGoalCandidates(context));
   }
-  const all = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts, learnMilestoneProgress)];
+  const all = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts, learnMilestoneProgress, jobContactLinks)];
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))
     .filter((x) => x.reason)
@@ -1551,6 +1564,7 @@ export function planDay(
 export function recommend(
   tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], energy: Energy,
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
+  jobContactLinks: Record<number, number[]> = {},
 ) {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const priorityCandidates: Candidate[] = [];
@@ -1559,7 +1573,7 @@ export function recommend(
   } else if (needsBroadPursuitSupportGoalCandidate(context)) {
     priorityCandidates.push(...buildBroadPursuitSupportGoalCandidates(context));
   }
-  const cands = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts)].filter((c) => passesGates(c, context));
+  const cands = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts, new Map(), jobContactLinks)].filter((c) => passesGates(c, context));
   const mode = pickDayMode(cands, energy, context);
   if (cands.length === 0) return { mode, pick: null, alternative: null };
   const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s || a.c.sourceId - b.c.sourceId);

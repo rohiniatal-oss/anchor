@@ -150,7 +150,7 @@ export default function BrainDumpView() {
         <div className="mb-5 flex flex-wrap items-start gap-3">
           {sorting ? (
             <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" /> Working out where each one goes...
+              <Loader2 className="w-4 h-4 animate-spin" /> Working out what each one probably is: something to do today, a learning item, part of something you've already saved, or just a note.
             </p>
           ) : Object.keys(triage).length > 0 ? (
             <div className="flex flex-wrap items-center gap-3">

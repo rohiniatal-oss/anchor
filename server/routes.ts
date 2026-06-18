@@ -20,8 +20,7 @@ import { registerTaskAssistRoutes } from "./taskAssistRoutes";
 import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
-import { syncGapRecommendations } from "./gapRecommendations";
-import { getRecommendationFreshnessSnapshot } from "./recommendationFreshness";
+import { getRecommendationFreshnessSnapshot, syncFreshIntelligence } from "./recommendationFreshness";
 import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
 import { COACH_PREAMBLE } from "./userPromptProfile";
@@ -276,8 +275,23 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   app.post("/api/recommendations/sync", async (_req, res, next) => {
     try {
-      await syncGapRecommendations();
-      res.json({ ok: true });
+      const snapshot = await syncFreshIntelligence();
+      res.json({ ok: true, snapshot });
+    } catch (err) {
+      next(err);
+    }
+  });
+  app.get("/api/intelligence/freshness", async (_req, res, next) => {
+    try {
+      res.json(await getRecommendationFreshnessSnapshot());
+    } catch (err) {
+      next(err);
+    }
+  });
+  app.post("/api/intelligence/sync", async (_req, res, next) => {
+    try {
+      const snapshot = await syncFreshIntelligence();
+      res.json({ ok: true, snapshot });
     } catch (err) {
       next(err);
     }

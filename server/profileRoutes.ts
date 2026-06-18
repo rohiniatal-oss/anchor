@@ -1,7 +1,6 @@
 import type { Express } from "express";
 import { storage } from "./storage";
-import { syncGapRecommendations } from "./gapRecommendations";
-import { refreshNetworkIntelligence } from "./networkIntelligenceSync";
+import { syncFreshIntelligence } from "./recommendationFreshness";
 
 export function registerProfileRoutes(app: Express) {
   app.get("/api/profile", async (_req, res) => {
@@ -14,18 +13,18 @@ export function registerProfileRoutes(app: Express) {
     const existing = await storage.getProfile();
     const profile = await storage.upsertProfile({ cvText });
     const refreshTriggered = (existing?.cvText || "") !== cvText;
+    let intelligenceRefreshed = false;
+    let intelligence = null;
 
     if (refreshTriggered) {
       try {
-        await syncGapRecommendations();
+        intelligence = await syncFreshIntelligence();
+        intelligenceRefreshed = true;
       } catch (error) {
-        console.error("recommendation refresh after CV update failed", error);
+        console.error("intelligence refresh after CV update failed", error);
       }
-      void refreshNetworkIntelligence().catch((error) => {
-        console.error("network refresh after CV update failed", error);
-      });
     }
 
-    res.json({ ...profile, refreshTriggered });
+    res.json({ ...profile, refreshTriggered, intelligenceRefreshed, intelligence });
   });
 }

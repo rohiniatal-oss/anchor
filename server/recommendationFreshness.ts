@@ -1,31 +1,47 @@
 import { storage } from "./storage";
 import { computeLearningGaps } from "./learningStrategy";
 import { buildUserContext, contextFingerprint } from "./userContext";
+import { syncGapRecommendations } from "./gapRecommendations";
+import { refreshNetworkIntelligence } from "./networkIntelligenceSync";
 
 const LIVE_STATUSES = new Set(["new", "ranked", "saved"]);
 const COVERED_STATUSES = new Set(["new", "ranked", "saved", "accepted"]);
 
+function hasContactSignal(contact: { who?: string; targetOrg?: string; targetRole?: string }) {
+  return !!((contact.who || "").trim() || (contact.targetOrg || "").trim() || (contact.targetRole || "").trim());
+}
+
 export type RecommendationFreshnessSnapshot = {
   currentContextHash: string;
+  profileUpdatedAt: number | null;
   staleAcceptedCount: number;
   staleSystemCount: number;
   missingLearningCount: number;
   missingNetworkCount: number;
+  staleNetworkGapTrackCount: number;
+  staleContactClassificationCount: number;
+  needsRecommendationSync: boolean;
+  needsNetworkRefresh: boolean;
   needsSync: boolean;
 };
 
 export async function getRecommendationFreshnessSnapshot(): Promise<RecommendationFreshnessSnapshot> {
-  const [recs, tracks, learningGapsResult, contacts, jobs, userCtx] = await Promise.all([
+  const [recs, tracks, learningGapsResult, contacts, jobs, userCtx, profile, networkGaps, contactClassifications] = await Promise.all([
     storage.getRecommendations(),
     storage.getCareerTracks(),
     computeLearningGaps(),
     storage.getContacts(),
     storage.getJobs(),
     buildUserContext(),
+    storage.getProfile(),
+    storage.getNetworkGaps(),
+    storage.getContactClassifications(),
   ]);
 
   const currentContextHash = contextFingerprint(userCtx);
-  const activeTrackIds = new Set(tracks.filter((track) => track.status === "active").map((track) => track.id));
+  const profileUpdatedAt = profile?.updatedAt ?? null;
+  const activeTracks = tracks.filter((track) => track.status === "active");
+  const activeTrackIds = new Set(activeTracks.map((track) => track.id));
 
   const contactsByTrack = new Map<number, number>();
   for (const contact of contacts) {
@@ -100,12 +116,56 @@ export async function getRecommendationFreshnessSnapshot(): Promise<Recommendati
     if (!covered) missingNetworkCount++;
   }
 
+  const staleNetworkGapTrackCount = activeTracks.filter((track) => {
+    const trackGapRows = networkGaps.filter((gap) => gap.trackId === track.id);
+    if (trackGapRows.length === 0) return true;
+    if (profileUpdatedAt == null) return false;
+    const latestGapAt = Math.max(...trackGapRows.map((gap) => gap.createdAt || 0));
+    return latestGapAt < profileUpdatedAt;
+  }).length;
+
+  const contactsWithSignal = contacts.filter(hasContactSignal);
+  const latestClassificationAt = contactClassifications.reduce(
+    (max, classification) => Math.max(max, classification.createdAt || 0),
+    0,
+  );
+  const staleContactClassificationCount = (
+    contactsWithSignal.length > 0
+    && (
+      contactClassifications.length === 0
+      || (profileUpdatedAt != null && latestClassificationAt < profileUpdatedAt)
+    )
+  )
+    ? contactsWithSignal.length
+    : 0;
+
+  const needsRecommendationSync =
+    staleAcceptedCount > 0 || staleSystemCount > 0 || missingLearningCount > 0 || missingNetworkCount > 0;
+  const needsNetworkRefresh =
+    staleNetworkGapTrackCount > 0 || staleContactClassificationCount > 0;
+
   return {
     currentContextHash,
+    profileUpdatedAt,
     staleAcceptedCount,
     staleSystemCount,
     missingLearningCount,
     missingNetworkCount,
-    needsSync: staleAcceptedCount > 0 || staleSystemCount > 0 || missingLearningCount > 0 || missingNetworkCount > 0,
+    staleNetworkGapTrackCount,
+    staleContactClassificationCount,
+    needsRecommendationSync,
+    needsNetworkRefresh,
+    needsSync: needsRecommendationSync || needsNetworkRefresh,
   };
+}
+
+export async function syncFreshIntelligence(snapshot?: RecommendationFreshnessSnapshot): Promise<RecommendationFreshnessSnapshot> {
+  const current = snapshot ?? await getRecommendationFreshnessSnapshot();
+  if (current.needsRecommendationSync) {
+    await syncGapRecommendations();
+  }
+  if (current.needsNetworkRefresh) {
+    await refreshNetworkIntelligence();
+  }
+  return getRecommendationFreshnessSnapshot();
 }

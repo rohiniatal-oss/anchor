@@ -169,8 +169,9 @@ These items are fixed in the active clean worktree on top of `c21ecb5`, committe
 
 - `BH1` fixed locally: [`server/vite.ts`](./server/vite.ts) no longer depends on undeclared `nanoid`; local typecheck is green.
 - `PL6` fixed locally: network gap generation now filters to track-relevant contacts before prompting the LLM.
-- `AF4` partially fixed locally: saving the CV now triggers recommendation refresh immediately and network-intelligence refresh in the background.
-- `AF5` / `CQ6` fixed locally: recommendation sync on mount now checks a read-only freshness snapshot first instead of always posting.
+- `AF4` materially fixed locally: saving the CV now runs one awaited intelligence refresh path, so recommendations and networking intelligence refresh together instead of networking being left as a background best-effort side path.
+- `AF5` / `CQ6` materially fixed locally: app-mount sync now checks a unified freshness snapshot first instead of always posting recommendation sync blindly.
+- `AF6` partially fixed locally: networking gaps and contact classifications now participate in the same freshness contract through `/api/intelligence/freshness` and `/api/intelligence/sync`.
 - `PL8` fixed locally: job-specific prep arcs are no longer triggered by JD text alone; they now only auto-create once the role is in `interviewing`, which matches the existing job-truth model and keeps saved roles lightweight longer.
 - `UX5` partially fixed locally: the main explanation surfaces now use plainer, more consistent bottleneck-first wording. Across Strategy, Jobs, Learn, compass surfaces, and broad-pursuit planner copy, the app now prefers `targeted learning item` / `add learning item` over internal-sounding phrases like `learning focus` or `start learning about`.
 
@@ -190,5 +191,14 @@ Local verification for this slice:
   - `client/src/pages/views/LearnView.tsx`
   - `client/src/pages/views/StrategyView.tsx`
 - Targeted tests after the direct-start slice: `45/45` passed
+- Freshness/recompute slice: passed
+  - `server/recommendationFreshness.ts`
+  - `server/profileRoutes.ts`
+  - `server/routes.ts`
+  - `client/src/hooks/useRecommendations.ts`
+  - `client/src/pages/home.tsx`
+  - `client/src/pages/views/ProfileView.tsx`
+- TypeScript after the freshness/recompute slice: passed
+- Targeted pure tests after the freshness/recompute slice: `45/45` passed
 - Route-level recommendation tests: still blocked by the known local `better-sqlite3` native-binding issue in harness-backed SQLite tests
 - Goal-state harness tests for this slice are also still blocked by the same local `better-sqlite3` native-binding issue

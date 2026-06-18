@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
+import { invalidateIntelligenceQueries } from "@/hooks/useRecommendations";
 
 export function ProfileView() {
   const { toast } = useToast();
@@ -25,23 +26,19 @@ export function ProfileView() {
     setSaving(true);
     try {
       const res = await apiRequest("PATCH", "/api/profile", { cvText });
-      const body = await res.json().catch(() => ({} as { refreshTriggered?: boolean }));
+      const body = await res.json().catch(() => ({} as { refreshTriggered?: boolean; intelligenceRefreshed?: boolean }));
       await queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
       if (body.refreshTriggered) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] }),
-          queryClient.invalidateQueries({ queryKey: ["/api/strategy"] }),
-          queryClient.invalidateQueries({ queryKey: ["/api/strategy/front-door"] }),
-          queryClient.invalidateQueries({ queryKey: ["/api/strategy/diagnostics"] }),
-          queryClient.invalidateQueries({ queryKey: ["/api/goals/state"] }),
-        ]);
+        await invalidateIntelligenceQueries(queryClient);
       }
       setDirty(false);
       toast({
         title: "CV saved.",
-        description: body.refreshTriggered
-          ? "Recommendations refreshed. Networking intelligence is updating in the background."
-          : undefined,
+        description: !body.refreshTriggered
+          ? undefined
+          : body.intelligenceRefreshed
+            ? "Recommendations and networking intelligence refreshed."
+            : "CV saved, but the refresh did not finish. The app will retry on the next load.",
       });
     } catch {
       toast({ title: "Couldn't save", description: "Try again in a moment." });

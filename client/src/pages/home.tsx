@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
-import { useSyncRecommendationsOnMount } from "@/hooks/useRecommendations";
+import { useSyncIntelligenceOnMount } from "@/hooks/useRecommendations";
 import { type Tab, tabFromPath, pathForTab } from "@/lib/homeTypes";
 import { TodayView } from "@/pages/views/TodayView";
 import { StrategyView } from "@/pages/views/StrategyView";
@@ -35,7 +35,7 @@ export default function Home() {
   const [location, navigate] = useLocation();
   const [tab, setTab] = useState<Tab>(() => tabFromPath(location));
   const [moreOpen, setMoreOpen] = useState(false);
-  useSyncRecommendationsOnMount();
+  useSyncIntelligenceOnMount();
 
   useEffect(() => {
     const next = tabFromPath(location);

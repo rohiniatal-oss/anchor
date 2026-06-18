@@ -18,6 +18,7 @@ import {
   broadPursuitMissingSupportContextReason,
   broadPursuitMissingSupportTodayMustDo,
   broadPursuitMissingSupportStopRule,
+  displayCombination,
 } from "./broadPursuitCopy";
 import {
   fitDiscoveryDecisionQuestion,
@@ -668,7 +669,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
   const networkBottleneck = snapshot.dueFollowUpCount > 0
     ? `${snapshot.dueFollowUpCount} follow-up${snapshot.dueFollowUpCount > 1 ? "s are" : " is"} due or overdue`
     : missingNetworkByLane.length > 0
-      ? `these live paths still lack networking support: ${missingNetworkByLane.join("; ")}`
+      ? `these live paths still lack networking support: ${missingNetworkByLane.map(displayCombination).join("; ")}`
     : !networkStarted
       ? "few warm conversations created"
     : snapshot.networkContactsCount > 0 && snapshot.warmContactCount === 0
@@ -773,7 +774,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " needs" : "s need"} notes, practice, or a short brief before the interview`
       : "interview and role preparation need practice that turns into something you can reuse"
     : missingLearningByLane.length > 0
-      ? `these live paths need learning support: ${missingLearningByLane.join("; ")}`
+      ? `these live paths need learning support: ${missingLearningByLane.map(displayCombination).join("; ")}`
     : snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
       ? snapshot.proofSupportDemandCount > 0
         ? `no role-relevant learning plan is active yet, and ${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice`
@@ -952,6 +953,9 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
     if (broadCoverage && broadCoverage.missing.length === 0 && broadCoverage.missingNetworkSupport.length > 0
         && snapshot.dominantOpportunityBlocker !== "application"
         && network && network.nextMoveType !== "wait") return network;
+    if (broadCoverage && broadCoverage.missing.length === 0 && broadCoverage.missingNetworkSupport.length === 0 && broadCoverage.missingPrepSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
+      return capability;
+    }
     if (snapshot.dominantOpportunityBlocker === "access" && network && network.nextMoveType !== "wait") return network;
     if ((snapshot.dominantOpportunityBlocker === "clarify" || snapshot.dominantOpportunityBlocker === "application") && applications && applications.nextMoveType !== "wait") {
       return applications;
@@ -962,9 +966,6 @@ function recommendedFocus(workstreams: WorkstreamState[], phase: GoalPhase, snap
     if (snapshot.dominantOpportunityBlocker === "targeting") {
       if (direction && direction.nextMoveType !== "wait") return direction;
       if (marketMap && marketMap.nextMoveType !== "wait") return marketMap;
-    }
-    if (broadCoverage && broadCoverage.missing.length === 0 && broadCoverage.missingNetworkSupport.length === 0 && broadCoverage.missingPrepSupport.length > 0 && capability && capability.nextMoveType !== "wait") {
-      return capability;
     }
   }
 
@@ -1102,11 +1103,11 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
   if (phase === "role-targeting" && hasBroadParallelLanes(snapshot)) {
     const coverage = buildBroadPursuitCoverage(snapshot);
     if (coverage.missing.length > 0) {
-      const missingText = coverage.missing.join("; ");
+      const missingText = coverage.missing.map(displayCombination).join("; ");
       return {
         mustDo: broadPursuitNextMissingRoleTodayMustDo(coverage.missing),
         next: coverage.covered.length > 0
-          ? `Keep these already-live paths warm while you fill the missing ones: ${coverage.covered.join("; ")}`
+          ? `Keep these already-live paths warm while you fill the missing ones: ${coverage.covered.map(displayCombination).join("; ")}`
           : `Start with these paths: ${missingText}`,
         optional: "Send one message to someone useful for the most gettable missing path",
         stopRule: broadPursuitNextMissingRoleStopRule(coverage.missing),

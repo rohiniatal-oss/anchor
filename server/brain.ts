@@ -36,6 +36,7 @@ import {
   broadPursuitMissingRolesTitle,
   broadPursuitMissingRolesUnlockMove,
   broadPursuitMissingRolesWhyNow,
+  displayCombination,
 } from "./broadPursuitCopy";
 import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { LANE_NAME, laneFocusAreaLabel, type CanonicalLaneName } from "./lanes";
@@ -367,6 +368,8 @@ function buildStrategicContext(
   return {
     bottleneck: broadPursuitNeedsRealRoles
       ? LANE_NAME.APPLICATIONS
+      : broadPursuitHasMixedSupportGaps
+        ? LANE_NAME.NETWORK
       : broadPursuitNeedsNetworkSupport
         ? LANE_NAME.NETWORK
         : broadPursuitNeedsLearningSupport
@@ -389,6 +392,8 @@ function buildStrategicContext(
     laneModel: { trace: spine.trace },
     bottleneckLane: broadPursuitNeedsRealRoles
       ? LANE_NAME.APPLICATIONS
+      : broadPursuitHasMixedSupportGaps
+        ? LANE_NAME.NETWORK
       : broadPursuitNeedsNetworkSupport
         ? LANE_NAME.NETWORK
         : broadPursuitNeedsLearningSupport
@@ -435,26 +440,27 @@ function needsBroadPursuitSupportGoalCandidate(context: StrategicContext) {
 function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
   const combinations = context?.broadPursuitMissingCombinations || [];
   const combination = combinations.length ? combinations[combinations.length - 1] : "";
+  const label = combination ? displayCombination(combination) : "";
   return {
     source: "goal",
     sourceId: 1,
     taskId: null,
-    title: combination ? `Add one real role for ${combination}` : broadPursuitMissingRolesTitle(),
+    title: label ? `Add one real role for ${label}` : broadPursuitMissingRolesTitle(),
     category: "job",
     size: "deep",
     deadline: "",
     status: "not_started",
     skipped: 0,
     sourceUrl: "",
-    sourceNote: combination
-      ? `The ${combination} path has no real role yet. Add one concrete role or application move for it next.`
+    sourceNote: label
+      ? `${label} has no real role yet. Add one concrete role or application move for it next.`
       : broadPursuitMissingRolesSourceNote(context?.broadPursuitMissingCombinations || []),
     sourceStatus: "broad_parallel_pursuit",
-    doneWhen: combination
-      ? `One concrete role or application move exists for the missing path: ${combination}`
+    doneWhen: label
+      ? `One concrete role or application move exists for ${label}.`
       : broadPursuitMissingRolesDoneWhen(),
-    whyNow: combination
-      ? `the ${combination} path has no real opening yet`
+    whyNow: label
+      ? `${label} has no real opening yet`
       : broadPursuitMissingRolesWhyNow(),
     fitScore: null,
     blocked: false,
@@ -481,21 +487,22 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
   const out: Candidate[] = [];
   if (context?.broadPursuitMissingNetworkSupport?.length) {
     for (const [index, combination] of context.broadPursuitMissingNetworkSupport.entries()) {
+      const label = displayCombination(combination);
       out.push({
         source: "goal",
         sourceId: 200 + index,
         taskId: null,
-        title: `Add one useful contact for ${combination}`,
+        title: `Add one useful contact for ${label}`,
         category: "admin",
         size: "medium",
         deadline: "",
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `The ${combination} path has no contacts yet. Add one useful contact or outreach path for it next.`,
+        sourceNote: `${label} has no contacts yet. Add one useful contact or outreach path for it next.`,
         sourceStatus: "broad_parallel_pursuit_network_support",
-        doneWhen: `One useful contact or outreach path exists for ${combination}`,
-        whyNow: `the ${combination} path has no contacts yet`,
+        doneWhen: `One useful contact or outreach path exists for ${label}.`,
+        whyNow: `${label} has no contacts yet`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -512,28 +519,29 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         messageDraft: "",
         sourceNetwork: "",
         targetOrg: "",
-        targetRole: combination,
+        targetRole: label,
         followUpDate: "",
       });
     }
   }
   if (context?.broadPursuitMissingLearningSupport?.length) {
     for (const [index, combination] of context.broadPursuitMissingLearningSupport.entries()) {
+      const label = displayCombination(combination);
       out.push({
         source: "goal",
         sourceId: 300 + index,
         taskId: null,
-        title: `Start learning about ${combination}`,
+        title: `Start learning about ${label}`,
         category: "learning",
         size: "medium",
         deadline: "",
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `The ${combination} path has no learning resources yet. Start learning about it next.`,
+        sourceNote: `${label} has no learning resources yet. Start learning about it next.`,
         sourceStatus: "broad_parallel_pursuit_learning_support",
-        doneWhen: `One focused learning item exists for ${combination}`,
-        whyNow: `the ${combination} path has no learning resources yet`,
+        doneWhen: `One focused learning item exists for ${label}.`,
+        whyNow: `${label} has no learning resources yet`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -841,7 +849,11 @@ function isActionableContact(c: Contact) {
 }
 
 function candidateStrategicLane(c: Candidate, context: StrategicContext): CanonicalLaneName {
-  if (c.source === "goal") return LANE_NAME.APPLICATIONS;
+  if (c.source === "goal") {
+    if (c.sourceStatus === "broad_parallel_pursuit_network_support") return LANE_NAME.NETWORK;
+    if (c.sourceStatus === "broad_parallel_pursuit_learning_support") return LANE_NAME.LEARNING_DEVELOPMENT;
+    return LANE_NAME.APPLICATIONS;
+  }
   if (c.source === "job") {
     if (c.jobTruthAction === "warm") return LANE_NAME.NETWORK;
     if (c.jobTruthAction === "prove") return LANE_NAME.LEARNING_DEVELOPMENT;
@@ -1115,7 +1127,13 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (c.source === "goal") {
     s += 42;
     if (c.sourceStatus === "broad_parallel_pursuit_network_support") trace.push("some live role paths still need someone useful to reach out to");
-    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") trace.push("some live role paths still need focused learning support");
+    else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") {
+      trace.push("some live role paths still need focused learning support");
+      if (context.broadPursuitMissingNetworkSupport.length > 0) {
+        s += 78;
+        trace.push("unlocks Learning and development focus area");
+      }
+    }
     else trace.push("several role paths still need a real role before you narrow");
   }
 

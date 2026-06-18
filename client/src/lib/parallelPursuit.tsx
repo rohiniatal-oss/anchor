@@ -234,8 +234,8 @@ export function BroadPursuitParallelSupportKickoff({
           </p>
           <p className="text-xs text-muted-foreground mt-1">
             {mode === "network"
-              ? `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a contact.`
-              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a learning focus.`}
+              ? `${visiblePortfolio.length} role type${visiblePortfolio.length === 1 ? "" : "s"} still need a contact.`
+              : `${visiblePortfolio.length} role type${visiblePortfolio.length === 1 ? "" : "s"} still need a learning focus.`}
           </p>
           {canStartWithoutRole && (
             <p className="text-xs text-muted-foreground mt-1">

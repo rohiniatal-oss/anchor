@@ -91,7 +91,7 @@ test("career goal state reads active career tracks as real direction signal", ()
   assert.equal(state.pursuitPortfolio.length, 4);
   assert.match(state.selectionRule, /keep stronger-fit alternatives warm in parallel/i);
   assert.match(state.todayPlan.mustDo, /Add the next real role or application move/i);
-  assert.match(state.todayPlan.mustDo, /Geopolitics \/ geopolitical advisory x Ops \/ chief of staff/i);
+  assert.match(state.todayPlan.mustDo, /Geopolitics \+ Ops \/ chief of staff/i);
   assert.match(direction.bottleneck, /multiple plausible paths need live roles and applications/i);
 });
 
@@ -170,7 +170,7 @@ test("career goal state names missing paths when broad pursuit coverage is parti
     "Geopolitics / geopolitical advisory x Strategy / advisory",
   ].sort());
   assert.match(state.todayPlan.mustDo, /Add the next real role or application move/i);
-  assert.match(state.decisionQuestion, /Geopolitics \/ geopolitical advisory x Strategy \/ advisory/i);
+  assert.match(state.decisionQuestion, /Geopolitics \+ Strategy \/ advisory/i);
   assert.match(state.decisionQuestion, /paths still need a first real role/i);
   const coveredLane = state.pursuitPortfolio.find((item) => item.combination === "AI / technology strategy x Strategy / advisory");
   const missingLane = state.pursuitPortfolio.find((item) => item.combination === "Geopolitics / geopolitical advisory x Strategy / advisory");
@@ -202,8 +202,8 @@ test("broad parallel pursuit tracks missing network and learning support after l
   assert.ok(state.broadPursuitCoverage.missingPrepSupport.includes("Geopolitics / geopolitical advisory x Strategy / advisory"));
   assert.match(state.decisionQuestion, /need outreach, more focused learning support, or both next/i);
   assert.match(state.todayPlan.mustDo, /Add the next missing support move for the strongest live path/i);
-  assert.match(state.todayPlan.mustDo, /AI \/ technology strategy x Ops \/ chief of staff/i);
-  assert.match(state.todayPlan.mustDo, /Geopolitics \/ geopolitical advisory x Strategy \/ advisory/i);
+  assert.match(state.todayPlan.mustDo, /AI strategy \+ Ops \/ chief of staff/i);
+  assert.match(state.todayPlan.mustDo, /Geopolitics \+ Strategy \/ advisory/i);
 });
 
 test("job-side prep signals count as prep support even without a Learn item", () => {

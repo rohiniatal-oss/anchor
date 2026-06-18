@@ -1076,9 +1076,9 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                           </div>
                         </div>
                       )}
-                      {broadPursuitCoverage && (
+                      {broadPursuitCoverage && broadPursuitLines.length > 0 && broadPursuitLines[0].key !== "covered" && (
                         <div className="mt-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Still needs coverage</p>
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">What's left to add</p>
                           <div className="mt-1.5 space-y-1.5">
                             {broadPursuitLines.map((line) => (
                               <p key={line.key} className="text-xs text-muted-foreground">

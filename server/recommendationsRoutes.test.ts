@@ -461,6 +461,79 @@ test("saving a job keeps the role lightweight and does not auto-create a learn p
   assert.equal(learns.some((item) => item.title === "Prep: AI Strategy Lead at Acme"), false);
 });
 
+test("adding a JD to a saved job still keeps the role lightweight until the process is live", async () => {
+  const track = await h.storage.createCareerTrack({
+    name: "AI strategy",
+    slug: "ai-strategy-job-jd",
+    description: "",
+    targetRoleArchetype: "ai-strategy",
+    priority: 80,
+    status: "active",
+    whyItFits: "",
+  } as any);
+
+  const created = await api(h.base, "POST", "/api/jobs", {
+    title: "AI Strategy Lead",
+    company: "Acme",
+    status: "wishlist",
+    relatedTrackId: track.id,
+  });
+  assert.equal(created.status, 200);
+
+  const updated = await api(h.base, "PATCH", `/api/jobs/${created.json.id}`, {
+    jdText: "Lead the AI strategy agenda across product, operations, and external partnerships. Build trusted executive narratives, shape cross-functional priorities, and drive interview loops with senior stakeholders.",
+  });
+  assert.equal(updated.status, 200);
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const recs = await h.storage.getRecommendations();
+  const learns = await h.storage.getLearn();
+  assert.equal(recs.some((item) => item.linkedGapKey === `job-prep-${created.json.id}`), false);
+  assert.equal(learns.some((item) => item.title === "Application learning: AI Strategy Lead at Acme"), false);
+});
+
+test("moving a job into interviewing creates a role-specific prep arc", async () => {
+  const track = await h.storage.createCareerTrack({
+    name: "AI strategy",
+    slug: "ai-strategy-job-interviewing",
+    description: "",
+    targetRoleArchetype: "ai-strategy",
+    priority: 80,
+    status: "active",
+    whyItFits: "",
+  } as any);
+
+  const created = await api(h.base, "POST", "/api/jobs", {
+    title: "AI Strategy Lead",
+    company: "Acme",
+    status: "wishlist",
+    relatedTrackId: track.id,
+    jdText: "Lead the AI strategy agenda across product, operations, and external partnerships. Build trusted executive narratives, shape cross-functional priorities, and drive interview loops with senior stakeholders.",
+  });
+  assert.equal(created.status, 200);
+
+  const moved = await api(h.base, "PATCH", `/api/jobs/${created.json.id}`, {
+    status: "interviewing",
+  });
+  assert.equal(moved.status, 200);
+
+  const rec = await waitFor("job prep recommendation", async () => {
+    const recs = await h.storage.getRecommendations();
+    return recs.find((item) => item.linkedGapKey === `job-prep-${created.json.id}`) || null;
+  });
+  assert.equal(rec.collection, "job-prep-arc");
+  assert.equal(rec.kind, "job-prep");
+  assert.equal(rec.status, "accepted");
+
+  const learn = await waitFor("job prep learn item", async () => {
+    const learns = await h.storage.getLearn();
+    return learns.find((item) => item.sourceType === "recommendation" && item.sourceId === rec.id) || null;
+  });
+  assert.equal(learn.title, "Application learning: AI Strategy Lead at Acme");
+  assert.equal(learn.learnStatus, "active");
+  assert.equal(learn.active, true);
+});
+
 test("accepting a job recommendation creates the role without auto-creating a learn prep arc", async () => {
   const track = await h.storage.createCareerTrack({
     name: "AI strategy",

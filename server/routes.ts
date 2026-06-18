@@ -49,6 +49,10 @@ function trimSentence(value: string | undefined, max = 300) {
   return String(value || "").trim().slice(0, max);
 }
 
+function shouldAutoGenerateJobPrepArc(job: { status?: string | null }) {
+  return (job.status || "") === "interviewing";
+}
+
 function inferRecommendationEntityType(rec: {
   collection: string;
   kind: string;
@@ -178,11 +182,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   // Custom POST /api/jobs: same as crud, but keeps saved roles lightweight.
   // Role-specific prep lives in Jobs (readiness rail / generated steps); Learn
   // is reserved for reusable capability work rather than one arc per saved role.
+  // Only create role-specific prep once the opportunity is truly live enough
+  // to justify single-opportunity preparation.
   app.post("/api/jobs", async (req, res) => {
     const p = insertJobSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const job = await storage.createJob(p.data);
-    if ((job.jdText || "").trim().length > 40) {
+    if (shouldAutoGenerateJobPrepArc(job)) {
       generateJobPrepArc(job).catch(() => {});
     }
     res.json(job);
@@ -193,7 +199,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const updated = await storage.updateJob(Number(req.params.id), p.data);
     if (!updated) return res.status(404).json({ error: "Not found" });
-    if (p.data.jdText && (p.data.jdText || "").trim().length > 40) {
+    if (shouldAutoGenerateJobPrepArc(updated)) {
       generateJobPrepArc(updated).catch(() => {});
     }
     res.json(updated);

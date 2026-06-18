@@ -209,6 +209,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     await storage.deleteJob(Number(req.params.id));
     res.json({ ok: true });
   });
+
+  app.get("/api/jobs/contact-links", async (_req, res) => {
+    res.json(await storage.getAllJobContactLinks());
+  });
+
+  app.post("/api/jobs/:id/link-contact", async (req, res) => {
+    const jobId = Number(req.params.id);
+    const contactId = Number(req.body?.contactId);
+    if (!Number.isFinite(jobId) || !Number.isFinite(contactId)) return res.status(400).json({ error: "Bad ids" });
+    const link = await storage.linkContactToJob(contactId, jobId);
+    res.json(link);
+  });
+
+  app.delete("/api/jobs/:id/unlink-contact/:contactId", async (req, res) => {
+    const jobId = Number(req.params.id);
+    const contactId = Number(req.params.contactId);
+    if (!Number.isFinite(jobId) || !Number.isFinite(contactId)) return res.status(400).json({ error: "Bad ids" });
+    await storage.unlinkContactFromJob(contactId, jobId);
+    res.json({ ok: true });
+  });
+
   app.patch("/api/learn/:id", async (req, res) => {
     const p = insertLearnSchema.partial().safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });

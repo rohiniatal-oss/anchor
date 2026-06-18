@@ -324,18 +324,21 @@ function getJobCapabilitySupportItems(trackId: number | null, learns: Learn[]) {
     .slice(0, 3);
 }
 
-function getJobWarmSupport(trackId: number | null, contacts: Contact[], job?: { company?: string; title?: string }) {
-  const trackContacts = trackId != null ? contacts.filter((c) => getTrackId("contacts", c) === trackId) : [];
+function getJobWarmSupport(trackId: number | null, contacts: Contact[], job?: { company?: string; title?: string }, linkedContactIds?: number[]) {
+  const linkedContacts = linkedContactIds?.length
+    ? contacts.filter((c) => linkedContactIds.includes(c.id))
+    : [];
+  const trackContacts = trackId != null ? contacts.filter((c) => getTrackId("contacts", c) === trackId && !linkedContactIds?.includes(c.id)) : [];
   const companyLower = (job?.company || "").toLowerCase().trim();
   const companyContacts = companyLower.length > 2
-    ? contacts.filter((c) => c.targetOrg && c.targetOrg.toLowerCase().includes(companyLower) && !trackContacts.some((tc) => tc.id === c.id))
+    ? contacts.filter((c) => c.targetOrg && c.targetOrg.toLowerCase().includes(companyLower) && !linkedContactIds?.includes(c.id) && !trackContacts.some((tc) => tc.id === c.id))
     : [];
-  const allRelevant = [...trackContacts, ...companyContacts];
+  const allRelevant = [...linkedContacts, ...trackContacts, ...companyContacts];
   const warmTrackContacts = allRelevant.filter((c) => c.status === "messaged" || c.status === "replied" || getRelationshipStrength(c) !== "cold");
   const weak = allRelevant.length === 0 || warmTrackContacts.length === 0;
   const pool = allRelevant.length > 0 ? allRelevant : contacts;
   const candidates = pool.filter((c) => c.status !== "replied").slice(0, 3);
-  return { trackContacts: allRelevant, warmTrackContacts, weak, candidates, companyContacts };
+  return { linkedContacts, trackContacts: allRelevant, warmTrackContacts, weak, candidates, companyContacts };
 }
 
 function visibleTrackRecommendation(
@@ -352,20 +355,19 @@ function visibleTrackRecommendation(
 }
 
 const LOW_WARM_PATH = 40;
-function JobWarmPath({ j, trackId, contacts, savedContactRec, onAcceptRecommendation }: { j: Job; trackId: number | null; contacts: Contact[]; savedContactRec: RecommendationItem | null; onAcceptRecommendation: (rec: RecommendationItem) => Promise<void> }) {
+function JobWarmPath({ j, trackId, contacts, linkedContactIds, savedContactRec, onAcceptRecommendation }: { j: Job; trackId: number | null; contacts: Contact[]; linkedContactIds: number[]; savedContactRec: RecommendationItem | null; onAcceptRecommendation: (rec: RecommendationItem) => Promise<void> }) {
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [linking, setLinking] = useState(false);
   if (j.status === "closed") return null;
 
-  const trackContacts = trackId != null ? contacts.filter((c) => getTrackId("contacts", c) === trackId) : [];
-  const warmTrackContacts = trackContacts.filter((c) => c.status === "messaged" || c.status === "replied" || getRelationshipStrength(c) !== "cold");
-  const weak = ((j.warmPathScore ?? 0) < LOW_WARM_PATH) || warmTrackContacts.length === 0;
-  if (!weak) return null;
+  const linked = contacts.filter((c) => linkedContactIds.includes(c.id));
+  const trackContacts = trackId != null ? contacts.filter((c) => getTrackId("contacts", c) === trackId && !linkedContactIds.includes(c.id)) : [];
+  const warmTrackContacts = [...linked, ...trackContacts].filter((c) => c.status === "messaged" || c.status === "replied" || getRelationshipStrength(c) !== "cold");
+  const weak = linked.length === 0 && (((j.warmPathScore ?? 0) < LOW_WARM_PATH) || warmTrackContacts.length === 0);
+  if (!weak && linked.length === 0) return null;
 
-  const pool = trackContacts.length > 0 ? trackContacts : contacts;
-  const candidates = pool
-    .filter((c) => c.status !== "replied")
-    .slice(0, 3);
+  const inferredCandidates = trackContacts.filter((c) => c.status !== "replied" && !linkedContactIds.includes(c.id)).slice(0, 3);
 
   async function outreach(c: Contact) {
     setBusyId(c.id);
@@ -374,6 +376,20 @@ function JobWarmPath({ j, trackId, contacts, savedContactRec, onAcceptRecommenda
       toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusyId(null); }
+  }
+
+  async function linkContact(c: Contact) {
+    setLinking(true);
+    try {
+      await mutateAndInvalidate("POST", `/api/jobs/${j.id}/link-contact`, { contactId: c.id }, ["/api/jobs/contact-links"]);
+      toast({ title: `Linked ${c.who || c.name || "contact"} to this role.` });
+    } catch { toast({ title: "Couldn't link", description: "Try again in a moment." }); }
+    finally { setLinking(false); }
+  }
+
+  async function unlinkContact(c: Contact) {
+    await mutateAndInvalidate("DELETE", `/api/jobs/${j.id}/unlink-contact/${c.id}`, undefined, ["/api/jobs/contact-links"]);
+    toast({ title: `Unlinked ${c.who || c.name || "contact"}.` });
   }
 
   function openNetworkIntake() {
@@ -394,46 +410,58 @@ function JobWarmPath({ j, trackId, contacts, savedContactRec, onAcceptRecommenda
   return (
     <div className="mt-2.5 pt-2.5 border-t border-card-border rounded-md bg-amber-50/40 dark:bg-amber-950/10 -mx-1 px-2 pb-2" data-testid={`warmpath-${j.id}`}>
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-1.5">
-        <Flame className="w-3.5 h-3.5" /> Helpful contacts
+        <Flame className="w-3.5 h-3.5" /> {linked.length > 0 ? "Your contacts for this role" : "Helpful contacts"}
       </div>
-      {candidates.length === 0 ? (
-        <div className="space-y-1">
-          <p className="text-xs text-muted-foreground">
-            {savedContactRec ? "No contacts are linked to this role yet, but Anchor already saved a useful contact suggestion for this track." : "No contacts linked to this role yet. Add someone in Network."}
-          </p>
-          {savedContactRec ? (
-            <button
-              type="button"
-              onClick={() => onAcceptRecommendation(savedContactRec)}
-              className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
-              data-testid={`button-use-saved-network-from-job-${j.id}`}
-            >
-              <Users className="w-3.5 h-3.5" /> Use saved suggestion
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={openNetworkIntake}
-              className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
-              data-testid={`button-open-network-from-job-${j.id}`}
-            >
-              <Users className="w-3.5 h-3.5" /> Add contact for this role
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">Someone who could help here:</p>
-          {candidates.map((c) => (
-            <div key={c.id} className="flex items-center justify-between gap-2" data-testid={`warmpath-candidate-${j.id}-${c.id}`}>
-              <span className="text-xs min-w-0 truncate">{c.who || c.name || "contact"}</span>
-              <button onClick={() => outreach(c)} disabled={busyId === c.id} data-testid={`button-warmpath-outreach-${j.id}-${c.id}`} className="shrink-0 text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-0.5 disabled:opacity-60">
-                {busyId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Outreach task
-              </button>
+      {linked.length > 0 && (
+        <div className="space-y-1 mb-2">
+          {linked.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-2" data-testid={`linked-contact-${j.id}-${c.id}`}>
+              <span className="text-xs min-w-0 truncate font-medium">{c.who || c.name || "contact"}{c.targetOrg ? ` · ${c.targetOrg}` : ""}</span>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => outreach(c)} disabled={busyId === c.id} data-testid={`button-linked-outreach-${j.id}-${c.id}`} className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-0.5 disabled:opacity-60">
+                  {busyId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MessageSquare className="w-3 h-3" />} Reach out
+                </button>
+                <button onClick={() => unlinkContact(c)} data-testid={`button-unlink-${j.id}-${c.id}`} className="text-[11px] text-muted-foreground hover:text-destructive ml-1">
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
       )}
+      {linked.length === 0 && inferredCandidates.length === 0 ? (
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground">
+            {savedContactRec ? "Anchor saved a contact suggestion for this track." : "No contacts linked to this role yet."}
+          </p>
+          {savedContactRec ? (
+            <button type="button" onClick={() => onAcceptRecommendation(savedContactRec)} className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1" data-testid={`button-use-saved-network-from-job-${j.id}`}>
+              <Users className="w-3.5 h-3.5" /> Use saved suggestion
+            </button>
+          ) : (
+            <button type="button" onClick={openNetworkIntake} className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1" data-testid={`button-open-network-from-job-${j.id}`}>
+              <Users className="w-3.5 h-3.5" /> Add contact for this role
+            </button>
+          )}
+        </div>
+      ) : inferredCandidates.length > 0 ? (
+        <div className="space-y-1">
+          {linked.length === 0 && <p className="text-[11px] text-muted-foreground">Someone who could help here:</p>}
+          {inferredCandidates.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-2" data-testid={`warmpath-candidate-${j.id}-${c.id}`}>
+              <span className="text-xs min-w-0 truncate">{c.who || c.name || "contact"}</span>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => linkContact(c)} disabled={linking} data-testid={`button-link-contact-${j.id}-${c.id}`} className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-0.5 disabled:opacity-60">
+                  <Plus className="w-3 h-3" /> Link to role
+                </button>
+                <button onClick={() => outreach(c)} disabled={busyId === c.id} data-testid={`button-warmpath-outreach-${j.id}-${c.id}`} className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-0.5 disabled:opacity-60">
+                  {busyId === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <MessageSquare className="w-3 h-3" />} Reach out
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -592,7 +620,7 @@ function JobCapabilitySupport({
   );
 }
 
-function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, onAcceptRecommendation, onMove, onRemove }: { j: Job; truth: JobTruthStripT | null; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; recommendations: RecommendationItem[]; onAcceptRecommendation: (rec: RecommendationItem) => Promise<void>; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
+function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, linkedContactIds, onAcceptRecommendation, onMove, onRemove }: { j: Job; truth: JobTruthStripT | null; tracks: CareerTrack[]; tasks: Task[]; contacts: Contact[]; learns: Learn[]; recommendations: RecommendationItem[]; linkedContactIds: number[]; onAcceptRecommendation: (rec: RecommendationItem) => Promise<void>; onMove: (j: Job, d: 1 | -1) => void; onRemove: () => void }) {
   const { toast } = useToast();
   const idx = JOB_COLS.findIndex((c) => c.id === j.status);
   const trackId = getTrackId("jobs", j);
@@ -605,7 +633,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
 
   const gated = j.eligibilityRisk === "likely_ineligible";
   const windowClosed = j.applicationWindowStatus === "closed" || j.status === "closed";
-  const warmSupport = getJobWarmSupport(trackId, contacts, j);
+  const warmSupport = getJobWarmSupport(trackId, contacts, j, linkedContactIds);
   const supportItems = getJobCapabilitySupportItems(trackId, learns);
   const requiredDomains = track ? requiredDomainsForTrack(track) : [];
   const savedContactRec = visibleTrackRecommendation(recommendations, { trackId, collection: "network-targets" });
@@ -821,7 +849,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
               {showDetails && (
                 <>
                   <JobStepRail j={j} />
-                  <JobWarmPath j={j} trackId={trackId} contacts={contacts} savedContactRec={savedContactRec} onAcceptRecommendation={onAcceptRecommendation} />
+                  <JobWarmPath j={j} trackId={trackId} contacts={contacts} linkedContactIds={linkedContactIds} savedContactRec={savedContactRec} onAcceptRecommendation={onAcceptRecommendation} />
                   <JobCapabilitySupport j={j} trackId={trackId} tracks={tracks} learns={learns} truth={truth} savedLearningRec={savedLearningRec} onAcceptRecommendation={onAcceptRecommendation} />
                 </>
               )}
@@ -846,6 +874,7 @@ export function JobsView() {
   const { data: tracks = [] } = useCareerTracks();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
   const { data: contacts = [] } = useQuery<Contact[]>({ queryKey: ["/api/contacts"] });
+  const { data: contactLinks = {} } = useQuery<Record<number, number[]>>({ queryKey: ["/api/jobs/contact-links"] });
   const truthById = new Map(truthStrips.map((truth) => [truth.jobId, truth]));
   const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
@@ -1007,7 +1036,7 @@ export function JobsView() {
                       {items.length > 0 && <span className="text-xs text-muted-foreground tabular-nums">({items.length})</span>}
                     </div>
                     <div className="space-y-2">
-                      {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
+                      {items.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} linkedContactIds={contactLinks[j.id] || []} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
                       {items.length === 0 && col.id === "wishlist" && (
                         <div className="rounded-xl border border-dashed border-border px-4 py-6 text-center">
                           <p className="text-sm text-muted-foreground">No roles yet - add one above or start from one of the suggested role types.</p>
@@ -1026,7 +1055,7 @@ export function JobsView() {
                 <div className="mb-4">
                   <GroupLabel count={openFellowships.length}><Compass className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Open / apply now</GroupLabel>
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {openFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
+                    {openFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} linkedContactIds={contactLinks[j.id] || []} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
                   </div>
                 </div>
               )}
@@ -1034,7 +1063,7 @@ export function JobsView() {
                 <div>
                   <GroupLabel count={watchFellowships.length}><CalendarDays className="w-4 h-4 text-slate-600 dark:text-slate-400" /> Watch / closed for 2026</GroupLabel>
                   <div className="grid gap-2.5 sm:grid-cols-2">
-                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
+                    {watchFellowships.map((j) => <JobCard key={j.id} j={j} truth={truthById.get(j.id) || null} tracks={tracks} tasks={tasks} contacts={contacts} learns={learns} recommendations={recommendations} linkedContactIds={contactLinks[j.id] || []} onAcceptRecommendation={acceptRecommendation} onMove={move} onRemove={() => remove(j.id)} />)}
                   </div>
                 </div>
               )}

@@ -16,6 +16,7 @@ import { CareerCompassCard } from "@/components/home/CareerCompassCard";
 import { GroupLabel } from "@/components/home/GroupLabel";
 import { Loading } from "@/components/home/Loading";
 import { deriveTrackNextAction, runTrackNextAction } from "@/lib/trackNextAction";
+import { deriveRecommendationStart } from "@/lib/recommendationStart";
 import type { Tab } from "@/lib/homeTypes";
 import type { CareerGoalT, GoalsStateResponseT } from "@/lib/goalSpine";
 import { WIN_CATEGORY_LABEL } from "@/lib/homeTypes";
@@ -335,6 +336,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     const subdivisions = detail?.subdivisions || [];
     const milestones = detail?.milestones || [];
     const linkedTrackName = rec.linkedTrackId ? trackNameById.get(rec.linkedTrackId) : "";
+    const startNow = deriveRecommendationStart(detail);
 
     return (
       <AccordionItem value={String(rec.id)} className="rounded-xl border border-card-border bg-card px-4">
@@ -376,6 +378,13 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               <p className="text-xs text-muted-foreground">Loading the topics and checkpoints for this suggestion...</p>
             ) : (
               <>
+                {startNow && (
+                  <div className="rounded-lg border border-primary/15 bg-primary/5 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Start here now</p>
+                    <p className="mt-1 text-sm font-medium leading-snug text-foreground">{startNow.title}</p>
+                    <p className="mt-1 text-xs leading-snug text-muted-foreground">{startNow.note}</p>
+                  </div>
+                )}
                 {subdivisions.length > 0 && (
                   <div>
                     <p className="text-xs font-medium text-foreground">What's inside</p>
@@ -390,7 +399,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                             )}
                             {materials.length > 0 && (
                               <div className="mt-2">
-                                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Suggested resources</p>
+                                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Possible resources if you need them</p>
                                 <div className="mt-1 flex flex-wrap gap-1.5">
                                   {materials.map((material) => (
                                     <span key={material} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700">

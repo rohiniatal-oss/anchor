@@ -185,5 +185,10 @@ Local verification for this slice:
   - `client/src/pages/views/StrategyView.tsx`
   - `client/src/pages/views/TodayView.tsx`
 - Targeted pure tests after the next-action consistency slice: `39/39` passed
+- Learn/Strategy direct-start slice: passed
+  - `client/src/lib/recommendationStart.ts`
+  - `client/src/pages/views/LearnView.tsx`
+  - `client/src/pages/views/StrategyView.tsx`
+- Targeted tests after the direct-start slice: `45/45` passed
 - Route-level recommendation tests: still blocked by the known local `better-sqlite3` native-binding issue in harness-backed SQLite tests
 - Goal-state harness tests for this slice are also still blocked by the same local `better-sqlite3` native-binding issue

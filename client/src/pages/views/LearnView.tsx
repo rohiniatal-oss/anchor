@@ -16,6 +16,7 @@ import { GOAL_SPINE_QUERY_KEYS, PENDING_LEARN_DRAFT_KEY, takeHashDraft, takeInta
 import { useCareerTracks } from "@/hooks/useCareerTracks";
 import { useRecommendations } from "@/hooks/useRecommendations";
 import { type LearnStarterPrefillT } from "@/lib/learnStarter";
+import { buildLearnRecommendationDraft } from "@/lib/recommendationStart";
 import { SectionHeading } from "@/components/home/SectionHeading";
 import { GroupLabel } from "@/components/home/GroupLabel";
 import { Loading } from "@/components/home/Loading";
@@ -823,6 +824,7 @@ export function LearnView() {
   const [showForm, setShowForm] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [showMoreLearnFields, setShowMoreLearnFields] = useState(false);
+  const [busyRecommendationId, setBusyRecommendationId] = useState<number | null>(null);
   const [form, setForm] = useState<LearnFormT>(EMPTY_LEARN_FORM);
   const [selectedLane, setSelectedLane] = useState("");
   const [starterHint, setStarterHint] = useState<{ label: string; why: string } | null>(null);
@@ -843,13 +845,16 @@ export function LearnView() {
     if (clearStarter) setStarterHint(null);
     setForm((current) => ({ ...current, ...patch }));
   }
-  function startLaneLearn(item: GoalPortfolioItemT) {
-    const preset = learnPresetForLane(item, tracks);
-    const { starterLabel, starterWhy, ...draft } = preset as LearnStarterPrefillT;
+  function applyLearnStarterDraft(preset: LearnStarterPrefillT) {
+    const { starterLabel, starterWhy, ...draft } = preset;
     setForm({ ...EMPTY_LEARN_FORM, ...draft });
     setStarterHint(starterLabel || starterWhy ? { label: starterLabel || draft.title || "Learning focus", why: starterWhy || "" } : null);
-    setSelectedLane(item.combination);
     setShowForm(true);
+  }
+  function startLaneLearn(item: GoalPortfolioItemT) {
+    const preset = learnPresetForLane(item, tracks);
+    applyLearnStarterDraft(preset as LearnStarterPrefillT);
+    setSelectedLane(item.combination);
   }
   async function add() {
     if (!form.title.trim()) return;
@@ -859,17 +864,31 @@ export function LearnView() {
   async function toggle(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { done: !l.done }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
   async function toggleActive(l: Learn) { await mutateAndInvalidate("PATCH", `/api/learn/${l.id}`, { active: !l.active }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]); }
   async function remove(id: number) { await mutateAndInvalidate("DELETE", `/api/learn/${id}`, undefined, ["/api/learn", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]); }
-  async function acceptRecommendation(rec: LearnRecommendation) {
-    await mutateAndInvalidate("POST", `/api/recommendations/${rec.id}/accept`, { entityType: "learn" }, [
-      "/api/recommendations",
-      "/api/learn",
-      "/api/strategy",
-      "/api/strategy/front-door",
-      "/api/strategy/diagnostics",
-      "/api/tasks",
-      ...GOAL_SPINE_QUERY_KEYS,
-    ]);
-    toast({ title: "Added to your learning list.", description: "You can keep it as-is, or tune it after it lands." });
+  async function acceptRecommendation(rec: LearnRecommendation, options?: { startNow?: boolean }) {
+    setBusyRecommendationId(rec.id);
+    try {
+      const accepted = await mutateAndInvalidate("POST", `/api/recommendations/${rec.id}/accept`, { entityType: "learn" }, [
+        "/api/recommendations",
+        "/api/learn",
+        "/api/strategy",
+        "/api/strategy/front-door",
+        "/api/strategy/diagnostics",
+        "/api/tasks",
+        ...GOAL_SPINE_QUERY_KEYS,
+      ]);
+      if (options?.startNow && accepted?.created?.id) {
+        await mutateAndInvalidate("PATCH", `/api/learn/${accepted.created.id}`, { active: true }, ["/api/learn", ...GOAL_SPINE_QUERY_KEYS]);
+        const task = await mutateAndInvalidate("POST", `/api/learn/${accepted.created.id}/create-output-task`, {}, ["/api/tasks", ...GOAL_SPINE_QUERY_KEYS]);
+        toast({
+          title: "Added and started.",
+          description: taskToastDescription(task, task?.title || "The first learning step is now on your list."),
+        });
+        return;
+      }
+      toast({ title: "Added to your learning list.", description: "You can keep it as-is, or tune it after it lands." });
+    } finally {
+      setBusyRecommendationId(null);
+    }
   }
   async function updateRecommendationStatus(id: number, status: string) {
     await mutateAndInvalidate("PATCH", `/api/recommendations/${id}`, { status }, ["/api/recommendations"]);
@@ -906,6 +925,8 @@ export function LearnView() {
         <div className="space-y-2">
           {list.map((rec) => {
             const linkedTrackName = rec.linkedTrackId ? trackNameById.get(rec.linkedTrackId) : "";
+            const recommendationDraft = buildLearnRecommendationDraft(rec, linkedTrackName);
+            const busy = busyRecommendationId === rec.id;
             return (
               <div key={rec.id} className="rounded-xl border border-card-border bg-card p-4" data-testid={`learn-recommendation-${rec.id}`}>
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -930,16 +951,29 @@ export function LearnView() {
                 </div>
                 <p className="mt-2 text-sm font-medium leading-snug text-foreground">{rec.title}</p>
                 <p className="mt-1 text-xs leading-snug text-muted-foreground">{rec.whySuggested}</p>
+                <div className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">Start here now</p>
+                  <p className="mt-1 text-sm font-medium text-foreground">{recommendationDraft.starterLabel || recommendationDraft.title || rec.title}</p>
+                  <p className="mt-1 text-xs leading-snug text-muted-foreground">
+                    {recommendationDraft.starterWhy || "Anchor can prefill this and put the first learning step onto your list."}
+                  </p>
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" onClick={() => acceptRecommendation(rec)} data-testid={`button-accept-learn-recommendation-${rec.id}`}>
-                    <GraduationCap className="mr-1 h-4 w-4" /> Use suggestion
+                  <Button size="sm" disabled={busy} onClick={() => acceptRecommendation(rec, { startNow: true })} data-testid={`button-start-learn-recommendation-${rec.id}`}>
+                    {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <GraduationCap className="mr-1 h-4 w-4" />} Start this now
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => applyLearnStarterDraft(recommendationDraft)} data-testid={`button-open-learn-draft-${rec.id}`}>
+                    Open prefilled draft
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => acceptRecommendation(rec)} data-testid={`button-accept-learn-recommendation-${rec.id}`}>
+                    Add without starting
                   </Button>
                   {rec.status !== "saved" && (
-                    <Button size="sm" variant="outline" onClick={() => updateRecommendationStatus(rec.id, "saved")} data-testid={`button-save-learn-recommendation-${rec.id}`}>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => updateRecommendationStatus(rec.id, "saved")} data-testid={`button-save-learn-recommendation-${rec.id}`}>
                       Save for later
                     </Button>
                   )}
-                  <Button size="sm" variant="ghost" onClick={() => updateRecommendationStatus(rec.id, "archived")} data-testid={`button-archive-learn-recommendation-${rec.id}`}>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => updateRecommendationStatus(rec.id, "archived")} data-testid={`button-archive-learn-recommendation-${rec.id}`}>
                     Not now
                   </Button>
                   {rec.sourceUrl && (

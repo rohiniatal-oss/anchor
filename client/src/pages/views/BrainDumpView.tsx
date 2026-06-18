@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Loader2, Plus, Sparkles, Wand2, X } from "lucide-react";
 import { mutateAndInvalidate } from "@/lib/api";
@@ -20,7 +20,7 @@ const ROUTE_ACTION_LABEL: Record<string, string> = {
   job: "File under Jobs",
   learn: "File under Learning",
   network: "File under Network",
-  proof: "File under Projects / proof assets",
+  proof: "File under Projects",
   deadline: "Add a deadline",
   blocker: "Flag as blocked",
   decision: "Needs a decision",
@@ -45,6 +45,15 @@ export default function BrainDumpView() {
   const [triage, setTriage] = useState<Record<number, CaptureSug>>({});
   const { toast } = useToast();
   const inbox = tasks.filter((t) => t.list === "inbox");
+
+  const autoSorted = useRef(false);
+  useEffect(() => {
+    if (isLoading || autoSorted.current) return;
+    autoSorted.current = true;
+    if (inbox.length > 0 && !sorting && Object.keys(triage).length === 0) {
+      sortAll();
+    }
+  }, [inbox.length, isLoading]);
 
   async function add() {
     const value = text.trim();
@@ -89,7 +98,7 @@ export default function BrainDumpView() {
         setTriage((current) => ({ ...current, [taskId]: data.suggestion as CaptureSug }));
       }
     } catch {
-      toast({ title: "Couldn't suggest a route", description: "Try again in a moment." });
+      toast({ title: "Couldn't work that one out", description: "Try again in a moment." });
     } finally {
       setSuggestingId((current) => (current === taskId ? null : current));
     }
@@ -139,19 +148,25 @@ export default function BrainDumpView() {
       </div>
       {inbox.length > 0 && (
         <div className="mb-5 flex flex-wrap items-start gap-3">
-          <div>
-            <Button variant="outline" onClick={sortAll} disabled={sorting} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
-              {sorting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-              {sorting ? "Working out where each one goes..." : "Sort these for me"}
-            </Button>
-            <p className="text-xs text-muted-foreground mt-1.5">
-              I'll work out what each one probably is: something to do today, a learning item, part of something you've already saved, or just a note.
+          {sorting ? (
+            <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Working out where each one goes...
             </p>
-          </div>
-          {Object.keys(triage).length > 0 && inbox.some((t) => triage[t.id] && triage[t.id].route !== "keep") && (
-            <Button variant="default" size="sm" onClick={acceptAll} data-testid="button-accept-all-braindump" className="inline-flex items-center gap-1.5 mt-0.5">
-              <ArrowRight className="w-4 h-4" />
-              Accept all suggestions
+          ) : Object.keys(triage).length > 0 ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {inbox.some((t) => triage[t.id] && triage[t.id].route !== "keep") && (
+                <Button variant="default" size="sm" onClick={acceptAll} data-testid="button-accept-all-braindump" className="inline-flex items-center gap-1.5">
+                  <ArrowRight className="w-4 h-4" />
+                  Accept all suggestions
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={sortAll} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
+                <Wand2 className="w-4 h-4" /> Re-sort
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" size="sm" onClick={sortAll} data-testid="button-sort-braindump" className="inline-flex items-center gap-1.5">
+              <Wand2 className="w-4 h-4" /> Sort these for me
             </Button>
           )}
         </div>

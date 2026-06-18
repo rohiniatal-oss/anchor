@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Plus, Check, CalendarDays, Loader2, Target, ChevronRight,
   Pin, Wand2, MoveRight, MoonStar, Trophy, Briefcase, Users, GraduationCap,
-  X, Sparkles, ExternalLink,
+  X, Sparkles, ExternalLink, Flame, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -193,6 +193,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
     (avoided || pinned.size === "deep" || ["job", "learn", "contact", "hustle"].includes(String(pinned.sourceType || "")));
 
   const autoTriggered = useRef<number | null>(null);
+  const autoSynthTriggered = useRef<number | null>(null);
   useEffect(() => {
     if (steps.length === 0 && !question && !breaking && autoTriggered.current !== pinned.id) {
       autoTriggered.current = pinned.id;
@@ -274,9 +275,17 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
       if (res?.draft) setSynthDraft(res.draft);
       setSynthError(res?.error || "");
     } catch {
-      setSynthError("The AI helper could not load a starter right now.");
+      setSynthError("Couldn't load a starter right now.");
     } finally { setSynthLoadingState(null); }
   }
+
+  useEffect(() => {
+    if (checkpoint && (checkpoint.milestoneType === "synthesis" || checkpoint.milestoneType === "artifact")
+      && !synthDraft && !synthLoadingState && autoSynthTriggered.current !== checkpoint.id) {
+      autoSynthTriggered.current = checkpoint.id;
+      getPinnedStarter();
+    }
+  }, [checkpoint?.id, checkpoint?.milestoneType, synthDraft, synthLoadingState]);
 
   async function getPinnedCritique() {
     if (!checkpoint || !synthDraft.trim()) return;
@@ -287,7 +296,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
       if (res?.critique) setSynthCritique(res.critique);
       setSynthError(res?.error || "");
     } catch {
-      setSynthError("The AI helper could not critique this draft right now.");
+      setSynthError("Couldn't critique this draft right now.");
     } finally { setSynthLoadingState(null); }
   }
 
@@ -341,7 +350,7 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
             <p className="text-sm text-muted-foreground inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Breaking this into steps so starting is easy...</p>
           ) : (
             <Button size="sm" variant="outline" onClick={() => breakdown()} data-testid="button-breakdown-pinned">
-              <Wand2 className="w-4 h-4 mr-1" /> Try again
+              <Wand2 className="w-4 h-4 mr-1" /> Break into steps
             </Button>
           )}
         </div>
@@ -636,6 +645,11 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     networkThisWeek: number;
     learningThisWeek: number;
     proofAssetThisWeek: number;
+    actionsToday: number;
+    startsToday: number;
+    streak: number;
+    yesterdayCompleted: number;
+    yesterdayTotal: number;
   }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
@@ -689,7 +703,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       if (res?.draft) setSynthDrafts((d) => ({ ...d, [itemId]: res.draft }));
       setSynthErrors((s) => ({ ...s, [itemId]: res?.error || "" }));
     } catch {
-      setSynthErrors((s) => ({ ...s, [itemId]: "The AI helper could not load a starter right now." }));
+      setSynthErrors((s) => ({ ...s, [itemId]: "Couldn't load a starter right now." }));
     } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
   }
   async function getCritique(itemId: number, milestoneId: number) {
@@ -702,7 +716,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       if (res?.critique) setSynthCritiques((c) => ({ ...c, [itemId]: res.critique }));
       setSynthErrors((s) => ({ ...s, [itemId]: res?.error || "" }));
     } catch {
-      setSynthErrors((s) => ({ ...s, [itemId]: "The AI helper could not critique this draft right now." }));
+      setSynthErrors((s) => ({ ...s, [itemId]: "Couldn't critique this draft right now." }));
     } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
   }
 
@@ -830,13 +844,29 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       )}
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
       {!activeGoal && <p className="text-sm text-muted-foreground mt-1 mb-3">{introLine}</p>}
-      {stats && stats.doneThisWeek > 0 && (
+      {stats && (stats.doneThisWeek > 0 || stats.actionsToday > 0 || stats.streak > 1) && (
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Trophy className="w-3.5 h-3.5 text-primary" />
-            <span className="font-semibold text-foreground tabular-nums">{stats.doneThisWeek}</span>
-            {stats.doneThisWeek === 1 ? "win" : "wins"} this week
-          </span>
+          {stats.streak > 1 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Flame className="w-3.5 h-3.5 text-orange-500" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.streak}</span>
+              day streak
+            </span>
+          )}
+          {stats.actionsToday > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Zap className="w-3.5 h-3.5 text-primary" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.actionsToday}</span>
+              done today
+            </span>
+          )}
+          {stats.doneThisWeek > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Trophy className="w-3.5 h-3.5 text-primary" />
+              <span className="font-semibold text-foreground tabular-nums">{stats.doneThisWeek}</span>
+              {stats.doneThisWeek === 1 ? "win" : "wins"} this week
+            </span>
+          )}
           {stats.jobProgressThisWeek > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <Briefcase className="w-3.5 h-3.5 text-primary" />
@@ -922,6 +952,19 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               <span className="text-foreground font-medium tabular-nums">{e.start}</span>{e.title}{i < events.length - 1 && <span className="opacity-40 ml-1">|</span>}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Yesterday recap — only shown when yesterday had a plan */}
+      {stats && stats.yesterdayTotal > 0 && !pinned && (
+        <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground" data-testid="yesterday-recap">
+          <span className="font-medium tabular-nums">{stats.yesterdayCompleted}/{stats.yesterdayTotal}</span>
+          <span>done yesterday{stats.yesterdayCompleted === stats.yesterdayTotal ? " — clean sweep" : stats.yesterdayCompleted === 0 ? " — fresh start today" : ""}</span>
+          {stats.streak > 1 && (
+            <span className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400">
+              <Flame className="w-3 h-3" /> {stats.streak}d streak
+            </span>
+          )}
         </div>
       )}
 

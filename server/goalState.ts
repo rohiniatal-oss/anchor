@@ -279,7 +279,7 @@ function describeOpportunityState(summary: OpportunityStateSummary, snapshot: Pi
   if (summary.state === "empty") return "No real opportunities are active yet, so the next step is to create one.";
   if (summary.state === "interviewing") return "A live interview process exists, so preparation has the highest leverage.";
   if (summary.dominantBlocker === "clarify") {
-    return `${snapshot.applicationActionCounts.clarify} promising role${snapshot.applicationActionCounts.clarify === 1 ? " still needs" : "s still need"} role-fact clarification before harder pushing makes sense.`;
+    return `${snapshot.applicationActionCounts.clarify} promising role${snapshot.applicationActionCounts.clarify === 1 ? " needs" : "s need"} role-fact clarification before harder pushing makes sense.`;
   }
   if (summary.dominantBlocker === "access") {
     const count = snapshot.applicationActionCounts.follow_up + snapshot.applicationActionCounts.warm;
@@ -718,7 +718,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
         : applicationLead?.action === "warm"
           ? `${snapshot.applicationActionCounts.warm} promising role${snapshot.applicationActionCounts.warm === 1 ? " should" : "s should"} reach out to someone useful before going cold`
           : applicationLead?.action === "clarify"
-            ? `${snapshot.applicationActionCounts.clarify} role${snapshot.applicationActionCounts.clarify === 1 ? " still needs" : "s still need"} clarification before real conversion`
+            ? `${snapshot.applicationActionCounts.clarify} role${snapshot.applicationActionCounts.clarify === 1 ? " needs" : "s need"} clarification before real conversion`
             : snapshot.proofSupportDemandCount > 0
               ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from stronger credibility, but that is an upskilling edge rather than an application blocker`
             : snapshot.directionReady
@@ -770,20 +770,20 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       : "not_started";
   const capabilityBottleneck = snapshot.interviewingJobs > 0
     ? snapshot.learningOutputGapCount > 0
-      ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} notes, practice, or a short brief before the interview`
+      ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " needs" : "s need"} notes, practice, or a short brief before the interview`
       : "interview and role preparation need practice that turns into something you can reuse"
     : missingLearningByLane.length > 0
-      ? `these live paths still need learning support: ${missingLearningByLane.join("; ")}`
+      ? `these live paths need learning support: ${missingLearningByLane.join("; ")}`
     : snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
       ? snapshot.proofSupportDemandCount > 0
         ? `no role-relevant learning plan is active yet, and ${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice`
         : "no role-relevant learning plan is active yet"
       : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
-        ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice, and ${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} notes or a short brief`
+        ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice, and ${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " needs" : "s need"} notes or a short brief`
       : snapshot.proofSupportDemandCount > 0
         ? `${snapshot.proofSupportDemandCount} promising role${snapshot.proofSupportDemandCount === 1 ? " would benefit" : "s would benefit"} from clearer examples or practice`
       : snapshot.learningOutputGapCount > 0
-        ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " still needs" : "s still need"} notes or a short brief`
+        ? `${snapshot.learningOutputGapCount} learning item${snapshot.learningOutputGapCount === 1 ? " needs" : "s need"} notes or a short brief`
       : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0
           ? "learning is in motion, but nothing is linked back yet"
       : "turn learning into clearer examples, notes, or practice";

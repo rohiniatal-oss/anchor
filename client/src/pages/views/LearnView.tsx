@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Trash2, ExternalLink, Loader2, Check,
@@ -173,6 +173,7 @@ function ProofStepRail({ h }: { h: Hustle }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [newLabel, setNewLabel] = useState("");
+  const autoSeeded = useRef(false);
   async function reloadInto() { await qc.invalidateQueries({ queryKey: stepsKey }); }
 
   async function seed() {
@@ -180,10 +181,16 @@ function ProofStepRail({ h }: { h: Hustle }) {
     try {
       await mutateAndInvalidate("POST", `/api/hustles/${h.id}/steps/seed`, {}, ["/api/strategy/diagnostics"]);
       await reloadInto();
-      toast({ title: "Steps generated.", description: "Based on this workflow. Edit them to fit." });
+      toast({ title: "Steps ready.", description: "Based on this project. Edit to fit." });
     } catch { toast({ title: "Couldn't generate steps", description: "Try again in a moment." }); }
     finally { setBusy(false); }
   }
+
+  useEffect(() => {
+    if (isLoading || autoSeeded.current) return;
+    autoSeeded.current = true;
+    if (steps.length === 0 && !busy) seed();
+  }, [isLoading, steps.length]);
   async function materialize(s: ProofAssetStep) {
     setBusy(true);
     try {
@@ -246,10 +253,16 @@ function ProofStepRail({ h }: { h: Hustle }) {
       {isLoading ? (
         <p className="text-xs text-muted-foreground/60 py-1">Loading steps...</p>
       ) : steps.length === 0 ? (
-        <button onClick={seed} disabled={busy} data-testid={`button-seed-proof-steps-${h.id}`}
-          className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Generate steps
-        </button>
+        busy ? (
+          <p className="text-xs text-muted-foreground inline-flex items-center gap-1.5 py-1">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Building steps…
+          </p>
+        ) : (
+          <button onClick={seed} disabled={busy} data-testid={`button-seed-proof-steps-${h.id}`}
+            className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 disabled:opacity-60">
+            <Plus className="w-3.5 h-3.5" /> Build learning steps
+          </button>
+        )
       ) : (
         <div className="space-y-1">
           {steps.map((s, i) => (
@@ -325,7 +338,7 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
       <ProofStepRail h={h} />
       <CardActions entity="hustles" id={h.id} trackId={trackId} tracks={tracks}
         nextTaskHint={taskPreviewHint(nextHustleTaskTitle(h), openHustleTask?.title)}
-        onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("hustles")) })} />
+        onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("hustles")) })} />
     </div>
   );
 }
@@ -805,7 +818,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
 
           <CardActions entity="learn" id={l.id} trackId={trackId} tracks={tracks}
             nextTaskHint={taskPreviewHint(nextTaskPreviewTitle, openLearnTask?.title)}
-            onViewTasks={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : `Use '${learnTaskActionLabel(outputState)}' to make one.` })} />
+            onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : `Use '${learnTaskActionLabel(outputState)}' to make one.` })} />
         </div>
       </div>
     </div>

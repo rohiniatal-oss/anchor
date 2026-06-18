@@ -39,12 +39,12 @@ export function ProfileView() {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold mb-0.5">Profile</h2>
-        <p className="text-sm text-muted-foreground">Your CV is used to suggest specific bullet rewrites when you work on job applications.</p>
+        <p className="text-sm text-muted-foreground">We'll use your CV to suggest specific bullet rewrites for each job you apply to.</p>
       </div>
       <div className="rounded-xl border border-card-border bg-card p-4 space-y-3">
         <div>
           <p className="text-sm font-medium mb-1">Your CV</p>
-          <p className="text-xs text-muted-foreground mb-2">Paste plain text. The app uses this alongside the job description to suggest exact bullet rewrites — not generic advice.</p>
+          <p className="text-xs text-muted-foreground mb-2">Paste your CV text. When you apply for jobs, we'll suggest specific wording based on what each role needs — not generic advice.</p>
           <textarea
             value={cvText}
             onChange={(e) => { setCvText(e.target.value); setDirty(true); }}

@@ -559,7 +559,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
         <div className="mt-2 rounded-lg border border-card-border bg-muted/40 p-3">
           <p className="text-xs font-medium mb-1">What do you know about them right now?</p>
           <p className="text-[11px] text-muted-foreground mb-2">
-            Paste anything — a LinkedIn headline, recent paper, something someone told you. Leave blank and the AI will search for them.
+            Paste anything — a LinkedIn headline, recent paper, something someone told you. Leave blank and we'll look them up.
           </p>
           <textarea
             value={draftContext}
@@ -649,7 +649,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
         >
           <Wand2 className="w-3.5 h-3.5" /> Message
         </button>
-        <button onClick={() => toast({ title: linked > 0 ? `${linked} linked open task${linked > 1 ? "s" : ""}` : "No linked tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("contacts")) })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <button onClick={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("contacts")) })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
           <ListChecks className="w-3.5 h-3.5" /> Tasks
         </button>
         <LinkTrackControl entity="contacts" id={c.id} trackId={trackId} tracks={tracks} />
@@ -937,10 +937,10 @@ export function NetworkView() {
           </button>
           {showMoreContactFields && (
             <div className="grid gap-2 sm:grid-cols-2">
-              <Input placeholder="Target role" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} />
+              <Input placeholder="Their role" value={form.targetRole} onChange={(e) => setForm({ ...form, targetRole: e.target.value })} />
               <Input type="date" value={form.nextFollowUpDate} onChange={(e) => setForm({ ...form, nextFollowUpDate: e.target.value })} />
               <Input placeholder="Why this person matters" value={form.why} onChange={(e) => setForm({ ...form, why: e.target.value })} className="sm:col-span-2" />
-              <Input placeholder="Network source / sector" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" />
+              <Input placeholder="How you're connected / sector" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" />
               {tracks.length > 0 && (
                 <div className="sm:col-span-2">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to role type</p>

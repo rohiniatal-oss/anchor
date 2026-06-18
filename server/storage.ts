@@ -201,6 +201,11 @@ export interface IStorage {
   getContactInteractions(contactId: number): Promise<ContactInteraction[]>;
   createContactInteraction(data: Omit<InsertContactInteraction, 'createdAt'>): Promise<ContactInteraction>;
   updateContactNextAction(id: number, nextActionType: string, nextActionDue: number | null, nextActionDesc: string): Promise<Contact | undefined>;
+  // Job-contact links
+  getJobContactLinks(jobId: number): Promise<number[]>;
+  getAllJobContactLinks(): Promise<Record<number, number[]>>;
+  linkContactToJob(contactId: number, jobId: number): Promise<any>;
+  unlinkContactFromJob(contactId: number, jobId: number): Promise<void>;
 }
 
 // Entities that carry a track link. Hustles store it in proofAssetForTrack;
@@ -489,6 +494,58 @@ export class DatabaseStorage implements IStorage {
       .where(eq(entityLinks.fromType, "learn")).all()
       .filter((r) => r.relationType === "proof_for");
     return new Set<number>(rows.map((r) => r.fromId));
+  }
+
+  async getJobContactLinks(jobId: number): Promise<number[]> {
+    const rows = db.select().from(entityLinks)
+      .where(and(
+        eq(entityLinks.fromType, "contact"),
+        eq(entityLinks.toType, "job"),
+        eq(entityLinks.toId, jobId),
+        eq(entityLinks.relationType, "contact_for"),
+      )).all();
+    return rows.map((r) => r.fromId);
+  }
+
+  async getAllJobContactLinks(): Promise<Record<number, number[]>> {
+    const rows = db.select().from(entityLinks)
+      .where(and(
+        eq(entityLinks.fromType, "contact"),
+        eq(entityLinks.toType, "job"),
+        eq(entityLinks.relationType, "contact_for"),
+      )).all();
+    const result: Record<number, number[]> = {};
+    for (const r of rows) {
+      (result[r.toId] ??= []).push(r.fromId);
+    }
+    return result;
+  }
+
+  async linkContactToJob(contactId: number, jobId: number) {
+    const existing = db.select().from(entityLinks)
+      .where(and(
+        eq(entityLinks.fromType, "contact"),
+        eq(entityLinks.fromId, contactId),
+        eq(entityLinks.toType, "job"),
+        eq(entityLinks.toId, jobId),
+        eq(entityLinks.relationType, "contact_for"),
+      )).get();
+    if (existing) return existing;
+    return db.insert(entityLinks).values({
+      fromType: "contact", fromId: contactId,
+      toType: "job", toId: jobId,
+      relationType: "contact_for", createdAt: Date.now(),
+    }).returning().get();
+  }
+
+  async unlinkContactFromJob(contactId: number, jobId: number) {
+    db.delete(entityLinks).where(and(
+      eq(entityLinks.fromType, "contact"),
+      eq(entityLinks.fromId, contactId),
+      eq(entityLinks.toType, "job"),
+      eq(entityLinks.toId, jobId),
+      eq(entityLinks.relationType, "contact_for"),
+    )).run();
   }
 
   async getProfile() {

@@ -6,6 +6,27 @@ import { legacyCategoryToRoute } from "./captureCompatibility";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 
+function computeStreak(activity: { eventType: string; timestamp: number }[]): number {
+  const dayKeys = new Set(
+    activity
+      .filter((a) => a.eventType === "completed")
+      .map((a) => {
+        const d = new Date(a.timestamp);
+        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      }),
+  );
+  const today = new Date();
+  let streak = 0;
+  for (let i = 0; i < 365; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (dayKeys.has(key)) streak++;
+    else break;
+  }
+  return streak;
+}
+
 export function registerTaskAssistRoutes(app: Express) {
   app.post("/api/unstick", async (req, res) => {
     const step = String(req.body?.step || "").trim();
@@ -73,15 +94,36 @@ export function registerTaskAssistRoutes(app: Express) {
   });
 
   app.get("/api/stats", async (_req, res) => {
-    const weekAgo = Date.now() - 7 * 86400000;
-    const wins = await storage.getWins();
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 86400000;
+    const weekAgo = startOfToday - 7 * 86400000;
+    const y = new Date(startOfYesterday);
+    const yesterdayKey = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, "0")}-${String(y.getDate()).padStart(2, "0")}`;
+    const [wins, activity, yesterdayPlan] = await Promise.all([
+      storage.getWins(), storage.getActivityLog(), storage.getPlanByDate(yesterdayKey),
+    ]);
+    const yesterdayItems = yesterdayPlan ? await storage.getPlanItems(yesterdayPlan.id) : [];
+    const yesterdayCompleted = yesterdayItems.filter((i: any) => i.status === "completed").length;
+    const yesterdayTotal = yesterdayItems.length;
     const thisWeek = wins.filter((w) => w.createdAt >= weekAgo);
+    const weekActivity = activity.filter((a) => a.timestamp >= weekAgo);
+    const todayActivity = activity.filter((a) => a.timestamp >= startOfToday);
     res.json({
       doneThisWeek: thisWeek.length,
       jobProgressThisWeek: thisWeek.filter((w) => w.winCategory === "job_progress").length,
       networkThisWeek: thisWeek.filter((w) => w.winCategory === "network").length,
       learningThisWeek: thisWeek.filter((w) => w.winCategory === "learning").length,
       proofAssetThisWeek: thisWeek.filter((w) => w.winCategory === "proof_asset").length,
+      actionsToday: todayActivity.filter((a) => a.eventType === "completed").length,
+      startsToday: todayActivity.filter((a) => a.eventType === "started").length,
+      blockedToday: todayActivity.filter((a) => a.eventType === "blocked").length,
+      completionsThisWeek: weekActivity.filter((a) => a.eventType === "completed").length,
+      startsThisWeek: weekActivity.filter((a) => a.eventType === "started").length,
+      blockedThisWeek: weekActivity.filter((a) => a.eventType === "blocked").length,
+      streak: computeStreak(activity),
+      yesterdayCompleted,
+      yesterdayTotal,
     });
   });
 

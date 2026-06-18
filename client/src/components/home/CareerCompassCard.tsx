@@ -179,7 +179,7 @@ export function CareerCompassCard({
 
       {goal.opportunityState && (
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="career-compass-search-snapshot">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Search snapshot</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">How your search is going</p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
               <Compass className="w-3 h-3" /> {opportunity.stateLabel}
@@ -195,7 +195,7 @@ export function CareerCompassCard({
 
       <div className={`mt-3 grid gap-3 ${isCompact ? "sm:grid-cols-1" : "sm:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]"}`}>
         <div className="rounded-xl border border-card-border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">What matters now</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your priority right now</p>
           <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
           <p className="text-xs text-muted-foreground mt-1">{focusSupportLine}</p>
         </div>
@@ -213,7 +213,7 @@ export function CareerCompassCard({
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 {coverage.missing.length > 0
-                  ? `Still missing real role examples: ${compactLanePreview(coverage.missing, "Every target has a real role.")}`
+                  ? `Roles to find: ${compactLanePreview(coverage.missing, "Every target has a real role.")}`
                   : "Every target has a real role."}
               </p>
               {supportGapLines.length > 0 && (
@@ -235,7 +235,7 @@ export function CareerCompassCard({
 
       {leadComparison && (
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="career-compass-why-first">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this first</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Why this is your move</p>
           <p className="text-sm font-medium mt-1">{leadComparison.detail}</p>
           {!isCompact && secondaryComparisons.length > 0 && (
             <div className="mt-3 space-y-2">
@@ -252,7 +252,7 @@ export function CareerCompassCard({
 
       {hasCoverage && (firstMissingRole || firstMissingNetwork || firstMissingPrep) && (
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="career-compass-next-moves">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Make the next gap easier</p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Close these gaps</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {firstMissingRole && (
               <Button size="sm" variant="outline" onClick={() => onOpenTab("jobs")} data-testid="button-compass-add-role">
@@ -273,17 +273,17 @@ export function CareerCompassCard({
           <div className="mt-2 space-y-1">
             {firstMissingRole && (
               <p className="text-xs text-muted-foreground">
-                Still missing a live role for <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingRole)}</span>.
+                Find a real opening for <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingRole)}</span>.
               </p>
             )}
             {firstMissingNetwork && (
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingNetwork)}</span> still needs someone useful to reach out to.
+                Add a contact for <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingNetwork)}</span>.
               </p>
             )}
             {firstMissingPrep && (
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> still needs a learning focus if you want clearer interview or application support.
+                Start learning about <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> to sharpen your interviews and applications.
               </p>
             )}
           </div>

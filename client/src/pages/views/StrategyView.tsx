@@ -92,10 +92,10 @@ type RecommendationDetail = RecommendationItem & {
 };
 
 const PVP_META: Record<"producing" | "balanced" | "planning" | "idle", { label: string; cls: string }> = {
-  producing: { label: "Producing", cls: "bg-primary/10 text-primary" },
-  balanced: { label: "Balanced", cls: "bg-slate-100 text-slate-600" },
-  planning: { label: "Planning, not producing", cls: "bg-slate-200 text-slate-700" },
-  idle: { label: "Idle", cls: "bg-muted text-muted-foreground" },
+  producing: { label: "Active progress", cls: "bg-primary/10 text-primary" },
+  balanced: { label: "Steady pace", cls: "bg-slate-100 text-slate-600" },
+  planning: { label: "In research mode", cls: "bg-slate-200 text-slate-700" },
+  idle: { label: "Not started yet", cls: "bg-muted text-muted-foreground" },
 };
 function EvidenceChips({ ev }: { ev: NonNullable<TrackDiagnostic["evidence"]> }) {
   const pvp = PVP_META[ev.producingVsPlanning];
@@ -121,12 +121,12 @@ function CapabilityChips({ lg }: { lg: NonNullable<TrackDiagnostic["learningGap"
       </span>
       {lg.gapCount > 0 && (
         <span className="inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid="capability-gap">
-          {lg.gapCount} area{lg.gapCount === 1 ? "" : "s"} still needs support{lg.topGapLabel ? ` | ${lg.topGapLabel}` : ""}
+          {lg.gapCount} area{lg.gapCount === 1 ? "" : "s"} to develop{lg.topGapLabel ? ` | ${lg.topGapLabel}` : ""}
         </span>
       )}
       {lg.gapCount > 0 && lg.topGapLabel && (
         <span className={`inline-flex shrink-0 text-[10px] rounded-full px-1.5 py-0.5 ${lg.topGapHasResource ? "bg-slate-100 text-slate-600" : "bg-slate-200 text-slate-700"}`} data-testid="capability-resource">
-          {lg.topGapHasResource ? "learning item saved" : "needs first learning item"}
+          {lg.topGapHasResource ? "learning resource added" : "add a learning resource"}
         </span>
       )}
     </div>
@@ -292,7 +292,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           <div className="mt-2.5 space-y-2">
             {needsFirstRole && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">No live role saved yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
+                <p className="text-xs text-muted-foreground leading-snug">Find a real <span className="font-medium text-foreground">{t.name}</span> opening to target.</p>
                 <Button size="sm" variant="outline" onClick={() => openTrackTab("jobs")} data-testid={`button-add-gap-job-${t.slug}`}>
                   <Briefcase className="w-4 h-4 mr-1" /> Add role
                 </Button>
@@ -300,7 +300,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             )}
             {needsContactPath && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">No one to reach out to yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
+                <p className="text-xs text-muted-foreground leading-snug">Add someone who can help with <span className="font-medium text-foreground">{t.name}</span>.</p>
                 {savedContactRec ? (
                   <Button size="sm" variant="outline" onClick={() => acceptRecommendation(savedContactRec)} data-testid={`button-use-saved-contact-${t.slug}`}>
                     <Users className="w-4 h-4 mr-1" /> Use saved suggestion
@@ -314,7 +314,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             )}
             {needsContactFollowThrough && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">You have contacts for <span className="font-medium text-foreground">{t.name}</span> — check if any need a follow-up or a clearer ask.</p>
+                <p className="text-xs text-muted-foreground leading-snug">You have contacts for <span className="font-medium text-foreground">{t.name}</span> — time to follow up or sharpen your ask.</p>
                 <Button size="sm" variant="outline" onClick={() => openTrackTab("network")} data-testid={`button-open-gap-contact-${t.slug}`}>
                   <Users className="w-4 h-4 mr-1" /> Open network
                 </Button>
@@ -323,7 +323,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             {needsPrepItem && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground leading-snug"><span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span> still needs a learning focus.</p>
+                  <p className="text-xs text-muted-foreground leading-snug">Start learning about <span className="font-medium text-foreground">{t.learningGap?.topGapLabel}</span>.</p>
                   {prepStarter && !savedLearningRec && (
                     <p className="text-[11px] text-muted-foreground mt-1 leading-snug">Start with: <span className="font-medium text-foreground">{prepStarter.title}</span>.</p>
                   )}
@@ -346,7 +346,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   };
 
   const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "learn", contacts: "network", hustles: "strategy" };
-  const ENTITY_LABEL: Record<UnlinkedItem["entity"], string> = { jobs: "Job", learn: "Learn", contacts: "Contact", hustles: "Projects and public work" };
+  const ENTITY_LABEL: Record<UnlinkedItem["entity"], string> = { jobs: "Role", learn: "Learning", contacts: "Contact", hustles: "Project" };
   async function linkUnlinked(it: UnlinkedItem, trackId: number) {
     await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]);
   }
@@ -456,7 +456,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
                 {milestones.length > 0 && (
                   <div>
-                    <p className="text-xs font-medium text-foreground">Checkpoints</p>
+                    <p className="text-xs font-medium text-foreground">Steps to master this</p>
                     <div className="mt-2 space-y-2">
                       {milestones.map((milestone) => (
                         <div key={milestone.id} className="rounded-lg border border-card-border bg-muted/25 p-3">
@@ -465,7 +465,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                             <div className="min-w-0">
                               <p className="text-sm font-medium leading-snug">{milestone.label}</p>
                               {milestone.doneWhen && (
-                                <p className="mt-1 text-xs leading-snug text-muted-foreground">Done when: {milestone.doneWhen}</p>
+                                <p className="mt-1 text-xs leading-snug text-muted-foreground">You're done when: {milestone.doneWhen}</p>
                               )}
                               {milestone.suggestedTaskTitle && (
                                 <p className="mt-1 text-xs leading-snug text-primary">Next step: {milestone.suggestedTaskTitle}</p>
@@ -510,7 +510,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   return (
     <div>
       <h1 className="text-xl font-bold tracking-tight">Strategy</h1>
-      <p className="text-sm text-muted-foreground mt-1 mb-5">Active role types and what each needs.</p>
+      <p className="text-sm text-muted-foreground mt-1 mb-5">Your search progress and what's next for each path.</p>
       {activeGoal && (
         <CareerCompassCard goal={activeGoal} onOpenTab={onOpenTab} variant="compact" showOpenStrategy={false} />
       )}
@@ -530,7 +530,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         <div className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
-            <span className="text-sm font-medium">{unlinkedItems.length} item{unlinkedItems.length > 1 ? "s" : ""} not linked to a role type</span>
+            <span className="text-sm font-medium">{unlinkedItems.length} item{unlinkedItems.length > 1 ? "s" : ""} not assigned to a path yet</span>
           </div>
           <div className="space-y-1.5">
             {unlinkedItems.map((it) => (
@@ -542,7 +542,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                     <button className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0" data-testid={`button-link-unlinked-${it.entity}-${it.id}`}><Link2 className="w-3.5 h-3.5" /> Link</button>
                   </PopoverTrigger>
                   <PopoverContent className="w-56 p-1.5" align="end">
-                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Link to a role type</p>
+                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Assign to a path</p>
                     <div className="space-y-0.5">
                       {careerTracks.map((t) => (
                         <button key={t.id} onClick={() => linkUnlinked(it, t.id)} className="w-full text-left text-sm px-2 py-1.5 rounded-md hover-elevate">{t.name}</button>
@@ -582,7 +582,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         <div className="mb-6">
           <GroupLabel count={visibleRecommendations.length}>Ideas to look at next</GroupLabel>
           <p className="mb-2 text-xs text-muted-foreground">
-            Things worth looking at — a theme to study, someone to reach out to, or a project idea. Tap any to review it and decide if you want to act on it.
+            Based on your roles, try these next. Each one fills a gap or opens a door.
           </p>
           <Accordion type="single" collapsible value={openRecommendationId} onValueChange={setOpenRecommendationId} className="space-y-2">
             {visibleRecommendations.map((rec) => <RecommendationCard key={rec.id} rec={rec} />)}

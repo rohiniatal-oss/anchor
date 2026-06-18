@@ -100,6 +100,7 @@ export type Candidate = {
   followUpDate?: string;
   jobTruthAction?: JobTruthAction;
   milestoneProgress?: { done: number; total: number };
+  linkedContactNames?: string[];
 };
 
 type StrategicContext = {
@@ -275,7 +276,7 @@ function startabilityMomentum(c: Candidate) {
 
   if (c.source === "task" && taskStillNeedsClarifying(c)) {
     score -= 14;
-    trace.push("still needs a clearer first step before it should lead");
+    trace.push("needs a clearer first step before it should lead");
   }
 
   return { score, trace };
@@ -446,14 +447,14 @@ function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
     skipped: 0,
     sourceUrl: "",
     sourceNote: combination
-      ? `This path still needs a real role: ${combination}. Add one real role or application move for it next.`
+      ? `The ${combination} path has no real role yet. Add one concrete role or application move for it next.`
       : broadPursuitMissingRolesSourceNote(context?.broadPursuitMissingCombinations || []),
     sourceStatus: "broad_parallel_pursuit",
     doneWhen: combination
       ? `One concrete role or application move exists for the missing path: ${combination}`
       : broadPursuitMissingRolesDoneWhen(),
     whyNow: combination
-      ? `the ${combination} path still needs a real opening`
+      ? `the ${combination} path has no real opening yet`
       : broadPursuitMissingRolesWhyNow(),
     fitScore: null,
     blocked: false,
@@ -491,10 +492,10 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `This live role type still needs someone useful to reach out to: ${combination}. Add one contact or outreach path for it next.`,
+        sourceNote: `The ${combination} path has no contacts yet. Add one useful contact or outreach path for it next.`,
         sourceStatus: "broad_parallel_pursuit_network_support",
         doneWhen: `One useful contact or outreach path exists for ${combination}`,
-        whyNow: `the ${combination} path still needs someone useful to reach out to`,
+        whyNow: `the ${combination} path has no contacts yet`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -529,10 +530,10 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `This live role type still needs more focused learning support: ${combination}. Start learning about it next.`,
+        sourceNote: `The ${combination} path has no learning resources yet. Start learning about it next.`,
         sourceStatus: "broad_parallel_pursuit_learning_support",
         doneWhen: `One focused learning item exists for ${combination}`,
-        whyNow: `the ${combination} path still needs more focused learning support`,
+        whyNow: `the ${combination} path has no learning resources yet`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -633,13 +634,13 @@ function jobMomentum(c: Candidate) {
   if (c.strategicValue != null) {
     const strategicBoost = Math.round((c.strategicValue / 100) * 16);
     s += strategicBoost;
-    if (strategicBoost >= 8) trace.push("strategically valuable role");
+    if (strategicBoost >= 8) trace.push("high-value role for your career direction");
   }
 
   if (c.frictionScore != null) {
     const frictionPenalty = Math.round((c.frictionScore / 100) * 18);
     s -= frictionPenalty;
-    if (frictionPenalty >= 8) trace.push("application friction penalty");
+    if (frictionPenalty >= 8) trace.push("application has some friction to work through");
   }
 
   const readiness = readinessMomentum(c.applicationReadiness || "none");
@@ -901,8 +902,9 @@ function askTypeAlignment(c: Candidate, context: StrategicContext) {
 
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
-export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [], learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map()): Candidate[] {
+export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [], learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(), jobContactLinks: Record<number, number[]> = {}): Candidate[] {
   const out: Candidate[] = [];
+  const contactsById = new Map(contacts.map((c) => [c.id, c]));
 
   for (const t of tasks) {
     const isTodayTask = t.list === "today";
@@ -941,6 +943,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         deadlineConfidence: j.deadlineConfidence || "",
         narrativeAngle: j.narrativeAngle || "",
         jobTruthAction: truthAction,
+        linkedContactNames: (jobContactLinks[j.id] || []).map((id) => contactsById.get(id)).filter(Boolean).map((c) => c!.who || c!.name || "a contact"),
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
       });
     }
@@ -1096,7 +1099,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (c.fitScore !== null) {
     const fitBoost = Math.round((c.fitScore / 100) * 60);
     s += fitBoost;
-    if (fitBoost >= 35) trace.push("strong fit score");
+    if (fitBoost >= 35) trace.push("strong match for your background");
   }
 
   if (c.source === "job") {
@@ -1124,12 +1127,12 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   }
   if (context.laneUnlockMove && `${c.title} ${c.whyNow} ${c.sourceNote}`.toLowerCase().includes(context.laneUnlockMove.toLowerCase().slice(0, 18))) {
     s += 25;
-    trace.push("matches the spine unlock move");
+    trace.push("directly addresses the main gap right now");
   }
-  if (/direction/i.test(context.bottleneck) && isDirectionSignal(c)) { s += 35; trace.push("matches direction bottleneck"); }
+  if (/direction/i.test(context.bottleneck) && isDirectionSignal(c)) { s += 35; trace.push("helps clarify which direction to go"); }
   if (/application/i.test(context.bottleneck) && isApplicationLike(c)) { s += 30; trace.push("moves an application forward"); }
   if (/network/i.test(context.bottleneck) && isNetworkLike(c)) { s += 35; trace.push("moves a relationship path forward"); }
-  if (/learning|development/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("converts learning/development into track leverage"); }
+  if (/learning|development/i.test(context.bottleneck) && isLearningLike(c)) { s += 25; trace.push("builds knowledge that makes your applications stronger"); }
   if (c.source === "learn" && c.milestoneProgress && c.milestoneProgress.total > 0) {
     const ratio = c.milestoneProgress.done / c.milestoneProgress.total;
     if (ratio >= 0.8) { s += 35; trace.push("nearly finished curriculum — close it out"); }
@@ -1139,27 +1142,27 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   if (context.planningPosture === "capability") {
     if (isLearningLike(c)) {
       s += 22;
-      trace.push("capability posture favors learning that turns into reusable notes or practice");
+      trace.push("strengthening a key skill area right now pays off across roles");
     }
     if (isProofAsset(c) && c.sourceStatus === "testing") {
       s += 10;
-      trace.push("a live project or public-work item can package capability into something you can point to later");
+      trace.push("this project turns learning into something you can show");
     } else if (isProofAsset(c)) {
       s -= 10;
-      trace.push("idea-stage projects or public work stay secondary to learning output");
+      trace.push("learning comes first — projects can wait until there's more to show");
     }
   } else if (isProofAsset(c)) {
     if (context.planningPosture === "conversion") {
       s -= 14;
-      trace.push("projects or public work stay secondary while live conversion moves exist");
+      trace.push("active applications take priority over project work right now");
     } else if (context.planningPosture === "exploration") {
       s -= 18;
-      trace.push("projects or public work stay deferred while role uncertainty is still high");
+      trace.push("projects can wait while you're still narrowing which roles to target");
     }
   }
   if (context.recommendedExploration && `${c.title} ${c.sourceNote}`.toLowerCase().includes(context.recommendedExploration.toLowerCase().slice(0, 20))) {
     s += 30;
-    trace.push("matches active track from spine");
+    trace.push("aligns with your current focus area");
   }
 
   const actionCategory = candidateActionCategory(c, context);
@@ -1174,15 +1177,15 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
     s -= 18;
   }
   if (context.clarifyBeforePush && actionCategory === "decide") {
-    trace.push("the strongest roles still need clarification before more effort is worth it");
+    trace.push("worth confirming the role details before investing more effort");
   } else if (context.clarifyBeforePush && actionCategory === "pursue") {
-    trace.push("application work stays secondary until the missing role facts are confirmed");
+    trace.push("application work can wait until key role details are confirmed");
   } else if (context.planningPosture === "capability" && actionCategory === "develop") {
-    trace.push("the main bottleneck is a repeated weak area, so strengthening work is promoted");
+    trace.push("a repeated gap keeps coming up — addressing it now will help across roles");
   } else if (context.planningPosture === "capability" && actionCategory === "pursue") {
-    trace.push("live pursuit stays secondary until the shared weak area is less exposed");
+    trace.push("strengthening this area first will make your applications more competitive");
   } else if ((context.planningPosture === "conversion" || context.planningPosture === "interview") && actionCategory === "develop") {
-    trace.push("development stays secondary while the main bottleneck is conversion or interview work");
+    trace.push("active applications and interviews take priority right now");
   }
 
   const startability = startabilityMomentum(c);
@@ -1259,7 +1262,10 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
     return "Open your job sources and add or apply to one real role in each active path before doing narrower comparison work.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "Open the role and draft the shortest message to someone who could help or refer you.";
+    if (candidate?.jobTruthAction === "warm") {
+      if (candidate.linkedContactNames?.length) return `Open the role and draft a message to ${candidate.linkedContactNames[0]} — they're already linked to this role.`;
+      return "Open the role and draft the shortest message to someone who could help or refer you.";
+    }
     if (candidate?.jobTruthAction === "prove") return "Open your strongest learning item or reusable example and make one weak requirement easier to back up.";
     if (candidate?.jobTruthAction === "clarify") return "Open the role and confirm the missing facts before spending more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "Open the role and send the polite follow-up or warm nudge.";
@@ -1297,7 +1303,10 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
     return "Stop after one concrete role or application move exists in each active path.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "Stop after one message to someone useful is drafted, sent, or scheduled.";
+    if (candidate?.jobTruthAction === "warm") {
+      if (candidate.linkedContactNames?.length) return `Stop after the message to ${candidate.linkedContactNames[0]} is drafted, sent, or scheduled.`;
+      return "Stop after one message to someone useful is drafted, sent, or scheduled.";
+    }
     if (candidate?.jobTruthAction === "prove") return "Stop after one weak requirement is easier to back up than it was before.";
     if (candidate?.jobTruthAction === "clarify") return "Stop after the key missing facts are confirmed.";
     if (candidate?.jobTruthAction === "follow_up") return "Stop after one follow-up or warm nudge is sent.";
@@ -1319,14 +1328,14 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
-      return `${candidate.targetRole} still needs a real role or application move, so that is the best next move now.`;
+      return `${candidate.targetRole} has no real role or application move yet — adding one is the best next move.`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
-      if (candidate?.targetRole) return `${candidate.targetRole} still needs someone useful to reach out to, so the best move is to add one contact path for it now.`;
+      if (candidate?.targetRole) return `${candidate.targetRole} has no contacts yet — add one useful person to reach out to.`;
       return broadPursuitMissingContactsSourceFrame(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `${candidate.targetRole} still needs more focused learning support, so the best move is to start learning about it now.`;
+      if (candidate?.targetRole) return `${candidate.targetRole} has no learning resources yet — start learning about it now.`;
       return broadPursuitMissingPrepSourceFrame(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1335,7 +1344,10 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
     return "You are testing several paths in parallel, so the best move is to turn each one into a real role or application move.";
   }
   if (source === "job") {
-    if (candidate?.jobTruthAction === "warm") return "This role looks promising, but the best next step is to reach out to someone useful before going in cold.";
+    if (candidate?.jobTruthAction === "warm") {
+      if (candidate.linkedContactNames?.length) return `This role looks promising — reach out to ${candidate.linkedContactNames[0]}, who's already linked to it.`;
+      return "This role looks promising, but the best next step is to reach out to someone useful before going in cold.";
+    }
     if (candidate?.jobTruthAction === "prove") return "This role looks promising, but you still need one clearer example you can point to before pushing harder.";
     if (candidate?.jobTruthAction === "clarify") return "This role needs one clarification pass before it deserves more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "This role is already moving, so follow-through matters most right now.";
@@ -1423,6 +1435,7 @@ export function planDay(
   energy: Energy, capacity: CapacityInput = 0,
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
   learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(),
+  jobContactLinks: Record<number, number[]> = {},
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const priorityCandidates: Candidate[] = [];
@@ -1431,7 +1444,7 @@ export function planDay(
   } else if (needsBroadPursuitSupportGoalCandidate(context)) {
     priorityCandidates.push(...buildBroadPursuitSupportGoalCandidates(context));
   }
-  const all = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts, learnMilestoneProgress)];
+  const all = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts, learnMilestoneProgress, jobContactLinks)];
   const ignored = all
     .map((c) => ({ c, reason: gateReason(c, context) }))
     .filter((x) => x.reason)
@@ -1451,7 +1464,7 @@ export function planDay(
     };
   }
 
-  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s);
+  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s || a.c.sourceId - b.c.sourceId);
   const maxItems = budget < 45 ? 1
     : budget < 90 ? 1
     : (energy === "low" || mode === "low") ? Math.min(2, cands.length)
@@ -1551,6 +1564,7 @@ export function planDay(
 export function recommend(
   tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], energy: Energy,
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
+  jobContactLinks: Record<number, number[]> = {},
 ) {
   const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
   const priorityCandidates: Candidate[] = [];
@@ -1559,10 +1573,10 @@ export function recommend(
   } else if (needsBroadPursuitSupportGoalCandidate(context)) {
     priorityCandidates.push(...buildBroadPursuitSupportGoalCandidates(context));
   }
-  const cands = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts)].filter((c) => passesGates(c, context));
+  const cands = [...priorityCandidates, ...gatherCandidates(tasks, jobs, learn, hustles, contacts, new Map(), jobContactLinks)].filter((c) => passesGates(c, context));
   const mode = pickDayMode(cands, energy, context);
   if (cands.length === 0) return { mode, pick: null, alternative: null };
-  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s);
+  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s || a.c.sourceId - b.c.sourceId);
   const pick = ranked[0].c;
   const alternative = ranked.map((r) => r.c).find((c) => !(c.source === pick.source && c.sourceId === pick.sourceId) && c.size === "quick") || null;
   return {

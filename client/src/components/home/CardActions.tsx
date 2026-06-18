@@ -26,7 +26,7 @@ export function CardActions({ entity, id, trackId, tracks, onViewTasks, nextTask
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} {taskActionLabelForEntity(entity)}
         </button>
         <button onClick={onViewTasks} data-testid={`button-view-tasks-${entity}-${id}`} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
-          <ListChecks className="w-3.5 h-3.5" /> View linked tasks
+          <ListChecks className="w-3.5 h-3.5" /> View tasks
         </button>
         <LinkTrackControl entity={entity} id={id} trackId={trackId} tracks={tracks} />
       </div>

@@ -193,11 +193,10 @@ export default function OnboardingView() {
 
   return (
     <div>
-      <h1 className="text-xl font-bold tracking-tight">Let's set up your strategy</h1>
+      <h1 className="text-xl font-bold tracking-tight">Build your career roadmap</h1>
       <p className="text-sm text-muted-foreground mt-1 mb-6">
-        Anchor should help even when you do not know the exact role types yet. Start
-        with a vague career concern, or pick role types directly if you already know
-        what you want to test.
+        Anchor works whether you know exactly what you want or you're still exploring.
+        Describe what's on your mind, or jump straight to adding roles if you're ready.
       </p>
 
       <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5 mb-6">
@@ -206,10 +205,10 @@ export default function OnboardingView() {
             <Compass className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold">Not sure which role types to choose?</h2>
+            <h2 className="text-sm font-semibold">Not sure where to start?</h2>
             <p className="text-xs text-muted-foreground mt-1">
-              Describe the career problem in plain English. Anchor will turn it into a
-              starting point, suggested role types, and the first tasks.
+              Describe what's on your mind in plain English. We'll turn it into a clear
+              first move, roles to explore, and your starting tasks.
             </p>
           </div>
         </div>
@@ -233,7 +232,7 @@ export default function OnboardingView() {
               ) : (
                 <Sparkles className="w-4 h-4 mr-1" />
               )}
-              {discovering ? "Thinking..." : "Help me figure it out"}
+              {discovering ? "Thinking..." : "Shape my direction"}
             </Button>
             {discovery && (
               <button
@@ -454,7 +453,7 @@ export default function OnboardingView() {
                 {discoveryCommitted && (
                   <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
                     <Check className="w-3.5 h-3.5" />
-                    Starter plan created with one clear Today item
+                    Plan created — your first task is ready in Today
                   </span>
                 )}
               </div>
@@ -466,16 +465,15 @@ export default function OnboardingView() {
       {!discovery && (
         <>
           <div className="mb-3">
-            <h2 className="text-sm font-semibold">Or pick role types directly</h2>
+            <h2 className="text-sm font-semibold">Know what you're looking for?</h2>
             <p className="text-xs text-muted-foreground mt-1">
-              If you already know what you want to test, add a few role types and Anchor
-              will keep them running in parallel.
+              Add the roles you're interested in and Anchor will track them in parallel.
             </p>
           </div>
 
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" /> Thinking about your options...
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading role suggestions...
             </div>
           ) : (
             <div className="space-y-3">
@@ -528,7 +526,7 @@ export default function OnboardingView() {
                         ) : (
                           <Plus className="w-3.5 h-3.5" />
                         )}
-                        {isAccepted ? "Added" : "Add role type"}
+                        {isAccepted ? "Added" : "Add this role"}
                       </button>
                     </div>
                   </div>

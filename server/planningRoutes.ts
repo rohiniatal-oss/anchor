@@ -108,16 +108,17 @@ async function busyMinutesFor(day: string): Promise<number> {
 }
 
 async function buildPlan(day: string, energy: Energy) {
-  const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
+  const [tasks, jobs, learn, hustles, contacts, tracks, jobContactLinks] = await Promise.all([
     storage.getTasks(),
     storage.getJobs(),
     storage.getLearn(),
     storage.getHustles(),
     storage.getContacts(),
     storage.getCareerTracks(),
+    storage.getAllJobContactLinks(),
   ]);
   const busy = await busyMinutesFor(day);
-  const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks);
+  const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks, new Map(), jobContactLinks);
   let plan = await storage.getPlanByDate(day);
   const planMode = r.mode === "low" ? "low_energy" : r.mode;
   if (!plan) plan = await storage.createPlan({ date: day, mode: planMode, energy, status: "active", enoughForToday: false, note: r.note } as any);
@@ -175,22 +176,23 @@ async function syncPlanItem(day: string, task: { id: number; planItemId?: number
 export function registerPlanningRoutes(app: Express) {
   app.post("/api/brain/recommend", async (req, res) => {
     const energy = ["low", "medium", "high"].includes(req.body?.energy) ? req.body.energy : "medium";
-    const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
+    const [tasks, jobs, learn, hustles, contacts, tracks, jobContactLinks] = await Promise.all([
       storage.getTasks(),
       storage.getJobs(),
       storage.getLearn(),
       storage.getHustles(),
       storage.getContacts(),
       storage.getCareerTracks(),
+      storage.getAllJobContactLinks(),
     ]);
-    const r = recommend(tasks, jobs, learn, hustles, energy, contacts, tracks);
+    const r = recommend(tasks, jobs, learn, hustles, energy, contacts, tracks, jobContactLinks);
     res.json(r);
   });
 
   app.post("/api/brain/plan", async (req, res) => {
     const energy = ["low", "medium", "high"].includes(req.body?.energy) ? req.body.energy : "medium";
     const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
-    const [tasks, jobs, learn, hustles, contacts, tracks, events] = await Promise.all([
+    const [tasks, jobs, learn, hustles, contacts, tracks, events, jobContactLinks] = await Promise.all([
       storage.getTasks(),
       storage.getJobs(),
       storage.getLearn(),
@@ -198,6 +200,7 @@ export function registerPlanningRoutes(app: Express) {
       storage.getContacts(),
       storage.getCareerTracks(),
       storage.getEvents(day),
+      storage.getAllJobContactLinks(),
     ]);
     let busy = 0;
     for (const e of events) {
@@ -210,7 +213,7 @@ export function registerPlanningRoutes(app: Express) {
         busy += 45;
       }
     }
-    const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks);
+    const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks, new Map(), jobContactLinks);
     res.json({ ...r, busyMinutes: busy, events });
   });
 

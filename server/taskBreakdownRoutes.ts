@@ -316,7 +316,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       if (nextStepNote) return [
         nextStepNote,
         `Review that against the ${roleLabel} requirements`,
-        `Note what still needs work`,
+        `Note any remaining gaps`,
       ];
       // Branch on what's already done — never repeat completed material.
       if (readiness === "cv") return [
@@ -353,7 +353,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
         `Open the application for ${roleLabel} and draft your answer to the first prompt`,
         `Write the key example or point you will use in the cover note or answer`,
         `Check the required format and any word limits`,
-        `Note what still needs work`,
+        `Note any remaining gaps`,
       ];
     }
     if (currentStage === "Submit") return [
@@ -400,7 +400,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
 
     if (nextStepNote) return [
       nextStepNote,
-      `Open the draft for ${assetLabel} and see what it still needs`,
+      `Open the draft for ${assetLabel} and review the current state`,
       `Note what is missing or needs strengthening`,
       `Record the next concrete step for the following session`,
     ];
@@ -445,13 +445,13 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     if (currentStage === "Build list") return [
       laneSpecific || `Find one real role for the most important path that is still missing one`,
       `Save it and mark the next action: apply, reach out first, or clarify`,
-      `Note if any other paths still need a first role`,
+      `Check which other paths could use a first role`,
     ];
     return [
       `Open the most promising saved role and take the next concrete action`,
       `Draft the application move, outreach message, or clarification note`,
       `Send it or save it ready to send`,
-      `Log which path still needs movement next`,
+      `Pick the next path to move forward`,
     ];
   }
 

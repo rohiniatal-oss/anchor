@@ -21,7 +21,7 @@ type WinsSummary = {
 
 export default function WinsView() {
   const { data: wins = [], isLoading } = useQuery<Win[]>({ queryKey: ["/api/wins"] });
-  const { data: stats } = useQuery<{ doneThisWeek: number }>({ queryKey: ["/api/stats"] });
+  const { data: stats } = useQuery<{ doneThisWeek: number; streak: number }>({ queryKey: ["/api/stats"] });
   const { data: summary } = useQuery<WinsSummary>({ queryKey: ["/api/wins/summary"] });
   const { data: careerTracks = [] } = useCareerTracks();
   const trackNameById = new Map(careerTracks.map((t) => [t.id, t.name] as const));
@@ -71,7 +71,7 @@ export default function WinsView() {
         <Trophy className="w-4 h-4 text-primary shrink-0" />
         <span className="flex-1 text-sm">{w.text}</span>
         {sourceLabel && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-primary/10 text-primary px-1.5 py-0.5">from {sourceLabel}</span>}
-        {trackName && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid={`win-track-${w.id}`} title="Derived track">{trackName}</span>}
+        {trackName && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid={`win-track-${w.id}`}>{trackName}</span>}
         {w.winCategory && <span className="hidden sm:inline-flex shrink-0 text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{WIN_CATEGORY_LABEL[w.winCategory as WinCategory] || w.winCategory}</span>}
         <span className="text-xs text-muted-foreground shrink-0">{dayLabel(w.createdAt)}</span>
         <button onClick={() => remove(w.id)} aria-label="Delete" data-testid={`button-delete-win-${w.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
@@ -83,11 +83,18 @@ export default function WinsView() {
     <div>
       <div className="flex items-start justify-between gap-4">
         <SectionHeading title="Wins" sub="Small wins count — log them so you don't forget the progress you made." />
-        {stats && stats.doneThisWeek > 0 && (
-          <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-accent text-accent-foreground px-3 py-1.5 text-sm font-medium" data-testid="text-wins-momentum">
-            <Trophy className="w-4 h-4" /> {stats.doneThisWeek} this week
-          </div>
-        )}
+        <div className="shrink-0 flex items-center gap-3">
+          {stats && stats.streak > 1 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-3 py-1.5 text-sm font-medium" data-testid="text-wins-streak">
+              {stats.streak}-day streak
+            </span>
+          )}
+          {stats && stats.doneThisWeek > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-accent-foreground px-3 py-1.5 text-sm font-medium" data-testid="text-wins-momentum">
+              <Trophy className="w-4 h-4" /> {stats.doneThisWeek} this week
+            </span>
+          )}
+        </div>
       </div>
 
       {summary && summary.total > 0 && (

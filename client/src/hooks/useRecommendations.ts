@@ -14,9 +14,16 @@ export function useSyncRecommendationsOnMount() {
 
     (async () => {
       try {
+        const freshnessRes = await apiRequest("GET", "/api/recommendations/freshness");
+        const freshness = await freshnessRes.json().catch(() => ({ needsSync: true } as { needsSync?: boolean }));
+        if (!freshness.needsSync) return;
         await apiRequest("POST", "/api/recommendations/sync");
         if (!cancelled) {
-          await queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] }),
+            queryClient.invalidateQueries({ queryKey: ["/api/strategy/front-door"] }),
+            queryClient.invalidateQueries({ queryKey: ["/api/strategy"] }),
+          ]);
         }
       } catch {}
     })();

@@ -7,6 +7,7 @@ import {
   draftOutreachMessage,
   computeBestNetworkingMove,
   computeNextAction,
+  filterTrackRelevantContacts,
   type ArchetypeKey,
   ARCHETYPE_META,
 } from "./networkStrategy";
@@ -30,9 +31,10 @@ export function registerNetworkStrategyRoutes(app: Express) {
     ]);
     const track = tracks.find((t) => t.id === trackId);
     if (!track) return res.status(404).json({ error: "Track not found" });
+    const relevantContacts = filterTrackRelevantContacts(track, contacts);
 
     try {
-      const gaps = await generateNetworkGaps(track, contacts);
+      const gaps = await generateNetworkGaps(track, relevantContacts);
       if (gaps.length === 0) return res.status(500).json({ error: "Could not generate gaps right now." });
 
       const stored = await storage.upsertNetworkGaps(trackId, gaps.map((g) => ({

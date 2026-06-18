@@ -24,10 +24,25 @@ export function ProfileView() {
   async function save() {
     setSaving(true);
     try {
-      await apiRequest("PATCH", "/api/profile", { cvText });
+      const res = await apiRequest("PATCH", "/api/profile", { cvText });
+      const body = await res.json().catch(() => ({} as { refreshTriggered?: boolean }));
       await queryClient.invalidateQueries({ queryKey: ["/api/profile"] });
+      if (body.refreshTriggered) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] }),
+          queryClient.invalidateQueries({ queryKey: ["/api/strategy"] }),
+          queryClient.invalidateQueries({ queryKey: ["/api/strategy/front-door"] }),
+          queryClient.invalidateQueries({ queryKey: ["/api/strategy/diagnostics"] }),
+          queryClient.invalidateQueries({ queryKey: ["/api/goals/state"] }),
+        ]);
+      }
       setDirty(false);
-      toast({ title: "CV saved." });
+      toast({
+        title: "CV saved.",
+        description: body.refreshTriggered
+          ? "Recommendations refreshed. Networking intelligence is updating in the background."
+          : undefined,
+      });
     } catch {
       toast({ title: "Couldn't save", description: "Try again in a moment." });
     } finally {

@@ -2,6 +2,7 @@ import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 import type { CareerTrack, Contact, Job, NetworkGap } from "@shared/schema";
+import { getTrackId } from "@shared/domainState";
 
 export type ArchetypeKey =
   | "recent_switcher"
@@ -90,6 +91,42 @@ function safeParseArray<T>(raw: string, fallback: T[] = []): T[] {
 function extractJson(text: string): any {
   const clean = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   try { return JSON.parse(clean); } catch { return null; }
+}
+
+function norm(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function trackMatchKeys(track: CareerTrack) {
+  return [track.name, track.targetRoleArchetype, track.slug]
+    .filter(Boolean)
+    .map((value) => norm(String(value)))
+    .filter(Boolean);
+}
+
+function contactTrackText(contact: Contact) {
+  return norm([
+    contact.who,
+    contact.targetRole,
+    contact.targetOrg,
+    contact.sector,
+    contact.why,
+    contact.sourceNetwork,
+  ].filter(Boolean).join(" "));
+}
+
+function matchesTrackByText(track: CareerTrack, contact: Contact) {
+  const hay = contactTrackText(contact);
+  if (!hay) return false;
+  return trackMatchKeys(track).some((key) =>
+    key.split(" ").filter((word) => word.length > 3).some((word) => hay.includes(word)),
+  );
+}
+
+export function filterTrackRelevantContacts(track: CareerTrack, contacts: Contact[]) {
+  return contacts.filter((contact) =>
+    getTrackId("contacts", contact) === track.id || matchesTrackByText(track, contact),
+  );
 }
 
 export async function generateNetworkGaps(

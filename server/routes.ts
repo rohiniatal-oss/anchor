@@ -21,6 +21,7 @@ import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
+import { getRecommendationFreshnessSnapshot } from "./recommendationFreshness";
 import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
 import { COACH_PREAMBLE } from "./userPromptProfile";
@@ -259,6 +260,13 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     (d) => storage.createContact(d), (id, d) => storage.updateContact(id, d), (id) => storage.deleteContact(id));
   app.get("/api/recommendations", async (_q, res) => {
     res.json(await storage.getRecommendations());
+  });
+  app.get("/api/recommendations/freshness", async (_req, res, next) => {
+    try {
+      res.json(await getRecommendationFreshnessSnapshot());
+    } catch (err) {
+      next(err);
+    }
   });
   app.post("/api/recommendations/sync", async (_req, res, next) => {
     try {

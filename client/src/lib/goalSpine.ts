@@ -704,15 +704,15 @@ export function nextLaneGap(goal: CareerGoalT, combination: string) {
     return {
       label: "Well supported",
       detail: support.hasExampleProjectSupport
-        ? "This target has a role, a contact, a learning focus, and an optional writing/project idea."
-        : "This target has a role, a contact, and a learning focus. Optional writing or project ideas can compound later.",
+        ? "This target has a role, a contact, a targeted learning item, and an optional writing/project idea."
+        : "This target has a role, a contact, and a targeted learning item. Optional writing or project ideas can compound later.",
       tone: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
     };
   }
   const missing: string[] = [];
   if (!support.hasRole) missing.push("a real role");
   if (!support.hasNetworkSupport) missing.push("a contact");
-  if (!support.hasPrepSupport) missing.push("a learning focus");
+  if (!support.hasPrepSupport) missing.push("a targeted learning item");
   return {
     label: `Needs ${missing.join(" + ")}`,
     detail: `Add any of these to strengthen this target: ${missing.join(", ")}.`,
@@ -755,7 +755,7 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
       key: "prep",
       label: "Need learning",
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
-      text: compactLanePreview(missingPrepSupport, "Every active role type has a learning focus."),
+      text: compactLanePreview(missingPrepSupport, "Every active role type has a targeted learning item."),
     });
   }
   if (lines.length === 0) {
@@ -763,7 +763,7 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
       key: "covered",
       label: "Covered",
       tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
-      text: "Each active role type has a real role, someone useful to reach out to, and a learning focus.",
+      text: "Each active role type has a real role, someone useful to reach out to, and a targeted learning item.",
     });
   }
   return lines;

@@ -505,8 +505,8 @@ function JobCapabilitySupport({
             {savedLearningRec
               ? "Anchor already saved a useful learning item for this track, so you can start from that instead of setting one up from scratch."
               : needsPrep
-                ? "This role may need clearer learning support. Start learning about it if you want more focused help here."
-                : "No learning is linked to this role type yet. Set one up if you want extra support for this role or interview."}
+                ? "This role may need one targeted learning item. Add one if you want stronger interview or application support here."
+                : "No learning item is linked to this role type yet. Add one if you want more support for this role or interview."}
           </p>
           {requiredDomains.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
@@ -533,7 +533,7 @@ function JobCapabilitySupport({
               className="text-[11px] text-primary font-medium hover:underline inline-flex items-center gap-1"
               data-testid={`button-open-learn-from-job-${j.id}`}
             >
-              <GraduationCap className="w-3.5 h-3.5" /> Start learning about
+              <GraduationCap className="w-3.5 h-3.5" /> Add learning item
             </button>
           )}
         </div>
@@ -680,7 +680,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, o
         ? { label: "Strengthen fit", icon: Hammer, run: async () => createSupportTask(supportItems[0]) }
         : savedLearningRec
           ? { label: "Use saved learning item", icon: GraduationCap, run: async () => onAcceptRecommendation(savedLearningRec) }
-          : { label: "Start learning about", icon: GraduationCap, run: async () => openLearnIntake() };
+          : { label: "Add learning item", icon: GraduationCap, run: async () => openLearnIntake() };
     }
     if (truth.action === "clarify") {
       return j.url
@@ -884,7 +884,7 @@ export function JobsView() {
     ]);
     toast({
       title: entityType === "contact" ? "Added to your network." : "Added to your learning list.",
-      description: entityType === "contact" ? "This should make it easier to move the role with a real person who can help." : "This gives the role focused learning support instead of a blank starter.",
+      description: entityType === "contact" ? "This should make it easier to move the role with a real person who can help." : "This gives the role one targeted learning item instead of a blank start.",
     });
   }
 

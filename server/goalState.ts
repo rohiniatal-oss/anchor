@@ -1117,7 +1117,7 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
         return {
           mustDo: `Advance the strongest application move: ${snapshot.leadApplicationTruth?.nextMove || "push the most credible live role forward"}`,
           next: "Keep the broad portfolio warm while you push this application",
-          optional: "Add one missing contact or learning focus for a parallel path when done",
+          optional: "Add one missing contact or targeted learning item for a parallel path when done",
           stopRule: "Stop once the application move is done.",
         };
       }
@@ -1135,7 +1135,7 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
               coverage.missingNetworkSupport,
               coverage.missingPrepSupport,
             ),
-        next: "Keep live roles moving while you add the missing contact or learning focus.",
+        next: "Keep live roles moving while you add the missing contact or targeted learning item.",
         optional: "If useful, add one optional example/project idea that could help more than one role in the same path.",
         stopRule: focusNetwork
           ? broadPursuitNextMissingContactStopRule(coverage.missingNetworkSupport)

@@ -266,7 +266,7 @@ export function CareerCompassCard({
             )}
             {firstMissingPrep && (
               <Button size="sm" variant="outline" onClick={() => openLearnDraftForCombination(firstMissingPrep)} data-testid="button-compass-add-prep">
-                <GraduationCap className="w-4 h-4 mr-1" /> Start learning about
+                <GraduationCap className="w-4 h-4 mr-1" /> Add learning item
               </Button>
             )}
           </div>
@@ -283,7 +283,7 @@ export function CareerCompassCard({
             )}
             {firstMissingPrep && (
               <p className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> still needs a learning focus if you want clearer interview or application support.
+                <span className="font-medium text-foreground">{displayCombinationLabel(firstMissingPrep)}</span> still needs one targeted learning item if you want clearer interview or application support.
               </p>
             )}
           </div>

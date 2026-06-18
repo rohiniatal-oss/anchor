@@ -172,8 +172,12 @@ These items are fixed in the active clean worktree on top of `c21ecb5`, committe
 - `AF4` partially fixed locally: saving the CV now triggers recommendation refresh immediately and network-intelligence refresh in the background.
 - `AF5` / `CQ6` fixed locally: recommendation sync on mount now checks a read-only freshness snapshot first instead of always posting.
 - `PL8` fixed locally: job-specific prep arcs are no longer triggered by JD text alone; they now only auto-create once the role is in `interviewing`, which matches the existing job-truth model and keeps saved roles lightweight longer.
+- `UX5` partially fixed locally: the main explanation surfaces now use plainer, more consistent bottleneck-first wording. Across Strategy, Jobs, Learn, compass surfaces, and broad-pursuit planner copy, the app now prefers `targeted learning item` / `add learning item` over internal-sounding phrases like `learning focus` or `start learning about`.
 
 Local verification for this slice:
 - TypeScript: passed
 - Targeted pure tests: `54/54` passed
+- TypeScript after the wording-alignment slice: passed
+- Planner/front-door pure tests after the wording-alignment slice: passed
 - Route-level recommendation tests: still blocked by the known local `better-sqlite3` native-binding issue in harness-backed SQLite tests
+- Goal-state harness tests for this slice are also still blocked by the same local `better-sqlite3` native-binding issue

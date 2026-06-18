@@ -102,14 +102,14 @@ function buildSteps(
             ? `Use the saved ${domainLabel} learning item for "${track.name}"`
             : `Use the saved learning item for "${track.name}"`
           : domainLabel
-            ? `Set up a ${domainLabel} learning focus for "${track.name}"`
-            : `Set up a learning focus for "${track.name}"`,
+            ? `Add one ${domainLabel} learning item for "${track.name}"`
+            : `Add one learning item for "${track.name}"`,
         detail: savedLearningRec
           ? `${savedLearningRec.title} is already waiting in Learn, so you can begin from that instead of setting one up from scratch.`
           : domainLabel
-            ? `${domainLabel} is a real weak area for this role type, so Anchor should give you one clear way to begin.`
-            : "This track needs its first learning focus before you can be ready to apply.",
-        action: savedLearningRec ? "Open learning item" : "Start learning about",
+            ? `${domainLabel} is the main weak area here, so the next useful move is one targeted learning item instead of generic browsing.`
+            : "This track needs one targeted learning item before it will feel more ready to pursue.",
+        action: savedLearningRec ? "Open learning item" : "Add learning item",
         mode: savedLearningRec ? "do-now" : "setup",
         onClick: savedLearningRec
           ? () => onOpenTab("learn")

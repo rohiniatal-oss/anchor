@@ -230,12 +230,12 @@ export function BroadPursuitParallelSupportKickoff({
             {mode === "network" ? "Contacts to add" : "Suggested learning"}
           </p>
           <p className="text-sm font-medium mt-1">
-            {mode === "network" ? "Add one contact for your weakest role types." : "Start learning about your weakest role types."}
+            {mode === "network" ? "Add one contact for your weakest role types." : "Add one learning item for your weakest role types."}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
             {mode === "network"
               ? `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a contact.`
-              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a learning focus.`}
+              : `${missingSupport.length} role type${missingSupport.length === 1 ? "" : "s"} still need a targeted learning item.`}
           </p>
           {canStartWithoutRole && (
             <p className="text-xs text-muted-foreground mt-1">
@@ -273,7 +273,7 @@ export function BroadPursuitParallelSupportKickoff({
               ? (support.hasRole ? "Add first contact" : "Add contact for this target")
               : "Add another contact"
             : supportMissing
-              ? (support.hasRole ? "Start learning about this" : "Start learning about this target")
+              ? (support.hasRole ? "Add learning item" : "Add learning item for this target")
               : "Add more learning";
           const showRoleStateBadge = !canStartWithoutRole;
           const showSupportDetail = !canStartWithoutRole;

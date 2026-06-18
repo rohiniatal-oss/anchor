@@ -113,7 +113,7 @@ function proofLabel(level: TruthLevel) {
 function actionLabel(action: JobTruthAction) {
   return action === "apply" ? "Apply"
     : action === "warm" ? "Reach out first"
-    : action === "prove" ? "Prep first"
+    : action === "prove" ? "Strengthen fit first"
     : action === "reject" ? "Skip for now"
     : action === "prepare" ? "Prepare"
     : action === "follow_up" ? "Follow up"

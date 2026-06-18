@@ -9,14 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { mutateAndInvalidate } from "@/lib/api";
-import { GOAL_SPINE_QUERY_KEYS, PENDING_CONTACT_DRAFT_KEY, PENDING_LEARN_DRAFT_KEY, queueIntakeDraft, buildPrefillHash } from "@/lib/homeTypes";
+import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
 import { useRecommendations } from "@/hooks/useRecommendations";
 import { CareerCompassCard } from "@/components/home/CareerCompassCard";
 import { GroupLabel } from "@/components/home/GroupLabel";
 import { Loading } from "@/components/home/Loading";
-import { learningGapPrepStarter } from "@shared/learningGapSuggestions";
-import { buildPrepStarterDraft } from "@/lib/learnStarter";
+import { deriveTrackNextAction, runTrackNextAction } from "@/lib/trackNextAction";
 import type { Tab } from "@/lib/homeTypes";
 import type { CareerGoalT, GoalsStateResponseT } from "@/lib/goalSpine";
 import { WIN_CATEGORY_LABEL } from "@/lib/homeTypes";
@@ -210,36 +209,8 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const visibleRecommendations = recommendations.filter((rec) => !["accepted", "rejected", "archived", "duplicate", "stale"].includes(rec.status));
   const trackNameById = new Map(careerTracks.map((track) => [track.id, track.name]));
 
-  function openLearnDraftFromGap(t: TrackDiagnostic) {
-    const topGapDomain = t.learningGap?.topGapDomain?.trim();
-    const topGapLabel = t.learningGap?.topGapLabel?.trim();
-    if (!topGapDomain || !topGapLabel) return;
-    const draft = buildPrepStarterDraft({
-      subjectText: t.name,
-      relatedTrackId: t.id,
-      explicitDomainKey: topGapDomain as any,
-      explicitDomainLabel: topGapLabel,
-      noteIntro: `Learning focus for ${t.name}.`,
-    });
-    queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
-    window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
+  function openLearnDraftFromGap(_t: TrackDiagnostic) {
     onOpenTab("learn");
-  }
-
-  function openContactDraftForTrack(t: TrackDiagnostic) {
-    const draft = {
-      sector: t.name,
-      targetOrg: "",
-      targetRole: t.name,
-      why: `Could help you reality-check or open doors for ${t.name}.`,
-      relatedTrackId: t.id,
-      askType: "advice",
-      relationshipStrength: "cold",
-      status: "to_contact",
-    };
-    queueIntakeDraft(PENDING_CONTACT_DRAFT_KEY, draft);
-    window.location.hash = buildPrefillHash("/network", "contactDraft", draft);
-    onOpenTab("network");
   }
 
   function openTrackTab(tab: Tab) {
@@ -248,28 +219,14 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   const TrackCard = ({ t }: { t: TrackDiagnostic }) => {
     const stalled = t.bottleneck !== "none";
-    const needsPrepItem = !!(t.learningGap?.gapCount && t.learningGap.topGapLabel && !t.learningGap.topGapHasResource);
-    const prepStarter = needsPrepItem && t.learningGap?.topGapDomain && t.learningGap?.topGapLabel
-      ? learningGapPrepStarter(t.learningGap.topGapDomain as any, t.learningGap.topGapLabel)
-      : null;
-    const needsFirstRole = t.bottleneck === "direction" && t.counts.jobs === 0;
-    const needsContactPath = t.bottleneck === "warmth" && t.counts.contacts === 0;
-    const needsContactFollowThrough = t.bottleneck === "warmth" && t.counts.contacts > 0;
+    const nextAction = deriveTrackNextAction(t, visibleRecommendations);
+    const ActionIcon = nextAction?.icon;
+    const needsPrepItem = false;
+    const prepStarter = { title: "" };
+    const needsContactFollowThrough = false;
+    const savedLearningRec: RecommendationItem | null = null;
 
     // Use a saved recommendation when one exists for this gap — avoids a blank form.
-    const savedLearningRec = needsPrepItem
-      ? (visibleRecommendations.find((r) =>
-          r.linkedTrackId === t.id &&
-          r.linkedGapKey === (t.learningGap?.topGapDomain ?? "") &&
-          r.collection === "learning-corpus"
-        ) ?? null)
-      : null;
-    const savedContactRec = needsContactPath
-      ? (visibleRecommendations.find((r) =>
-          r.linkedTrackId === t.id &&
-          r.collection === "network-targets"
-        ) ?? null)
-      : null;
 
     return (
       <div className="rounded-xl border border-card-border bg-card p-4" data-testid={`track-${t.slug}`}>
@@ -288,30 +245,26 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         ) : (
           <p className="text-xs text-primary mt-2.5 flex items-start gap-1" data-testid={`track-health-${t.slug}`}><ArrowUpRight className="w-3.5 h-3.5 shrink-0 mt-px" />{t.recommendedMove}</p>
         )}
-        {(needsFirstRole || needsPrepItem || needsContactPath || needsContactFollowThrough) && (
-          <div className="mt-2.5 space-y-2">
-            {needsFirstRole && (
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">No live role saved yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
-                <Button size="sm" variant="outline" onClick={() => openTrackTab("jobs")} data-testid={`button-add-gap-job-${t.slug}`}>
-                  <Briefcase className="w-4 h-4 mr-1" /> Add role
-                </Button>
+        {nextAction && ActionIcon && (
+          <div className="mt-2.5">
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-foreground leading-snug">{nextAction.title}</p>
+                <p className="text-xs text-muted-foreground mt-1 leading-snug">{nextAction.detail}</p>
               </div>
-            )}
-            {needsContactPath && (
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
-                <p className="text-xs text-muted-foreground leading-snug">No one to reach out to yet for <span className="font-medium text-foreground">{t.name}</span>.</p>
-                {savedContactRec ? (
-                  <Button size="sm" variant="outline" onClick={() => acceptRecommendation(savedContactRec)} data-testid={`button-use-saved-contact-${t.slug}`}>
-                    <Users className="w-4 h-4 mr-1" /> Use saved suggestion
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="outline" onClick={() => openContactDraftForTrack(t)} data-testid={`button-add-gap-contact-${t.slug}`}>
-                    <Users className="w-4 h-4 mr-1" /> Add contact
-                  </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void runTrackNextAction(
+                  nextAction,
+                  onOpenTab,
+                  async (rec) => acceptRecommendation(rec as RecommendationItem),
                 )}
-              </div>
-            )}
+                data-testid={`button-track-next-action-${t.slug}`}
+              >
+                <ActionIcon className="w-4 h-4 mr-1" /> {nextAction.action}
+              </Button>
+            </div>
             {needsContactFollowThrough && (
               <div className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-muted/35 px-3 py-2">
                 <p className="text-xs text-muted-foreground leading-snug">You have contacts for <span className="font-medium text-foreground">{t.name}</span> — check if any need a follow-up or a clearer ask.</p>

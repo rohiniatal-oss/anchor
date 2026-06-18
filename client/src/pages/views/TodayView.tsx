@@ -706,6 +706,32 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     } finally { setSynthLoading((s) => ({ ...s, [itemId]: null })); }
   }
 
+  async function acceptRecommendation(rec: Recommendation) {
+    const entityType =
+      rec.collection === "learning-corpus" ? "learn"
+      : rec.collection === "network-targets" ? "contact"
+      : rec.collection === "project-ideas" ? "hustle"
+      : "task";
+    await mutateAndInvalidate("POST", `/api/recommendations/${rec.id}/accept`, { entityType }, [
+      "/api/recommendations",
+      "/api/learn",
+      "/api/contacts",
+      "/api/jobs",
+      "/api/hustles",
+      "/api/tasks",
+      "/api/strategy",
+      "/api/strategy/diagnostics",
+      "/api/strategy/front-door",
+      ...GOAL_SPINE_QUERY_KEYS,
+    ]);
+    onOpenTab(
+      entityType === "learn" ? "learn"
+      : entityType === "contact" ? "network"
+      : entityType === "hustle" ? "strategy"
+      : "today",
+    );
+  }
+
   async function quickCapture() {
     const t = quickText.trim();
     if (!t || capturingQuick) return;
@@ -1205,6 +1231,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               tracks={diagnosticTracks}
               recommendations={recommendations}
               onOpenTab={onOpenTab}
+              onAcceptRecommendation={acceptRecommendation}
             />
           )}
         </div>
@@ -1216,6 +1243,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           tracks={diagnosticTracks}
           recommendations={recommendations}
           onOpenTab={onOpenTab}
+          onAcceptRecommendation={acceptRecommendation}
           compact
           modeFilter="setup-only"
         />

@@ -1,36 +1,14 @@
-import { Briefcase, GraduationCap, Users, ListChecks, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { buildPrepStarterDraft } from "@/lib/learnStarter";
-import {
-  buildPrefillHash,
-  PENDING_CONTACT_DRAFT_KEY,
-  PENDING_LEARN_DRAFT_KEY,
-  queueIntakeDraft,
-  type Tab,
-} from "@/lib/homeTypes";
 import type { Recommendation } from "@shared/schema";
+import type { Tab } from "@/lib/homeTypes";
+import {
+  deriveTrackNextActions,
+  runTrackNextAction,
+  type TrackActionDiagnostic,
+  type TrackNextAction,
+} from "@/lib/trackNextAction";
 
-type TrackDiagnostic = {
-  id: number;
-  name: string;
-  status: string;
-  bottleneck: string;
-  bottleneckLabel: string;
-  recommendedMove: string;
-  learningGap: { topGapDomain: string | null; topGapLabel: string | null } | null;
-  counts: { jobs: number; contacts: number; tasks?: number };
-};
-
-type NextStep = {
-  icon: typeof Briefcase;
-  title: string;
-  detail: string;
-  action: string;
-  mode: "setup" | "do-now";
-  onClick: () => void;
-};
-
-function nextStepsFooterText(steps: NextStep[]) {
+function nextStepsFooterText(steps: TrackNextAction[]) {
   const setupCount = steps.filter((step) => step.mode === "setup").length;
   const doNowCount = steps.filter((step) => step.mode === "do-now").length;
   if (doNowCount > 0 && setupCount === 0) {
@@ -42,167 +20,39 @@ function nextStepsFooterText(steps: NextStep[]) {
   return "Add one or two of these - I will shape a day plan from there.";
 }
 
-function visibleLearningRecommendationForTrack(
-  recs: Recommendation[],
-  trackId: number,
-  gapKey: string | null,
-) {
-  return (
-    recs.find((rec) =>
-      rec.linkedTrackId === trackId &&
-      rec.collection === "learning-corpus" &&
-      !["accepted", "rejected", "archived", "duplicate", "stale"].includes(rec.status) &&
-      (!gapKey || rec.linkedGapKey === gapKey)
-    ) || null
-  );
-}
-
-function buildSteps(
-  tracks: TrackDiagnostic[],
-  recs: Recommendation[],
-  onOpenTab: (t: Tab) => void,
-): NextStep[] {
-  const steps: NextStep[] = [];
-  const seen = new Set<string>();
-
-  for (const track of tracks) {
-    if (track.status !== "active") continue;
-    const b = track.bottleneck;
-    if (b === "none") continue;
-    const key = `${track.id}:${b}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    if (b === "direction") {
-      const hasSavedRole = track.counts.jobs > 0;
-      steps.push({
-        icon: Briefcase,
-        title: hasSavedRole
-          ? `Review the strongest role for "${track.name}"`
-          : `Add a job or role for "${track.name}"`,
-        detail: hasSavedRole
-          ? track.recommendedMove || track.bottleneckLabel || "You already have roles here, so the next move is to sharpen which one is worth pursuing."
-          : "Even a wishlist role gives this track direction - the search cannot move without one.",
-        action: hasSavedRole ? "Open jobs" : "Add a job",
-        mode: hasSavedRole ? "do-now" : "setup",
-        onClick: () => onOpenTab("jobs"),
-      });
-    } else if (b === "learning") {
-      const domainLabel = track.learningGap?.topGapLabel || null;
-      const domain = domainLabel || track.name;
-      const savedLearningRec = visibleLearningRecommendationForTrack(
-        recs,
-        track.id,
-        track.learningGap?.topGapDomain || null,
-      );
-      steps.push({
-        icon: GraduationCap,
-        title: savedLearningRec
-          ? domainLabel
-            ? `Use the saved ${domainLabel} learning item for "${track.name}"`
-            : `Use the saved learning item for "${track.name}"`
-          : domainLabel
-            ? `Add one ${domainLabel} learning item for "${track.name}"`
-            : `Add one learning item for "${track.name}"`,
-        detail: savedLearningRec
-          ? `${savedLearningRec.title} is already waiting in Learn, so you can begin from that instead of setting one up from scratch.`
-          : domainLabel
-            ? `${domainLabel} is the main weak area here, so the next useful move is one targeted learning item instead of generic browsing.`
-            : "This track needs one targeted learning item before it will feel more ready to pursue.",
-        action: savedLearningRec ? "Open learning item" : "Add learning item",
-        mode: savedLearningRec ? "do-now" : "setup",
-        onClick: savedLearningRec
-          ? () => onOpenTab("learn")
-          : () => {
-              const draft = buildPrepStarterDraft({
-                subjectText: domain,
-                relatedTrackId: track.id,
-                noteIntro: `Needed for ${track.name}.`,
-                fallbackTitle: `Intro to ${domain}`,
-              });
-              queueIntakeDraft(PENDING_LEARN_DRAFT_KEY, draft);
-              window.location.hash = buildPrefillHash("/learn", "learnDraft", draft);
-              onOpenTab("learn");
-            },
-      });
-    } else if (b === "readiness") {
-      const hasTaskTrail = (track.counts.tasks || 0) > 0;
-      steps.push({
-        icon: hasTaskTrail ? ListChecks : Briefcase,
-        title: hasTaskTrail
-          ? `Review the strongest role for "${track.name}"`
-          : `Work the strongest role for "${track.name}"`,
-        detail: track.recommendedMove || track.bottleneckLabel || "A real role is close enough to work on now, so the next move should make it more ready rather than add more learning.",
-        action: "Open jobs",
-        mode: "do-now",
-        onClick: () => onOpenTab("jobs"),
-      });
-    } else if (b === "warmth") {
-      const hasContacts = track.counts.contacts > 0;
-      steps.push({
-        icon: Users,
-        title: hasContacts
-          ? `Follow up or sharpen the ask for "${track.name}"`
-          : `Add a contact for "${track.name}"`,
-        detail: hasContacts
-          ? track.recommendedMove || track.bottleneckLabel || `You already have people linked here, so the next move is to use that access better.`
-          : `You have live jobs for this track but no one to reach out to yet. One advice conversation could open doors.`,
-        action: hasContacts ? "Open network" : "Add a contact",
-        mode: hasContacts ? "do-now" : "setup",
-        onClick: () => {
-          if (hasContacts) {
-            onOpenTab("network");
-            return;
-          }
-          const draft = {
-            relatedTrackId: track.id,
-            askType: "advice",
-            relationshipStrength: "cold",
-            status: "to_contact",
-            who: `Someone working in ${track.name.toLowerCase()}`,
-            why: `Could help you reality-check or open doors for ${track.name}.`,
-          };
-          queueIntakeDraft(PENDING_CONTACT_DRAFT_KEY, draft);
-          window.location.hash = buildPrefillHash("/network", "contactDraft", draft);
-          onOpenTab("network");
-        },
-      });
-    } else if (b === "execution") {
-      continue;
-    } else if (b === "proof") {
-      steps.push({
-        icon: Rocket,
-        title: `Move a stalled project forward for "${track.name}"`,
-        detail: "A project you started has stalled. One concrete step today keeps it moving.",
-        action: "Open projects",
-        mode: "do-now",
-        onClick: () => onOpenTab("learn"),
-      });
-    }
-
-    if (steps.length >= 3) break;
-  }
-
-  return steps;
-}
-
 export function StrategicNextSteps({
   tracks,
   recommendations,
   onOpenTab,
+  onAcceptRecommendation,
   compact = false,
   modeFilter = "all",
 }: {
-  tracks: TrackDiagnostic[];
+  tracks: TrackActionDiagnostic[];
   recommendations: Recommendation[];
   onOpenTab: (t: Tab) => void;
+  onAcceptRecommendation?: (rec: Recommendation) => Promise<void>;
   compact?: boolean;
   modeFilter?: "all" | "setup-only";
 }) {
-  const allSteps = buildSteps(tracks, recommendations, onOpenTab);
+  const allSteps = deriveTrackNextActions(tracks, recommendations).slice(0, 3);
   const steps = modeFilter === "setup-only"
     ? allSteps.filter((step) => step.mode === "setup")
     : allSteps;
+
+  async function handleAction(step: TrackNextAction) {
+    await runTrackNextAction(
+      step,
+      onOpenTab,
+      async (rec) => {
+        if (onAcceptRecommendation) {
+          await onAcceptRecommendation(rec as Recommendation);
+          return;
+        }
+        onOpenTab(step.kind === "warmth_saved" ? "network" : step.kind === "learning_saved" ? "learn" : "today");
+      },
+    );
+  }
 
   if (steps.length === 0) {
     if (compact) return null;
@@ -228,7 +78,7 @@ export function StrategicNextSteps({
           <p className="text-sm font-medium leading-snug">{top.title}</p>
           <p className="text-xs text-muted-foreground mt-0.5">{top.detail}</p>
         </div>
-        <Button size="sm" variant="outline" onClick={top.onClick} className="shrink-0 text-xs">
+        <Button size="sm" variant="outline" onClick={() => void handleAction(top)} className="shrink-0 text-xs">
           {top.action}{" ->"}
         </Button>
       </div>
@@ -244,7 +94,7 @@ export function StrategicNextSteps({
         {steps.map((step, i) => {
           const Icon = step.icon;
           return (
-            <div key={i} className="flex items-start gap-3 rounded-xl bg-card border border-card-border p-3.5">
+            <div key={`${step.trackId}:${step.kind}`} className="flex items-start gap-3 rounded-xl bg-card border border-card-border p-3.5">
               <Icon className="w-4 h-4 text-primary mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium leading-snug">{step.title}</p>
@@ -253,7 +103,7 @@ export function StrategicNextSteps({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={step.onClick}
+                onClick={() => void handleAction(step)}
                 className="shrink-0 text-xs"
                 data-testid={`button-strategic-step-${i}`}
               >

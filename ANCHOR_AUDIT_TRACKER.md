@@ -179,5 +179,11 @@ Local verification for this slice:
 - Targeted pure tests: `54/54` passed
 - TypeScript after the wording-alignment slice: passed
 - Planner/front-door pure tests after the wording-alignment slice: passed
+- Shared next-action consistency slice: passed
+  - `client/src/lib/trackNextAction.ts`
+  - `client/src/components/home/StrategicNextSteps.tsx`
+  - `client/src/pages/views/StrategyView.tsx`
+  - `client/src/pages/views/TodayView.tsx`
+- Targeted pure tests after the next-action consistency slice: `39/39` passed
 - Route-level recommendation tests: still blocked by the known local `better-sqlite3` native-binding issue in harness-backed SQLite tests
 - Goal-state harness tests for this slice are also still blocked by the same local `better-sqlite3` native-binding issue

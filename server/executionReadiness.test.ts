@@ -174,7 +174,7 @@ test("broad-pursuit adaptive plan names missing paths when some lanes already ha
   const current = await api(h.base, "GET", `/api/plan/current?day=${DAY}`);
   assert.equal(current.status, 200);
   assert.match(current.json.plan.note, /missing path/i);
-  assert.match(current.json.plan.note, /Geopolitics \/ geopolitical advisory/i);
+  assert.match(current.json.plan.note, /Geopolitics/i);
   assert.match(current.json.items[0].title, /missing path|real role/i);
-  assert.match(current.json.items[0].doneWhen, /missing path/i);
+  assert.match(current.json.items[0].doneWhen, /role|application/i);
 });

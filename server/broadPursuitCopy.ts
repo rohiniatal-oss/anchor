@@ -1,9 +1,16 @@
+export function displayCombination(raw: string) {
+  const parts = raw.split(/\s+x\s+/i);
+  if (parts.length !== 2) return raw;
+  const topic = parts[0].replace(/^AI \/ technology strategy$/i, "AI strategy").replace(/^Geopolitics \/ geopolitical advisory$/i, "Geopolitics");
+  return `${topic} + ${parts[1]}`;
+}
+
 export function broadPursuitPathList(
   combinations: string[] = [],
   fallback = "each role type you still want to test",
   max = combinations.length || 0,
 ) {
-  const shown = combinations.slice(0, Math.max(0, max)).filter(Boolean);
+  const shown = combinations.slice(0, Math.max(0, max)).filter(Boolean).map(displayCombination);
   return shown.length > 0 ? shown.join("; ") : fallback;
 }
 
@@ -83,17 +90,17 @@ export function broadPursuitMissingRolesDecisionQuestion(combinations: string[] 
 }
 
 export function broadPursuitNextMissingRoleTodayMustDo(combinations: string[] = []) {
-  const target = combinations.length ? combinations[combinations.length - 1] : "the next missing path";
+  const target = combinations.length ? displayCombination(combinations[combinations.length - 1]) : "the next missing path";
   return `Add the next real role or application move for ${target}.`;
 }
 
 export function broadPursuitNextMissingRoleStopRule(combinations: string[] = []) {
-  const target = combinations.length ? combinations[combinations.length - 1] : "the next missing path";
+  const target = combinations.length ? displayCombination(combinations[combinations.length - 1]) : "the next missing path";
   return `Stop after ${target} has one concrete role or application move.`;
 }
 
 export function broadPursuitNextMissingRolePlanNote(combinations: string[] = []) {
-  const target = combinations.length ? combinations[combinations.length - 1] : "the next missing path";
+  const target = combinations.length ? displayCombination(combinations[combinations.length - 1]) : "the next missing path";
   return `You are testing several paths in parallel, but ${target} has no real role or application step yet. Do that before drifting back into abstract comparison.`;
 }
 

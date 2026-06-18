@@ -726,9 +726,8 @@ export function nextLaneGap(goal: CareerGoalT, combination: string) {
 
 export function compactLanePreview(items: string[], fallback: string, limit = 2) {
   if (items.length === 0) return fallback;
-  const shown = items.slice(0, limit).map(displayCombinationLabel);
-  const remainder = items.length - shown.length;
-  return `${shown.join("; ")}${remainder > 0 ? ` +${remainder} more` : ""}`;
+  if (items.length === 1) return `${displayCombinationLabel(items[0])} still needs this.`;
+  return `${items.length} role types still need this.`;
 }
 
 export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPursuitGapLineT[] {
@@ -736,34 +735,34 @@ export function broadPursuitGapLines(coverage: BroadPursuitCoverageT): BroadPurs
   if (coverage.missing.length > 0) {
     lines.push({
       key: "roles",
-      label: "Need roles",
+      label: `${coverage.missing.length} need a role`,
       tone: "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
-      text: compactLanePreview(coverage.missing, "Every active role type has a real role."),
+      text: "Save one real role per type — that's enough to start learning what's viable.",
     });
   }
   if (coverage.missingNetworkSupport.length > 0) {
     lines.push({
       key: "contacts",
-      label: "Need contacts",
+      label: `${coverage.missingNetworkSupport.length} need a contact`,
       tone: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
-      text: compactLanePreview(coverage.missingNetworkSupport, "Every active role type has someone useful to reach out to."),
+      text: "Add one person you could realistically reach out to for each role type.",
     });
   }
   const missingPrepSupport = coverage.missingPrepSupport || coverage.missingLearningSupport;
   if (missingPrepSupport.length > 0) {
     lines.push({
       key: "prep",
-      label: "Need learning",
+      label: `${missingPrepSupport.length} need learning`,
       tone: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
-      text: compactLanePreview(missingPrepSupport, "Every active role type has a learning focus."),
+      text: "Start learning about the role type — one topic or resource is enough.",
     });
   }
   if (lines.length === 0) {
     lines.push({
       key: "covered",
-      label: "Covered",
+      label: "All covered",
       tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300",
-      text: "Each active role type has a real role, someone useful to reach out to, and a learning focus.",
+      text: "Each role type has a real role, a contact, and a learning focus. Keep them moving.",
     });
   }
   return lines;

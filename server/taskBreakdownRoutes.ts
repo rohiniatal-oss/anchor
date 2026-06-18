@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { deterministicUnstickStep } from "./planningFeedback";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
+import { isJobLive, isContactWarm, getTrackId } from "@shared/domainState";
 
 type WorkObject = "Artifact" | "Decision" | "Knowledge" | "Capability" | "Pipeline" | "Problem";
 type WorkflowKind = "finite" | "continuous";
@@ -31,6 +32,8 @@ type SourceBundle = {
   parentWorkflow?: WorkflowState;
   cvText?: string;
   jdText?: string;
+  crossEngineContext?: string;
+  contactName?: string;
 };
 
 function jobSource(bundle: SourceBundle): Job | null {
@@ -263,7 +266,10 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
       if (readiness === "sample") return `Open the ${j?.title || "role"} submission checklist and confirm everything is complete`;
       return keyword(text, /cv|resume|tailor|rewrite/) ? "Open your CV and the role posting side by side" : "Open the application material and draft the first useful line";
     }
-    if (workflowState?.currentStage === "Follow up") return "Open the application thread and find the next follow-up action";
+    if (workflowState?.currentStage === "Follow up") {
+      if (bundle.contactName) return `Check with ${bundle.contactName} for any update on your application`;
+      return "Open the application thread and find the next follow-up action";
+    }
   }
   if (bundle.sourceKind === "learn") {
     if (workflowState?.workObject === "Capability" || keyword(text, /practice|drill|mock/)) return "Open a blank practice note and do one 5-minute attempt";
@@ -359,11 +365,12 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     if (currentStage === "Submit") return [
       `Open the application form for ${roleLabel} and check all materials are complete`,
       `Submit and note the confirmation or reference number`,
+      bundle.contactName ? `Ask ${bundle.contactName} to flag your application or put in a referral` : `Consider whether someone in your network could flag this application internally`,
       `Log the submission date and set a follow-up reminder`,
     ];
     // Follow up
     return [
-      `Find the last contact point or submission thread for ${roleLabel}`,
+      bundle.contactName ? `Check with ${bundle.contactName} for any update on your ${roleLabel} application` : `Find the last contact point or submission thread for ${roleLabel}`,
       `Draft a short follow-up and decide whether to send now or wait`,
       `Send it or save it ready to send`,
       `Log the next action on this role`,
@@ -426,7 +433,9 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   if (bundle.sourceKind === "goal") {
     const laneSpecific = laneSpecificSearchMove(text);
     if (goalNeedsNetworkSupport(text)) return [
-      `Open Network and add one useful contact or outreach path for this live role path`,
+      bundle.contactName
+        ? `Draft a message to ${bundle.contactName} about this path — advice, referral, or warm intro`
+        : `Open Network and add one useful contact or outreach path for this live role path`,
       `Write the exact ask: advice, referral, reconnect, or warm intro`,
       `Draft the message or save who you should contact next`,
       `Note which live path still lacks outreach support after this`,
@@ -632,6 +641,110 @@ function fallbackStagePlan(task: Task, bundle: SourceBundle): { workflowState: W
   return { workflowState, steps };
 }
 
+function resolveTrackId(task: Task, source: SourceRecord): number | null {
+  if (task.relatedTrackId) return task.relatedTrackId;
+  if (source && "relatedTrackId" in source) return (source as any).relatedTrackId ?? null;
+  if (source && "proofAssetForTrack" in source) return (source as any).proofAssetForTrack ?? null;
+  return null;
+}
+
+async function buildCrossEngineContext(
+  task: Task,
+  sourceKind: string,
+  source: SourceRecord,
+): Promise<{ text: string; contactName?: string }> {
+  const trackId = resolveTrackId(task, source);
+  if (!trackId) return { text: "" };
+
+  const parts: string[] = [];
+  let bestContactName: string | undefined;
+
+  const [tracks, jobs, contacts, learns] = await Promise.all([
+    storage.getCareerTracks(),
+    storage.getJobs(),
+    storage.getContacts(),
+    storage.getLearn(),
+  ]);
+
+  const track = tracks.find((t) => t.id === trackId);
+  if (track) parts.push(`Track: ${track.name}.`);
+
+  // For job tasks: find linked contacts who can help with this specific role
+  if (sourceKind === "job" && source) {
+    const linkedContactIds = await storage.getJobContactLinks((source as Job).id);
+    const linked = linkedContactIds.map((cid) => contacts.find((c) => c.id === cid)).filter(Boolean);
+    if (linked.length) {
+      const lines = linked.slice(0, 3).map((c) => {
+        const ctx = [c!.relationshipStrength || "cold"];
+        if (c!.targetOrg) ctx.push(c!.targetOrg);
+        return `${c!.name} (${ctx.join(", ")})`;
+      });
+      parts.push(`Contacts linked to this role: ${lines.join("; ")}.`);
+      bestContactName = linked[0]!.name;
+    } else {
+      const trackContacts = contacts.filter((c) => getTrackId("contacts", c) === trackId && isContactWarm(c));
+      if (trackContacts.length) {
+        const lines = trackContacts.slice(0, 3).map((c) => `${c.name} (${c.relationshipStrength || "warm"}${c.targetOrg ? ", " + c.targetOrg : ""})`);
+        parts.push(`Warm contacts on this track: ${lines.join("; ")}.`);
+        bestContactName = trackContacts[0].name;
+      }
+    }
+  }
+
+  // For learning/goal/hustle tasks: show live jobs with upcoming deadlines
+  if (sourceKind !== "job") {
+    const trackJobs = jobs.filter((j) => getTrackId("jobs", j) === trackId && isJobLive(j));
+    const withDeadlines = trackJobs
+      .filter((j) => j.deadline && Number(j.deadline) > Date.now())
+      .sort((a, b) => Number(a.deadline) - Number(b.deadline));
+    const urgent = withDeadlines.filter((j) => Number(j.deadline) - Date.now() < 14 * 24 * 60 * 60 * 1000);
+    const toShow = urgent.length ? urgent : trackJobs.slice(0, 3);
+    if (toShow.length) {
+      const lines = toShow.slice(0, 3).map((j) => {
+        const dl = j.deadline ? ` — due ${new Date(Number(j.deadline)).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "";
+        return `${j.title} at ${j.company} (${j.status}${dl})`;
+      });
+      parts.push(`Live roles on this track: ${lines.join("; ")}.`);
+    }
+
+    // Warm contacts for non-job tasks
+    const trackContacts = contacts.filter((c) => getTrackId("contacts", c) === trackId && isContactWarm(c));
+    if (trackContacts.length) {
+      const lines = trackContacts.slice(0, 3).map((c) => `${c.name} (${c.relationshipStrength}${c.targetOrg ? ", " + c.targetOrg : ""})`);
+      parts.push(`Warm contacts: ${lines.join("; ")}.`);
+      bestContactName = bestContactName || trackContacts[0].name;
+    }
+  }
+
+  // Capability evidence and active learning on this track
+  const trackLearn = learns.filter((l) => getTrackId("learn", l) === trackId);
+  const evidenced = trackLearn.filter((l) => l.capabilityBuilt && (l.learnStatus === "done" || l.outputEvidenceUrl)).map((l) => l.capabilityBuilt!);
+  const inProgress = trackLearn.filter((l) => l.capabilityBuilt && l.active && l.learnStatus !== "done").map((l) => `${l.capabilityBuilt} (via ${l.title})`);
+  if (evidenced.length) parts.push(`Capabilities already evidenced: ${evidenced.join(", ")}.`);
+  if (inProgress.length) parts.push(`Currently building: ${inProgress.join("; ")}.`);
+
+  // Recent completions on this track (from activity log, last 7 days)
+  try {
+    const log = await storage.getActivityLog();
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const recentCompletedTaskIds = log
+      .filter((a) => a.timestamp > sevenDaysAgo && a.eventType === "completed" && a.taskId)
+      .slice(0, 50)
+      .map((a) => a.taskId!);
+    if (recentCompletedTaskIds.length) {
+      const allTasks = await storage.getTasks();
+      const recentOnTrack = allTasks
+        .filter((t) => recentCompletedTaskIds.includes(t.id) && resolveTrackId(t, null) === trackId)
+        .slice(0, 4)
+        .map((t) => t.title)
+        .filter(Boolean);
+      if (recentOnTrack.length) parts.push(`Completed in last 7 days: ${recentOnTrack.join("; ")}.`);
+    }
+  } catch { /* non-fatal */ }
+
+  return { text: parts.join("\n"), contactName: bestContactName };
+}
+
 async function buildSourceContext(task: Task): Promise<SourceBundle> {
   let sourceContext = "";
   let playbook = "";
@@ -684,7 +797,15 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
     jdText = ((source as any).jdText as string | undefined)?.trim() || "";
   }
 
-  return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow, cvText, jdText };
+  let crossEngineContext = "";
+  let contactName: string | undefined;
+  try {
+    const ce = await buildCrossEngineContext(task, sourceKind, source);
+    crossEngineContext = ce.text;
+    contactName = ce.contactName;
+  } catch { /* non-fatal — breakdown works without cross-engine context */ }
+
+  return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow, cvText, jdText, crossEngineContext, contactName };
 }
 
 export async function buildDeterministicTaskBreakdown(task: Task) {
@@ -727,6 +848,11 @@ export function registerTaskBreakdownRoutes(app: Express) {
         `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
         `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
         `${context ? `User context: ${context}\n` : ""}` +
+        `${bundle.crossEngineContext ? (
+          `\nCONNECTED CONTEXT — use this to make steps specific. Name real people, reference real deadlines, ` +
+          `build on completed work, and connect steps to live opportunities. Do not repeat work listed as already done.\n` +
+          `${bundle.crossEngineContext}\n\n`
+        ) : ""}` +
         `${bundle.cvText && bundle.jdText ? (
           `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
           `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +

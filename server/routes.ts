@@ -21,7 +21,7 @@ import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
-import { generateJobPrepArc } from "./learningCurriculum";
+import { generateJobPrepArc, generateNarrativeAngle } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats, LLM_MODELS } from "./llm";
@@ -161,8 +161,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }));
     res.json(repaired);
   });
-  // POST /api/tasks is handled by sprint2.ts (enrichTaskInput with estimates,
-  // track inference, and activity logging). Do not duplicate here.
   app.patch("/api/tasks/:id", async (req, res) => {
     const p = insertTaskSchema.partial().safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
@@ -174,15 +172,15 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     await storage.deleteTask(Number(req.params.id));
     res.json({ ok: true });
   });
-  // Custom POST /api/jobs: same as crud, but keeps saved roles lightweight.
-  // Role-specific prep lives in Jobs (readiness rail / generated steps); Learn
-  // is reserved for reusable capability work rather than one arc per saved role.
   app.post("/api/jobs", async (req, res) => {
     const p = insertJobSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const job = await storage.createJob(p.data);
     if ((job.jdText || "").trim().length > 40) {
       generateJobPrepArc(job).catch(() => {});
+    }
+    if (!(job.narrativeAngle || "").trim()) {
+      generateNarrativeAngle(job).catch(() => {});
     }
     res.json(job);
   });
@@ -194,6 +192,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!updated) return res.status(404).json({ error: "Not found" });
     if (p.data.jdText && (p.data.jdText || "").trim().length > 40) {
       generateJobPrepArc(updated).catch(() => {});
+    }
+    if (!(updated.narrativeAngle || "").trim()) {
+      generateNarrativeAngle(updated).catch(() => {});
     }
     res.json(updated);
   });
@@ -252,7 +253,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   crud(app, "learn", () => storage.getLearn(), insertLearnSchema,
     (d) => storage.createLearn(d), (id, d) => storage.updateLearn(id, d), (id) => storage.deleteLearn(id));
-  // Custom POST /api/hustles: same as crud but fires hustle arc generation.
   app.post("/api/hustles", async (req, res) => {
     const p = insertHustleSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
@@ -368,8 +368,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
     res.json(updated || existing);
   });
-  // Generate a starter draft for a synthesis or artifact milestone.
-  // Summarises completed milestones so the user has something concrete to edit.
   app.post("/api/recommendation-milestones/:id/synthesis-starter", async (req, res, next) => {
     try {
       const id = Number(req.params.id);
@@ -438,7 +436,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (err) { next(err); }
   });
 
-  // Critique a draft synthesis or artifact — push back, suggest what's missing.
   app.post("/api/recommendation-milestones/:id/critique", async (req, res, next) => {
     try {
       const id = Number(req.params.id);
@@ -619,8 +616,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   registerWorkflowStepRoutes(app);
   registerStrategyRoutes(app);
 
-  // ═══ P3.5: NEXT-TASK ENGINE — every source can spawn a provenance-carrying task ═══
-  // Maps an entity route segment to the source type the engine understands.
   const NEXT_TASK_SOURCES: Record<string, NextTaskSourceType> = {
     jobs: "job", learn: "learn", contacts: "contact", hustles: "hustle",
   };
@@ -634,12 +629,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     });
   }
 
-  // ═══ P4.4: LEARN AS A PROOF-BUILDING VIEW ═══
-  // create-output-task is an intent-named ALIAS over the existing 3.5 learn
-  // create-next-task (REUSES createNextTask(sourceType "learn") — title from
-  // requiredOutput, doneWhen references the artifact — with provenance + dedupe).
-  // No parallel task creator. PATCH /api/learn/:id is already provided by crud()
-  // and accepts requiredOutput / outputEvidenceUrl / learnStatus / relatedTrackId.
   app.post("/api/learn/:id/create-output-task", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
@@ -648,9 +637,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ ...result.task, reused: result.reused });
   });
 
-  // mark-evidenced: persist the produced-artifact url onto the learn item (flips
-  // derived outputState to "evidenced"); optionally record a proof_for entityLink
-  // to a produced task when proofToId is supplied (kept optional/simple).
   app.post("/api/learn/:id/mark-evidenced", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
@@ -665,7 +651,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(updated);
   });
 
-  // ═══ P3.5: TRACK COHERENCE — link any source/task to a career track in place ═══
   const LINK_ENTITIES = new Set<TrackEntity>(["jobs", "learn", "contacts", "hustles", "tasks"]);
   app.patch("/api/:entity/:id/link-track", async (req, res) => {
     const entity = String(req.params.entity) as TrackEntity;
@@ -681,7 +666,6 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(updated);
   });
 
-  // Career tracks CRUD.
   app.get("/api/career-tracks", async (_req, res) => res.json(await storage.getCareerTracks()));
   app.post("/api/career-tracks", async (req, res) => {
     const p = insertCareerTrackSchema.safeParse(req.body);
@@ -700,23 +684,10 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ ok: true });
   });
 
-  // ═══ P3.5: STRATEGY DIAGNOSTICS — per-track bottlenecks + unlinked bucket ═══
   app.get("/api/strategy/diagnostics", async (_req, res) => res.json({ tracks: await getTrackDiagnostics() }));
   app.get("/api/strategy/unlinked", async (_req, res) => res.json(await getUnlinkedItems()));
-
-  // ═══ P4.5: EVIDENCE LAYER — read-only derived metrics over wins + activityLog ═══
-  // Per-track diagnostics already carry compact per-track evidence (above); this
-  // endpoint exposes the full per-track + untracked-bucket metrics. No write path.
   app.get("/api/strategy/evidence", async (_req, res) => res.json(await getEvidencePayload()));
-
-  // ═══ P5: LEARNING STRATEGY — per-track capability gaps + deterministic sequencing ═══
-  // Read-only. The gap engine (server/learningStrategy.ts) compares each track's
-  // REQUIRED capability domains (data-driven from the track) against its EVIDENCED
-  // domains and exposes the gap + a sequenced learning path (incl. unfilled-gap
-  // slots where out-of-scope discovered resources later attach). No write path.
   app.get("/api/strategy/learning-gaps", async (_req, res) => res.json(await computeLearningGaps()));
-
-  // Compact wins summary (by-category + window counts + streak + derived track per win).
   app.get("/api/wins/summary", async (_req, res) => res.json(await computeWinsSummary()));
 
   return httpServer;

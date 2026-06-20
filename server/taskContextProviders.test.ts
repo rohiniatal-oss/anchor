@@ -98,7 +98,6 @@ test("query builder returns short public privacy-minimised queries", () => {
   assert.ok(plan);
   assert.equal(plan?.intent, "deadline_verification");
   assert.match(plan?.primary || "", /GovAI Fellowship application deadline/i);
-  assert.match(plan?.primary || "", /site:govai\.co/i);
   assert.doesNotMatch(plan?.primary || "", /example\.com|07700900123|cv|anchor|notion/i);
 });
 

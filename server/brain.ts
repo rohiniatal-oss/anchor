@@ -1531,6 +1531,28 @@ export function planDay(
     }
   }
 
+  if (
+    mode === "strategy"
+    && context.broadPursuitMissingCombinations.length === 0
+    && context.broadPursuitMissingNetworkSupport.length > 0
+    && context.broadPursuitMissingLearningSupport.length > 0
+    && maxItems > 1
+    && !picks.some((pick) => pick.c.sourceStatus === "broad_parallel_pursuit_learning_support")
+  ) {
+    const learningSupportPick = ranked.find((r) => r.c.sourceStatus === "broad_parallel_pursuit_learning_support");
+    if (learningSupportPick) {
+      let replaceIndex = picks.findIndex((pick, index) =>
+        index > 0 && pick.c.sourceStatus !== "broad_parallel_pursuit_network_support",
+      );
+      if (replaceIndex < 0 && picks.length > 1) replaceIndex = picks.length - 1;
+      if (replaceIndex >= 0) {
+        picks[replaceIndex] = learningSupportPick;
+      } else if (picks.length < maxItems) {
+        picks.push(learningSupportPick);
+      }
+    }
+  }
+
   const mvd = picks[0];
   const slots: SlotName[] = ["now", "next", "later", "bonus"];
   const plan: PlanItem[] = picks.map((r, i) => ({

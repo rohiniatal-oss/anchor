@@ -12,7 +12,6 @@ import {
   broadPursuitGapLines,
   CareerGoalT,
   compactLanePreview,
-  DECISION_MODE_LABEL,
   displayCombinationLabel,
   goalCompassSummary,
   goalFocusComparisonLines,
@@ -150,25 +149,8 @@ export function CareerCompassCard({
     <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5" data-testid="career-compass">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="inline-flex items-center gap-1 rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-[11px] font-semibold">
-              <Compass className="w-3 h-3" /> {PHASE_LABEL[goal.phase]}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-card text-muted-foreground px-2 py-0.5 text-[11px] font-medium border border-card-border">
-              {DECISION_MODE_LABEL[goal.decisionMode]}
-            </span>
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border ${mode.tone}`}>
-              {mode.label}
-            </span>
-            {goal.landingPriority === "credible-role-quickly" && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-card text-muted-foreground px-2 py-0.5 text-[11px] font-medium border border-card-border">
-                land something credible soon
-              </span>
-            )}
-          </div>
-          <h2 className="text-sm font-semibold leading-snug">Career compass</h2>
-          <p className="text-xs text-muted-foreground mt-1">{compassSummary}</p>
-          <p className="text-xs text-muted-foreground mt-1">{mode.detail}</p>
+          <p className="text-sm font-semibold leading-snug">{goal.todayPlan.mustDo}</p>
+          <p className="text-xs text-muted-foreground mt-1">{focusSupportLine}</p>
         </div>
         {showOpenStrategy && (
           <button onClick={() => onOpenTab("strategy")} className="shrink-0 text-xs text-primary font-medium hover:underline inline-flex items-center gap-1" data-testid="button-open-strategy-from-compass">
@@ -176,6 +158,25 @@ export function CareerCompassCard({
           </button>
         )}
       </div>
+      <details className="mt-2">
+        <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground">
+          <Compass className="w-3 h-3 inline mr-1" />{compassSummary}
+        </summary>
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-[11px] font-semibold">
+            {PHASE_LABEL[goal.phase]}
+          </span>
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border ${mode.tone}`}>
+            {mode.label}
+          </span>
+          {goal.landingPriority === "credible-role-quickly" && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-card text-muted-foreground px-2 py-0.5 text-[11px] font-medium border border-card-border">
+              land something credible soon
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">{mode.detail}</p>
+      </details>
 
       {goal.opportunityState && (
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="career-compass-search-snapshot">
@@ -193,13 +194,8 @@ export function CareerCompassCard({
         </div>
       )}
 
-      <div className={`mt-3 grid gap-3 ${isCompact ? "sm:grid-cols-1" : "sm:grid-cols-[minmax(0,1.35fr)_minmax(0,0.65fr)]"}`}>
+      {!isCompact && <div className="mt-3">
         <div className="rounded-xl border border-card-border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Your priority right now</p>
-          <p className="text-sm font-medium mt-1">{goal.todayPlan.mustDo}</p>
-          <p className="text-xs text-muted-foreground mt-1">{focusSupportLine}</p>
-        </div>
-        {!isCompact && <div className="rounded-xl border border-card-border bg-card p-3">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{hasCoverage ? "Still missing" : "Question to answer"}</p>
           {hasCoverage ? (
             <>
@@ -230,8 +226,8 @@ export function CareerCompassCard({
           ) : (
             <p className="text-sm font-medium mt-1">{goal.decisionQuestion}</p>
           )}
-        </div>}
-      </div>
+        </div>
+      </div>}
 
       {leadComparison && (
         <div className="mt-3 rounded-xl border border-card-border bg-card p-3" data-testid="career-compass-why-first">

@@ -888,40 +888,14 @@ export function registerTaskBreakdownRoutes(app: Express) {
     let steps: BreakdownStep[] = [];
     let workflowState: WorkflowState | undefined;
     try {
-      const raw = await llm(
-        `${COACH_PREAMBLE}You are Anchor's workflow-state decomposition engine. Do not jump from task title to steps.\n\n` +
-        `${userCtx}\n\n` +
-        `Use exactly this logic:\n` +
-        `1. Read inherited parent workflow first, if present.\n` +
-        `2. Classify the specific task intent as Artifact, Decision, Knowledge, Capability, Pipeline, or Problem.\n` +
-        `3. Decide whether the workflow is finite or continuous.\n` +
-        `4. Locate ONE current stage and define its output.\n` +
-        `5. Define completion criteria for that stage.\n` +
-        `6. Break down only the current stage into discrete actions.\n` +
-        `7. Define the advance condition and next stage.\n\n` +
-        `Prefer inherited workflow context over rediscovering from scratch, but let task intent refine the stage. Do not imply the parent has progressed; only provide the next workflow hint. ` +
-        `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
-        `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
-        `${bundle.playbook ? `Relevant playbook: ${bundle.playbook}\n` : ""}` +
-        `${bundle.parentContext ? `Parent workflow context: ${bundle.parentContext}\n` : ""}` +
-        `Default work object if uncertain: ${fallbackObject}\n` +
-        `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
-        `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
-        `${context ? `User context: ${context}\n` : ""}` +
-        `${bundle.crossEngineContext ? (
-          `\nCONNECTED CONTEXT — use this to make steps specific. Name real people, reference real deadlines, ` +
-          `build on completed work, and connect steps to live opportunities. Do not repeat work listed as already done.\n` +
-          `${bundle.crossEngineContext}\n\n`
-        ) : ""}` +
-        `${bundle.cvText && bundle.jdText ? (
-          `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
-          `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +
-          `IMPORTANT: For Build materials steps, quote the 2-3 most relevant existing CV bullets exactly, ` +
-          `then write a specific improved version using the job's language. ` +
-          `Step format: "Rewrite: \\"[exact existing bullet]\\" → \\"[improved version]\\"". ` +
-          `Steps must reference real content from the CV and JD above, not generic advice.\n`
-        ) : ""}`,
-      );
+      const prompt = buildTaskBreakdownPrompt({
+        task,
+        bundle,
+        fallbackObject,
+        userContextText: userCtx,
+        contextBlocks: collectedContext.blocks,
+      });
+      const raw = await llm(prompt);
       const parsed = parseBreakdown(raw, fallbackObject, bundle.parentWorkflow);
       question = parsed.question || "";
       steps = parsed.steps;

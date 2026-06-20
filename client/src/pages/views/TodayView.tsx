@@ -795,6 +795,16 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const doneListOpen = showDoneList ?? executionState.defaultDoneListOpen;
   const upcomingPlanOpen = showUpcomingPlan ?? false;
 
+  const hadPinned = useRef(false);
+  useEffect(() => {
+    if (pinned) { hadPinned.current = true; return; }
+    if (!hadPinned.current) return;
+    hadPinned.current = false;
+    if (plan?.enoughForToday) return;
+    const next = activeItems[0];
+    if (next) startItem(next);
+  }, [pinned, activeItems.length]);
+
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 
   // Only gate to onboarding once the tracks query has GENUINELY resolved to an

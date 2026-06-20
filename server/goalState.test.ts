@@ -44,7 +44,7 @@ test("career goal state reflects saved roles and feedback", () => {
   assert.equal(marketMap.nextMoveType, "research");
   assert.ok(direction.evidence.some((e) => e.includes("open or saved roles")));
   assert.equal(state.phase, "role-targeting");
-  assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "premature"));
+  assert.ok(state.workstreams.some((w) => w.name === "Applications" && w.status === "active"));
 });
 
 test("career goal state reads active career tracks as real direction signal", () => {
@@ -352,6 +352,33 @@ test("career goal frame stays in fit-discovery when learning exists but role sig
   assert.equal(frame.recommendedFocus, "Direction");
   assert.equal(frame.dayType, "evidence-building");
   assert.equal(frame.decisionMode, "single-track");
+});
+
+test("single-lane role signal does not become broad parallel pursuit just because one role mentions adjacent policy terms", () => {
+  const tracks = [{
+    id: 1,
+    name: "AI Governance",
+    slug: "ai-governance",
+    status: "active",
+    targetRoleArchetype: "policy",
+    whyItFits: "",
+    description: "",
+  }] as any;
+  const jobs = [{
+    id: 1,
+    title: "Policy Advisor",
+    company: "Ofcom",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    location: "London",
+    roleArchetype: "policy",
+    narrativeAngle: "Translate technical AI risk into proportionate regulation language",
+    note: "Online Safety team growth. Prioritise stakeholder judgement and policy translation.",
+  }] as any;
+
+  const state = buildCareerGoalState([], jobs, [], [], [], [], tracks);
+  assert.notEqual(state.decisionMode, "broad-parallel-pursuit");
+  assert.doesNotMatch(state.todayPlan.mustDo, /Add the next real role or application move/i);
 });
 
 test("role-targeting can focus prep and upskilling when several serious roles share the same weak area", () => {

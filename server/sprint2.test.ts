@@ -133,6 +133,38 @@ test("current plan refreshes stale single-lane carry-forward work when broad par
   assert.match(refreshed.json.items[0]?.title || "", /missing path|real role/i);
 });
 
+test("current plan does not invent broad-pursuit lane-filling over a single live lane", async () => {
+  const trackRes = await api(h.base, "POST", "/api/career-tracks", {
+    slug: "ai-governance-single-lane",
+    name: "AI Governance",
+    status: "active",
+    priority: 80,
+    targetRoleArchetype: "policy",
+  });
+  assert.equal(trackRes.status, 200);
+
+  const jobRes = await api(h.base, "POST", "/api/jobs", {
+    title: "Policy Advisor",
+    company: "Ofcom",
+    status: "wishlist",
+    applicationReadiness: "cv",
+    relatedTrackId: trackRes.json.id,
+    narrativeAngle: "Translate technical AI risk into proportionate regulation language",
+    note: "Online Safety team growth. Prioritise stakeholder judgement and policy translation.",
+    jdText: "Candidates should translate technical risk into policy language and work across stakeholder groups.",
+  });
+  assert.equal(jobRes.status, 200);
+
+  const plan = await api(h.base, "POST", "/api/plan/recompute", {
+    day: DAY,
+    energy: "medium",
+    availableMinutes: 180,
+  });
+  assert.equal(plan.status, 200);
+  assert.notEqual(plan.json.items[0]?.sourceType, "goal");
+  assert.doesNotMatch(plan.json.items[0]?.title || "", /Add one real role|missing path/i);
+});
+
 test("avoidance review distinguishes repeated avoidance from normal tasks", async () => {
   const avoided = await h.storage.createTask({ title: "Rewrite whole CV", list: "today", done: false, status: "not_started", category: "job", size: "deep", skipped: 2 } as any);
   const normal = await h.storage.createTask({ title: "Send one email", list: "today", done: false, status: "not_started", category: "admin", size: "quick", skipped: 0 } as any);

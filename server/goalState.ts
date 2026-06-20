@@ -620,7 +620,9 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
 }
 
 function hasBroadParallelLanes(snapshot: GoalSnapshot) {
-  return snapshot.directionStarted && snapshot.roleHypotheses.length >= 2;
+  if (!snapshot.directionStarted || snapshot.roleHypotheses.length < 2) return false;
+  if (snapshot.activeTracks.length >= 2) return true;
+  return buildBroadPursuitCoverage(snapshot).covered.length >= 2;
 }
 
 function inferGoalPhase(snapshot: GoalSnapshot): GoalPhase {

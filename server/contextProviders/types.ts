@@ -2,7 +2,7 @@ import type { Task } from "@shared/schema";
 
 export type ProviderName = "user_authored" | "external_research";
 export type ProviderStatus = "ok" | "skipped" | "empty" | "rate_limited" | "unavailable" | "error";
-export type SourceKind = "job" | "learn" | "hustle" | "goal" | "task";
+export type SourceKind = "job" | "learn" | "hustle" | "contact" | "goal" | "task";
 
 export type ContextBlock = {
   kind: "user_authored" | "external_research";

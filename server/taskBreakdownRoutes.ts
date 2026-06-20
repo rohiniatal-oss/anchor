@@ -1,11 +1,12 @@
 import type { Express } from "express";
-import { llm, llmJSON } from "./llm";
-import type { Hustle, Job, Learn, Task } from "@shared/schema";
+import { llm, llmJSON, LLM_MODELS } from "./llm";
+import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { deterministicUnstickStep } from "./planningFeedback";
 import { COACH_PREAMBLE } from "./userPromptProfile";
-import { buildUserContext, formatContextForPrompt } from "./userContext";
+import { buildUserContext, formatContextForPrompt, type UserContext } from "./userContext";
 import { isJobLive, isContactWarm, getTrackId } from "@shared/domainState";
+import { computeLearningGaps } from "./learningStrategy";
 import {
   collectTaskBreakdownContext,
   formatContextBlocksForPrompt,
@@ -27,11 +28,11 @@ type WorkflowState = {
   inheritedFrom?: string;
 };
 type BreakdownStep = { text: string; done: false; substeps?: string[]; workflowState?: WorkflowState };
-type SourceRecord = Job | Learn | Hustle | null;
+type SourceRecord = Job | Learn | Hustle | Contact | null;
 type SourceBundle = {
   sourceContext: string;
   playbook: string;
-  sourceKind: "job" | "learn" | "hustle" | "goal" | "task";
+  sourceKind: "job" | "learn" | "hustle" | "contact" | "goal" | "task";
   source: SourceRecord;
   parentContext: string;
   parentWorkflow?: WorkflowState;
@@ -53,6 +54,10 @@ function hustleSource(bundle: SourceBundle): Hustle | null {
   return bundle.sourceKind === "hustle" ? bundle.source as Hustle | null : null;
 }
 
+function contactSource(bundle: SourceBundle): Contact | null {
+  return bundle.sourceKind === "contact" ? bundle.source as Contact | null : null;
+}
+
 const WORKFLOWS: Record<WorkObject, string[]> = {
   Artifact: ["Clarify purpose", "Gather inputs", "Structure", "Draft", "Refine", "QC", "Deliver"],
   Decision: ["Frame question", "Define criteria", "Generate options", "Evaluate", "Decide", "Commit"],
@@ -63,6 +68,7 @@ const WORKFLOWS: Record<WorkObject, string[]> = {
 };
 
 const APPLICATION_WORKFLOW = ["Understand role", "Match examples", "Handle gaps", "Build materials", "Submit", "Follow up"];
+const CONTACT_WORKFLOW = ["Choose ask", "Draft outreach", "Send", "Prepare conversation", "Track follow-up", "Deepen relationship"];
 const PROOF_WORKFLOW = ["Define claim", "Choose audience", "Collect examples", "Draft fragment", "Save useful version"];
 
 function compact(value: unknown, max = 90) {
@@ -190,6 +196,7 @@ function classifyWorkObject(task: Task, bundle: SourceBundle): WorkObject {
     if (keyword(text, /requirements|research|understand role|posting|company|market|inspect/)) return "Knowledge";
     return "Artifact";
   }
+  if (bundle.sourceKind === "contact") return "Pipeline";
   if (bundle.sourceKind === "hustle") return "Artifact";
   return "Artifact";
 }
@@ -222,6 +229,64 @@ function laneSpecificSearchMove(text: string) {
     return "Open Jobs and save one geopolitical or policy-adjacent chief-of-staff or operations role";
   }
   return null;
+}
+
+function jobSignalThemes(job: Job | null | undefined) {
+  const noteBits = String(job?.note || "")
+    .split(/[.;\n]+/)
+    .map((part) => cleanText(part, 120))
+    .filter((part) => !!part && part.length >= 12);
+  const jdBits = String(job?.jdText || "")
+    .split(/[.;\n]+/)
+    .map((part) => cleanText(part.replace(/^(the role|candidates should|the job|this role)\s+/i, ""), 120))
+    .filter((part) => !!part && part.length >= 18)
+    .filter((part) => /\b(require|translat|stakeholder|analysis|policy|regulation|implementation|technology|safety)\b/i.test(part));
+  return cleanList([
+    job?.narrativeAngle,
+    ...noteBits,
+    ...jdBits,
+  ], 3);
+}
+
+function personalizeDeterministicSteps(task: Task, bundle: SourceBundle, workflowState: WorkflowState, steps: BreakdownStep[]) {
+  if (bundle.sourceKind !== "job" || workflowState.currentStage !== "Build materials") return steps;
+  const job = jobSource(bundle);
+  if (!job || (job.applicationReadiness || "none") !== "cv") return steps;
+
+  const roleLabel = `${job.title}${job.company ? ` @ ${job.company}` : ""}` || "the role";
+  const signalThemes = jobSignalThemes(job);
+  if (!signalThemes.length) return steps;
+
+  const leadTheme = signalThemes[0];
+  const proofThemes = signalThemes.slice(1, 3);
+  return [
+    {
+      text: leadTheme
+        ? `Open a blank cover note for ${roleLabel} and sketch 3 beats: opening angle, strongest example, closing fit. Lead beat 1 with: ${leadTheme}`
+        : `Open a blank cover note for ${roleLabel} and sketch 3 beats: opening angle, strongest example, closing fit`,
+      done: false as const,
+    },
+    {
+      text: leadTheme
+        ? `Write the opening paragraph for ${roleLabel} and lead with this angle: ${leadTheme}`
+        : `Write the opening paragraph for ${roleLabel} and lead with your specific angle, not a generic summary`,
+      done: false as const,
+    },
+    {
+      text: proofThemes.length
+        ? `Choose 1-2 concrete examples that prove these role signals where they are genuinely true: ${proofThemes.join("; ")}`
+        : `Mirror 2-3 key phrases from the job posting in the cover note`,
+      done: false as const,
+    },
+    {
+      text: `Keep to the required format or one tight page if unspecified`,
+      done: false as const,
+    },
+    {
+      text: `Check: does it say something only you could say for this role?`,
+      done: false as const,
+    },
+  ];
 }
 
 function goalNeedsNetworkSupport(text: string) {
@@ -259,6 +324,8 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
     return laneSpecificSearchMove(text) || "Open Jobs and save the first real role for one path that is still missing one";
   }
   if (bundle.sourceKind === "job") {
+    const j = jobSource(bundle);
+    const roleLabel = j ? `${j.title}${j.company ? " @ " + j.company : ""}` : "the role";
     if (workflowState?.currentStage === "Understand role") return "Open the role posting and highlight the first must-have requirement";
     if (workflowState?.currentStage === "Match examples" || workflowState?.currentStage === "Map evidence") return "Open a blank note and list the top 3 role requirements";
     if (workflowState?.currentStage === "Handle gaps") return "Write down the single biggest gap in one sentence";
@@ -272,14 +339,26 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
       return keyword(text, /cv|resume|tailor|rewrite/) ? "Open your CV and the role posting side by side" : "Open the application material and draft the first useful line";
     }
     if (workflowState?.currentStage === "Follow up") {
-      if (bundle.contactName) return `Check with ${bundle.contactName} for any update on your application`;
+      if (bundle.contactName) return `Check with ${bundle.contactName} for any update on your ${roleLabel} application`;
       return "Open the application thread and find the next follow-up action";
     }
   }
   if (bundle.sourceKind === "learn") {
+    const source = learnSource(bundle);
+    const { sourceStep } = buildKnowledgeExtractionSteps(task, bundle, source);
     if (workflowState?.workObject === "Capability" || keyword(text, /practice|drill|mock/)) return "Open a blank practice note and do one 5-minute attempt";
-    if (task.sourceUrl) return "Open the learning item and read only the first heading";
-    return "Open the learning note and write one useful note, brief, or practice result";
+    return sourceStep;
+  }
+  if (bundle.sourceKind === "contact") {
+    const contact = contactSource(bundle);
+    const person = contactDisplayName(contact);
+    if (workflowState?.currentStage === "Prepare conversation") {
+      return `Open a prep note for ${person} and write the 3 questions you most need answered`;
+    }
+    if (workflowState?.currentStage === "Track follow-up" || workflowState?.currentStage === "Deepen relationship") {
+      return `Open your last exchange with ${person} and draft the next message`;
+    }
+    return `Open a draft to ${person} and write the first useful line`;
   }
   if (bundle.sourceKind === "hustle") {
     if (workflowState?.currentStage === "Collect examples" || workflowState?.currentStage === "Gather evidence") return "Open a note and paste the 3 strongest examples or proof points";
@@ -301,8 +380,10 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   if (bundle.sourceKind === "job") {
     const j = jobSource(bundle);
     const roleLabel = j ? `${j.title}${j.company ? " @ " + j.company : ""}` : "the role";
+    const deadlineLabel = j?.deadline ? formatDeadlineLabel(j.deadline) : "";
     const nextStepNote = j?.nextStep?.trim();
     const hasNarrative = !!(j?.narrativeAngle?.trim());
+    const signalThemes = jobSignalThemes(j);
 
     if (currentStage === "Understand role") return [
       `Read the ${roleLabel} posting and note what they are actually looking for`,
@@ -376,9 +457,10 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     // Follow up
     return [
       bundle.contactName ? `Check with ${bundle.contactName} for any update on your ${roleLabel} application` : `Find the last contact point or submission thread for ${roleLabel}`,
+      deadlineLabel ? `Make sure the follow-up goes out while ${roleLabel} is still live before ${deadlineLabel}` : `Check whether the role is still live before you follow up`,
       `Draft a short follow-up and decide whether to send now or wait`,
       `Send it or save it ready to send`,
-      `Log the next action on this role`,
+      `Log the next action on this role so the follow-up is fully tracked`,
     ];
   }
 
@@ -388,6 +470,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     const prepLabel = l?.title || "this learning item";
     const requiredOutput = l?.requiredOutput?.trim();
     const capabilityBuilt = l?.capabilityBuilt?.trim();
+    const knowledgeSteps = buildKnowledgeExtractionSteps(task, bundle, l);
 
     if (object === "Capability") return [
       `Start a practice attempt: open a blank doc and work through one example of ${capabilityBuilt || prepLabel}`,
@@ -395,12 +478,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       `Write an improved version of just the weakest part`,
       requiredOutput ? `Draft the useful output you planned: ${requiredOutput}` : `Write one useful note or practice result from this session`,
     ];
-    return [
-      l?.url ? `Open ${prepLabel} and read the most relevant section` : `Read your notes on ${prepLabel} and find the most relevant part`,
-      `Write the key insight in your own words`,
-      requiredOutput ? `Draft: ${requiredOutput}` : `Draft a short summary, note, or interview learning note`,
-      `Note what you still need or what to do with this next`,
-    ];
+    return [knowledgeSteps.sourceStep, knowledgeSteps.extractStep, knowledgeSteps.draftStep, knowledgeSteps.stopStep];
   }
 
   // ── Proof asset / hustle ───────────────────────────────────────────────────
@@ -435,8 +513,56 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   }
 
   // ── Goal / pipeline ────────────────────────────────────────────────────────
+  if (bundle.sourceKind === "contact") {
+    const c = contactSource(bundle);
+    const person = contactDisplayName(c);
+    const target = contactTargetLabel(c);
+    const ask = cleanText(c?.askType?.replace(/_/g, " "), 40) || "outreach";
+    const angle = contactAngleSuggestion(c);
+    const askSuggestion = contactAskSuggestion(task, c);
+    const lastExchange = cleanText(c?.lastMessage, 140);
+    const prepTopics = contactPrepTopics(task, c);
+    const whyNow = contactPrepWhyNow(task, c);
+
+    if (currentStage === "Prepare conversation") return [
+      `Open a short prep note for ${person}${target ? ` about ${target}` : ""}`,
+      `Write one line on why this conversation matters now: ${whyNow}`,
+      prepTopics.length
+        ? `Turn these into 3 specific questions for ${person}: ${prepTopics.join("; ")}`
+        : `Write 3 specific questions you want ${person} to answer`,
+      `Add one short update or credibility point you want ${person} to leave with`,
+      `Stop when the prep note is short enough to glance at right before the conversation`,
+    ];
+    if (currentStage === "Choose ask") return [
+      `Use this outreach angle for ${person}${target ? ` about ${target}` : ""}: ${angle}`,
+      `Choose the smallest realistic ask for ${person}: ${askSuggestion}`,
+      `Stop when you can explain why them and the ask in 2 short lines`,
+    ];
+    if (currentStage === "Track follow-up") return [
+      `Open a blank message to ${person}${target ? ` about ${target}` : ""}`,
+      lastExchange
+        ? `Use this follow-up context in one line: ${lastExchange}`
+        : `Use this follow-up angle: ${angle}`,
+      `Give one clear ${ask} update or next step: ${askSuggestion}`,
+      `Keep it short and easy to reply to, then save it ready to send`,
+    ];
+    if (currentStage === "Deepen relationship") return [
+      `Choose one useful reason to contact ${person} now${target ? ` about ${target}` : ""}`,
+      `Draft a short note that shares a real update, thanks them, or offers something relevant`,
+      `End with one light next step rather than a heavy ask`,
+      `Stop when the note feels warm, specific, and easy to reply to`,
+    ];
+    return [
+      `Open a draft to ${person}${target ? ` about ${target}` : ""}`,
+      `Use this opener angle: ${angle}`,
+      `Make the ask small and specific: ${askSuggestion}`,
+      `Keep it to 4-5 lines and stop when the reply path is obvious`,
+    ];
+  }
+
   if (bundle.sourceKind === "goal") {
     const laneSpecific = laneSpecificSearchMove(text);
+    const focusLabel = relevantFocusFromContext(bundle.crossEngineContext) || "this focus area";
     if (goalNeedsNetworkSupport(text)) return [
       bundle.contactName
         ? `Draft a message to ${bundle.contactName} about this path — advice, referral, or warm intro`
@@ -450,6 +576,11 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       `Pick the one note, brief, or example that would help this path most`,
       `Write a short note on how you would use that learning later`,
       `Note which live path still lacks focused learning support after this`,
+    ];
+    if (keyword(text, /what kinds of|actually out there|what roles|which roles|role pattern|role patterns/)) return [
+      `Open Jobs and search for 3 real ${focusLabel} roles using concrete title keywords`,
+      `Save the first credible roles that actually fit what you mean by ${focusLabel}`,
+      `Extract the recurring title words, team names, and must-have requirements into one note`,
     ];
     if (currentStage === "Define target") return [
       `Open Jobs and find which path still has no saved role`,
@@ -482,12 +613,10 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     `Choose the most likely cause and decide how to test it`,
     `Write the fix or the next diagnostic action`,
   ];
-  if (object === "Knowledge") return [
-    task.sourceUrl ? `Open the source and read the most relevant section` : `Read your notes or open the source`,
-    `Write the key insight in your own words`,
-    `Draft one concrete output or decision this learning helps with`,
-    `Note what you still need or what to do with this next`,
-  ];
+  if (object === "Knowledge") {
+    const steps = buildKnowledgeExtractionSteps(task, bundle);
+    return [steps.sourceStep, steps.extractStep, steps.draftStep, steps.stopStep];
+  }
   if (object === "Capability") return [
     `Start a practice attempt and work through one example`,
     `Note the weakest part`,
@@ -606,6 +735,36 @@ export function parentWorkflowFor(task: Task, bundle: SourceBundle): WorkflowSta
     const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "One short practice attempt exists" : "One useful slice is chosen and one note is captured");
     return makeWorkflowState({ workObject, workflow: WORKFLOWS[workObject], currentStage, stageOutput, inheritedFrom: `learn:${source?.id || task.sourceId || "unknown"}`, confidence: "parent", sourceKind: "learn" });
   }
+  if (bundle.sourceKind === "contact") {
+    const source = contactSource(bundle);
+    const status = String(source?.status || "to_contact");
+    const askType = String(source?.askType || "");
+    const isMessageTask = /\b(draft|write|send|message|email|reply|follow up|follow-up|thank)\b/.test(text);
+    const conversationPrepTask = isConversationPrepTask(task, bundle);
+    const currentStage =
+      conversationPrepTask ? "Prepare conversation"
+      : isMessageTask && (status === "replied" || status === "messaged" || askType === "follow_up") ? "Track follow-up"
+      : isMessageTask ? "Draft outreach"
+      : status === "replied" ? "Deepen relationship"
+      : status === "messaged" || askType === "follow_up" ? "Track follow-up"
+      : keyword(text, /who is|why this person|which ask|angle|research/) ? "Choose ask"
+      : "Draft outreach";
+    const stageOutput =
+      currentStage === "Prepare conversation" ? "A short prep note with specific questions is ready"
+      : currentStage === "Choose ask" ? "The outreach angle and ask are clear"
+      : currentStage === "Track follow-up" ? "The next follow-up move is drafted or logged"
+      : currentStage === "Deepen relationship" ? "The next relationship-building move is clear"
+      : "A message draft exists";
+    return makeWorkflowState({
+      workObject: "Pipeline",
+      workflow: CONTACT_WORKFLOW,
+      currentStage,
+      stageOutput,
+      inheritedFrom: `contact:${source?.id || task.sourceId || "unknown"}`,
+      confidence: "parent",
+      sourceKind: "contact",
+    });
+  }
   if (bundle.sourceKind === "hustle") {
     const source = hustleSource(bundle);
     const currentStage = source?.coreClaim ? "Collect examples" : "Define claim";
@@ -642,7 +801,8 @@ function fallbackStagePlan(task: Task, bundle: SourceBundle): { workflowState: W
   const currentStage = inherited?.currentStage || workflow[0];
   const stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "One concrete next-step result exists";
   const workflowState = inherited || makeWorkflowState({ workObject: object, workflow, currentStage, stageOutput, confidence: "fallback", sourceKind: bundle.sourceKind });
-  const steps = coerceTaskBreakdownSteps(task, bundle, workflowState, stageActions(task, bundle, workflowState).map((text) => ({ text, done: false as const })));
+  const rawSteps = coerceTaskBreakdownSteps(task, bundle, workflowState, stageActions(task, bundle, workflowState).map((text) => ({ text, done: false as const })));
+  const steps = personalizeDeterministicSteps(task, bundle, workflowState, rawSteps);
   return { workflowState, steps };
 }
 
@@ -653,104 +813,456 @@ function resolveTrackId(task: Task, source: SourceRecord): number | null {
   return null;
 }
 
+function formatDeadlineLabel(deadline: string) {
+  const raw = String(deadline || "").trim();
+  if (!raw) return "";
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function cleanList(values: Array<string | null | undefined>, max = 4) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const text = cleanText(value || "", 140);
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function contactDisplayName(contact: Contact | null | undefined) {
+  return cleanText(contact?.name || contact?.who || "this person", 80) || "this person";
+}
+
+function contactTargetLabel(contact: Contact | null | undefined) {
+  return cleanText([contact?.targetRole, contact?.targetOrg].filter(Boolean).join(" at "), 120);
+}
+
+function contactAngleSuggestion(contact: Contact | null | undefined) {
+  const why = cleanText(contact?.why, 140);
+  if (why) return why;
+  const target = contactTargetLabel(contact);
+  if (target) return `They can help you reality-check ${target}`;
+  const who = cleanText(contact?.who, 100);
+  if (who) return `They are relevant because they are a ${who}`;
+  return "Why this person is relevant now";
+}
+
+function contactAskSuggestion(task: Task, contact: Contact | null | undefined) {
+  const title = `${task?.title || ""}`.toLowerCase();
+  const target = contactTargetLabel(contact);
+  if (/\b15[ -]?minute\b|\b15 min\b|\bquick chat\b|\bcoffee chat\b/.test(title)) {
+    return target
+      ? `Ask for a 15-minute chat about ${target}, or the clearest steer if they are short on time`
+      : "Ask for a 15-minute chat, or the clearest steer if they are short on time";
+  }
+  const askType = cleanText(contact?.askType?.replace(/_/g, " "), 40).toLowerCase();
+  if (askType === "referral") {
+    return target
+      ? `Ask whether they would point you to the right team or person for ${target}`
+      : "Ask whether they would point you to the right team or person";
+  }
+  if (askType === "follow up") return "Ask whether now is a good time to continue the conversation and what the best next step is";
+  if (askType === "reconnect") {
+    return target
+      ? `Ask for a quick reconnect and their latest steer on ${target}`
+      : "Ask for a quick reconnect and the clearest steer";
+  }
+  if (askType === "advice") {
+    return target
+      ? `Ask for the clearest steer on ${target}, ideally via a short chat`
+      : "Ask for quick advice or the clearest steer";
+  }
+  return target
+    ? `Ask for one small next step on ${target}: a steer, quick reply, or short chat`
+    : "Ask for one small next step: a steer, quick reply, or short chat";
+}
+
+function isOutreachOrMessageTask(task: Task, bundle: SourceBundle) {
+  const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext || ""}`.toLowerCase();
+  return bundle.sourceKind === "contact"
+    || /\b(reach out|outreach|follow up|follow-up|message|email|reply|coffee chat|chat|intro|referral|reconnect|contact)\b/.test(text);
+}
+
+function isConversationPrepTask(task: Task, bundle: SourceBundle) {
+  if (bundle.sourceKind !== "contact") return false;
+  const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${task?.sourceNote || ""} ${bundle.sourceContext || ""}`.toLowerCase();
+  const prepSignal = /\b(prepare|prep|questions?|talking points?|conversation prep)\b/.test(text);
+  const conversationSignal = /\b(coffee|coffee chat|chat|call|meeting|conversation)\b/.test(text);
+  const draftingSignal = /\b(draft|write|send|message|email|reply|follow up|follow-up|thank)\b/.test(text);
+  return prepSignal && conversationSignal && !draftingSignal;
+}
+
+function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle) {
+  if (isConversationPrepTask(task, bundle)) {
+    return (
+      `For contact conversation prep:\n` +
+      `- Anchor remains the planner; prepare a short prep note, not an outreach draft.\n` +
+      `- Turn the facts already provided into 3-5 specific questions, one why-now line, and one short update or credibility point to share.\n` +
+      `- If a referral path, target role, hiring question, or team context already exists, use it directly instead of telling the user to research or think from scratch.\n` +
+      `- Keep the output glanceable enough to use right before the conversation.\n` +
+      `- Use public evidence only if it changes what they should ask right now.\n`
+    );
+  }
+  if (isOutreachOrMessageTask(task, bundle)) {
+    return (
+      `For outreach, follow-up, or message work:\n` +
+      `- Anchor remains the planner; your job is to personalize the move using only the facts provided.\n` +
+      `- Do not tell the user to review notes, research the person, or figure out why they are reaching out if a reason, target, prior thread, or relationship signal already exists.\n` +
+      `- Convert available context into a suggested outreach angle, a smallest credible ask, and a clear stop condition.\n` +
+      `- If current public information about the person, team, or organization is already provided, use at most 1-2 relevant signals to sharpen why now, the angle, or the ask.\n` +
+      `- Do not turn the task into open-ended research. Use public evidence only when it materially improves relevance for this specific message.\n` +
+      `- For simple follow-ups, thank-yous, or status updates, keep public research silent unless a current fact clearly changes what should be sent.\n` +
+      `- If a prior exchange, draft, or warm relationship exists, continue from it instead of starting cold.\n` +
+      `- If context is weak, stay honest, keep the ask soft, and do not invent shared history or certainty.\n` +
+      `- Steps should reduce thinking load and move toward a sendable message in 3-5 concrete actions.\n`
+    );
+  }
+  return "";
+}
+
+function providerEvidencePromptGuidance(contextBlocks?: {
+  userAuthored?: ContextBlock[];
+  externalResearch?: ContextBlock[];
+}) {
+  const hasEvidence = !!(contextBlocks?.userAuthored?.length || contextBlocks?.externalResearch?.length);
+  if (!hasEvidence) return "";
+  return (
+    `When optional notes or evidence are present:\n` +
+    `- Treat them as bounded context that sharpens the current task, not as the task itself.\n` +
+    `- If they already contain specific facts, sections, deadlines, names, or draft material, use those directly instead of telling the user to review notes or re-research from scratch.\n` +
+    `- Do not expose internal mechanics like provider names, note systems, retrieval steps, or evidence labels in the user-facing task steps.\n` +
+    `- If the evidence reflects current public facts that could have changed, use cautious wording like check or verify rather than asserting certainty.\n`
+  );
+}
+
+function sparseContextPromptGuidance(
+  task: Task,
+  _bundle: SourceBundle,
+  contextBlocks?: {
+    userAuthored?: ContextBlock[];
+    externalResearch?: ContextBlock[];
+  },
+) {
+  const hasProviderEvidence = !!(contextBlocks?.userAuthored?.length || contextBlocks?.externalResearch?.length);
+  const hasMeaningfulTaskNote = !!meaningfulTaskContextText(task.sourceNote);
+  if (hasProviderEvidence || hasMeaningfulTaskNote) return "";
+  return (
+    `If user-authored notes are weak or absent:\n` +
+    `- Do not pretend there is hidden note value.\n` +
+    `- Rely on the structured Anchor context already provided: linked source record, deadlines, readiness, connected jobs, contacts, active tracks, recent progress, and done-when.\n` +
+    `- Produce a specific next move from that structured context rather than generic advice.\n`
+  );
+}
+
+function globalBreakdownQualityGuidance() {
+  return (
+    `Quality bar for every breakdown:\n` +
+    `- The first step must be immediately startable and produce a visible result.\n` +
+    `- Use available context to create specific actions, not generic advice or a restatement of the context.\n` +
+    `- Avoid filler like review notes, do research, take notes, or summarize unless the task is genuinely research-heavy and that is the shortest useful move.\n` +
+    `- Prefer 3-5 concrete actions that end in a clear stop condition for this stage.\n`
+  );
+}
+
+function firstLiveRoleLabelFromContext(text: string | undefined) {
+  const match = String(text || "").match(/Live roles nearby:\s*([^;(]+ at [^(;\n]+)/i);
+  return cleanText(match?.[1] || "", 160);
+}
+
+function relevantFocusFromContext(text: string | undefined) {
+  const match = String(text || "").match(/Relevant career focus:\s*([^.\n]+)/i);
+  return cleanText(match?.[1] || "", 80);
+}
+
+function contactPrepWhyNow(task: Task, contact: Contact | null | undefined) {
+  const note = meaningfulTaskContextText(task.sourceNote);
+  const fromNote = cleanText((note.match(/^(.*?)(?:\bi want to ask about\b|$)/i)?.[1] || ""), 120);
+  if (fromNote) return fromNote;
+  if (contact?.sourceNetwork) {
+    return `${cleanText(contact.sourceNetwork, 40)} referred me${contact?.why ? ` and ${cleanText(contact.why, 120)}` : ""}`;
+  }
+  return cleanText(contact?.why, 160) || contactAngleSuggestion(contact);
+}
+
+function contactPrepTopics(task: Task, contact: Contact | null | undefined) {
+  const note = meaningfulTaskContextText(task.sourceNote);
+  const askSlice = note.match(/\bi want to ask about\s+(.+)$/i)?.[1]
+    || note.match(/\bask about\s+(.+)$/i)?.[1]
+    || "";
+  const raw = askSlice || note || cleanText(contact?.why, 220) || contactTargetLabel(contact) || "";
+  const normalized = raw
+    .replace(/^i want to ask about\s+/i, "")
+    .replace(/^ask about\s+/i, "")
+    .replace(/^i want to\s+/i, "");
+  return cleanList(normalized.split(/;|,|\band\b/), 3);
+}
+
+function titleFocusLabel(text: string | undefined) {
+  return cleanText(
+    String(text || "")
+      .replace(/\b(working|synthesis|summary|notes?|memo|brief|guide|resource|course|reading|readings|practice|article)\b/gi, " ")
+      .replace(/\s+/g, " "),
+    120,
+  );
+}
+
+function stripOutputScaffold(text: string | undefined) {
+  return cleanText(
+    String(text || "")
+      .replace(/^(a|an|the)\s+(short|brief|tight|one-page|one page|usable)?\s*(note|memo|brief|summary|write-up|writeup|draft|analysis|synthesis)\s+(on|about)\s+/i, "")
+      .replace(/^(draft|write|create|turn this into)\s*:?/i, "")
+      .replace(/\s+/g, " "),
+    140,
+  );
+}
+
+function isWeakOutputTarget(text: string | undefined) {
+  const value = String(text || "").trim().toLowerCase();
+  return !value || /\b(application prep|prep|usable note exists|short prep note exists|short note exists|usable output|note exists)\b/.test(value);
+}
+
+function formatConceptList(values: string[]) {
+  const parts = cleanList(values, 3);
+  if (!parts.length) return "";
+  if (parts.length === 1) return parts[0];
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts[0]}, ${parts[1]}, and ${parts[2]}`;
+}
+
+function isGenericNoteFragment(text: string) {
+  const value = cleanText(text, 120).toLowerCase();
+  if (!value) return true;
+  if (value.length < 12) return true;
+  return /\b(working note|note from|notes from|draft from|research note|study note|june|july|august|september|october|november|december|january|february|march|april|may)\b/.test(value)
+    && !/\b(high-risk|risk tier|transparency|gpai|obligation|requirement|deadline|interview|application|case|framework|market|company|role|policy|strategy)\b/.test(value);
+}
+
+function isWeakTaskContextText(text: string | undefined) {
+  const value = cleanText(text, 140).toLowerCase();
+  if (!value) return true;
+  if (/^(from brain dump|from strategy builder|this is a relationship or outreach action)$/.test(value)) return true;
+  if (/^(working note|working note from [a-z0-9 -]+|note from [a-z0-9 -]+|notes from [a-z0-9 -]+)$/.test(value)) return true;
+  return false;
+}
+
+function meaningfulTaskContextText(text: string | undefined) {
+  return isWeakTaskContextText(text) ? "" : cleanText(text, 240);
+}
+
+function buildExtractionFocus(task: Task, bundle: SourceBundle, source?: Learn | null) {
+  const noteBits = String(source?.note || "")
+    .split(/[.;\n]+/)
+    .map((part) => cleanText(part.replace(/^focus on\s+/i, ""), 120))
+    .filter((part) => !!part && !isGenericNoteFragment(part))
+    .slice(0, 3);
+  const sourceNoteBits = String(task.sourceNote || "")
+    .split(/[.;\n]+/)
+    .map((part) => cleanText(part, 120))
+    .filter((part) => !!part && !isGenericNoteFragment(part))
+    .slice(0, 2);
+
+  const outputTarget =
+    stripOutputScaffold(source?.requiredOutput)
+    || titleFocusLabel(source?.capabilityBuilt)
+    || stripOutputScaffold(task.doneWhen || task.minimumOutcome)
+    || titleFocusLabel(source?.title || task.title)
+    || "the useful points you need";
+  const weakOutputTarget = isWeakOutputTarget(outputTarget);
+  const titleFocus = titleFocusLabel(source?.title || task.title);
+  const capabilityFocus = titleFocusLabel(source?.capabilityBuilt);
+  const hasStrongOutputHint = !!stripOutputScaffold(source?.requiredOutput) || !!capabilityFocus;
+
+  const focusTerms = cleanList([
+    ...noteBits,
+    ...sourceNoteBits,
+    weakOutputTarget ? "" : outputTarget,
+    capabilityFocus,
+    noteBits.length || hasStrongOutputHint ? "" : titleFocus,
+    noteBits.length || hasStrongOutputHint ? "" : stripOutputScaffold(task.doneWhen || task.minimumOutcome),
+  ], 4);
+
+  const focusLabel = focusTerms.join("; ");
+  const conceptLabel = formatConceptList(noteBits.length ? noteBits : focusTerms);
+
+  return { focusLabel, outputTarget, weakOutputTarget, conceptLabel, noteBits };
+}
+
+function buildKnowledgeExtractionSteps(task: Task, bundle: SourceBundle, source?: Learn | null) {
+  const itemLabel = titleFocusLabel(source?.title || task.title) || source?.title || task.title || "this source";
+  const liveRoleLabel = firstLiveRoleLabelFromContext(bundle.crossEngineContext);
+  const { focusLabel, outputTarget, weakOutputTarget, conceptLabel, noteBits } = buildExtractionFocus(task, bundle, source);
+  const searchTerms = focusLabel || outputTarget;
+  const hasStoredNotes = noteBits.length > 0;
+  const hasSourceLink = !!(source?.url?.trim() || task.sourceUrl?.trim());
+
+  const sourceStep = hasStoredNotes
+    ? noteBits.length
+      ? `Use your notes on ${itemLabel}. Go straight to the parts on ${conceptLabel}`
+      : `Use your notes on ${itemLabel}. Search for sections covering: ${searchTerms}`
+    : hasSourceLink
+      ? `Open ${itemLabel} and scan headings or summary for: ${searchTerms}`
+      : `Search your source or notes for: ${searchTerms}`;
+  const extractTail = liveRoleLabel ? ` for ${liveRoleLabel}` : "";
+  const extractStep = weakOutputTarget
+    ? conceptLabel
+      ? `Extract 3 points from ${conceptLabel}: what each one is, who it affects, and why it matters${extractTail}`
+      : `Extract 3 points: what each one is, why it matters, and how you would use it${extractTail}`
+    : `Pull the 3 points most relevant to ${outputTarget}${extractTail}`;
+  const draftStep = source?.requiredOutput?.trim()
+    ? `Turn those points into: ${source.requiredOutput.trim()}`
+    : `Turn those points into one usable note, answer, or brief`;
+  const stopStep = liveRoleLabel
+    ? `Stop when the output is usable for ${liveRoleLabel}, not just interesting in theory`
+    : `Stop when you have 3 concrete points and one usable output`;
+
+  return { sourceStep, extractStep, draftStep, stopStep };
+}
+
 async function buildCrossEngineContext(
   task: Task,
-  sourceKind: string,
+  sourceKind: SourceBundle["sourceKind"],
   source: SourceRecord,
+  userContext: UserContext,
 ): Promise<{ text: string; contactName?: string }> {
   const trackId = resolveTrackId(task, source);
-  if (!trackId) return { text: "" };
-
   const parts: string[] = [];
   let bestContactName: string | undefined;
 
-  const [tracks, jobs, contacts, learns] = await Promise.all([
-    storage.getCareerTracks(),
-    storage.getJobs(),
-    storage.getContacts(),
-    storage.getLearn(),
+  const needsTrackContext = trackId != null;
+  const needsJobs = sourceKind === "job" || sourceKind === "contact" || needsTrackContext;
+  const needsContacts = sourceKind === "job" || sourceKind === "contact" || needsTrackContext;
+  const needsLearn = sourceKind === "learn" || sourceKind === "hustle" || sourceKind === "goal" || needsTrackContext;
+
+  const [tracks, jobs, contacts, learns, learningGapResult] = await Promise.all([
+    needsTrackContext ? storage.getCareerTracks() : Promise.resolve([]),
+    needsJobs ? storage.getJobs() : Promise.resolve([]),
+    needsContacts ? storage.getContacts() : Promise.resolve([]),
+    needsLearn ? storage.getLearn() : Promise.resolve([]),
+    needsTrackContext ? computeLearningGaps() : Promise.resolve({ tracks: [] }),
   ]);
 
-  const track = tracks.find((t) => t.id === trackId);
-  if (track) parts.push(`Track: ${track.name}.`);
+  const track = trackId != null ? tracks.find((entry) => entry.id === trackId) : undefined;
+  if (track?.name) parts.push(`Relevant career focus: ${track.name}.`);
 
-  // For job tasks: find linked contacts who can help with this specific role
   if (sourceKind === "job" && source) {
+    const job = source as Job;
+    if (job.deadline) parts.push(`This role is still live until ${formatDeadlineLabel(job.deadline)}.`);
     const linkedContactIds = await storage.getJobContactLinks((source as Job).id);
-    const linked = linkedContactIds.map((cid) => contacts.find((c) => c.id === cid)).filter(Boolean);
-    if (linked.length) {
-      const lines = linked.slice(0, 3).map((c) => {
-        const ctx = [c!.relationshipStrength || "cold"];
-        if (c!.targetOrg) ctx.push(c!.targetOrg);
-        return `${c!.name} (${ctx.join(", ")})`;
-      });
-      parts.push(`Contacts linked to this role: ${lines.join("; ")}.`);
-      bestContactName = linked[0]!.name;
-    } else {
-      const trackContacts = contacts.filter((c) => getTrackId("contacts", c) === trackId && isContactWarm(c));
-      if (trackContacts.length) {
-        const lines = trackContacts.slice(0, 3).map((c) => `${c.name} (${c.relationshipStrength || "warm"}${c.targetOrg ? ", " + c.targetOrg : ""})`);
-        parts.push(`Warm contacts on this track: ${lines.join("; ")}.`);
-        bestContactName = trackContacts[0].name;
+    const linkedContacts = linkedContactIds
+      .map((contactId) => contacts.find((contact) => contact.id === contactId))
+      .filter((contact): contact is Contact => !!contact);
+    if (linkedContacts.length) {
+      parts.push(`People already linked to this role: ${linkedContacts
+        .slice(0, 3)
+        .map((contact) => `${contact.name} (${contact.relationshipStrength || "cold"}${contact.targetOrg ? `, ${contact.targetOrg}` : ""})`)
+        .join("; ")}.`);
+      bestContactName = linkedContacts[0]?.name;
+    }
+  }
+
+  const trackJobs = trackId != null
+    ? jobs.filter((job) => getTrackId("jobs", job) === trackId && isJobLive(job))
+    : [];
+  if (sourceKind !== "job" && trackJobs.length) {
+    const liveRoleLines = trackJobs
+      .slice()
+      .sort((a, b) => {
+        if (!a.deadline && !b.deadline) return 0;
+        if (!a.deadline) return 1;
+        if (!b.deadline) return -1;
+        return String(a.deadline).localeCompare(String(b.deadline));
+      })
+      .slice(0, 3)
+      .map((job) => `${job.title} at ${job.company} (${job.status}${job.applicationReadiness ? `, ${job.applicationReadiness}` : ""}${job.deadline ? `, due ${formatDeadlineLabel(job.deadline)}` : ""})`);
+    if (liveRoleLines.length) parts.push(`Live roles nearby: ${liveRoleLines.join("; ")}.`);
+  }
+
+  if (sourceKind === "contact" && source) {
+    const contact = source as Contact;
+    const relatedJobs = cleanList(
+      jobs
+        .filter((job) =>
+          isJobLive(job)
+          && (
+            (trackId != null && getTrackId("jobs", job) === trackId)
+            || (!!contact.targetOrg && job.company.toLowerCase() === contact.targetOrg.toLowerCase())
+            || (!!contact.targetRole && job.title.toLowerCase().includes(contact.targetRole.toLowerCase()))
+          ))
+        .map((job) => `${job.title} at ${job.company}${job.deadline ? ` (due ${formatDeadlineLabel(job.deadline)})` : ""}`),
+      3,
+    );
+    if (relatedJobs.length) parts.push(`Roles this contact could help with: ${relatedJobs.join("; ")}.`);
+    bestContactName = contact.name || bestContactName;
+  }
+
+  if (trackId != null) {
+    const warmContacts = contacts
+      .filter((contact) => getTrackId("contacts", contact) === trackId && isContactWarm(contact))
+      .slice(0, 3);
+    if (warmContacts.length && sourceKind !== "contact") {
+      parts.push(`Warm people already in reach: ${warmContacts
+        .map((contact) => `${contact.name} (${contact.relationshipStrength}${contact.targetOrg ? `, ${contact.targetOrg}` : ""})`)
+        .join("; ")}.`);
+      bestContactName = bestContactName || warmContacts[0]?.name;
+    }
+
+    const trackLearn = learns.filter((learnItem) => getTrackId("learn", learnItem) === trackId);
+    const evidencedCapabilities = cleanList(
+      trackLearn
+        .filter((learnItem) => learnItem.capabilityBuilt && (learnItem.learnStatus === "done" || !!learnItem.outputEvidenceUrl))
+        .map((learnItem) => learnItem.capabilityBuilt),
+      5,
+    );
+    const activeLearning = cleanList(
+      trackLearn
+        .filter((learnItem) => learnItem.active && learnItem.learnStatus !== "done")
+        .map((learnItem) => learnItem.capabilityBuilt ? `${learnItem.title} (${learnItem.capabilityBuilt})` : learnItem.title),
+      4,
+    );
+    if (activeLearning.length) parts.push(`Learning already in progress: ${activeLearning.join("; ")}.`);
+    if (evidencedCapabilities.length) parts.push(`Capabilities already evidenced: ${evidencedCapabilities.join(", ")}.`);
+
+    const gap = learningGapResult.tracks.find((entry) => entry.trackId === trackId);
+    if (gap?.rankedGaps.length) {
+      const gapLabels = cleanList(gap.rankedGaps.map((entry) => entry.label), 3);
+      if (gapLabels.length) parts.push(`Capability areas still worth strengthening: ${gapLabels.join(", ")}.`);
+    }
+
+    try {
+      const activity = await storage.getActivityLog();
+      const recentCompletedTaskIds = activity
+        .filter((entry) => entry.timestamp > Date.now() - 7 * 24 * 60 * 60 * 1000 && entry.eventType === "completed" && entry.taskId)
+        .map((entry) => entry.taskId as number);
+      if (recentCompletedTaskIds.length) {
+        const allTasks = await storage.getTasks();
+        const recentTaskTitles = cleanList(
+          allTasks
+            .filter((entry) => recentCompletedTaskIds.includes(entry.id) && resolveTrackId(entry, null) === trackId)
+            .map((entry) => entry.title),
+          4,
+        );
+        if (recentTaskTitles.length) parts.push(`Recently completed work: ${recentTaskTitles.join("; ")}.`);
+      } else if (userContext.recentWins) {
+        parts.push(`Recent progress to build on: ${userContext.recentWins}.`);
       }
+    } catch {
+      if (userContext.recentWins) parts.push(`Recent progress to build on: ${userContext.recentWins}.`);
     }
   }
-
-  // For learning/goal/hustle tasks: show live jobs with upcoming deadlines
-  if (sourceKind !== "job") {
-    const trackJobs = jobs.filter((j) => getTrackId("jobs", j) === trackId && isJobLive(j));
-    const withDeadlines = trackJobs
-      .filter((j) => j.deadline && Number(j.deadline) > Date.now())
-      .sort((a, b) => Number(a.deadline) - Number(b.deadline));
-    const urgent = withDeadlines.filter((j) => Number(j.deadline) - Date.now() < 14 * 24 * 60 * 60 * 1000);
-    const toShow = urgent.length ? urgent : trackJobs.slice(0, 3);
-    if (toShow.length) {
-      const lines = toShow.slice(0, 3).map((j) => {
-        const dl = j.deadline ? ` — due ${new Date(Number(j.deadline)).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "";
-        return `${j.title} at ${j.company} (${j.status}${dl})`;
-      });
-      parts.push(`Live roles on this track: ${lines.join("; ")}.`);
-    }
-
-    // Warm contacts for non-job tasks
-    const trackContacts = contacts.filter((c) => getTrackId("contacts", c) === trackId && isContactWarm(c));
-    if (trackContacts.length) {
-      const lines = trackContacts.slice(0, 3).map((c) => `${c.name} (${c.relationshipStrength}${c.targetOrg ? ", " + c.targetOrg : ""})`);
-      parts.push(`Warm contacts: ${lines.join("; ")}.`);
-      bestContactName = bestContactName || trackContacts[0].name;
-    }
-  }
-
-  // Capability evidence and active learning on this track
-  const trackLearn = learns.filter((l) => getTrackId("learn", l) === trackId);
-  const evidenced = trackLearn.filter((l) => l.capabilityBuilt && (l.learnStatus === "done" || l.outputEvidenceUrl)).map((l) => l.capabilityBuilt!);
-  const inProgress = trackLearn.filter((l) => l.capabilityBuilt && l.active && l.learnStatus !== "done").map((l) => `${l.capabilityBuilt} (via ${l.title})`);
-  if (evidenced.length) parts.push(`Capabilities already evidenced: ${evidenced.join(", ")}.`);
-  if (inProgress.length) parts.push(`Currently building: ${inProgress.join("; ")}.`);
-
-  // Recent completions on this track (from activity log, last 7 days)
-  try {
-    const log = await storage.getActivityLog();
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const recentCompletedTaskIds = log
-      .filter((a) => a.timestamp > sevenDaysAgo && a.eventType === "completed" && a.taskId)
-      .slice(0, 50)
-      .map((a) => a.taskId!);
-    if (recentCompletedTaskIds.length) {
-      const allTasks = await storage.getTasks();
-      const recentOnTrack = allTasks
-        .filter((t) => recentCompletedTaskIds.includes(t.id) && resolveTrackId(t, null) === trackId)
-        .slice(0, 4)
-        .map((t) => t.title)
-        .filter(Boolean);
-      if (recentOnTrack.length) parts.push(`Completed in last 7 days: ${recentOnTrack.join("; ")}.`);
-    }
-  } catch { /* non-fatal */ }
 
   return { text: parts.join("\n"), contactName: bestContactName };
 }
 
-async function buildSourceContext(task: Task): Promise<SourceBundle> {
+export async function buildSourceContext(task: Task, userContext?: UserContext): Promise<SourceBundle> {
+  const sharedUserContext = userContext || await buildUserContext();
+  const taskSourceNote = meaningfulTaskContextText(task.sourceNote);
   let sourceContext = "";
   let playbook = "";
   let sourceKind: SourceBundle["sourceKind"] = "task";
@@ -759,14 +1271,14 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
     sourceKind = "goal";
     const tracks = await storage.getCareerTracks();
     const activeTrackNames = tracks.filter((track) => track.status !== "archived").map((track) => track.name).slice(0, 6);
-    sourceContext = `This is a STRATEGIC GOAL / broad-pursuit item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one real role-opening move exists"}. ${task.sourceNote ? "Goal note: " + task.sourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
+    sourceContext = `This is a STRATEGIC GOAL / broad-pursuit item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one real role-opening move exists"}. ${taskSourceNote ? "Goal note: " + taskSourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
     playbook = "Use the parent pipeline workflow first. The goal is not abstract comparison; it is to turn each plausible path into one real role or application move. Prefer filling missing paths with concrete pipeline actions over reflection.";
   } else if (task.sourceType === "job" && task.sourceId) {
     const j = (await storage.getJobs()).find((x) => x.id === task.sourceId);
     if (j) {
       source = j;
       sourceKind = "job";
-      sourceContext = `This is a JOB / OPPORTUNITY item. Role: ${j.title} at ${j.company}. Status: ${j.status}. Readiness: ${j.applicationReadiness}. Fit score: ${j.fitScore ?? "unknown"}. Archetype: ${j.roleArchetype || "unknown"}. Narrative angle: ${j.narrativeAngle || "unset"}. ${j.note ? "Posting notes: " + j.note : ""} ${j.url ? "URL: " + j.url : ""}`;
+      sourceContext = `This is a JOB / OPPORTUNITY item. Role: ${j.title} at ${j.company}. Status: ${j.status}. Readiness: ${j.applicationReadiness}. ${j.deadline ? `Deadline: ${formatDeadlineLabel(j.deadline)}. ` : ""}Fit score: ${j.fitScore ?? "unknown"}. Archetype: ${j.roleArchetype || "unknown"}. Narrative angle: ${j.narrativeAngle || "unset"}. ${j.note ? "Posting notes: " + j.note : ""} ${j.url ? "URL: " + j.url : ""}`;
       playbook = "Use the parent application workflow first. CV/cover/answers/submission are Artifact; role research is Knowledge; multi-role search or networking is Pipeline. Never auto-change job status.";
     }
   } else if (task.sourceType === "learn" && task.sourceId) {
@@ -774,8 +1286,44 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
     if (l) {
       source = l;
       sourceKind = "learn";
-      sourceContext = `This is a LEARNING / DEVELOPMENT item. Title: ${l.title}. Type: ${l.type}. ${l.url ? "URL: " + l.url + ". " : ""}${l.note ? "Notes: " + l.note + ". " : ""}${l.capabilityBuilt ? "Capability: " + l.capabilityBuilt + ". " : ""}Optional useful result: ${l.requiredOutput || "none defined yet"}.`;
+      const learnParts = [
+        `This is a LEARNING / DEVELOPMENT item. Title: ${l.title}.`,
+        `Type: ${l.type}.`,
+        l.url ? `URL: ${l.url}.` : "",
+        l.note ? `Notes: ${l.note}.` : "",
+        l.capabilityBuilt ? `Capability: ${l.capabilityBuilt}.` : "",
+        `Optional useful result: ${l.requiredOutput || "none defined yet"}.`,
+        l.outputTitle ? `Current saved output title: ${l.outputTitle}.` : "",
+        l.outputStatus ? `Current output state: ${l.outputStatus}.` : "",
+        l.outputEvidenceUrl ? `Existing saved output link: ${l.outputEvidenceUrl}.` : "",
+      ];
+      if (l.sourceType === "recommendation" && l.sourceId) {
+        try {
+          const [subdivisions, milestones] = await Promise.all([
+            storage.getRecommendationSubdivisions(l.sourceId),
+            storage.getRecommendationMilestones(l.sourceId),
+          ]);
+          const topicLabels = cleanList(subdivisions.map((subdivision) => subdivision.label), 4);
+          const milestoneLabels = cleanList(
+            milestones.map((milestone) => milestone.label || milestone.suggestedTaskTitle || milestone.doneWhen),
+            4,
+          );
+          if (topicLabels.length) learnParts.push(`Stored topic breakdown: ${topicLabels.join("; ")}.`);
+          if (milestoneLabels.length) learnParts.push(`Stored checkpoints: ${milestoneLabels.join("; ")}.`);
+        } catch {
+          // Non-fatal: breakdown still works without recommendation detail.
+        }
+      }
+      sourceContext = learnParts.filter(Boolean).join(" ");
       playbook = "Use the parent learning/capability workflow first. Do not just read; locate the stage and produce a useful note, practice step, or useful output if one is defined. Never auto-change learnStatus.";
+    }
+  } else if (task.sourceType === "contact" && task.sourceId) {
+    const c = (await storage.getContacts()).find((x) => x.id === task.sourceId);
+    if (c) {
+      source = c;
+      sourceKind = "contact";
+      sourceContext = `This is a CONTACT / NETWORKING item. Person: ${contactDisplayName(c)}. Status: ${c.status}. Relationship strength: ${c.relationshipStrength}. Ask type: ${c.askType || "unspecified"}. ${c.who ? "Who they are: " + c.who + ". " : ""}${c.sourceNetwork ? "Shared network: " + c.sourceNetwork + ". " : ""}${c.why ? "Why they matter: " + c.why + ". " : ""}${c.targetOrg ? "Target company: " + c.targetOrg + ". " : ""}${c.targetRole ? "Target role: " + c.targetRole + ". " : ""}${c.messageDraft ? "Existing draft: " + c.messageDraft + ". " : ""}${c.lastMessage ? "Last message: " + c.lastMessage + ". " : ""}${c.nextFollowUpDate ? "Next follow-up: " + c.nextFollowUpDate + ". " : ""}${c.referralPotential ? "Referral potential: " + c.referralPotential + ". " : ""}`;
+      playbook = "Use the parent networking workflow first. Turn this into one specific outreach, follow-up, referral ask, or relationship move. Never auto-change contact status.";
     }
   } else if (task.sourceType === "hustle" && task.sourceId) {
     const h = (await storage.getHustles()).find((x) => x.id === task.sourceId);
@@ -785,8 +1333,8 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
       sourceContext = `This is a PROOF-ASSET / project step. Title: ${h.title}. Stage: ${h.stage}. Content pillar: ${h.contentPillar || "unset"}. Core claim: ${h.coreClaim || "unset"}. ${h.note ? "Notes: " + h.note : ""}`;
       playbook = "Use the parent output workflow first: claim -> audience -> examples -> draft -> save. Never auto-change the stage automatically.";
     }
-  } else if (task.sourceUrl || task.sourceNote) {
-    sourceContext = `${task.sourceNote ? "Context: " + task.sourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
+  } else if (task.sourceUrl || taskSourceNote) {
+    sourceContext = `${taskSourceNote ? "Context: " + taskSourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
   }
   const tempBundle: SourceBundle = { sourceContext, playbook, sourceKind, source, parentContext: "" };
   const parentWorkflow = parentWorkflowFor(task, tempBundle);
@@ -794,10 +1342,7 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
 
   let cvText = "";
   let jdText = "";
-  try {
-    const profile = await storage.getProfile();
-    cvText = profile?.cvText?.trim() || "";
-  } catch { /* non-fatal */ }
+  cvText = sharedUserContext.cv?.trim() || "";
   if (sourceKind === "job" && source) {
     jdText = ((source as any).jdText as string | undefined)?.trim() || "";
   }
@@ -805,7 +1350,7 @@ async function buildSourceContext(task: Task): Promise<SourceBundle> {
   let crossEngineContext = "";
   let contactName: string | undefined;
   try {
-    const ce = await buildCrossEngineContext(task, sourceKind, source);
+    const ce = await buildCrossEngineContext(task, sourceKind, source, sharedUserContext);
     crossEngineContext = ce.text;
     contactName = ce.contactName;
   } catch { /* non-fatal — breakdown works without cross-engine context */ }
@@ -830,6 +1375,10 @@ export function buildTaskBreakdownPrompt(input: {
   };
 }) {
   const { task, bundle, fallbackObject, userContextText, contextBlocks } = input;
+  const globalGuidance = globalBreakdownQualityGuidance();
+  const taskGuidance = taskSpecificPromptGuidance(task, bundle);
+  const providerGuidance = providerEvidencePromptGuidance(contextBlocks);
+  const sparseContextGuidance = sparseContextPromptGuidance(task, bundle, contextBlocks);
   const providerContext = formatContextBlocksForPrompt(contextBlocks || {});
   return (
     `${COACH_PREAMBLE}You are Anchor's workflow-state decomposition engine. Do not jump from task title to steps.\n\n` +
@@ -846,13 +1395,18 @@ export function buildTaskBreakdownPrompt(input: {
     `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
     `Use user-authored context ahead of external public evidence. Use external public evidence only to sharpen public facts and current constraints. Do not mention provider mechanics or invent sources not shown in the prompt. ` +
     `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
+    `${globalGuidance}\n` +
+    `For learning or research work: if stored notes, topic breakdown, checkpoints, links, prior outputs, live role context, or user-authored note excerpts are present, use them directly. Name the actual section, concept, checkpoint, deadline, company, role, or prior output when available. Do not assume page content beyond what is shown. If the context is sparse or partial, tell the user exactly what to search for, what to extract, and what output to produce.\n\n` +
+    `${taskGuidance ? `${taskGuidance}\n` : ""}` +
+    `${providerGuidance ? `${providerGuidance}\n` : ""}` +
+    `${sparseContextGuidance ? `${sparseContextGuidance}\n` : ""}` +
     `${bundle.playbook ? `Relevant playbook: ${bundle.playbook}\n` : ""}` +
     `${bundle.parentContext ? `Parent workflow context: ${bundle.parentContext}\n` : ""}` +
     `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
     `${bundle.crossEngineContext ? (
-      `\nCONNECTED CONTEXT — use this to make steps specific. Name real people, reference real deadlines, ` +
+      `\nCONNECTED CONTEXT - use this to make steps specific. Name real people, reference real deadlines, ` +
       `build on completed work, and connect steps to live opportunities. Do not repeat work listed as already done.\n` +
-      `${bundle.crossEngineContext}\n`
+      `${bundle.crossEngineContext}\n\n`
     ) : ""}` +
     `${providerContext ? `\n${providerContext}\n\n` : ""}` +
     `Default work object if uncertain: ${fallbackObject}\n` +
@@ -862,7 +1416,7 @@ export function buildTaskBreakdownPrompt(input: {
       `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +
       `IMPORTANT: For Build materials steps, quote the 2-3 most relevant existing CV bullets exactly, ` +
       `then write a specific improved version using the job's language. ` +
-      `Step format: "Rewrite: \\"[exact existing bullet]\\" → \\"[improved version]\\"". ` +
+      `Step format: "Rewrite: \\"[exact existing bullet]\\" -> \\"[improved version]\\"". ` +
       `Steps must reference real content from the CV and JD above, not generic advice.\n`
     ) : ""}`
   );
@@ -874,9 +1428,10 @@ export function registerTaskBreakdownRoutes(app: Express) {
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
     const context = String(req.body?.context || "").slice(0, 500);
-    const bundle = await buildSourceContext(task);
+    const sharedUserContext = await buildUserContext();
+    const bundle = await buildSourceContext(task, sharedUserContext);
     const fallbackObject = (bundle.parentWorkflow?.workObject as WorkObject) || classifyWorkObject(task, bundle);
-    const userCtx = formatContextForPrompt(await buildUserContext());
+    const userCtx = formatContextForPrompt(sharedUserContext);
     const collectedContext = await collectTaskBreakdownContext({
       task,
       sourceBundle: bundle,
@@ -888,40 +1443,13 @@ export function registerTaskBreakdownRoutes(app: Express) {
     let steps: BreakdownStep[] = [];
     let workflowState: WorkflowState | undefined;
     try {
-      const raw = await llm(
-        `${COACH_PREAMBLE}You are Anchor's workflow-state decomposition engine. Do not jump from task title to steps.\n\n` +
-        `${userCtx}\n\n` +
-        `Use exactly this logic:\n` +
-        `1. Read inherited parent workflow first, if present.\n` +
-        `2. Classify the specific task intent as Artifact, Decision, Knowledge, Capability, Pipeline, or Problem.\n` +
-        `3. Decide whether the workflow is finite or continuous.\n` +
-        `4. Locate ONE current stage and define its output.\n` +
-        `5. Define completion criteria for that stage.\n` +
-        `6. Break down only the current stage into discrete actions.\n` +
-        `7. Define the advance condition and next stage.\n\n` +
-        `Prefer inherited workflow context over rediscovering from scratch, but let task intent refine the stage. Do not imply the parent has progressed; only provide the next workflow hint. ` +
-        `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
-        `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
-        `${bundle.playbook ? `Relevant playbook: ${bundle.playbook}\n` : ""}` +
-        `${bundle.parentContext ? `Parent workflow context: ${bundle.parentContext}\n` : ""}` +
-        `Default work object if uncertain: ${fallbackObject}\n` +
-        `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
-        `Source context: ${bundle.sourceContext || "none beyond the title"}\n` +
-        `${context ? `User context: ${context}\n` : ""}` +
-        `${bundle.crossEngineContext ? (
-          `\nCONNECTED CONTEXT — use this to make steps specific. Name real people, reference real deadlines, ` +
-          `build on completed work, and connect steps to live opportunities. Do not repeat work listed as already done.\n` +
-          `${bundle.crossEngineContext}\n\n`
-        ) : ""}` +
-        `${bundle.cvText && bundle.jdText ? (
-          `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
-          `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +
-          `IMPORTANT: For Build materials steps, quote the 2-3 most relevant existing CV bullets exactly, ` +
-          `then write a specific improved version using the job's language. ` +
-          `Step format: "Rewrite: \\"[exact existing bullet]\\" → \\"[improved version]\\"". ` +
-          `Steps must reference real content from the CV and JD above, not generic advice.\n`
-        ) : ""}`,
-      );
+      const raw = await llm(buildTaskBreakdownPrompt({
+        task,
+        bundle,
+        fallbackObject,
+        userContextText: context ? `${userCtx}\nUser context: ${context}` : userCtx,
+        contextBlocks: collectedContext.blocks,
+      }), { model: LLM_MODELS.breakdown });
       const parsed = parseBreakdown(raw, fallbackObject, bundle.parentWorkflow);
       question = parsed.question || "";
       steps = parsed.steps;
@@ -946,3 +1474,4 @@ export function registerTaskBreakdownRoutes(app: Express) {
     res.json(updated);
   });
 }
+

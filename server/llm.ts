@@ -12,8 +12,32 @@ type LlmOptions = {
   retries?: number;
 };
 
-export const MODEL_PRIMARY = "gpt_5_1";
-export const MODEL_LIGHT = "gpt-4.1";
+const DEFAULT_PRIMARY_MODEL = "gpt-5.5";
+const DEFAULT_LIGHT_MODEL = "gpt-5.4-mini";
+
+function cleanModelId(value: string | undefined, fallback: string) {
+  const trimmed = String(value || "").trim();
+  return trimmed || fallback;
+}
+
+export function resolveLlmModelConfig(env: NodeJS.ProcessEnv = process.env) {
+  return {
+    // Use the strongest default for open-ended planning/reasoning work.
+    primary: cleanModelId(env.ANCHOR_LLM_PRIMARY_MODEL, DEFAULT_PRIMARY_MODEL),
+    // Keep support/extraction/classification paths on a cheaper default.
+    light: cleanModelId(env.ANCHOR_LLM_LIGHT_MODEL, DEFAULT_LIGHT_MODEL),
+  };
+}
+
+const MODEL_CONFIG = resolveLlmModelConfig();
+export const MODEL_PRIMARY = MODEL_CONFIG.primary;
+export const MODEL_LIGHT = MODEL_CONFIG.light;
+export const LLM_MODELS = Object.freeze({
+  breakdown: MODEL_PRIMARY,
+  draft: MODEL_PRIMARY,
+  critique: MODEL_PRIMARY,
+  support: MODEL_LIGHT,
+});
 const DEFAULT_MODEL = MODEL_PRIMARY;
 const MAX_RETRIES = 2;
 const BASE_DELAY_MS = 1000;

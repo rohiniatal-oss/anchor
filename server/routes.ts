@@ -24,7 +24,7 @@ import { syncGapRecommendations } from "./gapRecommendations";
 import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
 import { COACH_PREAMBLE } from "./userPromptProfile";
-import { llm, llmUsageStats } from "./llm";
+import { llm, llmUsageStats, LLM_MODELS } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 const acceptRecommendationSchema = z.object({
@@ -428,7 +428,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Return ONLY the bullet points, no preamble.`;
 
       try {
-        const draft = await llm(prompt);
+        const draft = await llm(prompt, { model: LLM_MODELS.draft });
         if (draft) return res.json({ draft });
       } catch {}
       res.json({
@@ -473,7 +473,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         `Return plain text, no markdown headers.`;
 
       try {
-        const critique = await llm(prompt);
+        const critique = await llm(prompt, { model: LLM_MODELS.critique });
         if (critique) return res.json({ critique });
       } catch {}
       res.json({

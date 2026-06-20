@@ -1,5 +1,6 @@
 import { test, describe, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { LLM_MODELS, MODEL_LIGHT, MODEL_PRIMARY, resolveLlmModelConfig } from "./llm";
 
 // We can't import the real llm module (it creates an OpenAI client).
 // Instead we test the retry/backoff logic and llmJSON parsing by
@@ -164,5 +165,50 @@ describe("exponential backoff timing", () => {
   test("delay doubles each attempt", () => {
     const delays = [0, 1, 2, 3].map((attempt) => BASE_DELAY_MS * 2 ** attempt);
     assert.deepEqual(delays, [1000, 2000, 4000, 8000]);
+  });
+});
+
+describe("model configuration", () => {
+  test("primary model uses a valid OpenAI model id format", () => {
+    assert.match(MODEL_PRIMARY, /^gpt-[\w.]+$/);
+    assert.doesNotMatch(MODEL_PRIMARY, /_/);
+  });
+
+  test("defaults target current flagship and lower-cost support models", () => {
+    assert.equal(MODEL_PRIMARY, "gpt-5.5");
+    assert.equal(MODEL_LIGHT, "gpt-5.4-mini");
+  });
+
+  test("env overrides can swap the primary and light models without code edits", () => {
+    const models = resolveLlmModelConfig({
+      ...process.env,
+      ANCHOR_LLM_PRIMARY_MODEL: "gpt-5.4",
+      ANCHOR_LLM_LIGHT_MODEL: "gpt-5.4-nano",
+    });
+    assert.deepEqual(models, {
+      primary: "gpt-5.4",
+      light: "gpt-5.4-nano",
+    });
+  });
+
+  test("blank env overrides fall back to sane defaults", () => {
+    const models = resolveLlmModelConfig({
+      ...process.env,
+      ANCHOR_LLM_PRIMARY_MODEL: "   ",
+      ANCHOR_LLM_LIGHT_MODEL: "",
+    });
+    assert.deepEqual(models, {
+      primary: "gpt-5.5",
+      light: "gpt-5.4-mini",
+    });
+  });
+
+  test("named workload defaults keep planning and drafting on the strong lane", () => {
+    assert.deepEqual(LLM_MODELS, {
+      breakdown: "gpt-5.5",
+      draft: "gpt-5.5",
+      critique: "gpt-5.5",
+      support: "gpt-5.4-mini",
+    });
   });
 });

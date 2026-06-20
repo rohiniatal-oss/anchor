@@ -21,8 +21,14 @@ import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { syncGapRecommendations } from "./gapRecommendations";
-import { generateJobPrepArc, generateNarrativeAngle } from "./learningCurriculum";
-import { generateHustleArc } from "./learningCurriculum";
+import {
+  generateJobPrepArc,
+  generateNarrativeAngle,
+  generateHustleArc,
+  generateLearningCurriculum,
+  generateContactArchetypes,
+  generateLearnItemEnrichment,
+} from "./learningCurriculum";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats, LLM_MODELS } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
@@ -172,31 +178,34 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     await storage.deleteTask(Number(req.params.id));
     res.json({ ok: true });
   });
+
+  // ── Jobs ──────────────────────────────────────────────────────────────────
   app.post("/api/jobs", async (req, res) => {
     const p = insertJobSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const job = await storage.createJob(p.data);
+    res.json(job);
     if ((job.jdText || "").trim().length > 40) {
       generateJobPrepArc(job).catch(() => {});
     }
-    if (!(job.narrativeAngle || "").trim()) {
-      generateNarrativeAngle(job).catch(() => {});
-    }
-    res.json(job);
+    generateNarrativeAngle(job).catch(() => {});
   });
   app.get("/api/jobs", async (_q, res) => res.json(await storage.getJobs()));
   app.patch("/api/jobs/:id", async (req, res) => {
     const p = insertJobSchema.partial().safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const before = await storage.getJob(Number(req.params.id));
     const updated = await storage.updateJob(Number(req.params.id), p.data);
     if (!updated) return res.status(404).json({ error: "Not found" });
-    if (p.data.jdText && (p.data.jdText || "").trim().length > 40) {
-      generateJobPrepArc(updated).catch(() => {});
-    }
-    if (!(updated.narrativeAngle || "").trim()) {
+    res.json(updated);
+    const jdChanged = p.data.jdText && p.data.jdText !== (before?.jdText || "");
+    if (jdChanged && (p.data.jdText || "").trim().length > 40) {
+      // Force regeneration — JD changed so old arc and angle are stale.
+      generateJobPrepArc(updated, /* force */ true).catch(() => {});
+      generateNarrativeAngle({ ...updated, narrativeAngle: "" } as any).catch(() => {});
+    } else if (!(updated.narrativeAngle || "").trim()) {
       generateNarrativeAngle(updated).catch(() => {});
     }
-    res.json(updated);
   });
   app.post("/api/jobs/:id/reject", async (req, res) => {
     const id = Number(req.params.id);
@@ -231,6 +240,14 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json({ ok: true });
   });
 
+  // ── Learn ─────────────────────────────────────────────────────────────────
+  app.post("/api/learn", async (req, res) => {
+    const p = insertLearnSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const learn = await storage.createLearn(p.data);
+    res.json(learn);
+    generateLearnItemEnrichment(learn).catch(() => {});
+  });
   app.patch("/api/learn/:id", async (req, res) => {
     const p = insertLearnSchema.partial().safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
@@ -251,33 +268,46 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     }
     res.json(updated);
   });
-  crud(app, "learn", () => storage.getLearn(), insertLearnSchema,
-    (d) => storage.createLearn(d), (id, d) => storage.updateLearn(id, d), (id) => storage.deleteLearn(id));
+  app.get("/api/learn", async (_q, res) => res.json(await storage.getLearn()));
+  app.delete("/api/learn/:id", async (req, res) => {
+    await storage.deleteLearn(Number(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // ── Hustles ───────────────────────────────────────────────────────────────
   app.post("/api/hustles", async (req, res) => {
     const p = insertHustleSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
     const hustle = await storage.createHustle(p.data);
     res.json(hustle);
-    generateHustleArc(hustle).catch(() => {
-      console.error(`hustle arc generation skipped for hustle ${hustle.id}`);
-    });
+    generateHustleArc(hustle).catch(() => {});
   });
   app.get("/api/hustles", async (_q, res) => res.json(await storage.getHustles()));
   app.patch("/api/hustles/:id", async (req, res) => {
     const p = insertHustleSchema.partial().safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const before = await storage.getHustle(Number(req.params.id));
     const updated = await storage.updateHustle(Number(req.params.id), p.data);
     if (!updated) return res.status(404).json({ error: "Not found" });
     res.json(updated);
+    // Re-generate arc if the core content changed (claim or description).
+    const coreChanged =
+      (p.data.coreClaim && p.data.coreClaim !== (before?.coreClaim || "")) ||
+      (p.data.description && p.data.description !== (before?.description || ""));
+    if (coreChanged) {
+      generateHustleArc({ ...updated, hustleArc: [] } as any, /* force */ true).catch(() => {});
+    }
   });
   app.delete("/api/hustles/:id", async (req, res) => {
     await storage.deleteHustle(Number(req.params.id));
     res.json({ ok: true });
   });
+
   crud(app, "wins", () => storage.getWins(), insertWinSchema,
     (d) => storage.createWin(d), () => Promise.resolve(undefined), (id) => storage.deleteWin(id));
   crud(app, "contacts", () => storage.getContacts(), insertContactSchema,
     (d) => storage.createContact(d), (id, d) => storage.updateContact(id, d), (id) => storage.deleteContact(id));
+
   app.get("/api/recommendations", async (_q, res) => {
     res.json(await storage.getRecommendations());
   });
@@ -402,6 +432,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
       const ctx = await buildUserContext();
       const userCtx = formatContextForPrompt(ctx);
+      const draftModel = (LLM_MODELS as any).draft ?? (LLM_MODELS as any).default ?? Object.values(LLM_MODELS)[0];
       const prompt = milestoneType === "artifact"
         ? `${COACH_PREAMBLE}You are helping a candidate prepare a concrete piece of writing.\n` +
           `${userCtx} ` +
@@ -426,7 +457,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
           `Return ONLY the bullet points, no preamble.`;
 
       try {
-        const draft = await llm(prompt, { model: LLM_MODELS.draft });
+        const draft = await llm(prompt, { model: draftModel });
         if (draft) return res.json({ draft });
       } catch {}
       res.json({
@@ -454,6 +485,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       });
 
       const critiqueCtx = await buildUserContext();
+      const critiqueModel = (LLM_MODELS as any).critique ?? (LLM_MODELS as any).default ?? Object.values(LLM_MODELS)[0];
       const prompt =
         `${COACH_PREAMBLE}You are reviewing a candidate's draft — be demanding but constructive.\n` +
         `${formatContextForPrompt(critiqueCtx)} Targeting ${rec?.linkedCombination || "advisory/strategy"} roles.\n` +
@@ -470,7 +502,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         `Return plain text, no markdown headers.`;
 
       try {
-        const critique = await llm(prompt, { model: LLM_MODELS.critique });
+        const critique = await llm(prompt, { model: critiqueModel });
         if (critique) return res.json({ critique });
       } catch {}
       res.json({
@@ -536,6 +568,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         sourceType: "recommendation",
         sourceId: recommendation.id,
       } as any);
+      if (created) generateLearnItemEnrichment(created).catch(() => {});
     } else if (entityType === "contact") {
       created = await storage.createContact({
         name: trimSentence(draft.name, 120),
@@ -572,6 +605,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         roleArchetype: trimSentence(draft.roleArchetype, 120),
         relatedTrackId: trackId,
       } as any);
+      if (created) generateNarrativeAngle(created).catch(() => {});
     } else {
       created = await storage.createTask({
         title,
@@ -666,11 +700,16 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     res.json(updated);
   });
 
+  // ── Career Tracks ─────────────────────────────────────────────────────────
   app.get("/api/career-tracks", async (_req, res) => res.json(await storage.getCareerTracks()));
   app.post("/api/career-tracks", async (req, res) => {
     const p = insertCareerTrackSchema.safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: p.error.flatten() });
-    res.json(await storage.createCareerTrack(p.data));
+    const track = await storage.createCareerTrack(p.data);
+    res.json(track);
+    // Fire generators asynchronously — do not block the response.
+    generateLearningCurriculum(track).catch(() => {});
+    generateContactArchetypes(track).catch(() => {});
   });
   app.patch("/api/career-tracks/:id", async (req, res) => {
     const p = insertCareerTrackSchema.partial().safeParse(req.body);
@@ -678,6 +717,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const u = await storage.updateCareerTrack(Number(req.params.id), p.data);
     if (!u) return res.status(404).json({ error: "Not found" });
     res.json(u);
+    // Re-generate when core content changes.
+    const coreChanged = p.data.name || p.data.description;
+    if (coreChanged) {
+      generateLearningCurriculum(u, /* force */ true).catch(() => {});
+      generateContactArchetypes(u).catch(() => {});
+    }
   });
   app.delete("/api/career-tracks/:id", async (req, res) => {
     await storage.deleteCareerTrack(Number(req.params.id));

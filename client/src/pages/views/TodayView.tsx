@@ -796,14 +796,20 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const upcomingPlanOpen = showUpcomingPlan ?? false;
 
   const hadPinned = useRef(false);
+  const lastPinnedPlanItemId = useRef<number | null>(null);
   useEffect(() => {
-    if (pinned) { hadPinned.current = true; return; }
+    if (pinned) {
+      hadPinned.current = true;
+      lastPinnedPlanItemId.current = pinned.planItemId ?? null;
+      return;
+    }
     if (!hadPinned.current) return;
+    if (plan?.enoughForToday) { hadPinned.current = false; return; }
+    const next = activeItems.find((it) => it.id !== lastPinnedPlanItemId.current);
+    if (!next) return;
     hadPinned.current = false;
-    if (plan?.enoughForToday) return;
-    const next = activeItems[0];
-    if (next) startItem(next);
-  }, [pinned, activeItems.length]);
+    void startItem(next);
+  }, [pinned, plan?.enoughForToday, activeItems]);
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 

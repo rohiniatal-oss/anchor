@@ -1068,6 +1068,19 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
     jdText = ((source as any).jdText as string | undefined)?.trim() || "";
   }
 
+  if (task.sourceType && task.sourceId) {
+    try {
+      const allTasks = await storage.getTasks();
+      const doneSiblings = allTasks
+        .filter((t) => t.id !== task.id && t.sourceType === task.sourceType && t.sourceId === task.sourceId && t.done)
+        .slice(-5)
+        .map((t) => t.title);
+      if (doneSiblings.length) {
+        sourceContext += ` Already completed for this ${sourceKind}: ${doneSiblings.join("; ")}.`;
+      }
+    } catch {}
+  }
+
   let crossEngineContext = "";
   let contactName: string | undefined;
   try {

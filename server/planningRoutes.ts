@@ -58,6 +58,16 @@ async function buildShrinkContext(task: { id: number; title: string; sourceType?
         }
       }
     } catch {}
+    try {
+      const allTasks = await storage.getTasks();
+      const doneSiblings = allTasks
+        .filter((t) => t.id !== task.id && t.sourceType === task.sourceType && t.sourceId === task.sourceId && t.done)
+        .slice(-4)
+        .map((t) => t.title);
+      if (doneSiblings.length) {
+        lines.push(`Already done for this: ${doneSiblings.join("; ")}`);
+      }
+    } catch {}
   }
   try {
     const wins = await storage.getWins();

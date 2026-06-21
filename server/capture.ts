@@ -234,6 +234,31 @@ export async function routeCapture(id: number, rawRoute: string) {
       sourceNote: reason,
     });
     const updated = await storage.updateTask(id, patch);
+    if (route === "today") {
+      try {
+        const day = new Date().toISOString().slice(0, 10);
+        const plan = await storage.getPlanByDate(day);
+        if (plan) {
+          const items = await storage.getPlanItems(plan.id);
+          const alreadyInPlan = items.some((i) => i.taskId === id);
+          if (!alreadyInPlan) {
+            await storage.createPlanItem({
+              planId: plan.id,
+              sequence: items.length,
+              slot: "next",
+              sourceType: updated?.sourceType || "task",
+              sourceId: updated?.sourceId ?? undefined,
+              taskId: id,
+              title: updated?.title || task.title,
+              whySelected: "You captured this for today.",
+              doneWhen: updated?.doneWhen || "",
+              status: "planned",
+              plannedFor: day,
+            } as any);
+          }
+        }
+      } catch {}
+    }
     return { status: 200, body: { moved: route, route, task: updated, reason } };
   }
 

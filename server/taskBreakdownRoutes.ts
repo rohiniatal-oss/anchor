@@ -683,6 +683,12 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
     lines.push(`Current readiness stage: ${stage} (readiness=${readiness}, status=${status}).`);
     lines.push(`Use the APPLICATION_WORKFLOW: ${APPLICATION_WORKFLOW.join(" → ")}.`);
     lines.push(`Do NOT recommend submitting or changing status. Focus on the current stage output only.`);
+    if (j?.deadline) {
+      const deadlineDays = deadlineDaysFromNow(j.deadline);
+      if (deadlineDays !== null && deadlineDays <= 3) {
+        lines.push(`DEADLINE URGENCY: This role closes in ${deadlineDays <= 0 ? "TODAY or already overdue" : deadlineDays === 1 ? "1 day" : `${deadlineDays} days`}. Every step must move toward a submittable application. Cut anything exploratory — no "research the company culture" or "reflect on fit". Focus on producing the next required material. If the CV is ready, draft the cover letter. If materials are ready, submit.`);
+      }
+    }
     if (j?.narrativeAngle) lines.push(`Narrative angle to use: ${j.narrativeAngle}.`);
     if (j?.roleArchetype) lines.push(`Role archetype: ${j.roleArchetype} — align step framing to this archetype.`);
   }
@@ -770,6 +776,14 @@ function formatDeadlineLabel(deadline: string) {
   const date = new Date(`${raw}T00:00:00`);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function deadlineDaysFromNow(deadline: string): number | null {
+  if (!deadline) return null;
+  const d = new Date(deadline + "T23:59:59");
+  if (isNaN(d.getTime())) return null;
+  const now = new Date();
+  return Math.ceil((d.getTime() - now.getTime()) / 86400000);
 }
 
 function cleanList(values: Array<string | null | undefined>, max = 4) {

@@ -10,6 +10,13 @@ import { insertEventSchema, type InsertActivityLog, type InsertDayPlanItem } fro
 
 type Energy = "low" | "medium" | "high";
 
+function deadlineDaysFromNow(deadline: string): number | null {
+  if (!deadline) return null;
+  const d = new Date(deadline + "T23:59:59");
+  if (isNaN(d.getTime())) return null;
+  return Math.ceil((d.getTime() - new Date().getTime()) / 86400000);
+}
+
 function decoratePlanItems(items: any[]) {
   return items.map((item) => ({
     ...item,
@@ -28,6 +35,12 @@ async function buildShrinkContext(task: { id: number; title: string; sourceType?
         if (job) {
           lines.push(`Role: ${job.title}${job.company ? ` at ${job.company}` : ""}`);
           if (job.jdText) lines.push(`Key requirements: ${job.jdText.slice(0, 300)}`);
+          if (job.deadline) {
+            const dd = deadlineDaysFromNow(job.deadline);
+            if (dd !== null && dd <= 3) {
+              lines.push(`URGENT: Deadline ${dd <= 0 ? "is today or overdue" : `in ${dd} day${dd === 1 ? "" : "s"}`}. Steps must move directly toward submission.`);
+            }
+          }
         }
       } else if (task.sourceType === "contact") {
         const contacts = await storage.getContacts();
@@ -315,7 +328,24 @@ export function registerPlanningRoutes(app: Express) {
     const skipped = (task.skipped || 0) + 1;
     let steps = task.steps;
     let autoShrunk = false;
-    if (skipped >= 2 && (!steps || steps === "[]")) {
+    let replacement: string | null = null;
+    if (skipped >= 3 && steps && steps !== "[]") {
+      try {
+        const shrinkContext = await buildShrinkContext(task);
+        const result = await llmJSON<{ replacement: string; steps: string[] }>(
+          "This task has been skipped 3+ times even with steps broken down. The current approach isn't working. " +
+          "Find a DIFFERENT ANGLE to achieve the same goal — a side door, a smaller version, or a completely different starting point. " +
+          "The replacement should feel fresh, not like a repackaged version of the same thing. " +
+          'Return JSON: {"replacement":"<new task title that feels different>","steps":["<2-3 micro-steps for the new angle>"]}\n\n' + shrinkContext,
+          { model: MODEL_LIGHT },
+        );
+        if (result?.replacement && result.steps?.length) {
+          replacement = result.replacement;
+          steps = JSON.stringify(result.steps.slice(0, 3).map((x) => ({ text: x, done: false })));
+          autoShrunk = true;
+        }
+      } catch {}
+    } else if (skipped >= 2 && (!steps || steps === "[]")) {
       try {
         const shrinkContext = await buildShrinkContext(task);
         const arr = await llmJSON<string[]>(
@@ -343,7 +373,9 @@ export function registerPlanningRoutes(app: Express) {
         }
       }
     }
-    const updated = await storage.updateTask(id, { skipped, steps, pinned: false, status: "not_started" });
+    const patch: any = { skipped, steps, pinned: false, status: "not_started" };
+    if (replacement) patch.title = replacement;
+    const updated = await storage.updateTask(id, patch);
     await syncPlanItem(day, task, { status: "skipped", skippedAt: Date.now() });
     const activity: InsertActivityLog = {
       eventType: "skipped",
@@ -351,10 +383,10 @@ export function registerPlanningRoutes(app: Express) {
       sourceId: task.sourceId ?? undefined,
       taskId: id,
       planItemId: task.planItemId ?? undefined,
-      metadata: JSON.stringify({ skipped, autoShrunk }),
+      metadata: JSON.stringify({ skipped, autoShrunk, replacement: !!replacement }),
     };
     await storage.logActivity(activity);
-    res.json(updated);
+    res.json({ ...updated, replacement: !!replacement });
   });
 
   app.post("/api/today/plan", async (req, res) => {

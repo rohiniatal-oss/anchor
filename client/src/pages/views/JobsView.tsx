@@ -81,8 +81,10 @@ const READINESS_STAGES = [
 const READINESS_ORDER = ["none", "cv", "cover", "questions", "sample", "referral", "submitted", "follow_up"];
 
 function CompanyBriefSection({ job }: { job: Job }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [brief, setBrief] = useState<any>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
 
   useEffect(() => {
     if (job.companyBrief) {
@@ -92,22 +94,55 @@ function CompanyBriefSection({ job }: { job: Job }) {
 
   if (!brief || !job.company) return null;
 
+  const allSuggestions = [
+    ...(brief.landscape?.competitors || []),
+    ...(brief.landscape?.alsoConsider || []),
+  ].filter(Boolean);
+
+  async function saveCompanyAsJob(company: string) {
+    setSaving(company);
+    try {
+      await apiRequest("POST", "/api/jobs", {
+        title: job.title,
+        company,
+        status: "wishlist",
+        roleArchetype: job.roleArchetype || "",
+        relatedTrackId: job.relatedTrackId,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: `Added ${company}`, description: `Saved ${job.title} at ${company} to explore.` });
+    } catch {
+      toast({ title: "Couldn't save", description: "Try again." });
+    } finally {
+      setSaving(null);
+    }
+  }
+
   return (
-    <button
-      onClick={() => setExpanded(!expanded)}
-      className="flex items-start gap-1.5 w-full text-left text-[11px] text-muted-foreground hover:text-foreground/80 transition-colors"
-    >
-      <Building2 className="w-3 h-3 mt-0.5 shrink-0" />
-      {expanded ? (
-        <div className="space-y-1">
-          <p className="leading-snug">{brief.whatTheyDo}</p>
-          {brief.relevantTeam && <p className="leading-snug">Team: {brief.relevantTeam}</p>}
-          {brief.landscape?.marketContext && <p className="leading-snug">{brief.landscape.marketContext}</p>}
-        </div>
-      ) : (
-        <span className="leading-snug">{brief.whatTheyDo?.slice(0, 80)}{brief.whatTheyDo?.length > 80 ? "..." : ""}</span>
+    <div className="space-y-2">
+      {brief.whatTheyDo && (
+        <p className="text-[11px] text-muted-foreground leading-snug flex items-start gap-1.5">
+          <Building2 className="w-3 h-3 mt-0.5 shrink-0" />
+          {brief.whatTheyDo}
+        </p>
       )}
-    </button>
+      {allSuggestions.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] text-muted-foreground">Similar:</span>
+          {allSuggestions.slice(0, 4).map((company: string) => (
+            <button
+              key={company}
+              onClick={() => saveCompanyAsJob(company)}
+              disabled={saving === company}
+              className="text-[11px] px-2 py-0.5 rounded-full border border-primary/20 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 flex items-center gap-1"
+            >
+              {saving === company ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Plus className="w-2.5 h-2.5" />}
+              {company}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

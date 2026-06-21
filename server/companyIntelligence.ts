@@ -117,33 +117,6 @@ async function materializeActions(job: Job, brief: CompanyBrief): Promise<void> 
     } as any);
   }
 
-  const competitors = (brief.landscape?.competitors || []).filter(Boolean);
-  const alsoConsider = (brief.landscape?.alsoConsider || []).filter(Boolean);
-  const suggestions = [...competitors.slice(0, 2), ...alsoConsider.slice(0, 2)].filter(Boolean);
-  const allJobs = await storage.getJobs();
-  const roleType = job.roleArchetype || job.title;
-
-  for (const company of suggestions.slice(0, 3)) {
-    const exists = allJobs.some((j) => j.company?.toLowerCase() === company.toLowerCase());
-    if (exists) continue;
-    const existingRec = existingTasks.some((t) => t.title.toLowerCase().includes(company.toLowerCase()));
-    if (existingRec) continue;
-    await storage.createTask({
-      title: `Search ${company} careers page for ${roleType} roles`,
-      list: "inbox",
-      done: false,
-      category: "job",
-      size: "quick",
-      sourceType: "job",
-      sourceId: job.id,
-      sourceNote: brief.landscape?.marketContext || `Similar to ${role}`,
-      relatedTrackId: job.relatedTrackId ?? null,
-      doneWhen: "Saved a role there, or decided they're not hiring for what you want",
-      steps: JSON.stringify([
-        { text: `Open ${company}'s careers page or LinkedIn jobs`, done: false },
-        { text: `Search for "${roleType}" or similar titles`, done: false },
-        { text: "Save anything interesting, skip if nothing fits", done: false },
-      ]),
-    } as any);
-  }
+  // Competitors and "also consider" companies are stored in the brief JSON
+  // and surfaced in the Jobs UI as tappable suggestions — not as tasks.
 }

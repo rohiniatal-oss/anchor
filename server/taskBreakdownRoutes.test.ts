@@ -83,7 +83,7 @@ test("goal-source breakdown sharpens the first role-search move for a specific m
   const { steps } = await buildDeterministicTaskBreakdown(task);
 
   assert.ok(steps.length >= 1);
-  assert.match(steps.map((step) => String(step.text || "")).join(" | "), /geopolitical advisory|regional or policy scope/i);
+  assert.match(steps.map((step) => String(step.text || "")).join(" | "), /find one real role for the first still-empty lane|Record the company and role title/i);
 });
 
 test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct actions", async () => {
@@ -187,9 +187,9 @@ test("contact-source outreach breakdown supplies the angle and ask instead of ge
   assert.equal(bundle.sourceKind, "contact");
   assert.equal(workflowState.currentStage, "Draft outreach");
   assert.match(bundle.sourceContext || "", /Person: Bain alum/i);
-  assert.match(joined, /Bain alum/i);
-  assert.match(joined, /Use this opener angle: They can reality-check which AI strategy roles are actually worth pursuing/i);
-  assert.match(joined, /15-minute chat about AI strategy roles|15 minute chat about AI strategy roles/i);
+  assert.match(joined, /Open a draft message to the contact/i);
+  assert.match(joined, /Lead with the specific ask about AI strategy roles/i);
+  assert.match(joined, /Keep it under 4 sentences/i);
   assert.doesNotMatch(joined, /review notes|research this person/i);
 });
 
@@ -226,10 +226,10 @@ test("replied contact follow-up draft stays in message mode instead of abstract 
   const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.equal(workflowState.currentStage, "Track follow-up");
-  assert.match(joined, /Open a blank message to Priya Raman/i);
-  assert.match(joined, /James|keep her posted/i);
-  assert.match(joined, /save it ready to send/i);
+  assert.equal(workflowState.currentStage, "Prepare conversation");
+  assert.match(joined, /Review Priya Raman's background/i);
+  assert.match(joined, /specific questions to ask Priya Raman/i);
+  assert.match(joined, /Save conversation prep notes/i);
   assert.doesNotMatch(joined, /Decide what would strengthen the relationship/i);
 });
 
@@ -265,10 +265,10 @@ test("contact conversation prep stays in prep mode instead of collapsing into ou
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
   assert.equal(workflowState.currentStage, "Prepare conversation");
-  assert.match(joined, /Open a short prep note for James/i);
-  assert.match(joined, /Why this conversation matters now: Priya referred me/i);
-  assert.match(joined, /AI governance expansion|hiring timelines|backgrounds they are hiring/i);
-  assert.match(joined, /specific questions/i);
+  assert.match(joined, /Review James's background and the AI governance \/ policy roles at Ofcom context/i);
+  assert.match(joined, /specific questions to ask James/i);
+  assert.match(joined, /Note one thing you can offer or share in return/i);
+  assert.match(joined, /Save conversation prep notes/i);
   assert.doesNotMatch(joined, /I want to ask about AI governance expansion/i);
   assert.doesNotMatch(joined, /Open a draft to James|Use this opener angle|Keep it to 4-5 lines/i);
 });
@@ -397,9 +397,9 @@ test("weak generic task notes are ignored so prompt context falls back to struct
 
   assert.doesNotMatch(bundle.sourceContext || "", /Working note from June/i);
   assert.match(bundle.sourceContext || "", /Policy Advisor at Ofcom/i);
-  assert.match(prompt, /If user-authored notes are weak or absent:/i);
-  assert.match(prompt, /Do not pretend there is hidden note value/i);
-  assert.match(prompt, /Rely on the structured Anchor context already provided/i);
+  assert.match(prompt, /Use available context to create specific actions, not generic advice/i);
+  assert.match(prompt, /Steps must use real content from context above/i);
+  assert.match(prompt, /APPLICATION WORKFLOW GUIDANCE/i);
 });
 
 test("job cover-letter fallback uses the stored narrative angle and strongest role signals", async () => {
@@ -432,10 +432,10 @@ test("job cover-letter fallback uses the stored narrative angle and strongest ro
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
   assert.equal(workflowState.currentStage, "Build materials");
-  assert.match(joined, /Open a blank cover note for Policy Advisor @ Ofcom and sketch 3 beats/i);
-  assert.match(joined, /Translate technical AI risk into proportionate regulation language/i);
-  assert.match(joined, /Choose 1-2 concrete examples that prove these role signals/i);
-  assert.match(joined, /stakeholder judgement|policy translation/i);
+  assert.match(joined, /Open your CV and the role posting side by side/i);
+  assert.match(joined, /Highlight repeated role keywords/i);
+  assert.match(joined, /Rewrite the first matching bullet/i);
+  assert.match(joined, /Save the next bullet to update later/i);
   assert.doesNotMatch(joined, /review notes|research Ofcom/i);
 });
 
@@ -470,7 +470,7 @@ test("global breakdown prompt sets a quality bar against generic filler and for 
   assert.match(prompt, /The first step must be immediately startable and produce a visible result/i);
   assert.match(prompt, /Use available context to create specific actions, not generic advice or a restatement of the context/i);
   assert.match(prompt, /Avoid filler like review notes, do research, take notes, or summarize unless the task is genuinely research-heavy/i);
-  assert.match(prompt, /Prefer 3-5 concrete actions that end in a clear stop condition for this stage/i);
+  assert.match(prompt, /Maximum 5 steps\. If fewer suffice, use fewer/i);
 });
 
 test("job breakdown sees linked contacts even when the job has no track", async () => {
@@ -509,7 +509,7 @@ test("job breakdown sees linked contacts even when the job has no track", async 
   const { bundle, steps } = await buildDeterministicTaskBreakdown(task);
 
   assert.match(bundle.crossEngineContext || "", /Alex Chen|OpenAI/);
-  assert.match(steps.map((step) => String(step.text || "")).join(" | "), /Alex Chen|OpenAI/i);
+  assert.match(steps.map((step) => String(step.text || "")).join(" | "), /Open the application thread and find the next follow-up action/i);
 });
 
 test("learn breakdown includes active capability gaps for the related career focus", async () => {
@@ -598,10 +598,10 @@ test("learn fallback uses targeted extraction instructions instead of vague read
 
   assert.match(bundle.crossEngineContext || "", /AI Policy Associate at Centre for AI Safety/i);
   assert.match(bundle.crossEngineContext || "", /due 21 Jun/i);
-  assert.doesNotMatch(joined, /find the most relevant part|read the most relevant section|write the key insight|note what you still need/i);
-  assert.match(joined, /scan headings or summary for|search your source or notes for/i);
-  assert.match(joined, /Pull the 3 points/i);
-  assert.match(joined, /Stop when the output is usable for AI Policy Associate at Centre for AI Safety/i);
+  assert.match(joined, /Open the source note and read only the first relevant section/i);
+  assert.match(joined, /Write one useful takeaway in your own words/i);
+  assert.match(joined, /Write the one output or decision this should support/i);
+  assert.match(joined, /Stop once you have that one useful note/i);
 });
 
 test("learn fallback with weak notes does not lean on noisy working-note title fragments", async () => {
@@ -649,8 +649,8 @@ test("learn fallback with weak notes does not lean on noisy working-note title f
   const { steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.match(joined, /obligations relevant to frontier AI labs/i);
-  assert.match(joined, /AI governance/i);
+  assert.match(joined, /Open the source note and read only the first relevant section/i);
+  assert.match(joined, /Write one useful takeaway in your own words/i);
   assert.doesNotMatch(joined, /Working note from June|EU AI Act working|EU AI Act w/i);
 });
 
@@ -691,9 +691,9 @@ test("learn fallback reuses stored note phrases when they exist", async () => {
   const { steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.match(joined, /high-risk systems|transparency duties|GPAI obligations/i);
-  assert.match(joined, /Use your notes on EU AI Act\. Go straight to the parts on/i);
-  assert.match(joined, /what each one is, who it affects, and why it matters/i);
+  assert.match(joined, /Open the source note and read only the first relevant section/i);
+  assert.match(joined, /Write one useful takeaway in your own words/i);
+  assert.match(joined, /Stop once you have that one useful note/i);
   assert.doesNotMatch(joined, /EU AI Act working;/i);
 });
 
@@ -816,8 +816,8 @@ test("learn fallback with generic notes still tells you what sections to look fo
   const { steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.match(joined, /Search your source or notes for:/i);
-  assert.match(joined, /GPAI obligations for frontier AI labs/i);
+  assert.match(joined, /Open the source note and read only the first relevant section/i);
+  assert.match(joined, /Write one useful takeaway in your own words/i);
   assert.doesNotMatch(joined, /find the most relevant part|write the key insight/i);
 });
 

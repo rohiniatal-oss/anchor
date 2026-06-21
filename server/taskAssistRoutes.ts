@@ -4,6 +4,7 @@ import { routeCapture, sortOpenCaptures } from "./capture";
 import { buildTaskIntakeDefaults } from "./taskIntakeInference";
 import { legacyCategoryToRoute } from "./captureCompatibility";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
+import { computeEvidence } from "./evidence";
 import { llm, llmJSON, MODEL_LIGHT } from "./llm";
 
 function computeStreak(activity: { eventType: string; timestamp: number }[]): number {
@@ -106,12 +107,30 @@ export function registerTaskAssistRoutes(app: Express) {
     const yesterdayItems = yesterdayPlan ? await storage.getPlanItems(yesterdayPlan.id) : [];
     const yesterdayCompleted = yesterdayItems.filter((i: any) => i.status === "completed").length;
     const yesterdayTotal = yesterdayItems.length;
+    const yesterdayWins = yesterdayItems
+      .filter((i: any) => i.status === "completed")
+      .slice(0, 4)
+      .map((i: any) => i.title);
+    const carriedOver = yesterdayItems
+      .filter((i: any) => i.status === "skipped" || i.status === "planned" || i.status === "moved")
+      .slice(0, 3)
+      .map((i: any) => i.title);
     const thisWeek = wins.filter((w) => w.createdAt >= weekAgo);
     const weekActivity = activity.filter((a) => a.timestamp >= weekAgo);
     const todayActivity = activity.filter((a) => a.timestamp >= startOfToday);
     const weekTakeaways = thisWeek
       .filter((w) => (w.takeaway || "").trim())
       .map((w) => ({ win: w.text, takeaway: w.takeaway!, category: w.winCategory }));
+    const tracks = await storage.getCareerTracks();
+    const evidence = await computeEvidence();
+    const staleTracks = tracks
+      .filter((t) => t.status === "active")
+      .filter((t) => {
+        const te = evidence.byTrack.get(t.id);
+        return te?.producingVsPlanning === "idle";
+      })
+      .slice(0, 3)
+      .map((t) => t.name);
     res.json({
       doneThisWeek: thisWeek.length,
       jobProgressThisWeek: thisWeek.filter((w) => w.winCategory === "job_progress").length,
@@ -127,7 +146,10 @@ export function registerTaskAssistRoutes(app: Express) {
       streak: computeStreak(activity),
       yesterdayCompleted,
       yesterdayTotal,
+      yesterdayWins,
+      carriedOver,
       weekTakeaways,
+      staleTracks,
     });
   });
 

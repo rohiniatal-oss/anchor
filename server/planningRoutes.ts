@@ -555,15 +555,25 @@ export function registerPlanningRoutes(app: Express) {
     if (!task) return res.status(404).json({ error: "Not found" });
     await storage.updateTask(id, { done: true, status: "done", pinned: false } as any);
     let completedMilestoneId: number | null = null;
+    let nextMilestoneHint: string | null = null;
     if (task.sourceStepType === "recommendation_milestone" && task.sourceStepId) {
       await completeRecommendationMilestone(task.sourceStepId);
       completedMilestoneId = task.sourceStepId;
+      const milestone = await storage.getRecommendationMilestone(task.sourceStepId).catch(() => undefined);
+      if (milestone) {
+        const siblings = await storage.getRecommendationMilestones(milestone.recommendationId);
+        const next = siblings.find((m) => m.status === "active" || m.status === "todo");
+        if (next) nextMilestoneHint = next.suggestedTaskTitle || next.label;
+      }
     } else if (task.sourceType === "learn" && task.sourceId != null) {
       const learnItem = await storage.getLearnItem(task.sourceId).catch(() => undefined);
       if (learnItem?.sourceType === "recommendation" && learnItem.sourceId != null) {
         const milestones = await storage.getRecommendationMilestones(learnItem.sourceId);
         const active = milestones.find((m) => m.status === "active") || milestones.find((m) => m.status === "todo");
         if (active) { await completeRecommendationMilestone(active.id); completedMilestoneId = active.id; }
+        const refreshed = await storage.getRecommendationMilestones(learnItem.sourceId);
+        const next = refreshed.find((m) => m.status === "active" || m.status === "todo");
+        if (next) nextMilestoneHint = next.suggestedTaskTitle || next.label;
       }
     }
     const winCategory = inferWinCategory(task);
@@ -572,7 +582,7 @@ export function registerPlanningRoutes(app: Express) {
     await updateSourceEntityOnComplete(task);
     await syncPlanItem(day, task, { status: "completed", completedAt: Date.now() });
     await refreshDoneEnough(day);
-    res.json({ ok: true, completedMilestoneId, winId: win?.id ?? null });
+    res.json({ ok: true, completedMilestoneId, winId: win?.id ?? null, nextMilestoneHint });
   });
 
   app.patch("/api/wins/:id", async (req, res) => {

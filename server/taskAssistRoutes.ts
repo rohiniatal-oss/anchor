@@ -153,6 +153,23 @@ export function registerTaskAssistRoutes(app: Express) {
       .filter((j) => j.daysLeft <= 5)
       .sort((a, b) => a.daysLeft - b.daysLeft)
       .slice(0, 3);
+    const twoWeeksAgo = startOfToday - 14 * 86400000;
+    const staleJobs = jobs
+      .filter((j) => !j.deadline && j.status === "wishlist" && j.createdAt && j.createdAt < twoWeeksAgo)
+      .slice(0, 3)
+      .map((j) => `${j.title}${j.company ? ` at ${j.company}` : ""}`);
+    const allTasks = await storage.getTasks();
+    const oneWeekAgo = startOfToday - 7 * 86400000;
+    const stuckTasks = allTasks
+      .filter((t) => !t.done && t.status === "in_progress")
+      .filter((t) => {
+        const lastEvent = activity
+          .filter((a) => a.taskId === t.id)
+          .sort((a, b) => b.timestamp - a.timestamp)[0];
+        return !lastEvent || lastEvent.timestamp < oneWeekAgo;
+      })
+      .slice(0, 3)
+      .map((t) => t.title);
     res.json({
       doneThisWeek: thisWeek.length,
       jobProgressThisWeek: thisWeek.filter((w) => w.winCategory === "job_progress").length,
@@ -174,6 +191,8 @@ export function registerTaskAssistRoutes(app: Express) {
       staleTracks,
       overdueFollowUps,
       urgentDeadlines,
+      staleJobs,
+      stuckTasks,
     });
   });
 

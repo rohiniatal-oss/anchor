@@ -1435,13 +1435,28 @@ export function explainPersistedPlanItem(item: {
   sourceType?: string | null;
   whySelected?: string | null;
   doneWhen?: string | null;
+  status?: string | null;
+  skippedAt?: number | null;
+  movedAt?: number | null;
 }): RecommendationExplanation {
   const source = (item.sourceType || "task") as SourceKind;
   const why = (item.whySelected || "").trim();
+  const wasCarried = why.toLowerCase().includes("carried forward") || why.toLowerCase().includes("carry-forward");
+  const wasSkipped = item.status === "skipped" || !!item.skippedAt;
+  const wasMoved = item.status === "moved" || !!item.movedAt;
+  const whyThis = wasCarried
+    ? "It carried over from yesterday — finishing it or parking it clears the backlog."
+    : wasSkipped
+    ? "It was skipped before, so it's been made smaller or given a different angle."
+    : wasMoved
+    ? "It was moved to later but is still worth doing today."
+    : why
+    ? "It was chosen because: " + why
+    : "It's still one of today's most useful moves.";
   return {
     summary: why || sourceFrame(source),
     whyNow: why || "This move is still in today's plan.",
-    whyThis: "It was already chosen as one of today's most useful moves.",
+    whyThis,
     supportingReasons: why ? [why] : [],
     firstStep: firstStepForSource(source),
     stopRule: item.doneWhen?.trim() ? `Stop when: ${item.doneWhen.trim()}` : stopRuleForSource(source),

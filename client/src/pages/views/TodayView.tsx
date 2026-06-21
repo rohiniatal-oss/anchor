@@ -238,7 +238,8 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
     const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/wins/summary", "/api/stats", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
-    toast({ title: "Done - and logged as a win", description: "Moving to the next thing." });
+    const nextHint = res?.nextMilestoneHint ? `Next up: ${res.nextMilestoneHint}` : "Moving to the next thing.";
+    toast({ title: "Done - and logged as a win", description: nextHint });
     if (res?.completedMilestoneId) {
       onMilestoneCompleted(res.completedMilestoneId, pinned.title, synthDraft || undefined);
     } else if (res?.winId) {
@@ -668,6 +669,8 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     staleTracks?: string[];
     overdueFollowUps?: { name: string; daysOverdue: number }[];
     urgentDeadlines?: { role: string; daysLeft: number }[];
+    staleJobs?: string[];
+    stuckTasks?: string[];
   }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
@@ -1027,6 +1030,26 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {stats?.staleJobs && stats.staleJobs.length > 0 && (
+        <div className="mb-4 rounded-xl border border-orange-200/60 dark:border-orange-800/40 bg-orange-50/30 dark:bg-orange-950/10 px-4 py-2.5" data-testid="stale-jobs">
+          <p className="text-[11px] uppercase tracking-wide text-orange-700 dark:text-orange-400 font-semibold mb-1">Roles going stale</p>
+          <p className="text-xs text-foreground">
+            <span className="font-semibold">{stats.staleJobs.join(", ")}</span>
+            {" "}— added 2+ weeks ago with no deadline. Add a deadline or decide if they're still live.
+          </p>
+        </div>
+      )}
+
+      {stats?.stuckTasks && stats.stuckTasks.length > 0 && (
+        <div className="mb-4 rounded-xl border border-yellow-200/60 dark:border-yellow-800/40 bg-yellow-50/30 dark:bg-yellow-950/10 px-4 py-2.5" data-testid="stuck-tasks">
+          <p className="text-[11px] uppercase tracking-wide text-yellow-700 dark:text-yellow-400 font-semibold mb-1">Stuck in progress</p>
+          <p className="text-xs text-foreground">
+            <span className="font-semibold">{stats.stuckTasks.join(", ")}</span>
+            {" "}— marked in-progress for 7+ days. Finish, park, or break them down.
+          </p>
         </div>
       )}
 

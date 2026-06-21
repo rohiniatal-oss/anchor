@@ -165,9 +165,10 @@ function DoneTaskRow({ t }: { t: Task }) {
 }
 
 /* Right Now — activated focus with steps + gentle replanning */
-function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
+function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanItem }: {
   pinned: Task;
   onMilestoneCompleted: (milestoneId: number, label: string, draft?: string) => void;
+  onTaskCompleted: (winId: number, label: string) => void;
   pinnedPlanItem?: PlanItemT | null;
 }) {
   const { toast } = useToast();
@@ -240,6 +241,8 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
     toast({ title: "Done - and logged as a win", description: "Moving to the next thing." });
     if (res?.completedMilestoneId) {
       onMilestoneCompleted(res.completedMilestoneId, pinned.title, synthDraft || undefined);
+    } else if (res?.winId) {
+      onTaskCompleted(res.winId, pinned.title);
     }
   }
   async function unstick() {
@@ -680,6 +683,9 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [milestoneCapture, setMilestoneCapture] = useState<{ milestoneId: number; label: string } | null>(null);
   const [captureNote, setCaptureNote] = useState("");
   const [savingCapture, setSavingCapture] = useState(false);
+  const [takeawayCapture, setTakeawayCapture] = useState<{ winId: number; label: string } | null>(null);
+  const [takeawayNote, setTakeawayNote] = useState("");
+  const [savingTakeaway, setSavingTakeaway] = useState(false);
   // Synthesis/artifact panel state — keyed by plan item id
   const [synthDrafts, setSynthDrafts] = useState<Record<number, string>>({});
   const [synthCritiques, setSynthCritiques] = useState<Record<number, string>>({});
@@ -697,6 +703,19 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       setSavingCapture(false);
       setMilestoneCapture(null);
       setCaptureNote("");
+    }
+  }
+  async function saveTakeaway() {
+    if (!takeawayCapture || savingTakeaway) return;
+    setSavingTakeaway(true);
+    try {
+      if (takeawayNote.trim()) {
+        await mutateAndInvalidate("PATCH", `/api/wins/${takeawayCapture.winId}`, { takeaway: takeawayNote.trim() }, ["/api/wins", "/api/wins/summary"]);
+      }
+    } finally {
+      setSavingTakeaway(false);
+      setTakeawayCapture(null);
+      setTakeawayNote("");
     }
   }
   async function getSynthesisStarter(itemId: number, milestoneId: number) {
@@ -871,6 +890,29 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           </div>
         </div>
       )}
+      {takeawayCapture && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-card border border-card-border p-5 shadow-xl">
+            <p className="text-sm font-semibold mb-1">Done. Quick takeaway?</p>
+            <p className="text-xs text-muted-foreground mb-3">
+              One sentence: what did you learn, notice, or figure out? (Skip if nothing comes to mind.)
+            </p>
+            <textarea
+              autoFocus
+              className="w-full min-h-[60px] text-sm rounded-lg border border-input bg-background px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="e.g. Their team is smaller than I thought — pitch operational efficiency, not scale"
+              value={takeawayNote}
+              onChange={(e) => setTakeawayNote(e.target.value)}
+            />
+            <div className="flex gap-2 mt-3">
+              <Button size="sm" className="flex-1" onClick={saveTakeaway} disabled={savingTakeaway}>
+                {savingTakeaway ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Check className="w-3 h-3 mr-1" />} Save
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setTakeawayCapture(null)}>Skip</Button>
+            </div>
+          </div>
+        </div>
+      )}
       <h1 className="text-xl font-bold tracking-tight">{greeting}, Rohini</h1>
       {!activeGoal && <p className="text-sm text-muted-foreground mt-1 mb-3">{introLine}</p>}
       {stats && (stats.doneThisWeek > 0 || stats.actionsToday > 0 || stats.streak > 1) && (
@@ -1002,6 +1044,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         <RightNow
           pinned={pinned}
           onMilestoneCompleted={(milestoneId, label, draft) => { setMilestoneCapture({ milestoneId, label }); setCaptureNote(draft || ""); }}
+          onTaskCompleted={(winId, label) => { setTakeawayCapture({ winId, label }); setTakeawayNote(""); }}
           pinnedPlanItem={pinnedPlanItem}
         />
       ) : (

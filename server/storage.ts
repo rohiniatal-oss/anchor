@@ -150,6 +150,7 @@ export interface IStorage {
   reorderProofAssetSteps(hustleId: number, orderedStepIds: number[]): Promise<ProofAssetStep[]>;
   getWins(): Promise<Win[]>;
   createWin(w: InsertWin): Promise<Win>;
+  updateWin(id: number, patch: Partial<InsertWin>): Promise<Win | undefined>;
   deleteWin(id: number): Promise<void>;
   getContacts(): Promise<Contact[]>;
   createContact(ct: InsertContact): Promise<Contact>;
@@ -355,6 +356,7 @@ export class DatabaseStorage implements IStorage {
 
   async getWins() { return db.select().from(wins).orderBy(desc(wins.id)).all(); }
   async createWin(w: InsertWin) { return db.insert(wins).values({ ...w, createdAt: Date.now() }).returning().get(); }
+  async updateWin(id: number, patch: Partial<InsertWin>) { return db.update(wins).set(patch).where(eq(wins.id, id)).returning().get(); }
   async deleteWin(id: number) { db.delete(wins).where(eq(wins.id, id)).run(); }
   async getContacts() { return db.select().from(contacts).orderBy(desc(contacts.id)).all(); }
   async createContact(ct: InsertContact) { return db.insert(contacts).values({ ...ct, createdAt: Date.now() }).returning().get(); }

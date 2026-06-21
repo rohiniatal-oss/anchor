@@ -285,6 +285,7 @@ export const wins = sqliteTable("wins", {
   trackId: integer("track_id"),
   sourceEntityType: text("source_entity_type"),
   sourceEntityId: integer("source_entity_id"),
+  takeaway: text("takeaway").notNull().default(""),
   createdAt: integer("created_at").notNull(),
 });
 

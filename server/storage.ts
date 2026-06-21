@@ -27,10 +27,13 @@ import {
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq, asc, desc, inArray, and, or } from "drizzle-orm";
+import { eq, asc, desc, inArray, and, or, inArray as inArr } from "drizzle-orm";
 import { templateForArchetype } from "@shared/jobTemplates";
 import { templateForProofAsset } from "@shared/proofAssetTemplates";
 import { SPINE_DDL, SPINE_MIGRATIONS } from "./spine.schema.sql";
+
+// Re-export EntityLink type for use in goalState and planItemEnrichment.
+export type EntityLink = typeof entityLinks.$inferSelect;
 
 type DbClient = ReturnType<typeof drizzle>;
 type SqliteHandle = InstanceType<typeof Database>;
@@ -206,12 +209,21 @@ export interface IStorage {
   getAllJobContactLinks(): Promise<Record<number, number[]>>;
   linkContactToJob(contactId: number, jobId: number): Promise<any>;
   unlinkContactFromJob(contactId: number, jobId: number): Promise<void>;
+  // Entity link graph — cross-entity relation reader for the goal brain
+  getEntityLinks(): Promise<EntityLink[]>;
 }
 
 // Entities that carry a track link. Hustles store it in proofAssetForTrack;
 // everything else in relatedTrackId.
 export type TrackEntity = "jobs" | "learn" | "contacts" | "hustles" | "tasks";
 const TRACK_TABLES = { jobs, learn, contacts, hustles, tasks } as const;
+
+// Relation types read by the goal brain when building the entity link index.
+const GOAL_BRAIN_RELATION_TYPES = [
+  "learn_unlocks_job",
+  "contact_warms_job",
+  "hustle_proves_job",
+] as const;
 
 export class DatabaseStorage implements IStorage {
   async getTasks() { return db.select().from(tasks).orderBy(asc(tasks.sort), asc(tasks.id)).all(); }
@@ -546,6 +558,16 @@ export class DatabaseStorage implements IStorage {
       eq(entityLinks.toId, jobId),
       eq(entityLinks.relationType, "contact_for"),
     )).run();
+  }
+
+  // Entity link graph reader — returns all cross-entity relation rows that the
+  // goal brain uses to build its EntityLinkIndex. Scoped to the three relation
+  // types that encode job-relevance from learn, contact, and hustle entities.
+  async getEntityLinks(): Promise<EntityLink[]> {
+    return db.select().from(entityLinks)
+      .where(inArray(entityLinks.relationType, [...GOAL_BRAIN_RELATION_TYPES]))
+      .orderBy(asc(entityLinks.createdAt))
+      .all();
   }
 
   async getProfile() {

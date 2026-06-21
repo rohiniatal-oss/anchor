@@ -1531,28 +1531,47 @@ export function planDay(
       const track = activeTracks[0];
       const trackJobs = jobs.filter((j) => j.relatedTrackId === track.id || (j as any).trackId === track.id);
       const hasJobs = trackJobs.length > 0;
-      const hasContacts = contacts.filter((c) => (c as any).relatedTrackId === track.id).length > 0;
+      const trackContacts = contacts.filter((c) => (c as any).relatedTrackId === track.id);
+      const hasContacts = trackContacts.length > 0;
+
+      const archetype = track.targetRoleArchetype || track.name;
+      const topCompanies = [...new Set(trackJobs.map((j) => j.company).filter(Boolean))].slice(0, 2);
+      const topRole = trackJobs.find((j) => j.title)?.title || "";
 
       let title: string;
       let firstStep: string;
       let why: string;
       let summary: string;
+      let doneWhen: string;
 
       if (!hasJobs) {
-        title = `Find one real ${track.name} opening`;
-        firstStep = `Open LinkedIn or a job board and search for "${track.name}" roles. Save the first one that looks interesting.`;
-        why = `Your "${track.name}" track has no real roles yet. One concrete opening makes everything else — networking, learning, prep — specific instead of abstract.`;
-        summary = `${track.name} needs a real role to aim at. Find one and save it — that makes the whole track concrete.`;
+        title = `Search for a ${archetype} role you'd actually apply to`;
+        firstStep = topRole
+          ? `Look for roles similar to "${topRole}" on LinkedIn or a job board. Save the first one that's real enough to apply to.`
+          : `Search "${archetype}" on LinkedIn. You're not committing — just find one opening that feels worth reading twice.`;
+        why = `You've set up a ${track.name} track but haven't saved any real openings yet. One concrete role makes everything else — prep, networking, outreach — specific instead of hypothetical.`;
+        summary = `Your ${track.name} track needs a real role to anchor it.`;
+        doneWhen = "One role saved that you could realistically apply to";
       } else if (!hasContacts) {
-        title = `Find one person who could help with ${track.name}`;
-        firstStep = `Think of one person — a former colleague, an alumni connection, someone at a target company — and add them to your network.`;
-        why = `You have ${trackJobs.length} role${trackJobs.length > 1 ? "s" : ""} saved for ${track.name} but no contacts. One real person to talk to changes the search from abstract to conversational.`;
-        summary = `${track.name} has roles but no people. Add one contact — even a weak connection counts.`;
+        const companyHint = topCompanies.length > 0
+          ? `someone at ${topCompanies.join(" or ")}` : "someone in this space";
+        title = `Think of one person — ${companyHint} — you could reach out to`;
+        firstStep = topCompanies.length > 0
+          ? `Check LinkedIn for anyone you know at ${topCompanies.join(" or ")}. A second-degree connection, a former colleague who moved there, an alumni contact — anyone real.`
+          : `Think about who you already know in ${archetype}. A former colleague, someone from a past project, a classmate who went this direction. Add one real person.`;
+        why = `You have ${trackJobs.length} ${archetype} role${trackJobs.length > 1 ? "s" : ""} saved${topCompanies[0] ? ` (${topCompanies.join(", ")})` : ""} but nobody to talk to about them. One real conversation changes how you prep and apply.`;
+        summary = `You've got roles saved for ${track.name} — now add one person you could actually message.`;
+        doneWhen = "One contact added who you'd realistically message";
       } else {
-        title = context.laneUnlockMove || `Take the next step for ${track.name}`;
-        firstStep = `Open your ${track.name} track and pick the most urgent thing — an application to start, a message to send, or something to learn.`;
-        why = `You have the building blocks for ${track.name}. Time to move one piece forward.`;
-        summary = `${track.name} is set up — now pick one thing and move it forward.`;
+        const nextJob = trackJobs.find((j) => j.status === "wishlist") || trackJobs[0];
+        const nextJobHint = nextJob ? `${nextJob.title}${nextJob.company ? ` at ${nextJob.company}` : ""}` : archetype;
+        title = context.laneUnlockMove || `Pick the next move for ${nextJobHint}`;
+        firstStep = nextJob
+          ? `Open "${nextJobHint}" and decide: start the application, message a contact, or learn something you need for it.`
+          : `Open your ${track.name} track and pick the thing that's been sitting longest — application, message, or prep.`;
+        why = `You have roles and contacts for ${track.name}. The pieces are there — pick one and move it.`;
+        summary = `${track.name} is set up — pick one thing and move it forward today.`;
+        doneWhen = "One concrete action taken (application started, message sent, or prep done)";
       }
 
       const synthetic: Candidate = {
@@ -1560,12 +1579,11 @@ export function planDay(
         title, category: hasJobs ? "admin" : "job", size: "quick",
         deadline: "", status: "not_started", skipped: 0,
         sourceUrl: "", sourceNote: "", sourceStatus: "",
-        doneWhen: hasJobs ? "One contact added" : "One real role saved",
-        whyNow: why, fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
+        doneWhen, whyNow: why, fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
       };
       const plan: PlanItem[] = [{
         slot: "now", candidate: synthetic, why, isMVD: true,
-        explanation: { summary, whyNow: "This is the highest-leverage next step for your search.", whyThis: why, supportingReasons: activeTracks.length > 1 ? [`${activeTracks.length - 1} other track${activeTracks.length > 2 ? "s" : ""} also waiting.`] : [], firstStep, stopRule: "Save one — that's enough to get the system working for you." },
+        explanation: { summary, whyNow: "This is the single thing that moves your search forward today.", whyThis: why, supportingReasons: activeTracks.length > 1 ? [`${activeTracks.length - 1} other track${activeTracks.length > 2 ? "s" : ""} also active — this one needs it most.`] : [], firstStep, stopRule: "Just one — that's enough to get momentum." },
       }];
       return { mode, plan, note: summary, mvdIndex: 0, trace: emptyTrace };
     }

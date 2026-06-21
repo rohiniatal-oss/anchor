@@ -1526,6 +1526,50 @@ export function planDay(
       return { mode, plan: [], note: "You finished everything today. Nice work — you're done.", mvdIndex: -1, trace: emptyTrace };
     }
 
+    const activeTracks = tracks.filter((t) => t.status === "active");
+    if (activeTracks.length > 0) {
+      const track = activeTracks[0];
+      const trackJobs = jobs.filter((j) => j.relatedTrackId === track.id || (j as any).trackId === track.id);
+      const hasJobs = trackJobs.length > 0;
+      const hasContacts = contacts.filter((c) => (c as any).relatedTrackId === track.id).length > 0;
+
+      let title: string;
+      let firstStep: string;
+      let why: string;
+      let summary: string;
+
+      if (!hasJobs) {
+        title = `Find one real ${track.name} opening`;
+        firstStep = `Open LinkedIn or a job board and search for "${track.name}" roles. Save the first one that looks interesting.`;
+        why = `Your "${track.name}" track has no real roles yet. One concrete opening makes everything else — networking, learning, prep — specific instead of abstract.`;
+        summary = `${track.name} needs a real role to aim at. Find one and save it — that makes the whole track concrete.`;
+      } else if (!hasContacts) {
+        title = `Find one person who could help with ${track.name}`;
+        firstStep = `Think of one person — a former colleague, an alumni connection, someone at a target company — and add them to your network.`;
+        why = `You have ${trackJobs.length} role${trackJobs.length > 1 ? "s" : ""} saved for ${track.name} but no contacts. One real person to talk to changes the search from abstract to conversational.`;
+        summary = `${track.name} has roles but no people. Add one contact — even a weak connection counts.`;
+      } else {
+        title = context.laneUnlockMove || `Take the next step for ${track.name}`;
+        firstStep = `Open your ${track.name} track and pick the most urgent thing — an application to start, a message to send, or something to learn.`;
+        why = `You have the building blocks for ${track.name}. Time to move one piece forward.`;
+        summary = `${track.name} is set up — now pick one thing and move it forward.`;
+      }
+
+      const synthetic: Candidate = {
+        source: "goal", sourceId: track.id, taskId: null,
+        title, category: hasJobs ? "admin" : "job", size: "quick",
+        deadline: "", status: "not_started", skipped: 0,
+        sourceUrl: "", sourceNote: "", sourceStatus: "",
+        doneWhen: hasJobs ? "One contact added" : "One real role saved",
+        whyNow: why, fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
+      };
+      const plan: PlanItem[] = [{
+        slot: "now", candidate: synthetic, why, isMVD: true,
+        explanation: { summary, whyNow: "This is the highest-leverage next step for your search.", whyThis: why, supportingReasons: activeTracks.length > 1 ? [`${activeTracks.length - 1} other track${activeTracks.length > 2 ? "s" : ""} also waiting.`] : [], firstStep, stopRule: "Save one — that's enough to get the system working for you." },
+      }];
+      return { mode, plan, note: summary, mvdIndex: 0, trace: emptyTrace };
+    }
+
     return {
       mode,
       plan: [],

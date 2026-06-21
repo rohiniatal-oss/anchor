@@ -535,7 +535,10 @@ export function registerPlanningRoutes(app: Express) {
               title: result.smallerVersion,
               steps: JSON.stringify(result.steps.slice(0, 3).map((x) => ({ text: x, done: false }))),
               pinned: false, status: "not_started",
+              blockedBy: learn?.id ? `learn:${learn.id}` : "",
             } as any);
+          } else if (learn?.id) {
+            await storage.updateTask(id, { blockedBy: `learn:${learn.id}` } as any);
           }
           await storage.logActivity({ eventType: "skip_resolved", sourceType: "task", taskId: id, metadata: JSON.stringify({ reason, learnItemId: learn?.id }) } as any);
           return res.json({ action: "learn_first", message: `I added "${result.learnFirst}" to your learning list. The task is ready once you've done that.`, learnTitle: result.learnFirst });

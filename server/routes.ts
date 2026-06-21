@@ -250,6 +250,12 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         sourceEntityId: id,
       } as any);
       await storage.logActivity({ eventType: "completed", sourceType: "learn", sourceId: id } as any);
+      const tasks = await storage.getTasks();
+      for (const t of tasks) {
+        if (t.blockedBy === `learn:${id}`) {
+          await storage.updateTask(t.id, { blockedBy: "", readiness: "ready" } as any);
+        }
+      }
     }
     res.json(updated);
   });

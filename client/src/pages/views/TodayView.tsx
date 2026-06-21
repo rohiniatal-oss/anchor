@@ -322,14 +322,19 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
             className="text-xs text-primary hover:underline inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Open the posting</a>
         )}
       </div>
-      {avoided && (
+      {(pinned.skipped || 0) >= 3 && (
+        <p className="text-xs rounded-lg bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-300 px-3 py-2 mb-2" data-testid="text-avoidance">
+          I found a different angle on this one. Fresh steps, same goal.
+        </p>
+      )}
+      {(pinned.skipped || 0) === 2 && (
         <p className="text-xs rounded-lg bg-muted text-muted-foreground px-3 py-2 mb-2" data-testid="text-avoidance">
-          This one's been slipping a few days - totally normal. Want it smaller, or park it kindly? No pressure.
+          This one's been slipping a few days - totally normal. I've made it smaller so starting is easier.
         </p>
       )}
       {clearlyPreShrunk && (
         <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-[11px] font-semibold text-accent-foreground" data-testid="badge-made-smaller">
-          <Sparkles className="w-3.5 h-3.5" /> Made smaller so starting is easier
+          <Sparkles className="w-3.5 h-3.5" /> {(pinned.skipped || 0) >= 3 ? "Different angle, fresh steps" : "Made smaller so starting is easier"}
         </div>
       )}
       {steps.length === 0 && question && (
@@ -657,6 +662,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     streak: number;
     yesterdayCompleted: number;
     yesterdayTotal: number;
+    weekTakeaways?: { win: string; takeaway: string; category: string }[];
   }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
@@ -1039,6 +1045,21 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
       )}
 
+      {/* Weekly growth — what you learned this week */}
+      {stats?.weekTakeaways && stats.weekTakeaways.length > 0 && !pinned && (
+        <div className="mb-5 rounded-xl border border-card-border bg-card px-4 py-3" data-testid="weekly-growth">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">What you learned this week</p>
+          <div className="space-y-1.5">
+            {stats.weekTakeaways.slice(0, 3).map((t, i) => (
+              <div key={i} className="text-xs">
+                <span className="text-foreground">{t.takeaway}</span>
+                <span className="text-muted-foreground ml-1.5">— from {t.win}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* HERO: either the active focus, or the day plan */}
       {pinned ? (
         <RightNow
@@ -1134,7 +1155,9 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                         })()}
                         {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
                         {preShrunk && <span className="shrink-0 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
-                        {linkedTask && (linkedTask.skipped || 0) >= 2 && <span className="shrink-0 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-[10px] font-semibold px-2 py-0.5">keeps slipping — try it smaller</span>}
+                        {linkedTask && (linkedTask.skipped || 0) >= 3 && <span className="shrink-0 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px] font-semibold px-2 py-0.5">found a different angle</span>}
+                        {linkedTask && (linkedTask.skipped || 0) === 2 && <span className="shrink-0 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
+                        {linkedTask?.deadline && (() => { const dd = daysUntil(linkedTask.deadline); return dd !== null && dd <= 3 ? <span className="shrink-0 rounded-full bg-destructive/10 text-destructive text-[10px] font-semibold px-2 py-0.5">{dd <= 0 ? "overdue" : dd === 1 ? "due tomorrow" : `${dd} days left`}</span> : null; })()}
                       </div>
                       {compactSummary && <p className="text-xs text-muted-foreground mt-0.5">{compactSummary}</p>}
                       {visibleReasons.length > 0 && (

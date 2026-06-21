@@ -109,6 +109,9 @@ export function registerTaskAssistRoutes(app: Express) {
     const thisWeek = wins.filter((w) => w.createdAt >= weekAgo);
     const weekActivity = activity.filter((a) => a.timestamp >= weekAgo);
     const todayActivity = activity.filter((a) => a.timestamp >= startOfToday);
+    const weekTakeaways = thisWeek
+      .filter((w) => (w.takeaway || "").trim())
+      .map((w) => ({ win: w.text, takeaway: w.takeaway!, category: w.winCategory }));
     res.json({
       doneThisWeek: thisWeek.length,
       jobProgressThisWeek: thisWeek.filter((w) => w.winCategory === "job_progress").length,
@@ -124,6 +127,7 @@ export function registerTaskAssistRoutes(app: Express) {
       streak: computeStreak(activity),
       yesterdayCompleted,
       yesterdayTotal,
+      weekTakeaways,
     });
   });
 

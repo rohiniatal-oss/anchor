@@ -1490,12 +1490,48 @@ export function planDay(
   const budget = capacityMinutes(capacity);
 
   if (cands.length === 0) {
+    const emptyTrace: PlanTrace = { picked: [], ignored, bottleneck: context.bottleneck, reason: context.reason, remainingMinutes: budget, laneTrace: context.laneModel.trace };
+
+    const blocked = all.filter((c) => c.blocked && c.status !== "done");
+    if (blocked.length > 0) {
+      const easiest = blocked.sort((a, b) => {
+        const aWaiting = /wait|reply|response/i.test(a.blockerReason);
+        const bWaiting = /wait|reply|response/i.test(b.blockerReason);
+        if (aWaiting !== bWaiting) return aWaiting ? 1 : -1;
+        return (a.blockerReason || "").length - (b.blockerReason || "").length;
+      })[0];
+      const unblockStep = /wait|reply|response/i.test(easiest.blockerReason)
+        ? `Check if you've gotten a reply — if so, unblock it and go.`
+        : `Clear this blocker: ${easiest.blockerReason || "figure out what's stopping it"}.`;
+      const plan: PlanItem[] = [{
+        slot: "now", candidate: easiest, why: `Everything else is stuck. This blocker looks easiest to clear.`, isMVD: true,
+        explanation: { summary: `${blocked.length} thing${blocked.length > 1 ? "s are" : " is"} blocked. Start with the easiest one.`, whyNow: "Nothing else can move until a blocker clears.", whyThis: `This one looks most clearable: "${easiest.blockerReason || "unspecified"}."`, supportingReasons: blocked.length > 1 ? [`${blocked.length - 1} other blocked item${blocked.length > 2 ? "s" : ""} waiting too.`] : [], firstStep: unblockStep, stopRule: "Unblock it or park it — either clears the jam." },
+      }];
+      return { mode, plan, note: `${blocked.length} thing${blocked.length > 1 ? "s" : ""} stuck — clearing one unblocks the day.`, mvdIndex: 0, trace: emptyTrace };
+    }
+
+    const avoided = all.filter((c) => c.skipped >= 2 && c.status !== "done");
+    if (avoided.length > 0) {
+      const least = avoided.sort((a, b) => a.skipped - b.skipped)[0];
+      const plan: PlanItem[] = [{
+        slot: "now", candidate: least, why: `Everything's been sliding. This one has slipped the least — start here.`, isMVD: true,
+        explanation: { summary: `${avoided.length} task${avoided.length > 1 ? "s have" : " has"} been skipped repeatedly.`, whyNow: "A day of skipped tasks means something needs to change.", whyThis: `This one has only been skipped ${least.skipped} time${least.skipped > 1 ? "s" : ""} — most likely to stick.`, supportingReasons: [], firstStep: "Open it and do just the first step. If it still won't move, park it.", stopRule: "Do one step or decide to park it." },
+      }];
+      return { mode, plan, note: "Everything's been sliding — starting with the one most likely to move.", mvdIndex: 0, trace: emptyTrace };
+    }
+
+    const doneTasks = tasks.filter((t) => t.done);
+    const activeTasks = tasks.filter((t) => !t.done && t.list === "today");
+    if (doneTasks.length > 0 && activeTasks.length === 0) {
+      return { mode, plan: [], note: "You finished everything today. Nice work — you're done.", mvdIndex: -1, trace: emptyTrace };
+    }
+
     return {
       mode,
       plan: [],
-      note: "Nothing actionable right now — add a role, task, or track and I'll shape a day.",
+      note: "Nothing actionable right now — add a thought to Brain Dump or save a job, and I'll shape a day from there.",
       mvdIndex: -1,
-      trace: { picked: [], ignored, bottleneck: context.bottleneck, reason: context.reason, remainingMinutes: budget, laneTrace: context.laneModel.trace },
+      trace: emptyTrace,
     };
   }
 

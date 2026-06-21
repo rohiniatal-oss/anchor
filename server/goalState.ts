@@ -1160,7 +1160,7 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
               coverage.missingNetworkSupport,
               coverage.missingPrepSupport,
             ),
-        next: "Keep live roles moving while you add the missing contact or prep starter.",
+        next: "Keep live roles moving while you add the missing contact or learning focus.",
         optional: "If useful, add one optional example/project idea that could help more than one role in the same path.",
         stopRule: focusNetwork
           ? broadPursuitNextMissingContactStopRule(coverage.missingNetworkSupport)

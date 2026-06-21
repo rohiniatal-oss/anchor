@@ -582,7 +582,7 @@ export function registerPlanningRoutes(app: Express) {
     await updateSourceEntityOnComplete(task);
     await syncPlanItem(day, task, { status: "completed", completedAt: Date.now() });
     await refreshDoneEnough(day);
-    res.json({ ok: true, completedMilestoneId, winId: win?.id ?? null, nextMilestoneHint });
+    res.json({ ok: true, completedMilestoneId, winId: win?.id ?? null, winCategory, nextMilestoneHint });
   });
 
   app.patch("/api/wins/:id", async (req, res) => {

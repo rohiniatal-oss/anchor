@@ -238,8 +238,10 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
     const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/wins/summary", "/api/stats", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    const catLabel = res?.winCategory && WIN_CATEGORY_LABEL[res.winCategory as WinCategory];
+    const winTitle = catLabel ? `Done — logged as ${catLabel.toLowerCase()}` : "Done — and logged as a win";
     const nextHint = res?.nextMilestoneHint ? `Next up: ${res.nextMilestoneHint}` : "Moving to the next thing.";
-    toast({ title: "Done - and logged as a win", description: nextHint });
+    toast({ title: winTitle, description: nextHint });
     if (res?.completedMilestoneId) {
       onMilestoneCompleted(res.completedMilestoneId, pinned.title, synthDraft || undefined);
     } else if (res?.winId) {

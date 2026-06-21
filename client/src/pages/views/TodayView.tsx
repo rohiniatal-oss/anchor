@@ -666,6 +666,8 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     carriedOver?: string[];
     weekTakeaways?: { win: string; takeaway: string; category: string }[];
     staleTracks?: string[];
+    overdueFollowUps?: { name: string; daysOverdue: number }[];
+    urgentDeadlines?: { role: string; daysLeft: number }[];
   }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
@@ -996,6 +998,35 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
             <span className="font-semibold">{stats.staleTracks.join(", ")}</span>
             {stats.staleTracks.length === 1 ? " hasn't had action this week" : " haven't had action this week"} — even one small move keeps momentum.
           </p>
+        </div>
+      )}
+
+      {stats?.urgentDeadlines && stats.urgentDeadlines.length > 0 && (
+        <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2.5" data-testid="urgent-deadlines">
+          <p className="text-[11px] uppercase tracking-wide text-destructive font-semibold mb-1">Closing soon</p>
+          <div className="space-y-0.5">
+            {stats.urgentDeadlines.map((d, i) => (
+              <p key={i} className="text-xs text-foreground flex items-start gap-1.5">
+                <CalendarDays className="w-3 h-3 text-destructive mt-0.5 shrink-0" />
+                <span>{d.role} — <span className="font-semibold text-destructive">{d.daysLeft <= 0 ? "today or overdue" : d.daysLeft === 1 ? "tomorrow" : `${d.daysLeft} days`}</span></span>
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stats?.overdueFollowUps && stats.overdueFollowUps.length > 0 && (
+        <div className="mb-4 rounded-xl border border-sky-200/60 dark:border-sky-800/40 bg-sky-50/30 dark:bg-sky-950/10 px-4 py-2.5" data-testid="overdue-followups">
+          <p className="text-[11px] uppercase tracking-wide text-sky-700 dark:text-sky-400 font-semibold mb-1">Follow-ups due</p>
+          <div className="flex flex-wrap gap-2">
+            {stats.overdueFollowUps.map((f, i) => (
+              <span key={i} className="inline-flex items-center gap-1 text-xs text-foreground">
+                <Users className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+                {f.name}
+                {f.daysOverdue > 0 && <span className="text-muted-foreground">({f.daysOverdue}d ago)</span>}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 

@@ -121,7 +121,7 @@ export function registerTaskAssistRoutes(app: Express) {
     const weekTakeaways = thisWeek
       .filter((w) => (w.takeaway || "").trim())
       .map((w) => ({ win: w.text, takeaway: w.takeaway!, category: w.winCategory }));
-    const tracks = await storage.getCareerTracks();
+    const [tracks, contacts] = await Promise.all([storage.getCareerTracks(), storage.getContacts()]);
     const evidence = await computeEvidence();
     const staleTracks = tracks
       .filter((t) => t.status === "active")
@@ -131,6 +131,28 @@ export function registerTaskAssistRoutes(app: Express) {
       })
       .slice(0, 3)
       .map((t) => t.name);
+    const todayMs = new Date(new Date().toISOString().slice(0, 10) + "T12:00:00").getTime();
+    const overdueFollowUps = contacts
+      .filter((c) => c.nextFollowUpDate && c.status !== "cold" && c.status !== "archived")
+      .map((c) => {
+        const dueMs = new Date(c.nextFollowUpDate + "T12:00:00").getTime();
+        const daysOverdue = Math.floor((todayMs - dueMs) / 86400000);
+        return { name: c.name || c.who || "Someone", daysOverdue };
+      })
+      .filter((c) => c.daysOverdue >= 0)
+      .sort((a, b) => b.daysOverdue - a.daysOverdue)
+      .slice(0, 4);
+    const jobs = await storage.getJobs();
+    const urgentDeadlines = jobs
+      .filter((j) => j.deadline && (j.status === "wishlist" || j.status === "applied" || j.status === "interviewing"))
+      .map((j) => {
+        const dueMs = new Date(j.deadline + "T23:59:59").getTime();
+        const daysLeft = Math.ceil((dueMs - Date.now()) / 86400000);
+        return { role: `${j.title} at ${j.company}`, daysLeft };
+      })
+      .filter((j) => j.daysLeft <= 5)
+      .sort((a, b) => a.daysLeft - b.daysLeft)
+      .slice(0, 3);
     res.json({
       doneThisWeek: thisWeek.length,
       jobProgressThisWeek: thisWeek.filter((w) => w.winCategory === "job_progress").length,
@@ -150,6 +172,8 @@ export function registerTaskAssistRoutes(app: Express) {
       carriedOver,
       weekTakeaways,
       staleTracks,
+      overdueFollowUps,
+      urgentDeadlines,
     });
   });
 

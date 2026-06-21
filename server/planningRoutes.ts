@@ -83,6 +83,42 @@ async function buildShrinkContext(task: { id: number; title: string; sourceType?
   return lines.join("\n");
 }
 
+type SkipReason = "cant_start" | "too_big" | "too_hard" | "wrong_moment" | "dont_want_to" | "doesnt_matter";
+
+async function diagnoseSkipReason(task: any): Promise<{ reason: SkipReason; confidence: "auto" | "ask" }> {
+  if (task.sourceType && task.sourceId != null) {
+    try {
+      if (task.sourceType === "job") {
+        const job = (await storage.getJobs()).find((j) => j.id === task.sourceId);
+        if (!job || job.status === "closed") return { reason: "doesnt_matter", confidence: "auto" };
+      } else if (task.sourceType === "contact") {
+        const contact = (await storage.getContacts()).find((c) => c.id === task.sourceId);
+        if (!contact || contact.status === "archived" || contact.status === "cold") return { reason: "doesnt_matter", confidence: "auto" };
+      } else if (task.sourceType === "learn") {
+        const item = (await storage.getLearn()).find((l) => l.id === task.sourceId);
+        if (!item) return { reason: "doesnt_matter", confidence: "auto" };
+      }
+    } catch {}
+  }
+  if (!task.relatedTrackId && !task.sourceType) {
+    const tracks = await storage.getCareerTracks();
+    if (tracks.filter((t) => t.status === "active").length === 0) {
+      return { reason: "doesnt_matter", confidence: "auto" };
+    }
+  }
+  const steps = parseTaskSteps(task.steps);
+  if (steps.length === 0 || !steps[0]?.text) return { reason: "cant_start", confidence: "auto" };
+  if (task.sourceType === "job" && task.sourceId != null) {
+    try {
+      const job = (await storage.getJobs()).find((j) => j.id === task.sourceId);
+      if (job && !job.url && !job.jdText) return { reason: "cant_start", confidence: "auto" };
+    } catch {}
+  }
+  const est = task.estimateMinutes || 0;
+  if (est > 45 || task.size === "deep") return { reason: "too_big", confidence: "auto" };
+  return { reason: "too_hard", confidence: "ask" };
+}
+
 function isStructuredTask(task: { sourceType?: string | null; category?: string | null }) {
   return ["job", "learn", "contact", "hustle", "goal"].includes(String(task.sourceType || ""))
     || ["job", "learning", "substack", "hustle", "afterline", "interview"].includes(String(task.category || ""));
@@ -382,50 +418,63 @@ export function registerPlanningRoutes(app: Express) {
     let steps = task.steps;
     let autoShrunk = false;
     let replacement: string | null = null;
-    if (skipped >= 3 && steps && steps !== "[]") {
-      try {
-        const shrinkContext = await buildShrinkContext(task);
-        const result = await llmJSON<{ replacement: string; steps: string[] }>(
-          "This task has been skipped 3+ times even with steps broken down. The current approach isn't working. " +
-          "Find a DIFFERENT ANGLE to achieve the same goal — a side door, a smaller version, or a completely different starting point. " +
-          "The replacement should feel fresh, not like a repackaged version of the same thing. " +
-          'Return JSON: {"replacement":"<new task title that feels different>","steps":["<2-3 micro-steps for the new angle>"]}\n\n' + shrinkContext,
-          { model: MODEL_LIGHT },
-        );
-        if (result?.replacement && result.steps?.length) {
-          replacement = result.replacement;
-          steps = JSON.stringify(result.steps.slice(0, 3).map((x) => ({ text: x, done: false })));
-          autoShrunk = true;
+    let autoAction: string | null = null;
+    let needsDiagnosis = false;
+
+    if (skipped >= 2) {
+      const diag = await diagnoseSkipReason(task);
+      if (diag.confidence === "auto") {
+        if (diag.reason === "doesnt_matter") {
+          await storage.updateTask(id, { list: "inbox", pinned: false, skipped, status: "not_started" } as any);
+          await syncPlanItem(day, task, { status: "skipped", skippedAt: Date.now() });
+          await storage.logActivity({ eventType: "skipped", sourceType: task.sourceType || "task", taskId: id, metadata: JSON.stringify({ skipped, autoAction: "parked", reason: "doesnt_matter" }) } as any);
+          return res.json({ ok: true, autoAction: "parked", message: "This lost its connection to your active goals, so I parked it." });
         }
-      } catch {}
-    } else if (skipped >= 2 && (!steps || steps === "[]")) {
-      try {
-        const shrinkContext = await buildShrinkContext(task);
-        const arr = await llmJSON<string[]>(
-          "This task keeps slipping. Break it into 3-4 micro-steps. The first step must be under 2 minutes, immediately startable, and physical (open something, write one line, send one thing). " +
-          "Each step should be specific to the actual task — never generic filler like 'do research' or 'think about it'. " +
-          'Return ONLY a JSON array of strings.\n\n' + shrinkContext,
-          { model: MODEL_LIGHT },
-        ) || [];
-        if (arr.length) {
-          steps = JSON.stringify(arr.slice(0, 4).map((x) => ({ text: x, done: false })));
-          autoShrunk = true;
-        }
-      } catch {
-        // Fall through to deterministic shrinking below.
-      }
-      if (!autoShrunk) {
-        try {
-          const breakdown = await buildDeterministicTaskBreakdown(task as any);
-          if (breakdown.steps.length) {
-            steps = JSON.stringify(breakdown.steps);
-            autoShrunk = true;
+        if (diag.reason === "cant_start") {
+          try {
+            const shrinkContext = await buildShrinkContext(task);
+            const arr = await llmJSON<string[]>(
+              "This task keeps slipping because the first step isn't clear enough. Break it into 3-4 micro-steps. " +
+              "The first step must be under 2 minutes, immediately startable, and physical (open something, write one line, send one thing). " +
+              "Each step should be specific to the actual task — never generic filler. " +
+              'Return ONLY a JSON array of strings.\n\n' + shrinkContext,
+              { model: MODEL_LIGHT },
+            ) || [];
+            if (arr.length) {
+              steps = JSON.stringify(arr.slice(0, 4).map((x) => ({ text: x, done: false })));
+              autoShrunk = true;
+              autoAction = "clarified";
+            }
+          } catch {}
+          if (!autoShrunk) {
+            try {
+              const breakdown = await buildDeterministicTaskBreakdown(task as any);
+              if (breakdown.steps.length) { steps = JSON.stringify(breakdown.steps); autoShrunk = true; autoAction = "clarified"; }
+            } catch {}
           }
-        } catch {
-          // Leave steps as-is if deterministic shrinking also fails.
         }
+        if (diag.reason === "too_big") {
+          try {
+            const shrinkContext = await buildShrinkContext(task);
+            const result = await llmJSON<{ replacement: string; steps: string[] }>(
+              "This task is too big to start. Find the SMALLEST useful slice — something that takes 15 minutes max and produces one visible result. " +
+              "The slice should be a meaningful first piece of the full task, not just planning or thinking. " +
+              'Return JSON: {"replacement":"<15-min slice title>","steps":["<2-3 micro-steps>"]}\n\n' + shrinkContext,
+              { model: MODEL_LIGHT },
+            );
+            if (result?.replacement && result.steps?.length) {
+              replacement = result.replacement;
+              steps = JSON.stringify(result.steps.slice(0, 3).map((x) => ({ text: x, done: false })));
+              autoShrunk = true;
+              autoAction = "shrunk";
+            }
+          } catch {}
+        }
+      } else {
+        needsDiagnosis = true;
       }
     }
+
     const patch: any = { skipped, steps, pinned: false, status: "not_started" };
     if (replacement) patch.title = replacement;
     const updated = await storage.updateTask(id, patch);
@@ -436,10 +485,99 @@ export function registerPlanningRoutes(app: Express) {
       sourceId: task.sourceId ?? undefined,
       taskId: id,
       planItemId: task.planItemId ?? undefined,
-      metadata: JSON.stringify({ skipped, autoShrunk, replacement: !!replacement }),
+      metadata: JSON.stringify({ skipped, autoShrunk, replacement: !!replacement, autoAction, needsDiagnosis }),
     };
     await storage.logActivity(activity);
-    res.json({ ...updated, replacement: !!replacement });
+    res.json({ ...updated, replacement: !!replacement, autoAction, needsDiagnosis });
+  });
+
+  app.post("/api/tasks/:id/skip-resolve", async (req, res) => {
+    const id = Number(req.params.id);
+    const reason = String(req.body?.reason || "") as SkipReason;
+    const valid: SkipReason[] = ["too_hard", "wrong_moment", "dont_want_to", "doesnt_matter"];
+    if (!valid.includes(reason)) return res.status(400).json({ error: "Invalid reason" });
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+    const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
+
+    if (reason === "doesnt_matter") {
+      await storage.updateTask(id, { list: "inbox", pinned: false, status: "not_started" } as any);
+      await storage.logActivity({ eventType: "skip_resolved", sourceType: "task", taskId: id, metadata: JSON.stringify({ reason }) } as any);
+      return res.json({ action: "parked", message: "Parked — it's out of your way." });
+    }
+
+    if (reason === "wrong_moment") {
+      await storage.updateTask(id, { pinned: false, block: null } as any);
+      await storage.logActivity({ eventType: "skip_resolved", sourceType: "task", taskId: id, metadata: JSON.stringify({ reason }) } as any);
+      return res.json({ action: "rescheduled", message: "I'll try a different time for this." });
+    }
+
+    if (reason === "too_hard") {
+      let learnTitle: string | null = null;
+      try {
+        const shrinkContext = await buildShrinkContext(task);
+        const result = await llmJSON<{ learnFirst: string; smallerVersion: string; steps: string[] }>(
+          "This task keeps being skipped because the user doesn't feel ready — it requires skills or knowledge they don't have yet. " +
+          "Figure out WHAT they'd need to learn first, and create a simpler version of the task they can do after learning. " +
+          'Return JSON: {"learnFirst":"<one specific thing to learn/practice first — a concrete skill, not a topic>","smallerVersion":"<a version of this task that assumes they\'ve done the learning>","steps":["<2-3 steps for the smaller version>"]}\n\n' + shrinkContext,
+          { model: MODEL_LIGHT },
+        );
+        if (result?.learnFirst) {
+          learnTitle = result.learnFirst;
+          const learn = await storage.createLearn({
+            title: result.learnFirst,
+            learnType: "practice",
+            category: task.category || "learning",
+            relatedTrackId: task.relatedTrackId ?? null,
+          } as any);
+          if (result.smallerVersion && result.steps?.length) {
+            await storage.updateTask(id, {
+              title: result.smallerVersion,
+              steps: JSON.stringify(result.steps.slice(0, 3).map((x) => ({ text: x, done: false }))),
+              pinned: false, status: "not_started",
+              blockedBy: learn?.id ? `learn:${learn.id}` : "",
+            } as any);
+          } else if (learn?.id) {
+            await storage.updateTask(id, { blockedBy: `learn:${learn.id}` } as any);
+          }
+          await storage.logActivity({ eventType: "skip_resolved", sourceType: "task", taskId: id, metadata: JSON.stringify({ reason, learnItemId: learn?.id }) } as any);
+          return res.json({ action: "learn_first", message: `I added "${result.learnFirst}" to your learning list. The task is ready once you've done that.`, learnTitle: result.learnFirst });
+        }
+      } catch {}
+      return res.json({ action: "learn_first", message: "I couldn't figure out the gap — try breaking it down yourself." });
+    }
+
+    if (reason === "dont_want_to") {
+      try {
+        const shrinkContext = await buildShrinkContext(task);
+        const goalLink = await llm(
+          "This task keeps being skipped because the user is avoiding it emotionally. " +
+          "In ONE warm sentence (no preamble), remind them WHY this task matters for their career goal. " +
+          "Then suggest the absolute smallest version — something so tiny it bypasses the resistance. " +
+          "Format: [why it matters]. [tiny version to start with].\n\n" + shrinkContext,
+          { model: MODEL_LIGHT },
+        );
+        const result = await llmJSON<{ tinyVersion: string; steps: string[] }>(
+          "Create the TINIEST possible version of this task — something that takes under 5 minutes and feels so small " +
+          "it's hard to say no. The goal is to bypass emotional resistance by making the first move trivially easy. " +
+          'Return JSON: {"tinyVersion":"<absurdly small version>","steps":["<1-2 micro-steps>"]}\n\n' + shrinkContext,
+          { model: MODEL_LIGHT },
+        );
+        if (result?.tinyVersion && result.steps?.length) {
+          await storage.updateTask(id, {
+            title: result.tinyVersion,
+            steps: JSON.stringify(result.steps.slice(0, 2).map((x) => ({ text: x, done: false }))),
+            pinned: false, status: "not_started",
+          } as any);
+        }
+        await storage.logActivity({ eventType: "skip_resolved", sourceType: "task", taskId: id, metadata: JSON.stringify({ reason }) } as any);
+        return res.json({ action: "shrunk_tiny", message: goalLink || "I made it as small as possible — just get the first thing done." });
+      } catch {}
+      await storage.logActivity({ eventType: "skip_resolved", sourceType: "task", taskId: id, metadata: JSON.stringify({ reason }) } as any);
+      return res.json({ action: "shrunk_tiny", message: "I made it smaller. Just do the first step — that's enough for today." });
+    }
+
+    res.json({ action: "none", message: "Noted." });
   });
 
   app.post("/api/today/plan", async (req, res) => {

@@ -102,6 +102,7 @@ export type Candidate = {
   jobTruthAction?: JobTruthAction;
   milestoneProgress?: { done: number; total: number };
   linkedContactNames?: string[];
+  blockedBy?: string;
 };
 
 type StrategicContext = {
@@ -933,6 +934,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
+        blockedBy: t.blockedBy || "",
       });
     }
   }
@@ -1497,7 +1499,21 @@ export function planDay(
     };
   }
 
-  const ranked = cands.map((c) => scoreWithTrace(c, energy, mode, context)).sort((a, b) => b.s - a.s || a.c.sourceId - b.c.sourceId);
+  const prereqLearnIds = new Set<number>();
+  for (const c of cands) {
+    if (c.blockedBy?.startsWith("learn:")) {
+      const lid = Number(c.blockedBy.slice(6));
+      if (Number.isFinite(lid)) prereqLearnIds.add(lid);
+    }
+  }
+  const ranked = cands.map((c) => {
+    const r = scoreWithTrace(c, energy, mode, context);
+    if (c.source === "learn" && prereqLearnIds.has(c.sourceId)) {
+      r.s += 60;
+      r.trace.push("prerequisite for a task you need to get unstuck on");
+    }
+    return r;
+  }).sort((a, b) => b.s - a.s || a.c.sourceId - b.c.sourceId);
   const maxItems = budget < 45 ? 1
     : budget < 90 ? 1
     : (energy === "low" || mode === "low") ? Math.min(2, cands.length)
@@ -1568,15 +1584,55 @@ export function planDay(
     }
   }
 
+  for (let i = 0; i < picks.length; i++) {
+    const dep = picks[i].c.blockedBy;
+    if (!dep || !dep.startsWith("learn:")) continue;
+    const learnId = Number(dep.slice(6));
+    if (!Number.isFinite(learnId)) continue;
+    const learnIdx = picks.findIndex((p) => p.c.source === "learn" && p.c.sourceId === learnId);
+    if (learnIdx > i) {
+      const [learnPick] = picks.splice(learnIdx, 1);
+      picks.splice(i, 0, learnPick);
+    } else if (learnIdx < 0) {
+      const learnCand = ranked.find((r) => r.c.source === "learn" && r.c.sourceId === learnId && !picks.includes(r));
+      if (learnCand && picks.length > 1) {
+        picks.splice(i, 0, learnCand);
+        if (picks.length > maxItems + 1) picks.pop();
+      }
+    }
+  }
+
+  const prerequisiteLearnIds = new Set<number>();
+  const prerequisiteUnlocksTitle = new Map<number, string>();
+  for (const p of picks) {
+    const dep = p.c.blockedBy;
+    if (dep && dep.startsWith("learn:")) {
+      const learnId = Number(dep.slice(6));
+      if (Number.isFinite(learnId)) {
+        prerequisiteLearnIds.add(learnId);
+        prerequisiteUnlocksTitle.set(learnId, p.c.title);
+      }
+    }
+  }
+
   const mvd = picks[0];
   const slots: SlotName[] = ["now", "next", "later", "bonus"];
-  const plan: PlanItem[] = picks.map((r, i) => ({
-    slot: slots[Math.min(i, slots.length - 1)],
-    candidate: r.c,
-    why: whyLine(r, context),
-    isMVD: r === mvd,
-    explanation: explainRankedPlanItem(picks, i, context),
-  }));
+  const plan: PlanItem[] = picks.map((r, i) => {
+    let why = whyLine(r, context);
+    if (r.c.source === "learn" && prerequisiteLearnIds.has(r.c.sourceId)) {
+      const unlocks = prerequisiteUnlocksTitle.get(r.c.sourceId);
+      why = unlocks
+        ? `This fills a gap that was blocking you on "${unlocks}." Do this first, then that task is ready.`
+        : `This fills a skill gap that was blocking another task. Do this first.`;
+    }
+    return {
+      slot: slots[Math.min(i, slots.length - 1)],
+      candidate: r.c,
+      why,
+      isMVD: r === mvd,
+      explanation: explainRankedPlanItem(picks, i, context),
+    };
+  });
 
   const planMin = picks.reduce((m, r) => m + (SIZE_MINUTES[r.c.size] ?? 45), 0);
   const fits = planMin <= Math.max(15, budget);

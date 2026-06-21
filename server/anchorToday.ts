@@ -3,6 +3,7 @@ import type { Task } from "@shared/schema";
 import { LANE_NAME, laneFocusAreaLabel, type CanonicalLaneName } from "./lanes";
 import { storage } from "./storage";
 import { buildTrackSpine } from "./trackSpine";
+import { createNextTask } from "./nextTask";
 
 // Anchor Today is the front door. It must read the same reason graph as the
 // sequencer: the Tracks x Lanes spine. GoalState remains useful as a legacy
@@ -89,6 +90,130 @@ function assessExistingTasks(tasks: Task[], bestMove: { title: string; lane: Can
   }).sort((a, b) => b.score - a.score);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PROACTIVE TASK SURFACE
+//
+// Scans live data for urgent signals and auto-creates tasks (via the existing
+// dedup-safe createNextTask machinery) so the user never has to visit the Jobs
+// or Network tabs to find out something needs attention.
+//
+// Signals checked:
+//   1. Jobs with a deadline within DEADLINE_HORIZON_DAYS (5 days), status not
+//      archived or rejected.
+//   2. Contacts with nextFollowUpDate in the past, status warm or active.
+//   3. Learn items linked (via relatedJobId) to a job that triggered signal 1.
+//
+// createNextTask is idempotent — calling this on every /api/anchor/today
+// request never creates duplicates.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEADLINE_HORIZON_DAYS = 5;
+const IGNORED_JOB_STATUSES = new Set(["archived", "rejected", "withdrawn", "offer_declined"]);
+
+export type ProactiveSuggestion = {
+  signal: "deadline_job" | "overdue_contact" | "learn_for_deadline_job";
+  sourceType: "job" | "contact" | "learn";
+  sourceId: number;
+  label: string;
+  urgency: "high" | "medium";
+  taskCreated: boolean;
+  taskReused: boolean;
+  taskId: number | null;
+};
+
+export async function deriveProactiveSuggestions(
+  jobs: any[],
+  contacts: any[],
+  learn: any[]
+): Promise<ProactiveSuggestion[]> {
+  const nowMs = Date.now();
+  const horizonMs = DEADLINE_HORIZON_DAYS * 24 * 60 * 60 * 1000;
+  const suggestions: ProactiveSuggestion[] = [];
+
+  // ── Signal 1: Jobs with imminent deadlines ──────────────────────────────
+  const deadlineJobIds = new Set<number>();
+
+  for (const job of jobs) {
+    if (IGNORED_JOB_STATUSES.has(job.status)) continue;
+    if (!job.deadline) continue;
+
+    const deadlineMs = typeof job.deadline === "number" ? job.deadline : new Date(job.deadline).getTime();
+    if (isNaN(deadlineMs)) continue;
+
+    const daysLeft = (deadlineMs - nowMs) / (24 * 60 * 60 * 1000);
+    if (daysLeft < 0 || daysLeft > DEADLINE_HORIZON_DAYS) continue;
+
+    deadlineJobIds.add(job.id);
+    const daysLabel = daysLeft < 1 ? "today" : `in ${Math.ceil(daysLeft)}d`;
+    const result = await createNextTask({ sourceType: "job", sourceId: job.id });
+    suggestions.push({
+      signal: "deadline_job",
+      sourceType: "job",
+      sourceId: job.id,
+      label: `${job.title ?? "Role"} deadline ${daysLabel}`,
+      urgency: daysLeft <= 1 ? "high" : "medium",
+      taskCreated: result !== null && !result.reused,
+      taskReused: result !== null && result.reused,
+      taskId: result?.task.id ?? null,
+    });
+  }
+
+  // ── Signal 2: Overdue contact follow-ups ───────────────────────────────
+  for (const contact of contacts) {
+    if (!contact.nextFollowUpDate) continue;
+    const followUpMs = typeof contact.nextFollowUpDate === "number"
+      ? contact.nextFollowUpDate
+      : new Date(contact.nextFollowUpDate).getTime();
+    if (isNaN(followUpMs)) continue;
+    if (followUpMs > nowMs) continue; // future — not overdue yet
+
+    const status = (contact.status ?? "").toLowerCase();
+    if (status === "cold" || status === "archived") continue;
+
+    const daysOverdue = Math.floor((nowMs - followUpMs) / (24 * 60 * 60 * 1000));
+    const result = await createNextTask({ sourceType: "contact", sourceId: contact.id });
+    suggestions.push({
+      signal: "overdue_contact",
+      sourceType: "contact",
+      sourceId: contact.id,
+      label: `Follow up with ${contact.name ?? "contact"} (${daysOverdue}d overdue)`,
+      urgency: daysOverdue >= 7 ? "high" : "medium",
+      taskCreated: result !== null && !result.reused,
+      taskReused: result !== null && result.reused,
+      taskId: result?.task.id ?? null,
+    });
+  }
+
+  // ── Signal 3: Learn items linked to a deadline job ──────────────────────
+  for (const item of learn) {
+    // relatedJobId links a learn item to a specific job it unblocks
+    const linkedJobId = item.relatedJobId ?? null;
+    if (!linkedJobId || !deadlineJobIds.has(linkedJobId)) continue;
+    if (item.learnStatus === "done" || item.learnStatus === "archived") continue;
+
+    const result = await createNextTask({ sourceType: "learn", sourceId: item.id });
+    suggestions.push({
+      signal: "learn_for_deadline_job",
+      sourceType: "learn",
+      sourceId: item.id,
+      label: `${item.title ?? "Learning item"} needed for deadline role`,
+      urgency: "medium",
+      taskCreated: result !== null && !result.reused,
+      taskReused: result !== null && result.reused,
+      taskId: result?.task.id ?? null,
+    });
+  }
+
+  // Sort: high urgency first, then deadline_job > overdue_contact > learn
+  const signalOrder = { deadline_job: 0, overdue_contact: 1, learn_for_deadline_job: 2 };
+  suggestions.sort((a, b) => {
+    if (a.urgency !== b.urgency) return a.urgency === "high" ? -1 : 1;
+    return signalOrder[a.signal] - signalOrder[b.signal];
+  });
+
+  return suggestions;
+}
+
 export function buildAnchorToday(input: { tasks: Task[]; jobs: any[]; learn: any[]; hustles: any[]; contacts: any[]; tracks: any[] }) {
   const spine = buildTrackSpine(input);
   const assessedTasks = assessExistingTasks(input.tasks, { title: spine.bestMove.title, lane: spine.bestMove.lane });
@@ -144,6 +269,13 @@ export function registerAnchorTodayRoutes(app: Express) {
     const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
       storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(),
     ]);
-    res.json(buildAnchorToday({ tasks, jobs, learn, hustles, contacts, tracks }));
+
+    // Proactive pass: auto-create tasks for urgent signals before building the
+    // today surface. This is fire-and-await so the suggestions are ready to
+    // include in the same response without a second round-trip.
+    const proactiveSuggestions = await deriveProactiveSuggestions(jobs, contacts, learn);
+
+    const today = buildAnchorToday({ tasks, jobs, learn, hustles, contacts, tracks });
+    res.json({ ...today, proactiveSuggestions });
   });
 }

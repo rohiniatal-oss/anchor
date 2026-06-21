@@ -797,19 +797,28 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   const hadPinned = useRef(false);
   const lastPinnedPlanItemId = useRef<number | null>(null);
+  const autoStartedOnLoad = useRef(false);
   useEffect(() => {
     if (pinned) {
       hadPinned.current = true;
       lastPinnedPlanItemId.current = pinned.planItemId ?? null;
       return;
     }
-    if (!hadPinned.current) return;
+    if (!hadPinned.current) {
+      // Auto-start the first plan item on initial load so the user
+      // immediately sees the focused RightNow view with steps.
+      if (!autoStartedOnLoad.current && !loadingPlan && plan && !plan.enoughForToday && activeItems.length > 0) {
+        autoStartedOnLoad.current = true;
+        void startItem(activeItems[0]);
+      }
+      return;
+    }
     if (plan?.enoughForToday) { hadPinned.current = false; return; }
     const next = activeItems.find((it) => it.id !== lastPinnedPlanItemId.current);
     if (!next) return;
     hadPinned.current = false;
     void startItem(next);
-  }, [pinned, plan?.enoughForToday, activeItems]);
+  }, [pinned, plan?.enoughForToday, activeItems, loadingPlan]);
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 

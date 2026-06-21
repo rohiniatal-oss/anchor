@@ -135,7 +135,20 @@ function inferWinCategory(task: { category?: string | null; sourceType?: string 
 async function updateSourceEntityOnComplete(task: { sourceType?: string | null; sourceId?: number | null; title: string }) {
   if (!task.sourceType || task.sourceId == null) return;
   try {
-    if (task.sourceType === "contact") {
+    if (task.sourceType === "job") {
+      const t = task.title;
+      if (/submit|apply|send.*application/i.test(t)) {
+        const job = (await storage.getJobs()).find((j) => j.id === task.sourceId);
+        if (job && job.status === "wishlist") {
+          await storage.updateJob(task.sourceId, { status: "applied" } as any);
+        }
+      } else if (/interview|prep.*interview|mock.*interview/i.test(t)) {
+        const job = (await storage.getJobs()).find((j) => j.id === task.sourceId);
+        if (job && (job.status === "wishlist" || job.status === "applied")) {
+          await storage.updateJob(task.sourceId, { status: "interviewing" } as any);
+        }
+      }
+    } else if (task.sourceType === "contact") {
       if (/message|draft|send|outreach|email|reach out|follow.?up/i.test(task.title)) {
         await storage.updateContact(task.sourceId, {
           status: "messaged",

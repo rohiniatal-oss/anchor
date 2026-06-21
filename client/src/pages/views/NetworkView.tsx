@@ -426,6 +426,14 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
     }
   }, [bestCls?.id]);
 
+  const autoDrafted = useRef(false);
+  useEffect(() => {
+    if (recommendedMove && !draft.trim() && !draftingAI && !autoDrafted.current && c.status === "to_contact") {
+      autoDrafted.current = true;
+      draftWithAI();
+    }
+  }, [recommendedMove?.moveType]);
+
   const tone = replied
     ? "border-emerald-300/60 bg-emerald-50/60 dark:border-emerald-800/60 dark:bg-emerald-950/30"
     : overdue

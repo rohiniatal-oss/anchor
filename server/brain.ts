@@ -103,6 +103,7 @@ export type Candidate = {
   milestoneProgress?: { done: number; total: number };
   linkedContactNames?: string[];
   blockedBy?: string;
+  companyBrief?: string;
 };
 
 type StrategicContext = {
@@ -959,6 +960,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         jobTruthAction: truthAction,
         linkedContactNames: (jobContactLinks[j.id] || []).map((id) => contactsById.get(id)).filter(Boolean).map((c) => c!.who || c!.name || "a contact"),
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
+        companyBrief: j.companyBrief || "",
       });
     }
   }
@@ -1263,6 +1265,11 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
   return `This helps with ${focusAreaLabel(lane)}. ${top || context.laneUnlockMove || "Best available next move"}.`;
 }
 
+function parseBrief(raw?: string): { whatTheyDo?: string; relevantTeam?: string; whyYouFit?: string; prepAngle?: string; landscape?: { competitors?: string[]; alsoConsider?: string[]; marketContext?: string }; outreachSuggestions?: Array<{ archetype?: string; searchTip?: string }> } | null {
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
 function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
@@ -1282,14 +1289,22 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
     return "Open your job sources and add or apply to one real role in each active path before doing narrower comparison work.";
   }
   if (source === "job") {
+    const brief = parseBrief(candidate?.companyBrief);
     if (candidate?.jobTruthAction === "warm") {
       if (candidate.linkedContactNames?.length) return `Open the role and draft a message to ${candidate.linkedContactNames[0]} — they're already linked to this role.`;
+      if (brief?.outreachSuggestions?.[0]?.searchTip) return brief.outreachSuggestions[0].searchTip;
       return "Open the role and draft the shortest message to someone who could help or refer you.";
     }
-    if (candidate?.jobTruthAction === "prove") return "Open your strongest learning item or reusable example and make one weak requirement easier to back up.";
+    if (candidate?.jobTruthAction === "prove") {
+      if (brief?.prepAngle) return brief.prepAngle;
+      return "Open your strongest learning item or reusable example and make one weak requirement easier to back up.";
+    }
     if (candidate?.jobTruthAction === "clarify") return "Open the role and confirm the missing facts before spending more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "Open the role and send the polite follow-up or warm nudge.";
-    if (candidate?.jobTruthAction === "prepare") return "Open the role and draft the strongest interview stories or prep notes.";
+    if (candidate?.jobTruthAction === "prepare") {
+      if (brief?.prepAngle) return brief.prepAngle;
+      return "Open the role and draft the strongest interview stories or prep notes.";
+    }
     return "Open the role, your CV, and the application materials for this step.";
   }
   if (source === "contact") {
@@ -1364,15 +1379,18 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
     return "You are testing several paths in parallel, so the best move is to turn each one into a real role or application move.";
   }
   if (source === "job") {
+    const brief = parseBrief(candidate?.companyBrief);
+    const companyCtx = brief?.whyYouFit || brief?.whatTheyDo || "";
     if (candidate?.jobTruthAction === "warm") {
       if (candidate.linkedContactNames?.length) return `This role looks promising — reach out to ${candidate.linkedContactNames[0]}, who's already linked to it.`;
+      if (brief?.outreachSuggestions?.[0]?.archetype) return `This role looks promising. Find ${brief.outreachSuggestions[0].archetype} before going in cold.`;
       return "This role looks promising, but the best next step is to reach out to someone useful before going in cold.";
     }
-    if (candidate?.jobTruthAction === "prove") return "This role looks promising, but you still need one clearer example you can point to before pushing harder.";
+    if (candidate?.jobTruthAction === "prove") return companyCtx ? `${companyCtx} You need one clearer example to point to before pushing harder.` : "This role looks promising, but you still need one clearer example you can point to before pushing harder.";
     if (candidate?.jobTruthAction === "clarify") return "This role needs one clarification pass before it deserves more effort.";
     if (candidate?.jobTruthAction === "follow_up") return "This role is already moving, so follow-through matters most right now.";
-    if (candidate?.jobTruthAction === "prepare") return "This role is live, so preparation matters most right now.";
-    return "This role is one of the strongest next moves right now.";
+    if (candidate?.jobTruthAction === "prepare") return companyCtx ? `${companyCtx} Preparation matters most right now.` : "This role is live, so preparation matters most right now.";
+    return companyCtx ? `${companyCtx} This is one of the strongest next moves right now.` : "This role is one of the strongest next moves right now.";
   }
   if (source === "contact") {
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
@@ -1421,6 +1439,12 @@ function explainRankedPlanItem(
   const lane = candidateStrategicLane(current.c, context);
   const focusArea = focusAreaLabel(lane);
   const supportingReasons = current.trace.filter(Boolean).slice(0, 4);
+  if (current.c.source === "job" && current.c.companyBrief) {
+    const brief = parseBrief(current.c.companyBrief);
+    if (brief?.landscape?.marketContext) supportingReasons.push(brief.landscape.marketContext);
+    if (brief?.landscape?.competitors?.length) supportingReasons.push(`Also hiring: ${brief.landscape.competitors.slice(0, 3).join(", ")}`);
+    if (brief?.landscape?.alsoConsider?.length) supportingReasons.push(`Worth exploring: ${brief.landscape.alsoConsider.slice(0, 2).join(", ")}`);
+  }
   return {
     summary: `${sourceFrame(current.c.source, current.c, context)} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
     whyNow: supportingReasons[0] || current.c.whyNow || context.reason,

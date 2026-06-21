@@ -17,6 +17,38 @@ function decoratePlanItems(items: any[]) {
   }));
 }
 
+async function buildShrinkContext(task: { id: number; title: string; sourceType?: string | null; sourceId?: number | null; doneWhen?: string | null; category?: string | null }) {
+  const lines = [`Task: "${task.title}"`];
+  if (task.doneWhen) lines.push(`Done when: ${task.doneWhen}`);
+  if (task.sourceType && task.sourceId) {
+    try {
+      if (task.sourceType === "job") {
+        const jobs = await storage.getJobs();
+        const job = jobs.find((j) => j.id === task.sourceId);
+        if (job) {
+          lines.push(`Role: ${job.title}${job.company ? ` at ${job.company}` : ""}`);
+          if (job.jdText) lines.push(`Key requirements: ${job.jdText.slice(0, 300)}`);
+        }
+      } else if (task.sourceType === "contact") {
+        const contacts = await storage.getContacts();
+        const contact = contacts.find((c) => c.id === task.sourceId);
+        if (contact) {
+          lines.push(`Contact: ${contact.name || contact.who}${contact.targetOrg ? ` at ${contact.targetOrg}` : ""}`);
+          if (contact.why) lines.push(`Why they matter: ${contact.why}`);
+        }
+      } else if (task.sourceType === "learn") {
+        const learn = await storage.getLearn();
+        const item = learn.find((l) => l.id === task.sourceId);
+        if (item) {
+          lines.push(`Learning: ${item.title}`);
+          if (item.capabilityBuilt) lines.push(`Builds: ${item.capabilityBuilt}`);
+        }
+      }
+    } catch {}
+  }
+  return lines.join("\n");
+}
+
 function isStructuredTask(task: { sourceType?: string | null; category?: string | null }) {
   return ["job", "learn", "contact", "hustle", "goal"].includes(String(task.sourceType || ""))
     || ["job", "learning", "substack", "hustle", "afterline", "interview"].includes(String(task.category || ""));
@@ -274,9 +306,11 @@ export function registerPlanningRoutes(app: Express) {
     let autoShrunk = false;
     if (skipped >= 2 && (!steps || steps === "[]")) {
       try {
+        const shrinkContext = await buildShrinkContext(task);
         const arr = await llmJSON<string[]>(
-          "Someone with ADHD keeps avoiding this task. Break it into 3-4 tiny steps, first one under 2 minutes and physical. " +
-          'Return ONLY a JSON array of strings. Task: "' + task.title + '"',
+          "This task keeps slipping. Break it into 3-4 micro-steps. The first step must be under 2 minutes, immediately startable, and physical (open something, write one line, send one thing). " +
+          "Each step should be specific to the actual task — never generic filler like 'do research' or 'think about it'. " +
+          'Return ONLY a JSON array of strings.\n\n' + shrinkContext,
           { model: MODEL_LIGHT },
         ) || [];
         if (arr.length) {

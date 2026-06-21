@@ -46,6 +46,17 @@ async function buildShrinkContext(task: { id: number; title: string; sourceType?
       }
     } catch {}
   }
+  try {
+    const wins = await storage.getWins();
+    const trackId = (task as any).relatedTrackId;
+    const relevant = wins
+      .filter((w) => (w.takeaway || "").trim() && (trackId ? w.trackId === trackId : true))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, 3);
+    if (relevant.length) {
+      lines.push(`Recent lessons: ${relevant.map((w) => w.takeaway).join("; ")}`);
+    }
+  } catch {}
   return lines.join("\n");
 }
 

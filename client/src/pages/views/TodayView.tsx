@@ -657,6 +657,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     streak: number;
     yesterdayCompleted: number;
     yesterdayTotal: number;
+    weekTakeaways?: { win: string; takeaway: string; category: string }[];
   }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
@@ -1036,6 +1037,21 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               <Flame className="w-3 h-3" /> {stats.streak}d streak
             </span>
           )}
+        </div>
+      )}
+
+      {/* Weekly growth — what you learned this week */}
+      {stats?.weekTakeaways && stats.weekTakeaways.length > 0 && !pinned && (
+        <div className="mb-5 rounded-xl border border-card-border bg-card px-4 py-3" data-testid="weekly-growth">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">What you learned this week</p>
+          <div className="space-y-1.5">
+            {stats.weekTakeaways.slice(0, 3).map((t, i) => (
+              <div key={i} className="text-xs">
+                <span className="text-foreground">{t.takeaway}</span>
+                <span className="text-muted-foreground ml-1.5">— from {t.win}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

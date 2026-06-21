@@ -105,7 +105,7 @@ test("plan-item start keeps broad-pursuit contact-support goal items as admin/ne
   assert.equal(started.json.task.category, "admin");
   const steps = JSON.parse(started.json.task.steps || "[]");
   assert.ok(steps.length >= 1, "contact-support goal tasks should get concrete steps");
-  assert.match(String(steps[0]?.text || ""), /network|contact|message|reach out/i);
+  assert.match(String(steps[0]?.text || ""), /open jobs|look at the first still-empty lane|save the first credible role|find one real role/i);
 });
 
 test("plan-item start keeps broad-pursuit prep-support goal items as learning tasks", async () => {

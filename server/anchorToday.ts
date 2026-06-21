@@ -124,7 +124,8 @@ export type ProactiveSuggestion = {
 export async function deriveProactiveSuggestions(
   jobs: any[],
   contacts: any[],
-  learn: any[]
+  learn: any[],
+  taskCreator: typeof createNextTask = createNextTask,
 ): Promise<ProactiveSuggestion[]> {
   const nowMs = Date.now();
   const horizonMs = DEADLINE_HORIZON_DAYS * 24 * 60 * 60 * 1000;
@@ -145,7 +146,7 @@ export async function deriveProactiveSuggestions(
 
     deadlineJobIds.add(job.id);
     const daysLabel = daysLeft < 1 ? "today" : `in ${Math.ceil(daysLeft)}d`;
-    const result = await createNextTask({ sourceType: "job", sourceId: job.id });
+    const result = await taskCreator({ sourceType: "job", sourceId: job.id });
     suggestions.push({
       signal: "deadline_job",
       sourceType: "job",
@@ -171,7 +172,7 @@ export async function deriveProactiveSuggestions(
     if (status === "cold" || status === "archived") continue;
 
     const daysOverdue = Math.floor((nowMs - followUpMs) / (24 * 60 * 60 * 1000));
-    const result = await createNextTask({ sourceType: "contact", sourceId: contact.id });
+    const result = await taskCreator({ sourceType: "contact", sourceId: contact.id });
     suggestions.push({
       signal: "overdue_contact",
       sourceType: "contact",
@@ -191,7 +192,7 @@ export async function deriveProactiveSuggestions(
     if (!linkedJobId || !deadlineJobIds.has(linkedJobId)) continue;
     if (item.learnStatus === "done" || item.learnStatus === "archived") continue;
 
-    const result = await createNextTask({ sourceType: "learn", sourceId: item.id });
+    const result = await taskCreator({ sourceType: "learn", sourceId: item.id });
     suggestions.push({
       signal: "learn_for_deadline_job",
       sourceType: "learn",

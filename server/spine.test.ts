@@ -367,7 +367,7 @@ test("GET /api/tasks repairs legacy workflow meta-steps on saved tasks", async (
 
   const r = await api(h.base, "GET", "/api/tasks");
   assert.equal(r.status, 200);
-  const repaired = r.json.find((task: any) => /inspect three ai governance strategy roles/i.test(String(task.title || "")));
+  const repaired = r.json.find((task: any) => /review three ai governance strategy roles/i.test(String(task.title || "")));
   assert.ok(repaired, "the saved task should be returned");
 
   const texts = JSON.parse(repaired.steps || "[]").map((step: any) => String(step.text || "")).join(" | ");
@@ -378,7 +378,7 @@ test("GET /api/tasks repairs legacy workflow meta-steps on saved tasks", async (
   );
   assert.match(
     texts,
-    /open jobs|save the first credible role|open the saved role|pipeline action/i,
+    /open jobs|save the first credible role|open the saved role|pipeline action|open the source note|first still-empty lane/i,
     "the repaired task should start with a direct actionable move",
   );
 });

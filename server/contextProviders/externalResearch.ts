@@ -7,6 +7,7 @@ import type {
   TaskContextProviderInput,
   TaskContextSourceBundle,
 } from "./types";
+import OpenAI from "openai";
 
 const NEGATIVE_TRIGGER_RE =
   /\b(cv|resume|cover letter|cover|application answer|question draft|writing sample|tailor|rewrite|personal statement|reflection|prioriti[sz]e|trade[ -]?off|network(?:ing)?|outreach|message|email|daily plan|schedule|adhd|proof asset|substack|draft fragment)\b/i;
@@ -148,11 +149,8 @@ function publicEntityTokens(task: TaskContextProviderInput["task"], bundle: Task
   if (bundle.sourceKind === "learn" && title) tokens.push(...title.split(/\s+/).slice(0, 5));
   if (!tokens.length && bundle.sourceKind === "goal") {
     const text = lower(`${task.title} ${task.doneWhen || task.minimumOutcome || ""}`);
-    if (text.includes("policy")) tokens.push("policy");
-    if (text.includes("research")) tokens.push("research");
-    if (text.includes("strategy")) tokens.push("strategy");
-    if (text.includes("operations")) tokens.push("operations");
-    if (text.includes("governance")) tokens.push("governance");
+    const words = text.split(/\s+/).filter((w) => w.length > 3);
+    tokens.push(...tokenCap(words, 4));
   }
   return dedupeWords(tokens);
 }
@@ -163,26 +161,22 @@ export function buildExternalResearchQueryPlan(
 ): ExternalResearchQueryPlan | null {
   const intent = deriveExternalResearchIntent(task, bundle);
   if (intent === "none") return null;
-  const publicTokens = publicEntityTokens(task, bundle);
-  const domain = sourceDomain(bundle, task);
-  const primaryWords = tokenCap([...publicTokens, ...intentTokens(intent)]);
-  if (!primaryWords.length) return null;
-  const primary = `${primaryWords.join(" ")}${domain ? ` site:${domain}` : ""}`.trim();
-  const fallbackWords = tokenCap([...publicTokens, ...intentTokens(intent).slice(0, 1)]);
-  const fallback = domain && fallbackWords.length ? fallbackWords.join(" ") : undefined;
-  return {
-    intent,
-    freshnessSensitive: looksFreshnessSensitive(intent),
-    primary,
-    fallback,
-  };
+  const entityTokens = publicEntityTokens(task, bundle);
+  if (!entityTokens.length) return null;
+  const iTokens = intentTokens(intent);
+  const freshnessSensitive = looksFreshnessSensitive(intent);
+  const primary = tokenCap([...entityTokens, ...iTokens], 12).join(" ");
+  const fallback = entityTokens.slice(0, 4).join(" ") || undefined;
+  return { intent, freshnessSensitive, primary, fallback };
 }
 
 function domainTrustScore(domain: string) {
-  if (!domain) return 0;
-  if (/\.(gov|edu)$/.test(domain)) return 30;
-  if (/careers|jobs|apply|official|program/.test(domain)) return 18;
-  return 8;
+  const d = lower(domain);
+  if (/\.(gov|edu|ac\.uk|org)$/.test(d)) return 20;
+  if (/reuters|apnews|bbc|ft\.com|economist|nytimes|washingtonpost|theguardian/.test(d)) return 15;
+  if (/linkedin|glassdoor|indeed|lever\.co|greenhouse\.io|ashbyhq|workable/.test(d)) return 12;
+  if (/crunchbase|techcrunch|wired|nature|science/.test(d)) return 10;
+  return 0;
 }
 
 function relevanceScore(hit: ExternalResearchHit, tokens: string[]) {
@@ -258,6 +252,62 @@ export function toExternalResearchBlocks(
   }));
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// LIVE SEARCH via OpenAI web_search_preview
+// Uses the same OpenAI client already powering task breakdowns — no new keys.
+//
+// ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE controls behaviour:
+//   unset / "live"   → real web search (default in production)
+//   "unavailable"    → silently skip (set this to disable search entirely)
+//   "success"        → deterministic mock hits (CI / test harness)
+//   "empty"          → empty result simulation
+//   "rate_limited"   → rate limit simulation
+//   "error"          → error simulation
+// ─────────────────────────────────────────────────────────────────────────
+
+async function runLiveWebSearch(
+  query: string,
+  now: number,
+): Promise<ExternalResearchHit[]> {
+  const client = new OpenAI();
+  const stamp = new Date(now).toISOString();
+
+  const response = await client.responses.create({
+    model: "gpt-4o-mini-search-preview",
+    tools: [{ type: "web_search_preview" as const }],
+    input: `Search for current, factual, public information to answer: ${query}\n\nReturn only factual results. Do not editorialize.`,
+  });
+
+  const hits: ExternalResearchHit[] = [];
+
+  for (const item of response.output || []) {
+    if (item.type !== "message") continue;
+    for (const content of (item as any).content || []) {
+      if (content.type !== "output_text") continue;
+      const annotations: any[] = content.annotations || [];
+      const text: string = content.text || "";
+
+      for (const ann of annotations) {
+        if (ann.type !== "url_citation") continue;
+        const start = Math.max(0, (ann.start_index ?? 0) - 120);
+        const end = Math.min(text.length, (ann.end_index ?? 0) + 120);
+        const snippet = text.slice(start, end).replace(/\s+/g, " ").trim();
+
+        hits.push({
+          title: clean(ann.title || ann.url || "Web result", 140),
+          url: clean(ann.url || "", 400),
+          snippet: clean(snippet || ann.title || "", 280),
+          date: stamp.slice(0, 10),
+          source: extractDomain(ann.url || ""),
+          retrievedAt: stamp,
+        });
+      }
+    }
+  }
+
+  return hits;
+}
+
 function mockExternalResearchHits(
   task: TaskContextProviderInput["task"],
   bundle: TaskContextSourceBundle,
@@ -267,9 +317,7 @@ function mockExternalResearchHits(
   const domain = sourceDomain(bundle, task) || "example.org";
   const title = sourceTitle(bundle) || sourceCompany(bundle) || "Public research target";
   const stamp = new Date(now).toISOString();
-  const shared = {
-    retrievedAt: stamp,
-  };
+  const shared = { retrievedAt: stamp };
   return [
     {
       title: `${title} official update`,
@@ -309,14 +357,34 @@ export const externalResearchContextProvider: TaskContextProvider = {
       if (!plan) {
         return { provider: "external_research", status: "skipped", blocks: [], debug: { reason: "no_query_plan" } };
       }
+
       const envMode = process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE as TaskContextProviderInput["mockMode"] | undefined;
-      const mode = input.mockMode || envMode || "unavailable";
+      const mode = input.mockMode || envMode;
+
+      // Hard-kill switches (explicit opt-out)
       if (mode === "unavailable") return { provider: "external_research", status: "unavailable", blocks: [], debug: { query: plan.primary } };
       if (mode === "rate_limited") return { provider: "external_research", status: "rate_limited", blocks: [], debug: { query: plan.primary } };
       if (mode === "error") throw new Error("mock external research provider error");
       if (mode === "empty") return { provider: "external_research", status: "empty", blocks: [], debug: { query: plan.primary } };
-      const rawHits = input.mockHits?.length ? input.mockHits : mockExternalResearchHits(input.task, input.sourceBundle, plan, input.now);
-      const ranked = rankAndFilterExternalResearchHits(input.task, input.sourceBundle, plan, rawHits, input.now);
+
+      const now = input.now ?? Date.now();
+
+      // mode === "success" → deterministic mock (test harness / CI)
+      // mode === undefined / "live" → real OpenAI web_search_preview
+      let rawHits: ExternalResearchHit[];
+      if (mode === "success") {
+        rawHits = input.mockHits?.length
+          ? input.mockHits
+          : mockExternalResearchHits(input.task, input.sourceBundle, plan, now);
+      } else {
+        rawHits = await runLiveWebSearch(plan.primary, now);
+        // Retry with fallback query if primary returned nothing
+        if (!rawHits.length && plan.fallback) {
+          rawHits = await runLiveWebSearch(plan.fallback, now);
+        }
+      }
+
+      const ranked = rankAndFilterExternalResearchHits(input.task, input.sourceBundle, plan, rawHits, now);
       const blocks = toExternalResearchBlocks(ranked, plan);
       return {
         provider: "external_research",
@@ -325,6 +393,7 @@ export const externalResearchContextProvider: TaskContextProvider = {
         debug: { query: plan.primary, resultCount: blocks.length },
       };
     } catch (error) {
+      // Search failure is always non-fatal — breakdown continues without research context
       return {
         provider: "external_research",
         status: "error",

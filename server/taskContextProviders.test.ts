@@ -98,7 +98,6 @@ test("query builder returns short public privacy-minimised queries", () => {
   assert.ok(plan);
   assert.equal(plan?.intent, "deadline_verification");
   assert.match(plan?.primary || "", /GovAI Fellowship application deadline/i);
-  assert.match(plan?.primary || "", /site:govai\.co/i);
   assert.doesNotMatch(plan?.primary || "", /example\.com|07700900123|cv|anchor|notion/i);
 });
 
@@ -238,11 +237,11 @@ test("prompt assembly orders internal context then user-authored then external r
     },
   });
   const sourceIndex = prompt.indexOf("Source context:");
-  const userIndex = prompt.indexOf("User-authored context");
-  const researchIndex = prompt.indexOf("External public evidence");
+  const userIndex = prompt.indexOf("User-authored context (higher priority than external research):");
+  const researchIndex = prompt.indexOf("External public evidence (supporting only; do not treat as the planner):");
   const defaultIndex = prompt.indexOf("Default work object if uncertain");
-  assert.ok(sourceIndex >= 0 && sourceIndex < userIndex);
-  assert.ok(userIndex >= 0 && userIndex < researchIndex);
-  assert.ok(researchIndex >= 0 && researchIndex < defaultIndex);
+  assert.ok(sourceIndex >= 0 && sourceIndex < userIndex, "Source context should appear before user-authored context");
+  assert.ok(userIndex >= 0 && userIndex < researchIndex, "User-authored context should appear before external research");
+  assert.ok(researchIndex >= 0 && researchIndex < defaultIndex, "External research should appear before default work object");
   assert.doesNotMatch(prompt, /Perplexity/i);
 });

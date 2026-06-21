@@ -23,6 +23,7 @@ import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } f
 import { syncGapRecommendations } from "./gapRecommendations";
 import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
+import { autoGenerateNarrativeAngle } from "./narrativeAngle";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats, LLM_MODELS } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
@@ -183,6 +184,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const job = await storage.createJob(p.data);
     if ((job.jdText || "").trim().length > 40) {
       generateJobPrepArc(job).catch(() => {});
+      autoGenerateNarrativeAngle(job).catch(() => {});
     }
     res.json(job);
   });
@@ -194,6 +196,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!updated) return res.status(404).json({ error: "Not found" });
     if (p.data.jdText && (p.data.jdText || "").trim().length > 40) {
       generateJobPrepArc(updated).catch(() => {});
+      autoGenerateNarrativeAngle(updated).catch(() => {});
     }
     res.json(updated);
   });

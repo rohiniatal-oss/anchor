@@ -773,10 +773,10 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   // Start an item via the IDENTITY-PRESERVING endpoint: it reads the exact plan
   // item id, creates/reuses the backing task, links taskId both ways, derives the
   // block from the slot (no hardcoded "morning"), and preserves source/doneWhen.
-  async function startItem(it: PlanItemT) {
+  async function startItem(it: PlanItemT, silent = false) {
     await mutateAndInvalidate("POST", `/api/plan-items/${it.id}/start`, { day }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
     setPlan(null); setPlanItems([]);
-    toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
+    if (!silent) toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
   }
 
   const executionState = deriveTodayExecutionState({
@@ -797,19 +797,28 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   const hadPinned = useRef(false);
   const lastPinnedPlanItemId = useRef<number | null>(null);
+  const autoStartedOnLoad = useRef(false);
   useEffect(() => {
     if (pinned) {
       hadPinned.current = true;
       lastPinnedPlanItemId.current = pinned.planItemId ?? null;
       return;
     }
-    if (!hadPinned.current) return;
+    if (!hadPinned.current) {
+      // Auto-start the first plan item on initial load so the user
+      // immediately sees the focused RightNow view with steps.
+      if (!autoStartedOnLoad.current && !loadingPlan && plan && !plan.enoughForToday && activeItems.length > 0) {
+        autoStartedOnLoad.current = true;
+        void startItem(activeItems[0], true);
+      }
+      return;
+    }
     if (plan?.enoughForToday) { hadPinned.current = false; return; }
     const next = activeItems.find((it) => it.id !== lastPinnedPlanItemId.current);
     if (!next) return;
     hadPinned.current = false;
     void startItem(next);
-  }, [pinned, plan?.enoughForToday, activeItems]);
+  }, [pinned, plan?.enoughForToday, activeItems, loadingPlan]);
 
   const greeting = (() => { const h = new Date().getHours(); return h < 12 ? "Morning" : h < 18 ? "Afternoon" : "Evening"; })();
 

@@ -439,7 +439,7 @@ function JobWarmPath({ j, trackId, contacts, linkedContactIds, savedContactRec, 
     setBusyId(c.id);
     try {
       const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
-      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned." });
+      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in Capture, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusyId(null); }
   }
@@ -922,7 +922,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, l
               )}
               <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
                 nextTaskHint={taskPreviewHint(nextJobTaskTitle(j), openJobTask?.title)}
-                onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />
+                onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Capture, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />
             </div>
           )}
         </>

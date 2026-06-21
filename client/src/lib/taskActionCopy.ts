@@ -33,6 +33,6 @@ export function taskToastDescription(
   const title = String(result?.title || "").trim();
   if (result?.reused) return title ? `Open task: "${title}".` : fallbackExisting;
   return title
-    ? `Added "${title}". Find it in Brain dump, or in Today if it gets planned.`
-    : "Find it in Brain dump, or in Today if it gets planned.";
+    ? `Added "${title}". Find it in Capture, or in Today if it gets planned.`
+    : "Find it in Capture, or in Today if it gets planned.";
 }

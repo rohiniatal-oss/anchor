@@ -60,7 +60,7 @@ test("goal-source breakdown turns broad pursuit into concrete role-type coverage
   const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
 
   assert.equal(workflowState.workObject, "Pipeline");
-  assert.match(workflowState.currentStage, /Define target|Build list|Execute next batch/);
+  assert.match(workflowState.currentStage, /Define your target|Build a list|Work through the next batch/);
   assert.ok(steps.length >= 1);
   assert.match(String(steps[0]?.text || ""), /open jobs|save the first real role|saved role|pipeline action|find one real role|still missing one|first path/i);
 });
@@ -99,7 +99,7 @@ test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct
     doneWhen: "One clear role-family signal is captured",
     minimumOutcome: "",
     steps: JSON.stringify([
-      { text: "Use the finite knowledge workflow", done: false, substeps: ["Orient", "Scope useful slice"] },
+      { text: "Use the finite knowledge workflow", done: false, substeps: ["Get the lay of the land", "Focus on what matters"] },
       { text: "Locate the current stage", done: false },
       { text: "Define this stage output", done: false },
       { text: "Check completion criteria", done: false },
@@ -151,7 +151,7 @@ test("contact-source breakdown uses the real contact context in deterministic fa
   const { bundle, workflowState, steps } = await buildDeterministicTaskBreakdown(task);
 
   assert.equal(bundle.sourceKind, "contact");
-  assert.equal(workflowState.currentStage, "Track follow-up");
+  assert.equal(workflowState.currentStage, "Follow up");
   assert.match(steps.map((step) => String(step.text || "")).join(" | "), /Sarah|Palantir/i);
 });
 
@@ -185,7 +185,7 @@ test("contact-source outreach breakdown supplies the angle and ask instead of ge
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
   assert.equal(bundle.sourceKind, "contact");
-  assert.equal(workflowState.currentStage, "Draft outreach");
+  assert.equal(workflowState.currentStage, "Draft a message");
   assert.match(bundle.sourceContext || "", /Person: Bain alum/i);
   assert.match(joined, /Open a draft message to the contact/i);
   assert.match(joined, /Lead with the specific ask about AI strategy roles/i);
@@ -226,7 +226,7 @@ test("replied contact follow-up draft stays in message mode instead of abstract 
   const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.equal(workflowState.currentStage, "Prepare conversation");
+  assert.equal(workflowState.currentStage, "Prepare for the conversation");
   assert.match(joined, /Review Priya Raman's background/i);
   assert.match(joined, /specific questions to ask Priya Raman/i);
   assert.match(joined, /Save conversation prep notes/i);
@@ -264,7 +264,7 @@ test("contact conversation prep stays in prep mode instead of collapsing into ou
   const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.equal(workflowState.currentStage, "Prepare conversation");
+  assert.equal(workflowState.currentStage, "Prepare for the conversation");
   assert.match(joined, /Review James's background and the AI governance \/ policy roles at Ofcom context/i);
   assert.match(joined, /specific questions to ask James/i);
   assert.match(joined, /Note one thing you can offer or share in return/i);

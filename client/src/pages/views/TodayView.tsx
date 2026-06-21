@@ -183,6 +183,27 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   // the task. Hold it here and re-call breakdown WITH the user's answer as context.
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
+  const [skipDiagOpen, setSkipDiagOpen] = useState(false);
+  const [skipResolving, setSkipResolving] = useState(false);
+  const skipDiagShownFor = useRef<number | null>(null);
+  useEffect(() => {
+    if ((pinned.skipped || 0) >= 2 && skipDiagShownFor.current !== pinned.id) {
+      skipDiagShownFor.current = pinned.id;
+      setSkipDiagOpen(true);
+    } else if ((pinned.skipped || 0) < 2) {
+      setSkipDiagOpen(false);
+    }
+  }, [pinned.id, pinned.skipped]);
+  async function resolveSkip(reason: string) {
+    setSkipResolving(true);
+    try {
+      const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/skip-resolve`, { reason, day: todayKey() }, ["/api/tasks"]);
+      toast({ title: res?.message || "Got it." });
+      setSkipDiagOpen(false);
+    } catch {
+      toast({ title: "Couldn't process that right now." });
+    } finally { setSkipResolving(false); }
+  }
   const steps = parseSteps(pinned.steps);
   const workflowCtx = steps[0]?.workflowState || null;
   const currentIdx = steps.findIndex((s) => !s.done);
@@ -325,16 +346,32 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
             className="text-xs text-primary hover:underline inline-flex items-center gap-1"><ExternalLink className="w-3 h-3" /> Open the posting</a>
         )}
       </div>
-      {(pinned.skipped || 0) >= 3 && (
+      {skipDiagOpen && (pinned.skipped || 0) >= 2 ? (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800/40 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2.5 mb-2" data-testid="skip-diagnosis">
+          <p className="text-xs font-medium text-amber-800 dark:text-amber-300 mb-2">This keeps sliding — what's going on?</p>
+          <div className="flex flex-wrap gap-2">
+            {([
+              ["too_hard", "It's too hard"],
+              ["dont_want_to", "I'm avoiding it"],
+              ["wrong_moment", "Bad timing"],
+              ["doesnt_matter", "It doesn't matter anymore"],
+            ] as const).map(([reason, label]) => (
+              <button key={reason} disabled={skipResolving} onClick={() => resolveSkip(reason)} data-testid={`skip-diag-${reason}`}
+                className="text-xs rounded-full border border-amber-300 dark:border-amber-700 bg-white dark:bg-amber-950/40 px-3 py-1.5 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors disabled:opacity-50">
+                {skipResolving ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}{label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (pinned.skipped || 0) >= 3 ? (
         <p className="text-xs rounded-lg bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-300 px-3 py-2 mb-2" data-testid="text-avoidance">
           I found a different angle on this one. Fresh steps, same goal.
         </p>
-      )}
-      {(pinned.skipped || 0) === 2 && (
+      ) : (pinned.skipped || 0) === 2 ? (
         <p className="text-xs rounded-lg bg-muted text-muted-foreground px-3 py-2 mb-2" data-testid="text-avoidance">
-          This one's been slipping a few days - totally normal. I've made it smaller so starting is easier.
+          This one's been slipping a few days — totally normal. I've made it smaller so starting is easier.
         </p>
-      )}
+      ) : null}
       {clearlyPreShrunk && (
         <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1 text-[11px] font-semibold text-accent-foreground" data-testid="badge-made-smaller">
           <Sparkles className="w-3.5 h-3.5" /> {(pinned.skipped || 0) >= 3 ? "Different angle, fresh steps" : "Made smaller so starting is easier"}

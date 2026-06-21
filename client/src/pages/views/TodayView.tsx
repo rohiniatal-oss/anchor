@@ -662,7 +662,10 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     streak: number;
     yesterdayCompleted: number;
     yesterdayTotal: number;
+    yesterdayWins?: string[];
+    carriedOver?: string[];
     weekTakeaways?: { win: string; takeaway: string; category: string }[];
+    staleTracks?: string[];
   }>({ queryKey: ["/api/stats"] });
   const { toast } = useToast();
 
@@ -965,6 +968,34 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               learning
             </span>
           )}
+        </div>
+      )}
+
+      {stats && stats.yesterdayCompleted > 0 && stats.yesterdayWins && stats.yesterdayWins.length > 0 && (
+        <div className="mb-4 rounded-xl border border-emerald-200/60 dark:border-emerald-800/40 bg-emerald-50/40 dark:bg-emerald-950/10 px-4 py-3" data-testid="yesterday-momentum">
+          <p className="text-[11px] uppercase tracking-wide text-emerald-700 dark:text-emerald-400 font-semibold mb-1.5">Yesterday you</p>
+          <ul className="space-y-0.5">
+            {stats.yesterdayWins.map((w, i) => (
+              <li key={i} className="text-xs text-foreground flex items-start gap-1.5">
+                <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+                <span>{w}</span>
+              </li>
+            ))}
+          </ul>
+          {stats.carriedOver && stats.carriedOver.length > 0 && (
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Carried over: {stats.carriedOver.join(", ")} — they're in today's plan.
+            </p>
+          )}
+        </div>
+      )}
+
+      {stats?.staleTracks && stats.staleTracks.length > 0 && (
+        <div className="mb-4 rounded-xl border border-amber-200/60 dark:border-amber-800/40 bg-amber-50/30 dark:bg-amber-950/10 px-4 py-2.5" data-testid="stale-tracks-nudge">
+          <p className="text-[11px] text-amber-700 dark:text-amber-400">
+            <span className="font-semibold">{stats.staleTracks.join(", ")}</span>
+            {stats.staleTracks.length === 1 ? " hasn't had action this week" : " haven't had action this week"} — even one small move keeps momentum.
+          </p>
         </div>
       )}
 

@@ -130,7 +130,7 @@ export default function WinsView() {
         <Button className="h-11 px-4" onClick={add} data-testid="button-add-win"><Trophy className="w-4 h-4 mr-1" /> Log win</Button>
       </div>
       {isLoading ? <Loading /> : wins.length === 0 ? (
-        <Empty icon={Trophy} text="No wins logged yet. A win can be a task finished, a message sent, or something you learned — anything counts." />
+        <Empty icon={Trophy} text="Wins auto-log when you complete tasks from Today. You can also log anything noteworthy here — a message sent, something you learned, anything that counts." />
       ) : (
         <div className="space-y-6">
           {thisWeek.length > 0 && (

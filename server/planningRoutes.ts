@@ -116,6 +116,36 @@ export function categoryForPlanItem(item: {
   return "admin";
 }
 
+function inferWinCategory(task: { category?: string | null; sourceType?: string | null; title: string }): string {
+  if (task.category === "job" || task.category === "interview") return "job_progress";
+  if (task.category === "learning") return "learning";
+  if (task.category === "substack" || task.category === "hustle" || task.category === "afterline") return "proof_asset";
+  if (task.sourceType === "contact") return "network";
+  if (task.sourceType === "job") return "job_progress";
+  if (task.sourceType === "learn") return "learning";
+  const t = task.title.toLowerCase();
+  if (/interview|application|apply|resume|cv|cover letter|job posting/i.test(t)) return "job_progress";
+  if (/portfolio|project|publish|post|article|blog|build/i.test(t)) return "proof_asset";
+  if (/\bread\b|learn|study|course|tutorial|practice/i.test(t)) return "learning";
+  if (/message|outreach|follow.?up|network|connect|intro|referral/i.test(t)) return "network";
+  if (/write|draft/i.test(t)) return "proof_asset";
+  return "admin";
+}
+
+async function updateSourceEntityOnComplete(task: { sourceType?: string | null; sourceId?: number | null; title: string }) {
+  if (!task.sourceType || task.sourceId == null) return;
+  try {
+    if (task.sourceType === "contact") {
+      if (/message|draft|send|outreach|email|reach out|follow.?up/i.test(task.title)) {
+        await storage.updateContact(task.sourceId, {
+          status: "messaged",
+          lastContactedAt: new Date().toISOString(),
+        } as any);
+      }
+    }
+  } catch {}
+}
+
 async function saveStarterStep(task: any) {
   if (parseTaskSteps(task.steps || "[]").length > 0) return task;
   const step = deterministicUnstickStep(task);
@@ -154,7 +184,7 @@ async function ensureExecutionReadyTask(task: any) {
   if (task.size === "deep") {
     return await saveStarterStep(task) || task;
   }
-  return task;
+  return await saveStarterStep(task) || task;
 }
 
 async function busyMinutesFor(day: string): Promise<number> {
@@ -523,14 +553,10 @@ export function registerPlanningRoutes(app: Express) {
         if (active) { await completeRecommendationMilestone(active.id); completedMilestoneId = active.id; }
       }
     }
-    const winCategory =
-      task.category === "job" || task.category === "interview" ? "job_progress"
-      : task.category === "learning" ? "learning"
-      : task.category === "substack" || task.category === "hustle" || task.category === "afterline" ? "proof_asset"
-      : task.sourceType === "contact" ? "network"
-      : "admin";
+    const winCategory = inferWinCategory(task);
     const win = await storage.createWin({ text: task.title, kind: "planned", winCategory, trackId: task.relatedTrackId ?? null, sourceEntityType: task.sourceType || "task", sourceEntityId: task.sourceId ?? task.id } as any);
     await storage.logActivity({ eventType: "completed", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: id, planItemId: task.planItemId ?? undefined } as any);
+    await updateSourceEntityOnComplete(task);
     await syncPlanItem(day, task, { status: "completed", completedAt: Date.now() });
     await refreshDoneEnough(day);
     res.json({ ok: true, completedMilestoneId, winId: win?.id ?? null });

@@ -227,13 +227,17 @@ function RightNow({ pinned, onMilestoneCompleted, pinnedPlanItem }: {
     if (currentIdx < 0) return;
     const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true } : s));
     await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
-    toast({ title: next.some((s) => !s.done) ? "Nice - next step's up." : "All steps done - you did it." });
+    if (next.every((s) => s.done)) {
+      await finishTask();
+    } else {
+      toast({ title: "Nice - next step's up." });
+    }
   }
   // Completion goes through the real endpoint: marks done, logs a win, updates the
   // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
     const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/wins/summary", "/api/stats", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
-    toast({ title: "Done - and logged as a win", description: "That's momentum. Pick your next thing when ready." });
+    toast({ title: "Done - and logged as a win", description: "Moving to the next thing." });
     if (res?.completedMilestoneId) {
       onMilestoneCompleted(res.completedMilestoneId, pinned.title, synthDraft || undefined);
     }

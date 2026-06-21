@@ -476,11 +476,20 @@ export function registerPlanningRoutes(app: Express) {
       : task.category === "substack" || task.category === "hustle" || task.category === "afterline" ? "proof_asset"
       : task.sourceType === "contact" ? "network"
       : "admin";
-    await storage.createWin({ text: task.title, kind: "planned", winCategory, trackId: task.relatedTrackId ?? null, sourceEntityType: task.sourceType || "task", sourceEntityId: task.sourceId ?? task.id } as any);
+    const win = await storage.createWin({ text: task.title, kind: "planned", winCategory, trackId: task.relatedTrackId ?? null, sourceEntityType: task.sourceType || "task", sourceEntityId: task.sourceId ?? task.id } as any);
     await storage.logActivity({ eventType: "completed", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: id, planItemId: task.planItemId ?? undefined } as any);
     await syncPlanItem(day, task, { status: "completed", completedAt: Date.now() });
     await refreshDoneEnough(day);
-    res.json({ ok: true, completedMilestoneId });
+    res.json({ ok: true, completedMilestoneId, winId: win?.id ?? null });
+  });
+
+  app.patch("/api/wins/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    const takeaway = String(req.body?.takeaway || "").trim().slice(0, 500);
+    if (!takeaway) return res.status(400).json({ error: "No takeaway" });
+    const updated = await storage.updateWin(id, { takeaway } as any);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true });
   });
 
   app.post("/api/tasks/:id/block", async (req, res) => {

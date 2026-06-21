@@ -67,14 +67,17 @@ export default function WinsView() {
     const trackName = tid && tid !== "untracked" ? trackNameById.get(tid) : undefined;
     const sourceLabel = w.sourceEntityType ? SOURCE_LABEL[w.sourceEntityType] || w.sourceEntityType : null;
     return (
-      <div className="group flex items-center gap-3 rounded-lg border border-card-border bg-card px-3.5 py-3" data-testid={`win-${w.id}`}>
-        <Trophy className="w-4 h-4 text-primary shrink-0" />
-        <span className="flex-1 text-sm">{w.text}</span>
-        {sourceLabel && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-primary/10 text-primary px-1.5 py-0.5">from {sourceLabel}</span>}
-        {trackName && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid={`win-track-${w.id}`}>{trackName}</span>}
-        {w.winCategory && <span className="hidden sm:inline-flex shrink-0 text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{WIN_CATEGORY_LABEL[w.winCategory as WinCategory] || w.winCategory}</span>}
-        <span className="text-xs text-muted-foreground shrink-0">{dayLabel(w.createdAt)}</span>
-        <button onClick={() => remove(w.id)} aria-label="Delete" data-testid={`button-delete-win-${w.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
+      <div className="group rounded-lg border border-card-border bg-card px-3.5 py-3" data-testid={`win-${w.id}`}>
+        <div className="flex items-center gap-3">
+          <Trophy className="w-4 h-4 text-primary shrink-0" />
+          <span className="flex-1 text-sm">{w.text}</span>
+          {sourceLabel && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-primary/10 text-primary px-1.5 py-0.5">from {sourceLabel}</span>}
+          {trackName && <span className="hidden md:inline-flex shrink-0 text-[10px] rounded-full bg-slate-100 text-slate-600 px-1.5 py-0.5" data-testid={`win-track-${w.id}`}>{trackName}</span>}
+          {w.winCategory && <span className="hidden sm:inline-flex shrink-0 text-[10px] rounded-full bg-accent text-accent-foreground px-1.5 py-0.5">{WIN_CATEGORY_LABEL[w.winCategory as WinCategory] || w.winCategory}</span>}
+          <span className="text-xs text-muted-foreground shrink-0">{dayLabel(w.createdAt)}</span>
+          <button onClick={() => remove(w.id)} aria-label="Delete" data-testid={`button-delete-win-${w.id}`} className="[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
+        </div>
+        {w.takeaway && <p className="text-xs text-muted-foreground mt-1.5 ml-7 italic">{w.takeaway}</p>}
       </div>
     );
   }

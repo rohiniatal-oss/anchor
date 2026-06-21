@@ -773,10 +773,10 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   // Start an item via the IDENTITY-PRESERVING endpoint: it reads the exact plan
   // item id, creates/reuses the backing task, links taskId both ways, derives the
   // block from the slot (no hardcoded "morning"), and preserves source/doneWhen.
-  async function startItem(it: PlanItemT) {
+  async function startItem(it: PlanItemT, silent = false) {
     await mutateAndInvalidate("POST", `/api/plan-items/${it.id}/start`, { day }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
     setPlan(null); setPlanItems([]);
-    toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
+    if (!silent) toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
   }
 
   const executionState = deriveTodayExecutionState({
@@ -809,7 +809,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       // immediately sees the focused RightNow view with steps.
       if (!autoStartedOnLoad.current && !loadingPlan && plan && !plan.enoughForToday && activeItems.length > 0) {
         autoStartedOnLoad.current = true;
-        void startItem(activeItems[0]);
+        void startItem(activeItems[0], true);
       }
       return;
     }

@@ -1087,6 +1087,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                         })()}
                         {isMVD(it) && <span className="shrink-0 rounded-full bg-primary/10 text-primary text-[10px] font-semibold px-2 py-0.5">do this & today counts</span>}
                         {preShrunk && <span className="shrink-0 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold px-2 py-0.5">made smaller to help you start</span>}
+                        {linkedTask && (linkedTask.skipped || 0) >= 2 && <span className="shrink-0 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 text-[10px] font-semibold px-2 py-0.5">keeps slipping — try it smaller</span>}
                       </div>
                       {compactSummary && <p className="text-xs text-muted-foreground mt-0.5">{compactSummary}</p>}
                       {visibleReasons.length > 0 && (

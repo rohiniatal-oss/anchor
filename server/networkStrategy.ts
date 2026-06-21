@@ -362,6 +362,7 @@ export async function draftOutreachMessage(
     (contact.targetOrg ? `Organisation: ${contact.targetOrg}\n` : "") +
     (contact.targetRole ? `Their role: ${contact.targetRole}\n` : "") +
     (contact.sourceNetwork ? `Connection context: ${contact.sourceNetwork}\n` : "") +
+    (contact.linkedinUrl ? `LinkedIn: ${contact.linkedinUrl}\n` : "") +
     `Relationship warmth: ${contact.relationshipStrength}\n` +
     (contact.why ? `Why this person matters: ${contact.why}\n` : "") +
     `\nRECOMMENDED MOVE: ${move.moveType}\n` +

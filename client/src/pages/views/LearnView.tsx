@@ -5,7 +5,7 @@ import {
   ListChecks, Pencil, ArrowUp, ArrowDown, Ban, RefreshCw, CheckCircle2,
   Star, ChevronDown, ChevronRight, Lock, ArrowUpRight,
   GraduationCap, BookOpen, Hammer, BadgeCheck, Layers,
-  Link2, Package, Newspaper, FileText, Rocket,
+  Link2, Package, Newspaper, FileText, Rocket, Compass,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -831,6 +831,7 @@ export function LearnView() {
   const { data: tracks = [] } = useCareerTracks();
   const { data: recommendations = [] } = useRecommendations<LearnRecommendation[]>();
   const { data: tasks = [] } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
+  const { data: learningGaps } = useQuery<{ tracks: any[] }>({ queryKey: ["/api/strategy/learning-gaps"], staleTime: 60_000 });
   const { toast } = useToast();
   const activeGoal = goalState?.goals?.[0] || null;
   const [showForm, setShowForm] = useState(false);
@@ -895,6 +896,25 @@ export function LearnView() {
   const readySuggestions = visibleSuggestions.filter((rec) => rec.status !== "saved");
   const savedSuggestions = visibleSuggestions.filter((rec) => rec.status === "saved");
   const trackNameById = new Map(tracks.map((track) => [track.id, track.name]));
+
+  const topGapSignal = (() => {
+    if (!learningGaps?.tracks) return null;
+    for (const g of learningGaps.tracks) {
+      if (g.status !== "active" || g.gapDomains.length === 0) continue;
+      const topGap = g.rankedGaps?.[0];
+      if (!topGap) continue;
+      const step = g.sequence?.find((s: any) => s.gapDomain === topGap.domain && s.learnId !== null);
+      return {
+        trackName: g.name as string,
+        gapLabel: topGap.label as string,
+        move: step
+          ? `Do the next step on "${step.title}"`
+          : `Find a resource for ${topGap.label} and add it here`,
+        learnId: step?.learnId as number | null,
+      };
+    }
+    return null;
+  })();
 
   const byDomain = new Map<string, Learn[]>(CAPABILITY_DOMAIN_KEYS.map((k) => [k, []]));
   const flat: Learn[] = [];
@@ -1090,6 +1110,17 @@ export function LearnView() {
         <Empty icon={GraduationCap} text="No learning items yet. Add one thing you want to learn, practise, or get clearer on." action={{ label: "Add a learning item", onClick: () => setShowForm(true) }} />
       ) : (
         <div className="space-y-6">
+          {topGapSignal && (
+            <div className="rounded-xl border border-primary/25 bg-primary/5 px-4 py-3.5" data-testid="learn-do-next">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary mb-1">
+                <Compass className="w-4 h-4" /> Do next
+              </div>
+              <p className="text-sm font-medium">{topGapSignal.move}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {topGapSignal.trackName} needs {topGapSignal.gapLabel}
+              </p>
+            </div>
+          )}
           {activeNow.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-2.5">

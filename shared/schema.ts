@@ -309,6 +309,7 @@ export const contacts = sqliteTable("contacts", {
   referralPotential: text("referral_potential").notNull().default(""),
   warmthScore: integer("warmth_score"),
   relatedTrackId: integer("related_track_id"),
+  linkedinUrl: text("linkedin_url").notNull().default(""),
   createdAt: integer("created_at").notNull(),
 });
 

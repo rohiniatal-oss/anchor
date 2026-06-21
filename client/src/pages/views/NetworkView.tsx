@@ -127,11 +127,12 @@ type ContactFormT = {
   name: string; who: string; sector: string; why: string; sourceNetwork: string;
   targetOrg: string; targetRole: string; askType: string; relationshipStrength: string;
   nextFollowUpDate: string; relatedTrackId: number | null; status: string; messageDraft: string;
+  linkedinUrl: string;
 };
 const EMPTY_CONTACT_FORM: ContactFormT = {
   name: "", who: "", sector: "", why: "", sourceNetwork: "", targetOrg: "", targetRole: "",
   askType: "soft", relationshipStrength: "cold", nextFollowUpDate: "", relatedTrackId: null,
-  status: "to_contact", messageDraft: "",
+  status: "to_contact", messageDraft: "", linkedinUrl: "",
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -528,13 +529,18 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
 
       {c.why && <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{c.why}</p>}
 
-      <input
-        value={name}
-        onChange={(e) => setNameLocal(e.target.value)}
-        onBlur={() => name !== c.name && onPatch(c, { name })}
-        placeholder="Name (optional)"
-        className="mt-1 w-full text-[11px] text-muted-foreground bg-transparent border-b border-input/60 pb-1 focus:outline-none focus:border-primary"
-      />
+      <div className="flex items-center gap-2 mt-1">
+        <input
+          value={name}
+          onChange={(e) => setNameLocal(e.target.value)}
+          onBlur={() => name !== c.name && onPatch(c, { name })}
+          placeholder="Name (optional)"
+          className="flex-1 text-[11px] text-muted-foreground bg-transparent border-b border-input/60 pb-1 focus:outline-none focus:border-primary"
+        />
+        {c.linkedinUrl && (
+          <a href={c.linkedinUrl} target="_blank" rel="noreferrer" className="text-[10px] text-primary hover:underline shrink-0">LinkedIn</a>
+        )}
+      </div>
 
       {/* Recommended move */}
       {recommendedMove ? (
@@ -949,6 +955,7 @@ export function NetworkView() {
               <Input type="date" value={form.nextFollowUpDate} onChange={(e) => setForm({ ...form, nextFollowUpDate: e.target.value })} />
               <Input placeholder="Why this person matters" value={form.why} onChange={(e) => setForm({ ...form, why: e.target.value })} className="sm:col-span-2" />
               <Input placeholder="How you're connected / sector" value={form.sourceNetwork} onChange={(e) => setForm({ ...form, sourceNetwork: e.target.value })} className="sm:col-span-2" />
+              <Input placeholder="LinkedIn URL (optional)" value={form.linkedinUrl} onChange={(e) => setForm({ ...form, linkedinUrl: e.target.value })} className="sm:col-span-2" />
               {tracks.length > 0 && (
                 <div className="sm:col-span-2">
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">Link to role type</p>

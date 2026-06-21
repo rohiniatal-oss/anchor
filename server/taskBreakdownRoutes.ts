@@ -331,6 +331,10 @@ function looksActionable(text: string) {
   return /^(open|write|draft|list|choose|mark|highlight|copy|paste|find|send|ask|save|start|set|create|name|pick|read|scan|skim|note|pull|collect|gather|match|rewrite|outline|reply|message|email|book|review|map|flag|compare|decide|record|log|extract|inspect)\b/i.test(text.trim());
 }
 
+function looksGenericFiller(text: string) {
+  return /^(get ready|think about|organize (your )?thoughts|do (some )?research|prepare yourself|gather (your )?thoughts|brainstorm|consider|reflect on|take (some )?time|plan (your )?approach|make a plan|set (up )?a plan)\b/i.test(text.trim());
+}
+
 function laneSpecificSearchMove(text: string): string | undefined {
   if (keyword(text, /still-empty combination|still-empty lane/)) return "Open Jobs and find one real role for the first still-empty lane";
   if (keyword(text, /credible role|plausible lane/)) return "Open Jobs and save the first real role you find";
@@ -550,7 +554,7 @@ export function coerceTaskBreakdownSteps(task: Task, bundle: SourceBundle, workf
     return [step.text];
   });
   const hadMeta = flattened.some((text) => looksMetaStep(text));
-  const stripped = dedupeTexts((flattened.length ? flattened : stageActions(task, bundle, workflowState)).filter((text) => !looksMetaStep(text)));
+  const stripped = dedupeTexts((flattened.length ? flattened : stageActions(task, bundle, workflowState)).filter((text) => !looksMetaStep(text) && !looksGenericFiller(text)));
   const baseActions = stripped.length ? stripped : stageActions(task, bundle, workflowState);
   const starter = tinyStarterStep(task, bundle, workflowState);
   const first = baseActions[0] || "";
@@ -611,7 +615,9 @@ function globalBreakdownQualityGuidance(): string {
     `- Never write steps that only say 'research X' without specifying what to find or produce.\n` +
     `- Steps must use real content from context above — names, deadlines, existing drafts, capabilities.\n` +
     `- The final step must produce or verify the stage output defined in the workflow.\n` +
-    `- Maximum 5 steps. If fewer suffice, use fewer.`
+    `- Maximum 5 steps. If fewer suffice, use fewer.\n` +
+    `- NEVER use these phrases: "get ready", "think about", "organize thoughts", "prepare yourself", "brainstorm ideas", "consider options". Replace with what to actually open, write, or produce.\n` +
+    `- Every step must name the specific thing acted on. BAD: "Review the requirements". GOOD: "Highlight the 3 must-have skills from the JD".`
   );
 }
 

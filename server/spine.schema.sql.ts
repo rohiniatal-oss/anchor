@@ -376,4 +376,5 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE wins ADD COLUMN source_entity_type TEXT`,
   `ALTER TABLE wins ADD COLUMN source_entity_id INTEGER`,
   `ALTER TABLE recommendations ADD COLUMN context_hash TEXT`,
+  `ALTER TABLE contacts ADD COLUMN linkedin_url TEXT NOT NULL DEFAULT ''`,
 ];

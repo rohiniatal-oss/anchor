@@ -82,7 +82,6 @@ const READINESS_ORDER = ["none", "cv", "cover", "questions", "sample", "referral
 
 function CompanyBriefSection({ job }: { job: Job }) {
   const [brief, setBrief] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -91,75 +90,24 @@ function CompanyBriefSection({ job }: { job: Job }) {
     }
   }, [job.companyBrief]);
 
-  async function loadBrief() {
-    setLoading(true);
-    try {
-      const r = await apiRequest("GET", `/api/jobs/${job.id}/company-brief`);
-      const data = await r.json();
-      if (data?.whatTheyDo) setBrief(data);
-    } catch {}
-    setLoading(false);
-  }
-
-  if (!job.company) return null;
-
-  if (!brief) {
-    return (
-      <button
-        onClick={loadBrief}
-        disabled={loading}
-        className="flex items-center gap-1.5 text-xs text-primary hover:underline disabled:opacity-50"
-      >
-        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Building2 className="w-3 h-3" />}
-        {loading ? "Researching..." : `What should I know about ${job.company}?`}
-      </button>
-    );
-  }
+  if (!brief || !job.company) return null;
 
   return (
-    <div className="rounded-lg border border-primary/15 bg-primary/5 p-3 space-y-2">
-      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1.5 w-full text-left">
-        <Building2 className="w-3.5 h-3.5 text-primary shrink-0" />
-        <span className="text-xs font-medium text-primary flex-1">About {job.company}</span>
-        {expanded ? <ChevronUp className="w-3 h-3 text-muted-foreground" /> : <ChevronDown className="w-3 h-3 text-muted-foreground" />}
-      </button>
-      {!expanded && brief.whatTheyDo && (
-        <p className="text-[11px] text-muted-foreground leading-snug">{brief.whatTheyDo}</p>
-      )}
-      {expanded && (
-        <div className="space-y-2 text-xs">
-          {brief.whatTheyDo && <p className="text-foreground/80 leading-snug">{brief.whatTheyDo}</p>}
-          {brief.relevantTeam && (
-            <p className="text-muted-foreground"><span className="font-medium text-foreground/70">Team: </span>{brief.relevantTeam}</p>
-          )}
-          {brief.whyYouFit && (
-            <p className="text-muted-foreground"><span className="font-medium text-foreground/70">Your angle: </span>{brief.whyYouFit}</p>
-          )}
-          {brief.landscape?.competitors?.length > 0 && (
-            <p className="text-muted-foreground"><span className="font-medium text-foreground/70">Also hiring: </span>{brief.landscape.competitors.join(", ")}</p>
-          )}
-          {brief.landscape?.alsoConsider?.length > 0 && (
-            <p className="text-muted-foreground"><span className="font-medium text-foreground/70">Worth exploring: </span>{brief.landscape.alsoConsider.join(", ")}</p>
-          )}
-          {brief.landscape?.marketContext && (
-            <p className="text-muted-foreground"><span className="font-medium text-foreground/70">Market: </span>{brief.landscape.marketContext}</p>
-          )}
-          {brief.outreachSuggestions?.length > 0 && (
-            <div>
-              <p className="font-medium text-foreground/70 mb-1">Who to reach out to:</p>
-              {brief.outreachSuggestions.map((s: any, i: number) => (
-                <p key={i} className="text-muted-foreground ml-2 leading-snug">
-                  <span className="font-medium">{s.archetype}</span>{s.why ? ` — ${s.why}` : ""}
-                </p>
-              ))}
-            </div>
-          )}
-          {brief.prepAngle && (
-            <p className="text-muted-foreground"><span className="font-medium text-foreground/70">Prep: </span>{brief.prepAngle}</p>
-          )}
+    <button
+      onClick={() => setExpanded(!expanded)}
+      className="flex items-start gap-1.5 w-full text-left text-[11px] text-muted-foreground hover:text-foreground/80 transition-colors"
+    >
+      <Building2 className="w-3 h-3 mt-0.5 shrink-0" />
+      {expanded ? (
+        <div className="space-y-1">
+          <p className="leading-snug">{brief.whatTheyDo}</p>
+          {brief.relevantTeam && <p className="leading-snug">Team: {brief.relevantTeam}</p>}
+          {brief.landscape?.marketContext && <p className="leading-snug">{brief.landscape.marketContext}</p>}
         </div>
+      ) : (
+        <span className="leading-snug">{brief.whatTheyDo?.slice(0, 80)}{brief.whatTheyDo?.length > 80 ? "..." : ""}</span>
       )}
-    </div>
+    </button>
   );
 }
 

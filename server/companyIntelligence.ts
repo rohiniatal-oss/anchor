@@ -1,6 +1,6 @@
 import { llmJSON, MODEL_LIGHT } from "./llm";
 import { storage } from "./storage";
-import type { Job } from "@shared/schema";
+import type { Job, Task, Contact } from "@shared/schema";
 
 export interface CompanyBrief {
   whatTheyDo: string;
@@ -72,5 +72,78 @@ Give 2-3 outreach suggestions, ordered by most likely to respond first. Use the 
   if (!brief || !brief.whatTheyDo) return null;
 
   await storage.updateJob(job.id, { companyBrief: JSON.stringify(brief) });
+  await materializeActions(job, brief).catch(() => {});
   return brief;
+}
+
+async function materializeActions(job: Job, brief: CompanyBrief): Promise<void> {
+  const role = `${job.title}${job.company ? ` at ${job.company}` : ""}`;
+  const existingTasks = await storage.getTasks();
+  const existingContacts = await storage.getContacts();
+
+  const hasTaskForCompany = (keyword: string) =>
+    existingTasks.some((t) => !t.done && t.sourceType === "job" && t.sourceId === job.id && t.title.toLowerCase().includes(keyword.toLowerCase()));
+  const hasContactForOrg = (org: string) =>
+    existingContacts.some((c) => (c.targetOrg || "").toLowerCase().includes(org.toLowerCase()));
+
+  if (brief.outreachSuggestions?.[0] && job.company && !hasContactForOrg(job.company)) {
+    const s = brief.outreachSuggestions[0];
+    await storage.createContact({
+      name: "",
+      who: s.archetype,
+      sector: job.roleArchetype || "",
+      why: `Could help with ${role}. ${s.why || ""}`.trim(),
+      status: "to_contact",
+      targetOrg: job.company,
+      targetRole: job.title,
+      relatedTrackId: job.relatedTrackId ?? undefined,
+      note: s.searchTip || "",
+    } as any);
+  }
+
+  if (brief.prepAngle && !hasTaskForCompany("prep")) {
+    const title = brief.prepAngle.length > 80 ? brief.prepAngle.slice(0, 77) + "..." : brief.prepAngle;
+    await storage.createTask({
+      title,
+      list: "inbox",
+      done: false,
+      category: "learning",
+      size: "quick",
+      sourceType: "job",
+      sourceId: job.id,
+      sourceNote: `Prep for ${role}`,
+      relatedTrackId: job.relatedTrackId ?? null,
+      doneWhen: "You can speak to this confidently in a conversation or cover letter",
+    } as any);
+  }
+
+  const competitors = (brief.landscape?.competitors || []).filter(Boolean);
+  const alsoConsider = (brief.landscape?.alsoConsider || []).filter(Boolean);
+  const suggestions = [...competitors.slice(0, 2), ...alsoConsider.slice(0, 2)].filter(Boolean);
+  const allJobs = await storage.getJobs();
+  const roleType = job.roleArchetype || job.title;
+
+  for (const company of suggestions.slice(0, 3)) {
+    const exists = allJobs.some((j) => j.company?.toLowerCase() === company.toLowerCase());
+    if (exists) continue;
+    const existingRec = existingTasks.some((t) => t.title.toLowerCase().includes(company.toLowerCase()));
+    if (existingRec) continue;
+    await storage.createTask({
+      title: `Search ${company} careers page for ${roleType} roles`,
+      list: "inbox",
+      done: false,
+      category: "job",
+      size: "quick",
+      sourceType: "job",
+      sourceId: job.id,
+      sourceNote: brief.landscape?.marketContext || `Similar to ${role}`,
+      relatedTrackId: job.relatedTrackId ?? null,
+      doneWhen: "Saved a role there, or decided they're not hiring for what you want",
+      steps: JSON.stringify([
+        { text: `Open ${company}'s careers page or LinkedIn jobs`, done: false },
+        { text: `Search for "${roleType}" or similar titles`, done: false },
+        { text: "Save anything interesting, skip if nothing fits", done: false },
+      ]),
+    } as any);
+  }
 }

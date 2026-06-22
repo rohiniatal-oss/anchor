@@ -124,7 +124,7 @@ function makeWorkflowState(input: {
   const kind = workflowKindFor(input.workObject, input.sourceKind);
   const workflow = input.workflow.length ? input.workflow : WORKFLOWS[input.workObject as WorkObject] || WORKFLOWS.Artifact;
   const currentStage = input.currentStage || workflow[0];
-  const stageOutput = input.stageOutput || "One concrete next-step result exists";
+  const stageOutput = input.stageOutput || "Something visible has changed";
   const completionCriteria = input.completionCriteria?.length ? input.completionCriteria : defaultCriteria(stageOutput, currentStage);
   const next = nextStage(workflow, currentStage, kind);
   return {
@@ -244,7 +244,7 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
     const source = learnSource(bundle);
     const workObject: WorkObject = keyword(text, /practice|drill|mock/) ? "Capability" : "Knowledge";
     const currentStage = workObject === "Capability" ? "Practise" : "Find out what's involved";
-    const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "One practice output exists" : "One useful slice and output are chosen");
+    const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "You've practised it at least once" : "You know what to focus on and have one useful note");
     return makeWorkflowState({ workObject, workflow: WORKFLOWS[workObject], currentStage, stageOutput, inheritedFrom: `learn:${source?.id || (task as any).sourceId || "unknown"}`, confidence: "parent", sourceKind: "learn" });
   }
   if (bundle.sourceKind === "hustle") {
@@ -614,7 +614,7 @@ function fallbackStagePlan(task: Task, bundle: SourceBundle): { workflowState: W
       : bundle.sourceKind === "hustle" ? PROOF_WORKFLOW
       : WORKFLOWS[object] || WORKFLOWS.Artifact);
   const currentStage = inherited?.currentStage || workflow[0];
-  const stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "One concrete stage output exists";
+  const stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "Something visible has changed";
   const workflowState = inherited || makeWorkflowState({ workObject: object, workflow, currentStage, stageOutput, confidence: "fallback", sourceKind: bundle.sourceKind });
   const steps = coerceTaskBreakdownSteps(task, bundle, workflowState, stageActions(task, bundle, workflowState).map((text) => ({ text, done: false as const })));
   return { workflowState, steps };

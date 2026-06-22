@@ -166,10 +166,11 @@ function DoneTaskRow({ t }: { t: Task }) {
 }
 
 /* Right Now — activated focus with steps + gentle replanning */
-function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanItem }: {
+function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinished, pinnedPlanItem }: {
   pinned: Task;
   onMilestoneCompleted: (milestoneId: number, label: string, draft?: string) => void;
   onTaskCompleted: (winId: number, label: string) => void;
+  onTaskFinished: () => Promise<void> | void;
   pinnedPlanItem?: PlanItemT | null;
 }) {
   const { toast } = useToast();
@@ -291,7 +292,8 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   // Completion goes through the real endpoint: marks done, logs a win, updates the
   // SOURCE object (e.g. a job → applied), the plan item, and checks the MVD.
   async function finishTask() {
-    const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/wins", "/api/wins/summary", "/api/stats", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/complete`, { day: todayKey() }, ["/api/tasks", "/api/plan/current", "/api/wins", "/api/wins/summary", "/api/stats", "/api/jobs", ...GOAL_SPINE_QUERY_KEYS]);
+    await onTaskFinished();
     const catLabel = res?.winCategory && WIN_CATEGORY_LABEL[res.winCategory as WinCategory];
     const winTitle = catLabel ? `Done — logged as ${catLabel.toLowerCase()}` : "Done — and logged as a win";
     const nextHint = res?.nextMilestoneHint ? `Next up: ${res.nextMilestoneHint}` : "Moving to the next thing.";
@@ -952,6 +954,12 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     }
   }
 
+  async function refreshAfterTaskFinished() {
+    setPlan(null);
+    setPlanItems([]);
+    await getPlan(energy, false, true);
+  }
+
   const executionState = deriveTodayExecutionState({
     todayTasks: today,
     doneTodayTasks: doneToday,
@@ -1287,6 +1295,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           pinned={pinned}
           onMilestoneCompleted={(milestoneId, label, draft) => { setMilestoneCapture({ milestoneId, label }); setCaptureNote(draft || ""); }}
           onTaskCompleted={(winId, label) => { setTakeawayCapture({ winId, label }); setTakeawayNote(""); }}
+          onTaskFinished={refreshAfterTaskFinished}
           pinnedPlanItem={pinnedPlanItem}
         />
       ) : (

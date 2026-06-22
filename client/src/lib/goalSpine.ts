@@ -394,10 +394,12 @@ export function goalMorningBriefWithExecution(
         : "Do not rethink the whole day. Stay with the thing already in motion.",
       bestUseLabel: "Best use of right now",
       bestUseText: execution.pinnedAvoided
-        ? "Do the next tiny step on your current focus."
+        ? execution.pinnedTitle
+          ? `Do the next tiny step on this task: ${execution.pinnedTitle}.`
+          : "Do the next tiny step on your current focus."
         : execution.pinnedTitle
-          ? `Stay with ${execution.pinnedTitle}.`
-          : "Stay with your current focus.",
+          ? `Continue this task: ${execution.pinnedTitle}.`
+          : "Continue your current focus.",
     };
   }
 

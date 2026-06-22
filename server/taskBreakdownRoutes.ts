@@ -301,7 +301,7 @@ function plannerLearningGapFromNote(sourceNote?: string | null): { label?: strin
   const note = compactText(sourceNote || "");
   if (!note) return {};
   const explicit = note.match(/\bTreat\s+(.+?)\s+as\s+the\s+likely\s+first\s+(knowledge|skill|proof)\s+gap\b/i)
-    || note.match(/\bTreat\s+(.+?)\s+as\s+the\s+likely\s+first\s+gap\s*\((knowledge|skill|proof)\)\b/i);
+    || note.match(/\bTreat\s+(.+?)\s+as\s+the\s+likely\s+first\s+gap\s*\((knowledge|skill|proof)\)/i);
   const legacy = note.match(/\bStart\s+with\s+(.+?)\s+as\s+the\s+likely\s+first\s+(?:knowledge\s+|skill\s+|proof\s+)?gap\b/i);
   const label = compactText(explicit?.[1] || legacy?.[1] || "").replace(/[.?!]+$/g, "");
   const rawGapType = String(explicit?.[2] || "").toLowerCase();

@@ -172,6 +172,39 @@ test("goal-source learning-support breakdown preserves the planner gap over broa
   assert.doesNotMatch(joined, /frontier safety framing|stakeholder translation/i);
 });
 
+test("goal-source learning-support breakdown preserves typed planner gap notes", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Use AI Chief of Staff at Model Lab to check whether Product & Delivery is the first missing requirement for AI strategy + Ops / chief of staff",
+    category: "learning",
+    sourceType: "goal",
+    sourceId: 3,
+    sourceStatus: "broad_parallel_pursuit_learning_support",
+    sourceNote: "Treat Product & Delivery as the likely first gap (skill) from AI Chief of Staff at Model Lab. Use the role to confirm or disprove that diagnosis, save one line on why, then use this prep move: do one short drill on Product & Delivery against the posting and save the output.",
+    doneWhen: "The likely first gap and the matching smallest prep move are saved.",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+  const bundle = {
+    sourceKind: "goal",
+    source: null,
+    sourceContext: "",
+    playbook: "",
+    parentContext: "",
+    crossEngineContext: "",
+  } as any;
+
+  const { steps } = await buildDeterministicTaskBreakdown(task, bundle);
+  const joined = steps.map((step) => String(step.text || "")).join(" | ");
+
+  assert.match(joined, /Open AI Chief of Staff at Model Lab/i);
+  assert.match(joined, /Treat Product & Delivery as the likely first skill gap/i);
+  assert.match(joined, /do one short drill on Product & Delivery/i);
+  assert.doesNotMatch(joined, /strongest repeated requirement in the posting/i);
+});
+
 test("strategy role-scan breakdown turns broad exploration into a real posting plus repeated requirements", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
   const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");

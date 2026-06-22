@@ -1415,6 +1415,8 @@ export function registerTaskBreakdownRoutes(app: Express) {
           userContext: userCtx,
           researchBlocks,
           priorCompletedOutputs: priorOutputs,
+          sourceContext: bundle.sourceContext,
+          crossEngineContext: bundle.crossEngineContext,
         });
         steps = executed.map((e) => ({
           text: e.text,

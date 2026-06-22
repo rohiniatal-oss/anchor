@@ -916,6 +916,14 @@ function askTypeAlignment(c: Candidate, context: StrategicContext) {
 
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
+function countDismissedStepOutputs(stepsJson: string): number {
+  try {
+    const arr = JSON.parse(stepsJson || "[]");
+    if (!Array.isArray(arr)) return 0;
+    return arr.filter((s: any) => s?.disposition === "dismissed").length;
+  } catch { return 0; }
+}
+
 export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [], learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(), jobContactLinks: Record<number, number[]> = {}): Candidate[] {
   const out: Candidate[] = [];
   const contactsById = new Map(contacts.map((c) => [c.id, c]));
@@ -925,10 +933,12 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
     const isLaneAlignedSystemMove = t.sourceType === "strategy_builder" || t.sourceType === "marketability_engine" || t.sourceStatus === "strategy_refresh" || (t.sourceType === "career_track" && !!t.relatedTrackId);
     if ((isTodayTask || isLaneAlignedSystemMove) && !t.done) {
       const blocked = t.readiness === "blocked" || !!t.blockerReason;
+      const dismissedCount = countDismissedStepOutputs(t.steps);
+      const effectiveSkipped = t.skipped + dismissedCount;
       out.push({
         source: "task", sourceId: t.id, taskId: t.id,
         title: t.title.replace(/^✨\s*/, ""), category: t.category, size: t.size,
-        deadline: t.deadline, status: t.status, skipped: t.skipped,
+        deadline: t.deadline, status: t.status, skipped: effectiveSkipped,
         sourceUrl: t.sourceUrl || "", sourceNote: t.sourceNote || "", sourceStatus: t.sourceStatus || "",
         doneWhen: t.doneWhen || t.minimumOutcome || `"${t.title.slice(0, 50).trim()}" is visibly further along`,
         whyNow: isLaneAlignedSystemMove ? "it directly supports the path you're building right now" : "you put it on today's list",
@@ -1623,15 +1633,53 @@ export function planDay(
         summary = `You've got roles saved for ${track.name} — now add one person you could actually message.`;
         doneWhen = "One contact added who you'd realistically message";
       } else {
-        const nextJob = trackJobs.find((j) => j.status === "wishlist") || trackJobs[0];
-        const nextJobHint = nextJob ? `${nextJob.title}${nextJob.company ? ` at ${nextJob.company}` : ""}` : archetype;
-        title = context.laneUnlockMove || `Pick the next move for ${nextJobHint}`;
-        firstStep = nextJob
-          ? `Open "${nextJobHint}" and decide: start the application, message a contact, or learn something you need for it.`
-          : `Open your ${track.name} track and pick the thing that's been sitting longest — application, message, or prep.`;
-        why = `You have roles and contacts for ${track.name}. The pieces are there — pick one and move it.`;
-        summary = `${track.name} is set up — pick one thing and move it forward today.`;
-        doneWhen = "One concrete action taken (application started, message sent, or prep done)";
+        const wishlistJob = trackJobs.find((j) => j.status === "wishlist");
+        const appliedJob = trackJobs.find((j) => j.status === "applied");
+        const warmContact = trackContacts.find((c) => c.relationshipStrength === "warm" || c.status === "replied");
+        const draftContact = trackContacts.find((c) => c.messageDraft);
+        const trackLearns = learn.filter((l) => (l as any).relatedTrackId === track.id && !l.done && l.active);
+
+        if (appliedJob) {
+          const jobLabel = `${appliedJob.title}${appliedJob.company ? ` at ${appliedJob.company}` : ""}`;
+          title = `Follow up on ${jobLabel}`;
+          firstStep = warmContact
+            ? `Message ${warmContact.name || warmContact.who} about "${jobLabel}" — a short check-in moves you from "applied" to "known."`
+            : `Open "${jobLabel}" and check: any response yet? If not, find someone at ${appliedJob.company || "the org"} to reach out to.`;
+          why = `You applied to ${jobLabel} but it's sitting. One follow-up or warm nudge moves it forward.`;
+          summary = `${jobLabel} needs a follow-up.`;
+          doneWhen = `Follow-up sent or next step identified for ${appliedJob.company || "this role"}`;
+        } else if (draftContact) {
+          const contactLabel = draftContact.name || draftContact.who;
+          title = `Send the message to ${contactLabel}`;
+          firstStep = `Open the draft for ${contactLabel} and send it. It's already written — just review and hit send.`;
+          why = `You drafted a message to ${contactLabel} but haven't sent it. One sent message is worth ten planned ones.`;
+          summary = `Message to ${contactLabel} is drafted — send it.`;
+          doneWhen = "Message sent";
+        } else if (wishlistJob) {
+          const jobLabel = `${wishlistJob.title}${wishlistJob.company ? ` at ${wishlistJob.company}` : ""}`;
+          title = `Start the application for ${jobLabel}`;
+          firstStep = `Open "${jobLabel}" and begin the application. If materials aren't ready, open your CV and the posting side by side — tailor one bullet.`;
+          why = `${jobLabel} is saved but you haven't started applying. Moving it from wishlist to in-progress is the highest-leverage thing you can do today.`;
+          summary = `${jobLabel} is waiting for you to start.`;
+          doneWhen = `Application started or one material tailored for ${wishlistJob.company || "this role"}`;
+        } else if (trackLearns.length > 0) {
+          const item = trackLearns[0];
+          title = item.requiredOutput ? `${item.title} — produce: ${item.requiredOutput}` : item.title;
+          firstStep = item.url ? `Open ${item.url} and spend 20 minutes. Note one thing that changes how you'd answer an interview question.` : `Open "${item.title}" and capture one useful note.`;
+          why = `Your applications and contacts are moving. Now strengthen the knowledge behind them — "${item.title}" fills a gap your target roles keep asking for.`;
+          summary = `${track.name} roles need this — spend 20 minutes on "${item.title}."`;
+          doneWhen = item.requiredOutput || `One useful note from "${item.title}"`;
+        } else {
+          const nextJob = trackJobs[0];
+          const nextJobHint = nextJob ? `${nextJob.title}${nextJob.company ? ` at ${nextJob.company}` : ""}` : archetype;
+          title = context.laneUnlockMove || `Move "${nextJobHint}" forward`;
+          firstStep = nextJob
+            ? `Open "${nextJobHint}" and do the next obvious thing: check for updates, draft a follow-up, or prep one interview answer.`
+            : `Open your ${track.name} track and pick the thing that's been sitting longest.`;
+          why = `You have roles and contacts for ${track.name}. The pieces are there — pick one and move it.`;
+          summary = `${track.name} is set up — move the most actionable piece forward.`;
+          doneWhen = "One concrete action taken";
+        }
       }
 
       const synthetic: Candidate = {

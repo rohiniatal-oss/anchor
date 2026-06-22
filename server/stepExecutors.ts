@@ -27,10 +27,46 @@ type ExecutionContext = {
   userContext?: string;
   researchBlocks?: ContextBlock[];
   priorCompletedOutputs?: string[];
+  sourceContext?: string;
+  crossEngineContext?: string;
 };
 
 function clean(v: unknown, max = 300) {
   return String(v || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function buildAvailableContext(ctx: ExecutionContext, priorOutputs: string[]): string {
+  const parts: string[] = [];
+  const research = ctx.researchBlocks?.map((b) =>
+    `${b.sourceTitle || ""}: ${b.text} ${b.sourceUrl ? `(${b.sourceUrl})` : ""}`
+  ).join("\n") || "";
+  if (research) parts.push(research);
+  if (ctx.sourceContext) parts.push(ctx.sourceContext);
+  if (ctx.crossEngineContext) parts.push(ctx.crossEngineContext);
+  if (priorOutputs.length) parts.push(`Prior outputs:\n${priorOutputs.join("\n")}`);
+  return parts.join("\n\n");
+}
+
+function buildUserActionFallback(step: { text: string; outputSpec?: string }, ctx: ExecutionContext): ExecutedStep {
+  const spec = step.outputSpec || step.text;
+  const t = spec.toLowerCase();
+  let action = `Do this yourself: ${step.text}`;
+  if (/role|job|posting|position/.test(t)) {
+    action = `Search for "${ctx.taskTitle.slice(0, 50)}" on LinkedIn or a job board and note what you find`;
+  } else if (/company|org/.test(t)) {
+    action = `Look up the company online and note what they do and why it matters`;
+  } else if (/contact|person|network|reach out/.test(t)) {
+    action = `Think of one person who could help with "${ctx.taskTitle.slice(0, 40)}" and add them`;
+  } else if (/require|skill|gap|qualification/.test(t)) {
+    action = `Open a real posting for this role type and list the top 3 requirements`;
+  }
+  return {
+    text: action,
+    done: false,
+    executor: "user_action",
+    outputSpec: step.outputSpec,
+    ready: true,
+  };
 }
 
 async function executeSystemStep(
@@ -39,21 +75,20 @@ async function executeSystemStep(
   ctx: ExecutionContext,
 ): Promise<ExecutedStep> {
   const spec = step.outputSpec || step.text;
-  const existingResearch = ctx.researchBlocks?.map((b) =>
-    `${b.sourceTitle || ""}: ${b.text} ${b.sourceUrl ? `(${b.sourceUrl})` : ""}`
-  ).join("\n") || "";
+  const available = buildAvailableContext(ctx, priorOutputs);
 
-  if (!existingResearch) {
-    return { text: step.text, done: false, executor: "system", outputSpec: step.outputSpec, gaps: "No research available to populate this step" };
+  if (!available.trim()) {
+    return buildUserActionFallback(step, ctx);
   }
 
   try {
     const raw = await llm(
-      `${COACH_PREAMBLE}Format these research results into the step output. Return ONLY what the spec requires, populated with real data. No instructions, no "you should". If results are thin, report it in "gaps" — never invent.\n\n` +
+      `${COACH_PREAMBLE}Format the available context into the step output. Return ONLY what the spec requires, populated with real data from the context. No instructions, no "you should". If context is thin, report it in "gaps" — never invent.\n\n` +
       `OUTPUT_SPEC: ${spec}\n` +
-      `RAW_RESULTS:\n${existingResearch}\n` +
+      `AVAILABLE_CONTEXT:\n${available}\n` +
       `${ctx.userContext ? `USER_CONTEXT: ${ctx.userContext}\n` : ""}` +
-      `${priorOutputs.length ? `PRIOR_OUTPUTS:\n${priorOutputs.join("\n")}\n` : ""}` +
+      `TASK: ${ctx.taskTitle}\n` +
+      `${ctx.doneWhen ? `DONE_WHEN: ${ctx.doneWhen}\n` : ""}` +
       `\nReturn JSON: { "output": "<matches spec, real data>", "gaps": null | "what's missing" }`,
       { model: LLM_MODELS.breakdown },
     );
@@ -68,7 +103,7 @@ async function executeSystemStep(
       gaps: parsed.gaps || undefined,
     };
   } catch {
-    return { text: step.text, done: false, executor: "system", outputSpec: step.outputSpec, gaps: "Could not generate output" };
+    return buildUserActionFallback(step, ctx);
   }
 }
 

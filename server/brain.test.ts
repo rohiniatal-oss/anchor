@@ -166,7 +166,7 @@ test("planner collapses to one item when the remaining day is small", () => {
   ];
   const result = planDay(tasks, [], [], [], "medium", { remainingMinutes: 30 });
   assert.equal(result.plan.length, 1);
-  assert.match(result.note, /little day|One useful thing/i);
+  assert.match(result.note, /Short on time|real win for today/i);
 });
 
 test("urgent real deadlines still lead", () => {
@@ -363,8 +363,8 @@ test("planner surfaces missing broad-pursuit contact support once live role type
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, [], tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /contact/i);
-  assert.match(result.plan[0].explanation.firstStep, /Open Network/i);
+  assert.match(result.plan[0].candidate.title, /Find someone/i);
+  assert.match(result.plan[0].explanation.firstStep, /LinkedIn/i);
   assert.match(result.note, /outreach, more focused learning support, or both/i);
 });
 
@@ -419,7 +419,7 @@ test("planner surfaces missing broad-pursuit prep support after contact support 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, contacts as any, tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
   assert.match(result.plan[0].candidate.title, /learning/i);
-  assert.match(result.plan[0].explanation.firstStep, /Jobs or Learn/i);
+  assert.match(result.plan[0].explanation.firstStep, /briefing|job description|report|LinkedIn Learning|Coursera/i);
   assert.match(result.note, /learning focus|learning support/i);
 });
 

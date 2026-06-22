@@ -250,7 +250,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
         setAnswer("");
       }
     }
-    catch { toast({ title: "Couldn't break it down", description: "Give it another go in a sec." }); }
+    catch { toast({ title: "Couldn't break it down", description: "Try adding more detail to the title or a note about what's involved." }); }
     finally { setBreaking(false); }
   }
   async function answerQuestion() {
@@ -308,7 +308,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
       const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/unstick-to-step`, {}, ["/api/tasks"]);
       toast({ title: "Added a tiny first step.", description: res.step || "Just do that one thing." });
     }
-    catch { toast({ title: "Couldn't think of one", description: "Try again in a moment." }); }
+    catch { toast({ title: "Couldn't find a smaller step", description: "Try editing the task title to be more specific." }); }
     finally { setUnsticking(false); }
   }
   async function shrink() {
@@ -494,16 +494,19 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
                   <div className="mt-1 text-sm whitespace-pre-wrap leading-relaxed">{current.output}</div>
                   {current.gaps && <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Gap: {current.gaps}</p>}
                   {dispositionPending ? (
-                    <div className="mt-2.5 flex flex-wrap gap-2">
-                      <button onClick={() => dispositionStep("applied")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-                        <Check className="w-3 h-3" /> Use this
-                      </button>
-                      <button onClick={() => dispositionStep("saved")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-muted hover:bg-muted/80 transition-colors">
-                        <Pin className="w-3 h-3" /> Save for later
-                      </button>
-                      <button onClick={() => dispositionStep("dismissed")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md text-muted-foreground hover:bg-muted/60 transition-colors">
-                        <X className="w-3 h-3" /> Not useful
-                      </button>
+                    <div className="mt-2.5 space-y-1.5">
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => dispositionStep("applied")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                          <Check className="w-3 h-3" /> Use this
+                        </button>
+                        <button onClick={() => dispositionStep("saved")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-muted hover:bg-muted/80 transition-colors">
+                          <Pin className="w-3 h-3" /> Save for later
+                        </button>
+                        <button onClick={() => dispositionStep("dismissed")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md text-muted-foreground hover:bg-muted/60 transition-colors">
+                          <X className="w-3 h-3" /> Not useful
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground/70 leading-snug">Use this = done, move on. Save = I'll keep it for next time. Not useful = I'll try a different approach.</p>
                     </div>
                   ) : (
                     <p className="text-[11px] text-muted-foreground mt-1.5">Tap to review</p>
@@ -898,7 +901,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       toast({ title: "Captured.", description: "It's out of your head. I kept it off today's plan." });
     } catch {
       setQuickText(t);
-      toast({ title: "Couldn't capture that", description: "Try again in a moment." });
+      toast({ title: "Couldn't capture that", description: "Your text is still in the box — try submitting again." });
     } finally {
       setCapturingQuick(false);
     }
@@ -926,7 +929,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       if (typeof r?.plan?.energy === "string" && ["low", "medium", "high"].includes(r.plan.energy)) {
         setEnergy(r.plan.energy);
       }
-    } catch { toast({ title: "Couldn't shape the day", description: "Try again in a moment." }); }
+    } catch { toast({ title: "Couldn't shape the day", description: "Refresh the page and it should rebuild." }); }
     finally { setLoadingPlan(false); }
   }
 
@@ -945,7 +948,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       setPlan(null); setPlanItems([]);
       if (!silent) toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
     } catch {
-      toast({ title: "Couldn't start that", description: "Try again in a moment." });
+      toast({ title: "Couldn't start that", description: "The task may have been completed or removed. Refresh to see what's current." });
     }
   }
 

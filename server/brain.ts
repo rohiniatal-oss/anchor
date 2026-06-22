@@ -490,21 +490,28 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
   if (context?.broadPursuitMissingNetworkSupport?.length) {
     for (const [index, combination] of context.broadPursuitMissingNetworkSupport.entries()) {
       const label = displayCombination(combination);
+      const relevantJobs = context?.liveJobTargets?.filter((j) => j.company) || [];
+      const companies = [...new Set(relevantJobs.map((j) => j.company))].slice(0, 2);
+      const companyHint = companies.length > 0 ? ` at ${companies.join(" or ")}` : "";
       out.push({
         source: "goal",
         sourceId: 200 + index,
         taskId: null,
-        title: `Add one useful contact for ${label}`,
+        title: companies.length > 0
+          ? `Find someone${companyHint} who can help with ${label}`
+          : `Find one person already working in ${label}`,
         category: "admin",
         size: "medium",
         deadline: "",
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `${label} has no contacts yet. Add one useful contact or outreach path for it next.`,
+        sourceNote: companies.length > 0
+          ? `${label} needs a contact. Try LinkedIn for connections at ${companies.join(", ")} — alumni, former colleagues, or second-degree contacts.`
+          : `${label} has no contacts yet. Search LinkedIn for someone one step ahead in this path.`,
         sourceStatus: "broad_parallel_pursuit_network_support",
-        doneWhen: `One useful contact or outreach path exists for ${label}.`,
-        whyNow: `${label} has no contacts yet`,
+        doneWhen: `One real person added who you'd actually message about ${label}.`,
+        whyNow: `${label} has no contacts yet — one real conversation changes how you prep and apply`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -586,7 +593,7 @@ function jobDoneWhen(action: JobTruthAction) {
 function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; why: string; truthAction?: JobTruthAction } {
   const role = `${j.title}${j.company ? " — " + j.company : ""}`;
   if (j.nextStep && j.nextStep.trim()) {
-    return { action: `${j.nextStep.trim()} — ${role}`, size: guessSize(j.nextStep), doneWhen: `"${j.nextStep.trim().slice(0, 50)}" is done for ${j.title || "this role"}`, why: "your own next step on this role" };
+    return { action: `${j.nextStep.trim()} — ${role}`, size: guessSize(j.nextStep), doneWhen: `You've finished "${j.nextStep.trim().slice(0, 40)}" for ${j.title || "this role"} and know what comes next`, why: "your own next step on this role" };
   }
   const truth = computeJobTruthStrip(j);
   return {
@@ -916,6 +923,14 @@ function askTypeAlignment(c: Candidate, context: StrategicContext) {
 
 export type DayMode = "normal" | "low" | "deadline" | "strategy";
 
+function countDismissedStepOutputs(stepsJson: string): number {
+  try {
+    const arr = JSON.parse(stepsJson || "[]");
+    if (!Array.isArray(arr)) return 0;
+    return arr.filter((s: any) => s?.disposition === "dismissed").length;
+  } catch { return 0; }
+}
+
 export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [], learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(), jobContactLinks: Record<number, number[]> = {}): Candidate[] {
   const out: Candidate[] = [];
   const contactsById = new Map(contacts.map((c) => [c.id, c]));
@@ -925,12 +940,14 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
     const isLaneAlignedSystemMove = t.sourceType === "strategy_builder" || t.sourceType === "marketability_engine" || t.sourceStatus === "strategy_refresh" || (t.sourceType === "career_track" && !!t.relatedTrackId);
     if ((isTodayTask || isLaneAlignedSystemMove) && !t.done) {
       const blocked = t.readiness === "blocked" || !!t.blockerReason;
+      const dismissedCount = countDismissedStepOutputs(t.steps);
+      const effectiveSkipped = t.skipped + dismissedCount;
       out.push({
         source: "task", sourceId: t.id, taskId: t.id,
         title: t.title.replace(/^✨\s*/, ""), category: t.category, size: t.size,
-        deadline: t.deadline, status: t.status, skipped: t.skipped,
+        deadline: t.deadline, status: t.status, skipped: effectiveSkipped,
         sourceUrl: t.sourceUrl || "", sourceNote: t.sourceNote || "", sourceStatus: t.sourceStatus || "",
-        doneWhen: t.doneWhen || t.minimumOutcome || `"${t.title.slice(0, 50).trim()}" is visibly further along`,
+        doneWhen: t.doneWhen || t.minimumOutcome || `You can point to one concrete thing you did on "${t.title.slice(0, 40).trim()}"`,
         whyNow: isLaneAlignedSystemMove ? "it directly supports the path you're building right now" : "you put it on today's list",
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
@@ -983,7 +1000,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: "learning", size: guessSize(l.title),
         deadline: dl, status: "not_started", skipped: 0,
         sourceUrl: l.url || "", sourceNote: l.note || "", sourceStatus: l.learnStatus || "active",
-        doneWhen: l.requiredOutput || `You've learned one useful thing about "${l.title.slice(0, 50).trim()}"`,
+        doneWhen: l.requiredOutput || `You have one note, example, or takeaway from "${l.title.slice(0, 40).trim()}" that you could use in an interview or application`,
         whyNow: l.applicationDeadline ? "there's a deadline coming up" : "it fills a gap your target roles keep asking for",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
@@ -1018,7 +1035,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: cat, size: guessSize(h.nextStep),
         deadline: "", status: "not_started", skipped: 0,
         sourceUrl: "", sourceNote: h.note || "", sourceStatus: h.stage,
-        doneWhen: `"${(h.nextStep || h.title).slice(0, 50).trim()}" is done or clearly further along`,
+        doneWhen: `You have something shareable or reusable from "${(h.nextStep || h.title).slice(0, 40).trim()}" — even a draft or outline counts`,
         whyNow: "keeping this project moving builds credibility you can point to",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
@@ -1278,11 +1295,27 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
       return `Open your job sources and add one real role for ${candidate.targetRole}.`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
-      if (candidate?.targetRole) return `Open Network and add one person you could realistically reach out to for ${candidate.targetRole}.`;
+      if (candidate?.targetRole && context?.liveJobTargets?.length) {
+        const relevantJobs = context.liveJobTargets.filter((j) => j.company);
+        if (relevantJobs.length > 0) {
+          const companies = [...new Set(relevantJobs.map((j) => j.company))].slice(0, 2);
+          return `Search LinkedIn for someone you know at ${companies.join(" or ")} — a second-degree connection, alumni contact, or former colleague who moved there. Add them as a contact for ${candidate.targetRole}.`;
+        }
+      }
+      if (candidate?.targetRole) return `Search LinkedIn for "${candidate.targetRole}" and find one person already in that kind of role. Add them as a contact — even a cold note to someone one step ahead is worth more than no contact.`;
       return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Use Jobs or Learn to start learning about ${candidate.targetRole}.`;
+      if (candidate?.targetRole) {
+        const roleKey = (candidate.targetRole || "").toLowerCase();
+        let suggestion = "";
+        if (/ai|governance|safety/.test(roleKey)) suggestion = `Read one recent AI governance briefing or policy paper and note the main debate. Start with Brookings, CSIS, or the AI Now Institute.`;
+        else if (/chief of staff|operations|operator/.test(roleKey)) suggestion = `Find one example of a Chief of Staff job description and list the top 3 skills it asks for. Note which ones you can already demonstrate.`;
+        else if (/geopoliti|strateg|advisory/.test(roleKey)) suggestion = `Read one recent geopolitics briefing (Chatham House, IISS, or Foreign Affairs) and write a one-paragraph take on the main tension.`;
+        else if (/philanthropy|development|funder/.test(roleKey)) suggestion = `Find one recent report from a major funder or development org in your target area. Note what they're prioritising this year.`;
+        if (suggestion) return suggestion;
+        return `Search for "${candidate.targetRole}" on LinkedIn Learning, Coursera, or Google Scholar. Save the first resource that looks genuinely useful — not the most popular, the most relevant to the roles you're targeting.`;
+      }
       return broadPursuitMissingPrepFirstStep(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1427,8 +1460,8 @@ function explainRecommendation(
   const supportingReasons = top.trace.filter(Boolean).slice(0, 4);
   const whyNow = supportingReasons[0] || context.reason || "This is the strongest available move right now.";
   const whyThis = second
-    ? `It beats the next option because it helps more with ${focusArea} right now.`
-    : `It is the clearest available move in ${focusArea} right now.`;
+    ? `It beats "${second.c.title.slice(0, 40).trim()}" because it helps more with ${focusArea} right now.`
+    : `It's the only move that directly advances ${focusArea} right now.`;
 
   return {
     summary: `${sourceFrame(pick.source, pick, context)} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
@@ -1461,8 +1494,8 @@ function explainRankedPlanItem(
     summary: `${frame} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
     whyNow: supportingReasons[0] || current.c.whyNow || context.reason || `The main constraint is ${focusArea}.`,
     whyThis: next
-      ? `It outranks the next option because it helps more with ${focusArea} right now.`
-      : `It's the strongest available move for ${focusArea} right now.`,
+      ? `It outranks "${next.c.title.slice(0, 40).trim()}" because it helps more with ${focusArea} right now.`
+      : `It's the only move that directly advances ${focusArea} right now.`,
     supportingReasons,
     firstStep: firstStepForSource(current.c.source, current.c, context),
     stopRule: stopRuleForSource(current.c.source, current.c, context),
@@ -1623,15 +1656,53 @@ export function planDay(
         summary = `You've got roles saved for ${track.name} — now add one person you could actually message.`;
         doneWhen = "One contact added who you'd realistically message";
       } else {
-        const nextJob = trackJobs.find((j) => j.status === "wishlist") || trackJobs[0];
-        const nextJobHint = nextJob ? `${nextJob.title}${nextJob.company ? ` at ${nextJob.company}` : ""}` : archetype;
-        title = context.laneUnlockMove || `Pick the next move for ${nextJobHint}`;
-        firstStep = nextJob
-          ? `Open "${nextJobHint}" and decide: start the application, message a contact, or learn something you need for it.`
-          : `Open your ${track.name} track and pick the thing that's been sitting longest — application, message, or prep.`;
-        why = `You have roles and contacts for ${track.name}. The pieces are there — pick one and move it.`;
-        summary = `${track.name} is set up — pick one thing and move it forward today.`;
-        doneWhen = "One concrete action taken (application started, message sent, or prep done)";
+        const wishlistJob = trackJobs.find((j) => j.status === "wishlist");
+        const appliedJob = trackJobs.find((j) => j.status === "applied");
+        const warmContact = trackContacts.find((c) => c.relationshipStrength === "warm" || c.status === "replied");
+        const draftContact = trackContacts.find((c) => c.messageDraft);
+        const trackLearns = learn.filter((l) => (l as any).relatedTrackId === track.id && !l.done && l.active);
+
+        if (appliedJob) {
+          const jobLabel = `${appliedJob.title}${appliedJob.company ? ` at ${appliedJob.company}` : ""}`;
+          title = `Follow up on ${jobLabel}`;
+          firstStep = warmContact
+            ? `Message ${warmContact.name || warmContact.who} about "${jobLabel}" — a short check-in moves you from "applied" to "known."`
+            : `Open "${jobLabel}" and check: any response yet? If not, find someone at ${appliedJob.company || "the org"} to reach out to.`;
+          why = `You applied to ${jobLabel} but it's sitting. One follow-up or warm nudge moves it forward.`;
+          summary = `${jobLabel} needs a follow-up.`;
+          doneWhen = `Follow-up sent or next step identified for ${appliedJob.company || "this role"}`;
+        } else if (draftContact) {
+          const contactLabel = draftContact.name || draftContact.who;
+          title = `Send the message to ${contactLabel}`;
+          firstStep = `Open the draft for ${contactLabel} and send it. It's already written — just review and hit send.`;
+          why = `You drafted a message to ${contactLabel} but haven't sent it. One sent message is worth ten planned ones.`;
+          summary = `Message to ${contactLabel} is drafted — send it.`;
+          doneWhen = "Message sent";
+        } else if (wishlistJob) {
+          const jobLabel = `${wishlistJob.title}${wishlistJob.company ? ` at ${wishlistJob.company}` : ""}`;
+          title = `Start the application for ${jobLabel}`;
+          firstStep = `Open "${jobLabel}" and begin the application. If materials aren't ready, open your CV and the posting side by side — tailor one bullet.`;
+          why = `${jobLabel} is saved but you haven't started applying. Moving it from wishlist to in-progress is the highest-leverage thing you can do today.`;
+          summary = `${jobLabel} is waiting for you to start.`;
+          doneWhen = `Application started or one material tailored for ${wishlistJob.company || "this role"}`;
+        } else if (trackLearns.length > 0) {
+          const item = trackLearns[0];
+          title = item.requiredOutput ? `${item.title} — produce: ${item.requiredOutput}` : item.title;
+          firstStep = item.url ? `Open ${item.url} and spend 20 minutes. Note one thing that changes how you'd answer an interview question.` : `Open "${item.title}" and capture one useful note.`;
+          why = `Your applications and contacts are moving. Now strengthen the knowledge behind them — "${item.title}" fills a gap your target roles keep asking for.`;
+          summary = `${track.name} roles need this — spend 20 minutes on "${item.title}."`;
+          doneWhen = item.requiredOutput || `One useful note from "${item.title}"`;
+        } else {
+          const nextJob = trackJobs[0];
+          const nextJobHint = nextJob ? `${nextJob.title}${nextJob.company ? ` at ${nextJob.company}` : ""}` : archetype;
+          title = context.laneUnlockMove || `Move "${nextJobHint}" forward`;
+          firstStep = nextJob
+            ? `Open "${nextJobHint}" and do the next obvious thing: check for updates, draft a follow-up, or prep one interview answer.`
+            : `Open your ${track.name} track and pick the thing that's been sitting longest.`;
+          why = `You have roles and contacts for ${track.name}. The pieces are there — pick one and move it.`;
+          summary = `${track.name} is set up — move the most actionable piece forward.`;
+          doneWhen = "One concrete action taken";
+        }
       }
 
       const synthetic: Candidate = {
@@ -1794,11 +1865,12 @@ export function planDay(
 
   const planMin = picks.reduce((m, r) => m + (SIZE_MINUTES[r.c.size] ?? 45), 0);
   const fits = planMin <= Math.max(15, budget);
+  const topTitle = picks[0]?.c.title.slice(0, 50).trim() || "";
   const note =
-    mode === "deadline" ? "A deadline's close — the urgent application/material step leads. Do that one and today counts."
-    : budget < 45 ? "Very little day left. One tiny useful application or track move is enough."
-    : budget < 90 ? "One useful application or track move is enough for the time left today."
-    : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
+    mode === "deadline" ? `A deadline's close — "${topTitle}" leads. Do that one and today counts.`
+    : budget < 45 ? `Short on time. Just do "${topTitle}" — that's a real win for today.`
+    : budget < 90 ? `Enough time for one solid move. "${topTitle}" is the one that matters most right now.`
+    : mode === "low" ? `Lighter day. Just finish "${topTitle}" and you're done — quality over quantity.`
     : mode === "strategy" && needsBroadPursuitGoalCandidate(context) ? broadPursuitNextMissingRolePlanNote(context.broadPursuitMissingCombinations)
     : mode === "strategy"
       && context.broadPursuitMissingNetworkSupport.length > 0
@@ -1810,9 +1882,9 @@ export function planDay(
       )
     : mode === "strategy" && context.broadPursuitMissingNetworkSupport.length > 0 && context.broadPursuitMissingCombinations.length === 0 ? broadPursuitNextMissingContactPlanNote(context.broadPursuitMissingNetworkSupport)
     : mode === "strategy" && context.broadPursuitMissingLearningSupport.length > 0 && context.broadPursuitMissingCombinations.length === 0 ? broadPursuitNextMissingPrepPlanNote(context.broadPursuitMissingLearningSupport)
-    : mode === "strategy" ? `The main constraint right now is ${focusAreaLabel(context.bottleneckLane)}. Anchor picked the next move to unblock it.`
-    : fits ? "Start at the top. Finish the first one and today already counts."
-    : "Full plate for the time you've got. Just do the first one and call it a win.";
+    : mode === "strategy" ? `The main constraint right now is ${focusAreaLabel(context.bottleneckLane)}. "${topTitle}" is the move to unblock it.`
+    : fits ? `Start with "${topTitle}". Finish that and today already counts.`
+    : `Full plate. Just do "${topTitle}" and call it a win — the rest can wait.`;
 
   return {
     mode,

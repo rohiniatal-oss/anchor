@@ -68,7 +68,7 @@ export default function BrainDumpView() {
       toast({ title: "Captured.", description: "It's out of your head. You can sort it later." });
     } catch {
       setText(value);
-      toast({ title: "Couldn't capture that", description: "Try again in a moment." });
+      toast({ title: "Couldn't capture that", description: "Your text is still in the box — try submitting again." });
     } finally {
       setAdding(false);
     }
@@ -84,7 +84,7 @@ export default function BrainDumpView() {
       (data?.suggestions || []).forEach((sg: CaptureSug) => { map[sg.id] = sg; });
       setTriage(map);
     } catch {
-      toast({ title: "Couldn't sort right now", description: "Give it another go in a moment." });
+      toast({ title: "Couldn't sort right now", description: "Hit 'Sort all' again — it usually works on a second try." });
     } finally {
       setSorting(false);
     }
@@ -99,7 +99,7 @@ export default function BrainDumpView() {
         setTriage((current) => ({ ...current, [taskId]: data.suggestion as CaptureSug }));
       }
     } catch {
-      toast({ title: "Couldn't work that one out", description: "Try again in a moment." });
+      toast({ title: "Couldn't work that one out", description: "Edit the title to be clearer, then try sorting again." });
     } finally {
       setSuggestingId((current) => (current === taskId ? null : current));
     }

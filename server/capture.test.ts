@@ -127,7 +127,7 @@ test("routing a decision keeps it as an actionable inbox task", async () => {
   assert.equal(task.list, "inbox");
   assert.equal(task.category, "admin");
   assert.match(task.doneWhen, /decision|next action/i);
-  assert.match(task.steps, /exact question/i);
+  assert.match(task.steps, /exact question you need to decide/i);
   assert.equal(task.minimumOutcome, task.doneWhen);
   assert.match(task.sourceStatus, /routed:decision:task/);
 });
@@ -142,7 +142,7 @@ test("routing to Today moves the task to the today list without a hardcoded bloc
   assert.equal(task.list, "today");
   // Phase 4.6a: never fabricate a time block. No slot context => block stays null.
   assert.equal(task.block, null, "today route must not hardcode a morning/afternoon block");
-  assert.match(task.steps, /first concrete change/i);
+  assert.match(task.steps, /open the draft, project, or blank note/i);
   assert.equal(task.minimumOutcome, task.doneWhen);
   assert.match(task.sourceStatus, /routed:today:task/);
 });

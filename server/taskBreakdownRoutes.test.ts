@@ -86,6 +86,100 @@ test("goal-source breakdown sharpens the first role-search move for a specific m
   assert.match(steps.map((step) => String(step.text || "")).join(" | "), /find one real role for the first role type still missing|Record the company and role title/i);
 });
 
+test("strategy role-scan breakdown turns broad exploration into a real posting plus repeated requirements", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Find three real AI governance strategy roles and note what they keep asking for",
+    category: "job",
+    sourceType: "strategy_builder",
+    sourceId: 1,
+    sourceNote: "From Strategy Builder",
+    doneWhen: "You've found at least one real AI governance strategy and implementation role and noted what it asks for",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+
+  const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
+  const joined = steps.map((step) => String(step.text || "")).join(" | ");
+
+  assert.equal(workflowState.workObject, "Pipeline");
+  assert.match(joined, /Open LinkedIn or the target job board and search "AI governance strategy roles"/i);
+  assert.match(joined, /Save the first real posting that matches the path closely enough to learn from/i);
+  assert.match(joined, /Extract the 3 repeated requirements or background signals/i);
+  assert.match(joined, /Mark which signals you can already evidence/i);
+  assert.match(joined, /Stop once one real role and one requirements pattern are captured/i);
+  assert.doesNotMatch(joined, /open a note and list the first thing you need to understand|get the lay of the land|review notes/i);
+});
+
+test("role-scan coercion replaces generic model steps with the concrete scan contract", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { coerceTaskBreakdownSteps } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Find three real AI governance strategy roles and note what they keep asking for",
+    category: "job",
+    sourceType: "strategy_builder",
+    sourceNote: "From Strategy Builder",
+    doneWhen: "One real role and one requirements pattern are captured",
+    minimumOutcome: "",
+  } as any;
+  const bundle = {
+    sourceKind: "task",
+    sourceContext: "This is a STRATEGY task - exploring or building a career path. Title: Find three real AI governance strategy roles.",
+    playbook: "",
+    source: null,
+    parentContext: "",
+  } as any;
+  const workflowState = {
+    workObject: "Pipeline",
+    workflow: ["Define your target", "Build a list", "Prioritise"],
+    workflowKind: "continuous",
+    currentStage: "Build a list",
+    stageOutput: "One real role and one requirements pattern are captured",
+    completionCriteria: ["A real posting exists", "Repeated requirements are captured"],
+    advanceCondition: "Advance once one real role exists.",
+  } as any;
+
+  const steps = coerceTaskBreakdownSteps(task, bundle, workflowState, [
+    { text: "Get the lay of the land", done: false },
+    { text: "Research AI governance roles", done: false },
+    { text: "Summarize your findings", done: false },
+  ] as any);
+  const joined = steps.map((step) => String(step.text || "")).join(" | ");
+
+  assert.equal(steps.length, 5);
+  assert.match(joined, /Save the first real posting/i);
+  assert.match(joined, /Extract the 3 repeated requirements/i);
+  assert.match(joined, /Stop once one real role and one requirements pattern are captured/i);
+  assert.doesNotMatch(joined, /lay of the land|Research AI governance roles|Summarize your findings/i);
+});
+
+test("plain networking task breakdown pre-structures the outreach instead of falling back to generic task mechanics", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Reach out to one Bain alum about AI strategy roles",
+    category: "admin",
+    sourceType: "task",
+    sourceId: null,
+    sourceNote: "",
+    doneWhen: "A message is drafted",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+
+  const { steps } = await buildDeterministicTaskBreakdown(task);
+  const joined = steps.map((step) => String(step.text || "")).join(" | ");
+
+  assert.match(joined, /Open a blank message to one Bain alum/i);
+  assert.match(joined, /Use this angle: you are exploring AI strategy roles/i);
+  assert.match(joined, /Ask for quick advice about AI strategy roles/i);
+  assert.doesNotMatch(joined, /find the first thing to act on|get ready|research|job board/i);
+});
+
 test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct actions", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
   const { normalizeExistingTaskBreakdown } = await import("./taskBreakdownRoutes");
@@ -187,9 +281,9 @@ test("contact-source outreach breakdown supplies the angle and ask instead of ge
   assert.equal(bundle.sourceKind, "contact");
   assert.equal(workflowState.currentStage, "Draft a message");
   assert.match(bundle.sourceContext || "", /Person: Bain alum/i);
-  assert.match(joined, /Open a draft message to the contact/i);
-  assert.match(joined, /Lead with the specific ask about AI strategy roles/i);
-  assert.match(joined, /Keep it under 4 sentences/i);
+  assert.match(joined, /Open a draft message to Bain alum/i);
+  assert.match(joined, /reality-check which AI strategy roles are actually worth pursuing/i);
+  assert.match(joined, /Ask for a 15-minute chat or quick steer on AI strategy roles/i);
   assert.doesNotMatch(joined, /review notes|research this person/i);
 });
 
@@ -226,10 +320,11 @@ test("replied contact follow-up draft stays in message mode instead of abstract 
   const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.equal(workflowState.currentStage, "Prepare for the conversation");
-  assert.match(joined, /Review Priya Raman's background/i);
-  assert.match(joined, /specific questions to ask Priya Raman/i);
-  assert.match(joined, /Save conversation prep notes/i);
+  assert.equal(workflowState.currentStage, "Follow up");
+  assert.match(joined, /Open the last exchange with Priya Raman/i);
+  assert.match(joined, /Referred me to James/i);
+  assert.match(joined, /Ask for the clearest next steer on AI governance \/ online safety policy at Ofcom/i);
+  assert.match(joined, /Save or send the draft/i);
   assert.doesNotMatch(joined, /Decide what would strengthen the relationship/i);
 });
 

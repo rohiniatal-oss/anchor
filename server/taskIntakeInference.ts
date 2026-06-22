@@ -1,5 +1,6 @@
 import { llmJSON, MODEL_LIGHT } from "./llm";
 import { storage } from "./storage";
+import { contractForTaskIntent, inferTaskIntent } from "./taskIntent";
 
 function containsAny(text: string, terms: string[]) {
   const t = (text || "").toLowerCase();
@@ -33,6 +34,8 @@ export function intakeWords(text: string) {
 
 export function inferTaskCategory(title: string, current?: string) {
   if (current && current !== "admin") return current;
+  const intentContract = contractForTaskIntent({ title, category: current });
+  if (intentContract.intent !== "admin_action") return intentContract.category;
   const hasJobSignal = containsAny(title, ["cv", "cover", "application", "apply", "interview", "role", "job", "fellowship", "hiring"]);
   const hasThinkingVerb = containsAny(title, ["think", "reflect", "direction", "options", "decide", "consider"]);
   if (hasThinkingVerb && !hasJobSignal) return "thinking";
@@ -48,6 +51,12 @@ export function inferTaskEstimate(title: string, current?: string) {
   if (current === "quick") return { size: "quick", minutes: 15, reason: "user_marked_quick" };
   if (current === "medium") return { size: "medium", minutes: 45, reason: "user_marked_medium" };
   if (current === "deep") return { size: "deep", minutes: 90, reason: "user_marked_deep" };
+  const intent = inferTaskIntent({ title });
+  if (intent === "role_market_scan") return { size: "medium", minutes: 45, reason: "role_market_scan" };
+  if (intent === "application_material" || intent === "interview_prep" || intent === "proof_asset") return { size: "deep", minutes: 90, reason: `intent:${intent}` };
+  if (intent === "networking_message" || intent === "status_update" || intent === "blocked_unblock") return { size: "quick", minutes: 15, reason: `intent:${intent}` };
+  if (intent === "learning_output") return { size: "medium", minutes: 45, reason: "intent:learning_output" };
+  if (intent === "decision" || intent === "comparison") return { size: "quick", minutes: 20, reason: `intent:${intent}` };
   if (containsAny(title, ["open", "check", "confirm", "send", "email", "message", "reply", "book", "pay", "list", "note", "skim", "find"])) return { size: "quick", minutes: 15, reason: "quick_action_keyword" };
   if (containsAny(title, ["write", "draft", "apply", "prepare", "research", "tailor", "build", "finish", "review", "outline"])) return { size: "deep", minutes: 90, reason: "deep_work_keyword" };
   if (containsAny(title, ["think", "plan", "reflect", "consider", "explore", "decide"])) return { size: "quick", minutes: 20, reason: "thinking_task" };
@@ -58,6 +67,8 @@ export function inferDoneWhen(title: string, category: string) {
   if (containsAny(title, ["email", "message", "reply", "send"])) return "Message is sent";
   if (containsAny(title, ["deadline", "due", "closes", "closing", "submit by"])) return "The correct deadline and next timing risk are written down";
   if (containsAny(title, ["blocked", "stuck", "waiting on", "waiting for", "need from", "missing info", "depends on"])) return "The blocker and next unblock action are written down";
+  const intentContract = contractForTaskIntent({ title, category });
+  if (intentContract.intent !== "admin_action") return intentContract.doneWhen;
   if (isNetworkingTask(title)) return "One person and a clear ask are drafted or sent";
   if (isExplicitComparisonTask(title)) return "A short comparison note and the next choice are written down";
   if (isRoleResearchTask(title)) return "At least two real role examples are saved with the main patterns or requirements they share";
@@ -77,6 +88,8 @@ function inferFirstStep(title: string, category: string) {
   if (containsAny(title, ["email", "message", "reply", "send"])) return "Open the thread and draft the message";
   if (containsAny(title, ["deadline", "due", "closes", "closing", "submit by"])) return "Open the relevant source and record the exact date";
   if (containsAny(title, ["blocked", "stuck", "waiting on", "waiting for", "need from", "missing info", "depends on"])) return "Write what is blocked and what would unblock it";
+  const intentContract = contractForTaskIntent({ title, category });
+  if (intentContract.intent !== "admin_action") return intentContract.firstStep;
   if (isNetworkingTask(title)) return "Pick one person and write the exact ask before you send anything";
   if (isExplicitComparisonTask(title)) return "Write the exact options you are comparing";
   if (isRoleResearchTask(title)) return "Open one search or saved board and save the first two relevant roles";

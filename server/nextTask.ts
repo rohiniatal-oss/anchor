@@ -3,6 +3,7 @@ import { tasks, jobs, learn, contacts, hustles, jobPipelineSteps, proofAssetStep
 import { eq, and, ne, asc } from "drizzle-orm";
 import { buildDeterministicTaskBreakdown, attachWorkflowState } from "./taskBreakdownRoutes";
 import { materializedJobStepTaskTitle, materializedProofStepTaskTitle, nextContactTaskTitle, nextHustleTaskTitle, nextJobTaskTitle, nextLearnTaskTitle } from "@shared/taskPreview";
+import { contractForTaskIntent } from "./taskIntent";
 
 // ─────────────────────────────────────────────────────────────────────────
 // NEXT-TASK ENGINE — turn any source object (job/learn/contact/hustle) into a
@@ -102,17 +103,22 @@ export async function createNextTask(args: { sourceType: NextTaskSourceType; sou
     const c = db.select().from(contacts).where(eq(contacts.id, sourceId)).get();
     if (!c) return null;
     const title = nextContactTaskTitle(c);
+    const intent = contractForTaskIntent({
+      title,
+      sourceType: "contact",
+      sourceNote: `${c.why || c.note || ""} ${c.targetOrg || ""} ${c.targetRole || ""}`,
+    });
     values = {
       ...base,
       title,
       category: "admin",
-      doneWhen: "A message is drafted and ready to send",
+      doneWhen: intent.doneWhen,
       sourceUrl: "",
       sourceNote: c.why || c.note || "",
       sourceStatus: c.status,
       relatedTrackId: c.relatedTrackId ?? null,
       relatedOpportunityId: null,
-      minimumOutcome: "A draft message",
+      minimumOutcome: intent.doneWhen,
       estimateMinutes: null,
       estimateConfidence: "",
     };

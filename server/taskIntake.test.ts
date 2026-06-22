@@ -24,7 +24,7 @@ test("task intake infers deep estimate for drafting work", async () => {
   assert.equal(r.json.size, "deep");
   assert.equal(r.json.estimateMinutes, 90);
   assert.equal(r.json.category, "substack");
-  assert.equal(r.json.doneWhen, "A rough draft or outline exists");
+  assert.match(r.json.doneWhen, /rough draft, outline, proof note, or reusable fragment/i);
 });
 
 test("task intake preserves explicit user estimate values", async () => {

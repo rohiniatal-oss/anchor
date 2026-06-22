@@ -14,40 +14,40 @@ test("message tasks get a concrete send step", () => {
 test("decision tasks get a question-first starter step", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Figure out if AI governance is right for me" });
   assert.match(inferred.doneWhen, /decision or next action/i);
-  assert.match(inferred.steps, /exact question/i);
+  assert.match(inferred.steps, /exact question you need to decide/i);
 });
 
 test("comparison tasks get a comparison-specific starter step", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Compare AI strategy vs chief of staff roles" });
   assert.match(inferred.doneWhen, /comparison note/i);
-  assert.match(inferred.steps, /options you are comparing/i);
+  assert.match(inferred.steps, /exact options you are comparing/i);
 });
 
 test("learning tasks get a smallest-start reading step", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Read Superforecasting" });
   assert.equal(inferred.category, "learning");
   assert.match(inferred.doneWhen, /useful note or output/i);
-  assert.match(inferred.steps, /read only the first section/i);
+  assert.match(inferred.steps, /open the learning item or source/i);
 });
 
 test("role research tasks get a save-real-examples starter step", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Review three AI governance strategy roles and note the requirements that keep coming up." });
   assert.equal(inferred.category, "job");
-  assert.match(inferred.doneWhen, /real role examples/i);
-  assert.match(inferred.steps, /save the first two relevant roles/i);
+  assert.match(inferred.doneWhen, /one real role and one repeated requirements pattern/i);
+  assert.match(inferred.steps, /search .*AI governance strategy roles/i);
 });
 
 test("broad application tasks are shrunk to one live role move", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Apply to several saved roles" });
   assert.equal(inferred.category, "job");
   assert.match(inferred.doneWhen, /one application move/i);
-  assert.match(inferred.steps, /strongest live role/i);
+  assert.match(inferred.steps, /open the role and the current application material/i);
 });
 
 test("networking tasks without the word message still get a clear ask starter", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Reach out to one Bain alum about AI strategy roles" });
-  assert.match(inferred.doneWhen, /one person and a clear ask/i);
-  assert.match(inferred.steps, /pick one person and write the exact ask/i);
+  assert.match(inferred.doneWhen, /message is drafted, sent, or clearly scheduled/i);
+  assert.match(inferred.steps, /blank message to one Bain alum/i);
 });
 
 test("deadline tasks get a record-the-date starter step", () => {
@@ -115,8 +115,8 @@ test("contextualizeTask sets doneWhen for contact-linked tasks", async () => {
 test("thinking category is inferred for planning tasks", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Think about what direction makes sense" });
   assert.equal(inferred.category, "thinking");
-  assert.match(inferred.doneWhen, /clearer next step/i);
-  assert.match(inferred.steps, /question you are actually trying to answer/i);
+  assert.match(inferred.doneWhen, /decision or next action/i);
+  assert.match(inferred.steps, /exact question you need to decide/i);
 });
 
 test("unrecognized tasks get empty steps instead of vague ones", () => {

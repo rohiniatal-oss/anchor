@@ -9,9 +9,17 @@ export function nextLearnTaskTitle(l: Pick<Learn, "title" | "requiredOutput">): 
   return reusable ? `Create reusable result: ${reusable}` : `Work through: ${l.title}`;
 }
 
-export function nextContactTaskTitle(c: Pick<Contact, "who" | "name" | "askType">): string {
+export function nextContactTaskTitle(c: Pick<Contact, "who" | "name" | "askType" | "targetOrg" | "targetRole" | "status" | "messageDraft">): string {
   const target = c.who || c.name || "contact";
-  return `Draft ${c.askType || "soft"} outreach to ${target}`;
+  const orgRole = [c.targetRole, c.targetOrg].filter(Boolean).join(" at ");
+  const about = orgRole ? ` about ${orgRole}` : "";
+  if (c.status === "replied" || c.status === "in_conversation") return `Reply to ${target}${about}`;
+  if (c.status === "messaged") return `Follow up with ${target}${about}`;
+  if (c.messageDraft?.trim()) return `Send the drafted message to ${target}${about}`;
+  if (c.askType === "referral") return `Draft a referral ask to ${target}${about}`;
+  if (c.askType === "follow_up") return `Draft a follow-up note to ${target}${about}`;
+  if (c.askType === "reconnect") return `Draft a reconnect note to ${target}${about}`;
+  return `Draft a 15-minute chat ask to ${target}${about}`;
 }
 
 export function nextHustleTaskTitle(h: Pick<Hustle, "title" | "nextStep">): string {

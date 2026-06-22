@@ -4,6 +4,7 @@ import { LANE_NAME, laneFocusAreaLabel, type CanonicalLaneName } from "./lanes";
 import { storage } from "./storage";
 import { buildTrackSpine } from "./trackSpine";
 import { createNextTask } from "./nextTask";
+import { contractForTaskIntent } from "./taskIntent";
 
 // Anchor Today is the front door. It must read the same reason graph as the
 // sequencer: the Tracks x Lanes spine. GoalState remains useful as a legacy
@@ -37,6 +38,8 @@ function firstStepFromTask(task: Task) {
     const step = Array.isArray(parsed) ? parsed.find((s) => s && typeof s.text === "string" && !s.done) : null;
     if (step?.text) return String(step.text);
   } catch {}
+  const contract = contractForTaskIntent(task);
+  if (contract.intent !== "admin_action") return contract.firstStep;
   if (/role|job|inspect|career|research/i.test(task.title)) return "Open LinkedIn or the saved role.";
   if (/message|person|network|contact/i.test(task.title)) return "Open the contact or message thread.";
   if (/cv|cover|application/i.test(task.title)) return "Open the role and application material.";

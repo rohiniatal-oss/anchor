@@ -139,11 +139,11 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
       });
     }
 
-    if (roleCount === 0 && !hasOpenTask(input.tasks, /inspect three|role examples|requirements/i, track)) {
+    if (roleCount === 0 && !hasOpenTask(input.tasks, /inspect three|find one real|role examples|requirements pattern|requirements/i, track)) {
       moves.push({
         kind: "asset", lane: "Direction", priority: 82, trackId: track.id, trackName: name,
-        title: `Review three ${name} role examples and note the requirements that keep coming up`,
-        doneWhen: "Three role examples are saved with the main requirements they share",
+        title: `Find one real ${name} role and extract the first requirements pattern`,
+        doneWhen: "One real role and one repeated requirements pattern are captured",
         reason: "Without role examples, general prep can drift away from the market.",
         outputType: "note",
       });

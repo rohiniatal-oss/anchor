@@ -41,7 +41,7 @@ test("today capture patch adds a starter step without inventing a block", () => 
   });
   assert.equal(patch.list, "today");
   assert.equal(patch.block, null);
-  assert.match(String(patch.steps), /rough outline|first concrete change/i);
+  assert.match(String(patch.steps), /open the draft, project, or blank note/i);
   assert.equal(patch.minimumOutcome, patch.doneWhen);
 });
 

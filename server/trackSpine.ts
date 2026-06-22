@@ -3,6 +3,7 @@ import { buildLaneOperatingModel, type LaneState } from "./laneState";
 import { buildAllTrackPlans } from "./trackPlanner";
 import { buildMarketabilityPlan } from "./marketabilityEngine";
 import { LANE_NAME, normalizeLaneName, type CanonicalLaneName } from "./lanes";
+import { contractForTaskIntent } from "./taskIntent";
 
 export type TrackSpineLane = {
   name: CanonicalLaneName;
@@ -65,12 +66,20 @@ function toSpineLane(lane: LaneState): TrackSpineLane {
 }
 
 function firstStepFor(title: string, lane: CanonicalLaneName) {
+  const contract = contractForTaskIntent({ title, lane });
+  if (contract.intent !== "admin_action") return contract.firstStep;
   if (lane === LANE_NAME.APPLICATIONS) return "Open the role, CV, or application material.";
   if (lane === LANE_NAME.NETWORK) return "Open the contact list or draft message.";
   if (lane === LANE_NAME.LEARNING_DEVELOPMENT) return "Open the learning item or a blank note for one short practice attempt or useful note.";
   if (lane === LANE_NAME.PROOF_ASSETS) return "Open a blank note and create the smallest useful or publishable piece.";
   if (/role|inspect|requirements/i.test(title)) return "Open LinkedIn or a saved role.";
   return "Spend 5 minutes on the smallest useful version of this";
+}
+
+function stopWhenFor(title: string, lane: CanonicalLaneName) {
+  const contract = contractForTaskIntent({ title, lane });
+  if (contract.intent !== "admin_action") return contract.stopCondition;
+  return lane === LANE_NAME.APPLICATIONS ? "Stop after one concrete application/material step." : "Stop after one useful result exists.";
 }
 
 export function buildTrackSpine(input: {
@@ -119,7 +128,7 @@ export function buildTrackSpine(input: {
     title: activeTrack.primaryMove,
     firstStep: firstStepFor(activeTrack.primaryMove, activeTrack.primaryLane),
     doneWhen: activeTrack.doneWhen,
-    stopWhen: activeTrack.primaryLane === LANE_NAME.APPLICATIONS ? "Stop after one concrete application/material step." : "Stop after one useful result exists.",
+    stopWhen: stopWhenFor(activeTrack.primaryMove, activeTrack.primaryLane),
     source: "track_spine" as const,
     trackId: activeTrack.id,
     trackName: activeTrack.name,
@@ -129,7 +138,7 @@ export function buildTrackSpine(input: {
     title: marketMove.title,
     firstStep: firstStepFor(marketMove.title, normalizeLaneName(marketMove.lane)),
     doneWhen: marketMove.doneWhen,
-    stopWhen: "Stop once the required result exists.",
+    stopWhen: stopWhenFor(marketMove.title, normalizeLaneName(marketMove.lane)),
     source: "marketability" as const,
     trackId: marketMove.trackId,
     trackName: marketMove.trackName,
@@ -139,7 +148,7 @@ export function buildTrackSpine(input: {
     title: laneModel.bottleneckLane.unlockMove,
     firstStep: firstStepFor(laneModel.bottleneckLane.unlockMove, bottleneckLane),
     doneWhen: "One useful signal or result exists.",
-    stopWhen: laneModel.bottleneckLane.stopRule,
+    stopWhen: stopWhenFor(laneModel.bottleneckLane.unlockMove, bottleneckLane) || laneModel.bottleneckLane.stopRule,
     source: "fallback" as const,
     lane: bottleneckLane,
     reason: laneModel.bottleneckLane.bottleneck,

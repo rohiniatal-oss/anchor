@@ -174,6 +174,16 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   const { toast } = useToast();
   const [breaking, setBreaking] = useState(false);
   const [unsticking, setUnsticking] = useState(false);
+  const [stuckVisible, setStuckVisible] = useState(false);
+  const [stuckExpanded, setStuckExpanded] = useState(false);
+  const stuckTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    setStuckVisible(false);
+    setStuckExpanded(false);
+    clearTimeout(stuckTimer.current);
+    stuckTimer.current = setTimeout(() => setStuckVisible(true), 45_000);
+    return () => clearTimeout(stuckTimer.current);
+  }, [pinned.id]);
   // Synthesis panel state — local to RightNow (plan list has its own in TodayView)
   const [synthDraft, setSynthDraft] = useState("");
   const [synthCritique, setSynthCritique] = useState("");
@@ -461,11 +471,13 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
               )}
             </div>
           </div>
-          <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
-              className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary disabled:opacity-60">
+          {stuckVisible && (
+            <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-primary disabled:opacity-60">
               {unsticking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-              {unsticking ? "Adding step..." : "Stuck? Get a tiny first step"}
+              {unsticking ? "Adding step..." : "Try a different first step"}
             </button>
+          )}
         </div>
       )}
       {allStepsDone && (
@@ -565,24 +577,35 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
           )}
         </div>
       )}
-      <div className="mt-4 pt-3 border-t border-primary/15 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">Need a smaller next move?</span>
-          <button onClick={shrink} data-testid="button-shrink" className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1">
-            <Wand2 className="w-3.5 h-3.5" /> Make it smaller
-          </button>
+      {stuckVisible && (
+        <div className="mt-4 pt-3 border-t border-primary/15">
+          {!stuckExpanded ? (
+            <button onClick={() => setStuckExpanded(true)} data-testid="button-stuck"
+              className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors inline-flex items-center gap-1">
+              Not sure where to start?
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <button onClick={() => { shrink(); setStuckExpanded(false); }} data-testid="button-shrink" className="w-full text-left text-xs rounded-lg border border-card-border bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+                <span className="font-medium text-primary inline-flex items-center gap-1"><Wand2 className="w-3.5 h-3.5" /> Make it smaller</span>
+                <span className="text-muted-foreground ml-1">— break it into a tinier step</span>
+              </button>
+              <button onClick={() => { moveBlock(); setStuckExpanded(false); }} data-testid="button-move" className="w-full text-left text-xs rounded-lg border border-card-border bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+                <span className="font-medium text-foreground inline-flex items-center gap-1"><MoveRight className="w-3.5 h-3.5" /> Do something else first</span>
+                <span className="text-muted-foreground ml-1">— move this to later today</span>
+              </button>
+              <button onClick={() => { park(); setStuckExpanded(false); }} data-testid="button-park" className="w-full text-left text-xs rounded-lg border border-card-border bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+                <span className="font-medium text-foreground inline-flex items-center gap-1"><MoonStar className="w-3.5 h-3.5" /> Not today</span>
+                <span className="text-muted-foreground ml-1">— park it, no guilt</span>
+              </button>
+              <button onClick={() => { block(); setStuckExpanded(false); }} data-testid="button-block" className="w-full text-left text-xs rounded-lg border border-card-border bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+                <span className="font-medium text-foreground inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> I'm waiting on something</span>
+                <span className="text-muted-foreground ml-1">— mark blocked</span>
+              </button>
+            </div>
+          )}
         </div>
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground list-none inline-flex items-center gap-1">
-            Need a different move?
-          </summary>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-card-border bg-card px-3 py-2.5">
-            <button onClick={moveBlock} data-testid="button-move" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><MoveRight className="w-3.5 h-3.5" /> Move to later</button>
-            <button onClick={park} data-testid="button-park" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><MoonStar className="w-3.5 h-3.5" /> Park for another day</button>
-            <button onClick={block} data-testid="button-block" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> I'm blocked</button>
-          </div>
-        </details>
-      </div>
+      )}
     </div>
   );
 }

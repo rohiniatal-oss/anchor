@@ -63,7 +63,7 @@ function contactSource(bundle: SourceBundle): Contact | null {
 const WORKFLOWS: Record<WorkObject, string[]> = {
   Artifact: ["Understand what's needed", "Gather what you need", "Outline", "Draft", "Refine", "Check", "Deliver"],
   Decision: ["Frame the question", "Set criteria", "Explore options", "Weigh up", "Decide", "Commit"],
-  Knowledge: ["Get the lay of the land", "Focus on what matters", "Read / watch", "Pull out the key bits", "Make sense of it", "Save what's useful"],
+  Knowledge: ["Find out what's involved", "Focus on what matters", "Read / watch", "Pull out the key bits", "Make sense of it", "Save what's useful"],
   Capability: ["Understand the skill", "Learn the basics", "Practise", "Try it for real", "Reflect", "Lock it in"],
   Pipeline: ["Define your target", "Build a list", "Prioritise", "Work through the next batch", "Track progress", "Follow up", "Review what's working"],
   Problem: ["Describe what's wrong", "Find the cause", "Consider fixes", "Test", "Fix it", "Confirm it's working"],
@@ -243,7 +243,7 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
   if (bundle.sourceKind === "learn") {
     const source = learnSource(bundle);
     const workObject: WorkObject = keyword(text, /practice|drill|mock/) ? "Capability" : "Knowledge";
-    const currentStage = workObject === "Capability" ? "Practise" : "Get the lay of the land";
+    const currentStage = workObject === "Capability" ? "Practise" : "Find out what's involved";
     const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "One practice output exists" : "One useful slice and output are chosen");
     return makeWorkflowState({ workObject, workflow: WORKFLOWS[workObject], currentStage, stageOutput, inheritedFrom: `learn:${source?.id || (task as any).sourceId || "unknown"}`, confidence: "parent", sourceKind: "learn" });
   }

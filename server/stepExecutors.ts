@@ -50,7 +50,7 @@ function buildAvailableContext(ctx: ExecutionContext, priorOutputs: string[]): s
 function buildUserActionFallback(step: { text: string; outputSpec?: string }, ctx: ExecutionContext): ExecutedStep {
   const spec = step.outputSpec || step.text;
   const t = spec.toLowerCase();
-  let action = `Do this yourself: ${step.text}`;
+  let action = step.text;
   if (/role|job|posting|position/.test(t)) {
     action = `Search for "${ctx.taskTitle.slice(0, 50)}" on LinkedIn or a job board and note what you find`;
   } else if (/company|org/.test(t)) {
@@ -59,6 +59,12 @@ function buildUserActionFallback(step: { text: string; outputSpec?: string }, ct
     action = `Think of one person who could help with "${ctx.taskTitle.slice(0, 40)}" and add them`;
   } else if (/require|skill|gap|qualification/.test(t)) {
     action = `Open a real posting for this role type and list the top 3 requirements`;
+  } else if (/write|draft|memo|brief/.test(t)) {
+    action = `Open a blank doc and write the first paragraph — even rough is fine`;
+  } else if (/read|review|article|paper/.test(t)) {
+    action = `Find the source and read just the first section — write one takeaway`;
+  } else if (/schedule|book|calendar/.test(t)) {
+    action = `Open your calendar and block time for this now`;
   }
   return {
     text: action,

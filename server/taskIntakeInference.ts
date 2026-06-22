@@ -12,7 +12,7 @@ function isNetworkingTask(title: string) {
 
 function isRoleResearchTask(title: string) {
   return containsAny(title, ["role", "roles", "job", "jobs", "posting", "postings"])
-    && containsAny(title, ["review", "compare", "inspect", "research", "search", "shortlist", "map"]);
+    && containsAny(title, ["review", "compare", "inspect", "research", "search", "shortlist", "map", "explore"]);
 }
 
 function isBroadApplicationTask(title: string) {

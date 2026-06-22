@@ -188,10 +188,10 @@ function parseBreakdown(raw: string, fallbackObject: WorkObject, inheritedWorkfl
 function classifyWorkObject(task: Task, bundle: SourceBundle): WorkObject {
   const text = `${task?.title || ""} ${task?.category || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${task?.sourceNote || ""} ${bundle.sourceContext}`.toLowerCase();
   if (keyword(text, /fix|blocked|bug|confus|stuck|messy|unblock|not working|error|broken/)) return "Problem";
-  if (keyword(text, /decide|choose|prioriti|pick|whether|option|trade[ -]?off|select|think|plan|reflect|direction|explore|consider|strategy|weigh/)) return "Decision";
+  if (keyword(text, /decide|choose|prioriti|pick|whether|option|trade[ -]?off|select|weigh|think about|reflect|consider|figure out/)) return "Decision";
   if (keyword(text, /practice|drill|improve|skill|interviewing|storylining|excel|capability|development|mock/)) return "Capability";
   if (keyword(text, /learn|read|understand|research|report|guide|resource|synthesize|synthesize/)) return "Knowledge";
-  if (keyword(text, /pipeline|outreach|network|search|batch|apply to multiple|generate list|all.*roles/)) return "Pipeline";
+  if (keyword(text, /pipeline|outreach|network|search|batch|apply to multiple|generate list|all.*roles|explore.*role/)) return "Pipeline";
   if (bundle.sourceKind === "job") return "Artifact";
   if (bundle.sourceKind === "contact") return "Pipeline";
   if (bundle.sourceKind === "learn") return "Capability";

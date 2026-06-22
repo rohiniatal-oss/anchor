@@ -115,6 +115,8 @@ export function deriveExternalResearchIntent(
   if (bundle.sourceKind === "job" && COMPANY_RESEARCH_RE.test(text)) return "company_research";
   if (bundle.sourceKind === "learn" && /verify|check|confirm|application|program|course|fellowship/i.test(text)) return "resource_verification";
   if (COMPANY_RESEARCH_RE.test(text)) return "company_research";
+  if (/strategy_builder|career_track|marketability/i.test(task.sourceType || "")) return "market_scan";
+  if (/\b(roles?|requirements|hiring|job market|demand|qualifications)\b/i.test(text)) return "market_scan";
   if (NEGATIVE_TRIGGER_RE.test(text)) return "none";
   return "none";
 }
@@ -147,10 +149,11 @@ function publicEntityTokens(task: TaskContextProviderInput["task"], bundle: Task
   if (company) tokens.push(...company.split(/\s+/));
   if (bundle.sourceKind === "job" && title) tokens.push(...title.split(/\s+/).slice(0, 4));
   if (bundle.sourceKind === "learn" && title) tokens.push(...title.split(/\s+/).slice(0, 5));
-  if (!tokens.length && bundle.sourceKind === "goal") {
+  if (!tokens.length) {
     const text = lower(`${task.title} ${task.doneWhen || task.minimumOutcome || ""}`);
-    const words = text.split(/\s+/).filter((w) => w.length > 3);
-    tokens.push(...tokenCap(words, 4));
+    const stopWords = new Set(["this", "that", "with", "from", "your", "have", "been", "what", "they", "keep", "find", "note", "three", "real", "them", "coming"]);
+    const words = text.split(/\s+/).filter((w) => w.length > 3 && !stopWords.has(w));
+    tokens.push(...tokenCap(words, 6));
   }
   return dedupeWords(tokens);
 }

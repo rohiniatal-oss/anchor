@@ -340,7 +340,10 @@ function looksActionable(text: string) {
 }
 
 function looksGenericFiller(text: string) {
-  return /^(get ready|think about|organize (your )?thoughts|do (some )?research|prepare yourself|gather (your )?thoughts|brainstorm|consider|reflect on|take (some )?time|plan (your )?approach|make a plan|set (up )?a plan)\b/i.test(text.trim());
+  const t = text.trim();
+  if (/^(get ready|think about|organize (your )?thoughts|do (some )?research|prepare yourself|gather (your )?thoughts|brainstorm|consider|reflect on|take (some )?time|plan (your )?approach|make a plan|set (up )?a plan|familiarize|orient yourself|explore the landscape|understand the context|assess the situation|identify key|determine the best|evaluate your|establish a)\b/i.test(t)) return true;
+  if (/^(review your (notes|progress|goals|strategy)|ensure you have|make sure you|verify that|confirm your|revisit your)\b/i.test(t)) return true;
+  return false;
 }
 
 function laneSpecificSearchMove(text: string): string | undefined {
@@ -569,11 +572,21 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     ];
   }
 
+  if (/strategy_builder|career_track|marketability/i.test(task.sourceType || "")) {
+    const roleSlice = task.title.replace(/^(find|review|explore|research|identify)\s+/i, "").slice(0, 60).trim();
+    return [
+      `Open LinkedIn or a job board and search for "${roleSlice}"`,
+      "Save 1-2 real postings that look credible",
+      "Note the requirements that keep coming up across them",
+      "Write one sentence: what does this role type actually need?",
+    ];
+  }
+
   return [
-    "Open the task context",
-    "Write the intended audience or use",
-    "Name the smallest useful version",
-    "Start the first rough line or note",
+    `Open "${task.title.slice(0, 50).trim()}" and find the first thing to act on`,
+    "Write down what the end result should look like",
+    "Do the smallest piece that moves it forward",
+    "Save what you produced",
   ];
 }
 
@@ -745,6 +758,15 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
     lines.push(`PROOF ASSET WORKFLOW GUIDANCE:`);
     lines.push(`Use the PROOF_WORKFLOW: ${PROOF_WORKFLOW.join(" → ")}.`);
     lines.push(`Each step must move the proof asset one stage forward. The output must be saveable.`);
+  }
+
+  if (!lines.length && /strategy_builder|career_track|marketability/i.test(task.sourceType || "")) {
+    lines.push(`STRATEGY / ROLE EXPLORATION GUIDANCE:`);
+    lines.push(`The user is exploring a role type or career path — steps must use real platforms.`);
+    lines.push(`Step 1 should be "Open LinkedIn/Indeed and search for [specific role title from the task]".`);
+    lines.push(`Subsequent steps: save 1-3 real postings, note common requirements, compare to the user's background.`);
+    lines.push(`Do NOT say "research the role" or "explore the landscape" — name the exact search query and platform.`);
+    lines.push(`Final step should produce a saved note or list the user can refer back to.`);
   }
 
   return lines.join("\n");
@@ -1120,6 +1142,16 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
       sourceContext = `This is a PROOF-ASSET / project step. Title: ${h.title}. Stage: ${h.stage}. Content pillar: ${h.contentPillar || "unset"}. Core claim: ${h.coreClaim || "unset"}. ${h.note ? "Notes: " + h.note : ""}`;
       playbook = "Use the parent output workflow first: claim -> audience -> examples -> draft -> save. Never auto-change the stage automatically.";
     }
+  } else if (task.sourceType === "strategy_builder" || task.sourceType === "career_track" || task.sourceType === "marketability_engine") {
+    sourceKind = "task";
+    const trackId = task.relatedTrackId;
+    let trackName = "";
+    if (trackId) {
+      const tracks = await storage.getCareerTracks();
+      trackName = tracks.find((tr) => tr.id === trackId)?.name || "";
+    }
+    sourceContext = `This is a STRATEGY task — exploring or building a career path.${trackName ? ` Career track: ${trackName}.` : ""} Title: ${task.title}. ${task.doneWhen ? `Done when: ${task.doneWhen}. ` : ""}${taskSourceNote ? "Notes: " + taskSourceNote + ". " : ""}${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
+    playbook = "The user is exploring role types or building strategy. Steps must be concrete actions on real job boards, LinkedIn, or saved notes — not abstract planning. Each step should produce something saved: a role link, a note about requirements, or a comparison.";
   } else if (task.sourceUrl || taskSourceNote) {
     sourceContext = `${taskSourceNote ? "Context: " + taskSourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
   }
@@ -1211,7 +1243,7 @@ export function buildTaskBreakdownPrompt(input: {
     ) : ""}` +
     `${providerContext ? `\n${providerContext}\n\n` : ""}` +
     `Default work object if uncertain: ${fallbackObject}\n` +
-    `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
+    `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || `something about "${task.title.slice(0, 50)}" is visibly further along`}\n` +
     `${bundle.cvText && bundle.jdText ? (
       `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
       `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +

@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildTaskIntakeDefaults } from "./taskIntakeInference";
@@ -59,4 +61,64 @@ test("blocker tasks get an unblock-oriented starter step", () => {
   assert.equal(inferred.readiness, "blocked");
   assert.match(inferred.doneWhen, /blocker and next unblock action/i);
   assert.match(inferred.steps, /what is blocked and what would unblock it/i);
+});
+
+test("contextualizeTask sets category and doneWhen for job-linked tasks", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-ctx-${process.pid}.db`);
+  const { contextualizeTask } = await import("./taskIntakeInference");
+  const { storage } = await import("./storage");
+
+  const job = await storage.createJob({
+    title: "Strategy Analyst",
+    company: "Deloitte",
+    status: "wishlist",
+  } as any);
+
+  const task = await storage.createTask({
+    title: "Apply to Deloitte",
+    category: "admin",
+    sourceType: "job",
+    sourceId: job.id,
+    doneWhen: "",
+    steps: "[]",
+  } as any);
+
+  await contextualizeTask(task.id);
+  const updated = (await storage.getTasks()).find((t) => t.id === task.id);
+  assert.equal(updated?.category, "job");
+  assert.ok(updated?.doneWhen?.includes("Deloitte"), "doneWhen should mention the company");
+});
+
+test("contextualizeTask sets doneWhen for contact-linked tasks", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-ctx-contact-${process.pid}.db`);
+  const { contextualizeTask } = await import("./taskIntakeInference");
+  const { storage } = await import("./storage");
+
+  const contact = await storage.createContact({
+    name: "Sarah Chen",
+    status: "to_contact",
+  } as any);
+
+  const task = await storage.createTask({
+    title: "Reach out to Sarah",
+    sourceType: "contact",
+    sourceId: contact.id,
+    doneWhen: "",
+    steps: "[]",
+  } as any);
+
+  await contextualizeTask(task.id);
+  const updated = (await storage.getTasks()).find((t) => t.id === task.id);
+  assert.ok(updated?.doneWhen?.includes("Sarah Chen"), "doneWhen should mention the contact name");
+});
+
+test("thinking category is inferred for planning tasks", () => {
+  const inferred = buildTaskIntakeDefaults({ title: "Think about what direction makes sense" });
+  assert.equal(inferred.category, "thinking");
+  assert.match(inferred.doneWhen, /clearer next step/i);
+});
+
+test("unrecognized tasks get empty steps instead of vague ones", () => {
+  const inferred = buildTaskIntakeDefaults({ title: "Something completely unfamiliar" });
+  assert.equal(inferred.steps, "[]");
 });

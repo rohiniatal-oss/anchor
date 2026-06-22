@@ -134,12 +134,45 @@ export async function contextualizeTask(taskId: number): Promise<void> {
   const task = (await storage.getTasks()).find((t) => t.id === taskId);
   if (!task) return;
 
-  const steps = JSON.parse(task.steps || "[]");
-  if (steps.length > 0) return;
+  const patch: Record<string, any> = {};
 
-  // Don't manufacture steps for tasks we don't understand.
-  // The LLM enrichment (llmEnrichTask) will add a real step later,
-  // and the UI shows the task title directly when there are no steps.
+  if (task.sourceType === "job" && task.sourceId) {
+    const job = (await storage.getJobs()).find((j) => j.id === task.sourceId);
+    if (job) {
+      if (!task.category || task.category === "admin") patch.category = "job";
+      if (!task.doneWhen) {
+        const status = job.status || "wishlist";
+        patch.doneWhen = status === "interviewing"
+          ? "Interview preparation is stronger than before"
+          : status === "applied"
+            ? "Follow-up is sent or next step is clear"
+            : `Application material for ${job.title} at ${job.company} is improved or submitted`;
+      }
+    }
+  } else if (task.sourceType === "contact" && task.sourceId) {
+    const contact = (await storage.getContacts()).find((c) => c.id === task.sourceId);
+    if (contact) {
+      if (!task.doneWhen) {
+        patch.doneWhen = contact.status === "messaged" || contact.status === "in_conversation"
+          ? `Next step with ${contact.name || "the contact"} is done`
+          : `Message to ${contact.name || "the contact"} is drafted or sent`;
+      }
+    }
+  } else if (task.sourceType === "learn" && task.sourceId) {
+    const learn = (await storage.getLearn()).find((l) => l.id === task.sourceId);
+    if (learn) {
+      if (!task.category || task.category === "admin") patch.category = "learning";
+      if (!task.doneWhen) {
+        patch.doneWhen = learn.requiredOutput
+          ? `One useful output exists: ${learn.requiredOutput}`
+          : `One useful note or takeaway from ${learn.title}`;
+      }
+    }
+  }
+
+  if (Object.keys(patch).length > 0) {
+    await storage.updateTask(taskId, patch);
+  }
 }
 
 export async function llmEnrichTask(taskId: number): Promise<void> {
@@ -155,7 +188,7 @@ export async function llmEnrichTask(taskId: number): Promise<void> {
     `Classify this task for a job-searching professional.\n\n` +
     `Task: "${task.title}"\n\n` +
     `Return a JSON object:\n` +
-    `- category: one of "job", "learning", "substack", "health", "admin" (pick the best fit)\n` +
+    `- category: one of "job", "learning", "substack", "health", "thinking", "admin" (pick the best fit)\n` +
     `- size: "quick" (under 15 min), "medium" (15-60 min), or "deep" (60+ min)\n` +
     `- estimateMinutes: your best guess in minutes\n` +
     `- doneWhen: a specific, testable completion criterion (not "feels done" but "has written X" or "has sent Y")\n` +
@@ -164,7 +197,7 @@ export async function llmEnrichTask(taskId: number): Promise<void> {
   );
   if (!result) return;
   const patch: any = {};
-  if (result.category && ["job", "learning", "substack", "health", "admin"].includes(result.category)) {
+  if (result.category && ["job", "learning", "substack", "health", "thinking", "admin"].includes(result.category)) {
     patch.category = result.category;
   }
   if (result.size && ["quick", "medium", "deep"].includes(result.size)) patch.size = result.size;

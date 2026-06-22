@@ -3,7 +3,8 @@ import { llm, llmJSON, LLM_MODELS } from "./llm";
 import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { deterministicUnstickStep } from "./planningFeedback";
-import { parseCompanyBrief } from "./companyIntelligence";
+import { parseCompanyBrief, type CompanyBrief } from "./companyIntelligence";
+import { computeJobTruthStrip } from "./jobTruth";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { buildUserContext, formatContextForPrompt, type UserContext } from "./userContext";
 import { isJobLive, isContactWarm, getTrackId } from "@shared/domainState";
@@ -216,7 +217,13 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
     const source = jobSource(bundle);
     const readiness = String(source?.applicationReadiness || "none");
     const status = String(source?.status || "wishlist");
-    const currentStage = status === "applied" ? "Follow up"
+    const truth = source ? computeJobTruthStrip(source) : null;
+    const truthAction = truth?.action;
+    const currentStage = truthAction === "follow_up" ? "Follow up"
+      : truthAction === "prepare" ? "Build materials"
+      : truthAction === "warm" ? "Match your experience"
+      : truthAction === "reject" ? "Understand the role"
+      : status === "applied" ? "Follow up"
       : status === "interviewing" ? "Build materials"
       : readiness === "submitted" ? "Follow up"
       : readiness === "follow_up" ? "Follow up"
@@ -404,18 +411,36 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   }
 
   if (bundle.sourceKind === "job" && object === "Artifact") {
-    if (currentStage === "Understand the role") return [
-      "Open the role posting and highlight the first must-have requirement",
-      "List the top 3 must-have requirements",
-      "List the top 2 nice-to-have signals",
-      "Write one sentence on what this role is really asking for",
-    ];
-    if (currentStage === "Match your experience") return [
-      "Open a blank note and list the top 3 role requirements",
-      "Match one concrete example to the first requirement",
-      "Match one concrete example to the second requirement",
-      "Mark the weakest proof gap",
-    ];
+    const jobSource = bundle.source as Job | null;
+    const brief = jobSource ? parseCompanyBrief(jobSource.companyBrief || "") : null;
+    const company = jobSource?.company || "the company";
+
+    if (currentStage === "Understand the role") {
+      const steps = [
+        "Open the role posting and highlight the first must-have requirement",
+        "List the top 3 must-have requirements",
+      ];
+      if (brief?.relevantTeam) {
+        steps.push(`Note: this sits in ${brief.relevantTeam} — check how that shapes the requirements`);
+      } else {
+        steps.push("List the top 2 nice-to-have signals");
+      }
+      steps.push("Write one sentence on what this role is really asking for");
+      return steps;
+    }
+    if (currentStage === "Match your experience") {
+      const steps = [
+        "Open a blank note and list the top 3 role requirements",
+        "Match one concrete example to the first requirement",
+        "Match one concrete example to the second requirement",
+      ];
+      if (brief?.whyYouFit) {
+        steps.push(`Use this fit insight: ${brief.whyYouFit}`);
+      } else {
+        steps.push("Mark the weakest proof gap");
+      }
+      return steps;
+    }
     if (currentStage === "Address gaps") return [
       "Write down the single biggest gap in one sentence",
       "Choose whether to explain, reframe, or offset it",
@@ -423,17 +448,30 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       "Save that line in your role notes",
     ];
     if (currentStage === "Build materials") {
-      return keyword(text, /cv|resume|tailor|rewrite/) ? [
-        "Open your CV and the role posting side by side",
-        "Highlight repeated role keywords",
-        "Rewrite the first matching bullet",
-        "Save the next bullet to update later",
-      ] : [
+      if (keyword(text, /cv|resume|tailor|rewrite/)) {
+        const steps = [
+          "Open your CV and the role posting side by side",
+          "Highlight repeated role keywords",
+          "Rewrite the first matching bullet",
+        ];
+        if (brief?.landscape?.competitors?.length) {
+          steps.push(`Position against ${brief.landscape.competitors.slice(0, 2).join(" and ")} — use their language where it fits`);
+        } else {
+          steps.push("Save the next bullet to update later");
+        }
+        return steps;
+      }
+      const steps = [
         "Open the application material and draft the first useful line",
-        "Answer the first prompt in rough notes",
-        "Tighten one sentence so it sounds credible",
-        "Save the next missing section",
       ];
+      if (brief?.prepAngle) {
+        steps.push(`Use this angle: ${brief.prepAngle}`);
+      } else {
+        steps.push("Answer the first prompt in rough notes");
+      }
+      steps.push("Tighten one sentence so it sounds credible");
+      steps.push("Save the next missing section");
+      return steps;
     }
     return [
       "Open the application thread and find the next follow-up action",
@@ -859,6 +897,9 @@ async function buildCrossEngineContext(
         .map((s) => `${s.archetype} — ${s.why}`)
         .join("; ");
       parts.push(`Outreach suggestions from company research: ${suggestions}.`);
+    }
+    if (brief?.landscape?.alsoConsider?.length) {
+      parts.push(`Also consider these companies for similar roles: ${brief.landscape.alsoConsider.join(", ")}.`);
     }
   }
 

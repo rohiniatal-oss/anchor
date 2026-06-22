@@ -250,7 +250,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
         setAnswer("");
       }
     }
-    catch { toast({ title: "Couldn't break it down", description: "Give it another go in a sec." }); }
+    catch { toast({ title: "Couldn't break it down", description: "Try adding more detail to the title or a note about what's involved." }); }
     finally { setBreaking(false); }
   }
   async function answerQuestion() {
@@ -308,7 +308,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
       const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/unstick-to-step`, {}, ["/api/tasks"]);
       toast({ title: "Added a tiny first step.", description: res.step || "Just do that one thing." });
     }
-    catch { toast({ title: "Couldn't think of one", description: "Try again in a moment." }); }
+    catch { toast({ title: "Couldn't find a smaller step", description: "Try editing the task title to be more specific." }); }
     finally { setUnsticking(false); }
   }
   async function shrink() {
@@ -901,7 +901,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       toast({ title: "Captured.", description: "It's out of your head. I kept it off today's plan." });
     } catch {
       setQuickText(t);
-      toast({ title: "Couldn't capture that", description: "Try again in a moment." });
+      toast({ title: "Couldn't capture that", description: "Your text is still in the box — try submitting again." });
     } finally {
       setCapturingQuick(false);
     }
@@ -929,7 +929,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       if (typeof r?.plan?.energy === "string" && ["low", "medium", "high"].includes(r.plan.energy)) {
         setEnergy(r.plan.energy);
       }
-    } catch { toast({ title: "Couldn't shape the day", description: "Try again in a moment." }); }
+    } catch { toast({ title: "Couldn't shape the day", description: "Refresh the page and it should rebuild." }); }
     finally { setLoadingPlan(false); }
   }
 
@@ -948,7 +948,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
       setPlan(null); setPlanItems([]);
       if (!silent) toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
     } catch {
-      toast({ title: "Couldn't start that", description: "Try again in a moment." });
+      toast({ title: "Couldn't start that", description: "The task may have been completed or removed. Refresh to see what's current." });
     }
   }
 

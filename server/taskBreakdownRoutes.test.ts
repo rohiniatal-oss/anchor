@@ -83,7 +83,7 @@ test("goal-source breakdown sharpens the first role-search move for a specific m
   const { steps } = await buildDeterministicTaskBreakdown(task);
 
   assert.ok(steps.length >= 1);
-  assert.match(steps.map((step) => String(step.text || "")).join(" | "), /find one real role for the first still-empty lane|Record the company and role title/i);
+  assert.match(steps.map((step) => String(step.text || "")).join(" | "), /find one real role for the first role type still missing|Record the company and role title/i);
 });
 
 test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct actions", async () => {

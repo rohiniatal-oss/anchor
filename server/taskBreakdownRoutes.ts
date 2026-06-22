@@ -188,7 +188,7 @@ function parseBreakdown(raw: string, fallbackObject: WorkObject, inheritedWorkfl
 function classifyWorkObject(task: Task, bundle: SourceBundle): WorkObject {
   const text = `${task?.title || ""} ${task?.category || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${task?.sourceNote || ""} ${bundle.sourceContext}`.toLowerCase();
   if (keyword(text, /fix|blocked|bug|confus|stuck|messy|unblock|not working|error|broken/)) return "Problem";
-  if (keyword(text, /decide|choose|prioriti|pick|whether|option|trade[ -]?off|select/)) return "Decision";
+  if (keyword(text, /decide|choose|prioriti|pick|whether|option|trade[ -]?off|select|think|plan|reflect|direction|explore|consider|strategy|weigh/)) return "Decision";
   if (keyword(text, /practice|drill|improve|skill|interviewing|storylining|excel|capability|development|mock/)) return "Capability";
   if (keyword(text, /learn|read|understand|research|report|guide|resource|synthesize|synthesize/)) return "Knowledge";
   if (keyword(text, /pipeline|outreach|network|search|batch|apply to multiple|generate list|all.*roles/)) return "Pipeline";
@@ -278,9 +278,9 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
       : keyword(text, /lane|pipeline/) ? "Build a list"
       : "Define your target";
     const stageOutput = currentStage === "Define your target"
-      ? "The next still-empty lane is chosen"
+      ? "The next role type to fill is chosen"
       : currentStage === "Build a list"
-        ? "One credible role exists for at least one still-empty combination"
+        ? "One credible role exists for at least one role type still missing one"
         : "One concrete pipeline action has been taken on a saved role";
     return makeWorkflowState({
       workObject: "Pipeline",
@@ -344,7 +344,7 @@ function looksGenericFiller(text: string) {
 }
 
 function laneSpecificSearchMove(text: string): string | undefined {
-  if (keyword(text, /still-empty combination|still-empty lane/)) return "Open Jobs and find one real role for the first still-empty lane";
+  if (keyword(text, /still-empty combination|still-empty lane/)) return "Open Jobs and find one real role for the first role type still missing one";
   if (keyword(text, /credible role|plausible lane/)) return "Open Jobs and save the first real role you find";
   if (keyword(text, /fill the lane|pipeline action/)) return "Open the most promising saved role and take one pipeline action";
   return undefined;
@@ -353,10 +353,10 @@ function laneSpecificSearchMove(text: string): string | undefined {
 function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: WorkflowState) {
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
   if (bundle.sourceKind === "goal") {
-    if (workflowState?.currentStage === "Define your target") return "Open Jobs and look at the first still-empty lane";
-    if (workflowState?.currentStage === "Build a list") return laneSpecificSearchMove(text) || "Open Jobs and save the first credible role for one still-empty lane";
+    if (workflowState?.currentStage === "Define your target") return "Open Jobs and look at the first role type still missing a real role";
+    if (workflowState?.currentStage === "Build a list") return laneSpecificSearchMove(text) || "Open Jobs and save the first credible role for one role type still missing one";
     if (workflowState?.currentStage === "Work through the next batch") return "Open the saved role and take the next concrete pipeline action";
-    return laneSpecificSearchMove(text) || "Open Jobs and save the first credible role for one still-empty lane";
+    return laneSpecificSearchMove(text) || "Open Jobs and save the first credible role for one role type still missing one";
   }
   if (bundle.sourceKind === "job") {
     if (workflowState?.currentStage === "Understand the role") return "Open the role posting and highlight the first must-have requirement";
@@ -391,22 +391,22 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   if (bundle.sourceKind === "goal" || (object === "Pipeline" && keyword(text, /lane|role|pipeline|application/))) {
     const laneSpecific = laneSpecificSearchMove(text);
     if (currentStage === "Define your target") return [
-      "Open Jobs and look at the first still-empty lane",
-      "Name the lane you are filling first",
-      "Define what counts as a credible role for that lane",
-      "Save the lane and move to role search",
+      "Open Jobs and look at the first role type still missing a real role",
+      "Name the role type you are filling first",
+      "Define what counts as a credible role for that type",
+      "Save it and move to role search",
     ];
     if (currentStage === "Build a list") return [
-      laneSpecific || "Open Jobs and save the first credible role for one still-empty lane",
+      laneSpecific || "Open Jobs and save the first credible role for one role type still missing one",
       "Record the company and role title",
       "Mark whether it needs apply, warm path, or clarify",
-      "Repeat for the next still-empty lane only if there is still energy",
+      "Repeat for the next role type only if there is still energy",
     ];
     return [
       "Open the saved role and take the next concrete pipeline action",
       "Draft the message, application, or clarification note",
       "Save or send that move",
-      "Log what lane still needs a real role next",
+      "Log which role type still needs a real role next",
     ];
   }
 
@@ -521,8 +521,8 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
 
   if (object === "Pipeline") {
     return currentStage === "Define your target" ? [
-      "Write down the exact target lane",
-      "List 3 live targets in that lane",
+      "Write down the exact role type you are targeting",
+      "List 3 live targets for that type",
       "Mark the best one to act on first",
       "Save the first outreach or application move",
     ] : [

@@ -33,7 +33,10 @@ export function intakeWords(text: string) {
 
 export function inferTaskCategory(title: string, current?: string) {
   if (current && current !== "admin") return current;
-  if (containsAny(title, ["cv", "cover", "application", "apply", "interview", "role", "job", "fellowship", "career", "hiring"])) return "job";
+  const hasJobSignal = containsAny(title, ["cv", "cover", "application", "apply", "interview", "role", "job", "fellowship", "hiring"]);
+  const hasThinkingVerb = containsAny(title, ["think", "reflect", "direction", "options", "decide", "consider"]);
+  if (hasThinkingVerb && !hasJobSignal) return "thinking";
+  if (hasJobSignal) return "job";
   if (containsAny(title, ["read", "course", "learn", "study", "book", "certificate", "practice", "skill"])) return "learning";
   if (containsAny(title, ["article", "substack", "post", "memo", "essay", "publish", "draft"])) return "substack";
   if (containsAny(title, ["workout", "walk", "sleep", "meal", "gym"])) return "health";
@@ -86,6 +89,7 @@ function inferFirstStep(title: string, category: string) {
   if (containsAny(title, ["memo", "essay", "article", "substack", "post", "draft", "outline", "write"])) return "Open a blank doc and sketch the rough outline";
   if (containsAny(title, ["check", "confirm", "find"])) return "Open the relevant source and look for the missing fact";
   if (category === "health") return "Start the smallest version that still counts";
+  if (containsAny(title, ["think", "plan", "reflect", "consider", "explore", "direction", "strategy", "options"])) return "Open a note and write the one question you are actually trying to answer";
   return null;
 }
 

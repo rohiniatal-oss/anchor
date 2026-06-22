@@ -1316,7 +1316,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
   }
   if (source === "learn") return "Open the learning item or a blank note and capture one useful note, brief, or practice result.";
   if (source === "hustle") return "Open the project or public-work item and make the smallest publishable or reusable fragment.";
-  return "Open the task and do the first small visible step, not the whole project.";
+  return "Spend 5 minutes on this — just the smallest useful start.";
 }
 
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {

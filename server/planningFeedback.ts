@@ -257,26 +257,26 @@ export function prependStep(rawSteps: string, text: string) {
 
 export function deterministicUnstickStep(task: Task) {
   if (task.readiness === "blocked" || task.blockerReason) {
-    return `Write down the missing input: ${task.blockerReason || task.blockedBy || "what is blocking this"}`;
+    return `Write down what's missing: ${task.blockerReason || task.blockedBy || "what's blocking this"}`;
   }
-  if (task.sourceUrl) return "Open the saved link and list what is needed";
+  if (task.sourceUrl) return "Check the saved link and note what you need from it";
   if (task.sourceType === "job") {
-    if (/cv|resume|tailor/i.test(task.title)) return "Open your CV and highlight the 2 bullets closest to this role";
-    if (/cover/i.test(task.title)) return "Open a blank doc and write just the opening sentence — why this role, why now";
-    if (/apply|submit/i.test(task.title)) return "Open the application page and fill in just the first field";
-    if (/research|understand/i.test(task.title)) return "Open the job posting and write down 3 key requirements in your own words";
+    if (/cv|resume|tailor/i.test(task.title)) return "Pick the 2 CV bullets closest to this role and sharpen one";
+    if (/cover/i.test(task.title)) return "Write the opening line — why this role, why you, why now";
+    if (/apply|submit/i.test(task.title)) return "Fill in the first required field on the application";
+    if (/research|understand/i.test(task.title)) return "Write down the 3 key requirements in your own words";
   }
   if (task.sourceType === "contact") {
-    if (/draft|outreach|message|email/i.test(task.title)) return "Open a blank message and type just the subject line or first sentence";
-    if (/prep|prepare|conversation/i.test(task.title)) return "Write down the one question you most want to ask them";
-    if (/follow/i.test(task.title)) return "Open the last message thread and type a one-line check-in";
+    if (/draft|outreach|message|email/i.test(task.title)) return "Write the subject line and first sentence";
+    if (/prep|prepare|conversation/i.test(task.title)) return "Write down the one thing you most want to learn from them";
+    if (/follow/i.test(task.title)) return "Send a one-line check-in referencing your last exchange";
   }
   if (task.sourceType === "learn") {
-    if (/read|watch|listen|review/i.test(task.title)) return "Open the material and read just the first heading or intro paragraph";
-    if (/note|write|summarise|summarize/i.test(task.title)) return "Open a note and write one sentence about what you remember so far";
-    if (/practice|try|build|create/i.test(task.title)) return "Open the tool or editor and create the blank file or template";
+    if (/read|watch|listen|review/i.test(task.title)) return "Read just the intro or first section and note one takeaway";
+    if (/note|write|summarise|summarize/i.test(task.title)) return "Write one sentence about what you've learned so far";
+    if (/practice|try|build|create/i.test(task.title)) return "Do one small practice attempt — even 5 minutes counts";
   }
-  if (task.size === "deep") return "Open a blank note and write the first ugly sentence";
-  if (/email|message|reach|follow/i.test(task.title)) return "Draft the first line only";
-  return "Set a two-minute timer and do the smallest visible start";
+  if (task.size === "deep") return "Write one rough sentence to break the blank page";
+  if (/email|message|reach|follow/i.test(task.title)) return "Write the first line";
+  return "Pick the one part of this you can do in 5 minutes";
 }

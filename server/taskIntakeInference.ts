@@ -33,10 +33,11 @@ export function intakeWords(text: string) {
 
 export function inferTaskCategory(title: string, current?: string) {
   if (current && current !== "admin") return current;
-  if (containsAny(title, ["cv", "cover", "application", "apply", "interview", "role", "job", "fellowship"])) return "job";
-  if (containsAny(title, ["read", "course", "learn", "study", "book", "certificate"])) return "learning";
+  if (containsAny(title, ["cv", "cover", "application", "apply", "interview", "role", "job", "fellowship", "career", "hiring"])) return "job";
+  if (containsAny(title, ["read", "course", "learn", "study", "book", "certificate", "practice", "skill"])) return "learning";
   if (containsAny(title, ["article", "substack", "post", "memo", "essay", "publish", "draft"])) return "substack";
   if (containsAny(title, ["workout", "walk", "sleep", "meal", "gym"])) return "health";
+  if (containsAny(title, ["think", "plan", "reflect", "strategy", "direction", "explore", "options", "decide", "consider"])) return "thinking";
   return current || "admin";
 }
 
@@ -46,6 +47,7 @@ export function inferTaskEstimate(title: string, current?: string) {
   if (current === "deep") return { size: "deep", minutes: 90, reason: "user_marked_deep" };
   if (containsAny(title, ["open", "check", "confirm", "send", "email", "message", "reply", "book", "pay", "list", "note", "skim", "find"])) return { size: "quick", minutes: 15, reason: "quick_action_keyword" };
   if (containsAny(title, ["write", "draft", "apply", "prepare", "research", "tailor", "build", "finish", "review", "outline"])) return { size: "deep", minutes: 90, reason: "deep_work_keyword" };
+  if (containsAny(title, ["think", "plan", "reflect", "consider", "explore", "decide"])) return { size: "quick", minutes: 20, reason: "thinking_task" };
   return { size: "medium", minutes: 45, reason: "default_medium" };
 }
 
@@ -64,7 +66,8 @@ export function inferDoneWhen(title: string, category: string) {
   if (containsAny(title, ["read", "course", "learn", "study", "book"])) return "One useful note or output exists";
   if (containsAny(title, ["article", "substack", "post", "memo", "essay", "draft"])) return "A rough draft or outline exists";
   if (category === "health") return "The healthy action is done";
-  return "The next visible action is complete";
+  if (containsAny(title, ["think", "plan", "reflect", "consider", "explore", "direction", "strategy", "options"])) return "You have a clearer next step written down";
+  return "You've done something concrete, even if small";
 }
 
 function inferFirstStep(title: string, category: string) {
@@ -83,7 +86,8 @@ function inferFirstStep(title: string, category: string) {
   if (containsAny(title, ["memo", "essay", "article", "substack", "post", "draft", "outline", "write"])) return "Open a blank doc and sketch the rough outline";
   if (containsAny(title, ["check", "confirm", "find"])) return "Open the relevant source and look for the missing fact";
   if (category === "health") return "Start the smallest version that still counts";
-  return "Open the task and do the first visible action";
+  if (containsAny(title, ["think", "plan", "reflect", "consider", "explore", "direction", "strategy", "options"])) return "Open a note and write down what's on your mind about this";
+  return "Spend 5 minutes on the smallest useful version of this";
 }
 
 export function inferStarterSteps(title: string, category: string, currentSteps?: string) {

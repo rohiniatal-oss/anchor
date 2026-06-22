@@ -5,6 +5,7 @@ import { buildCaptureTaskPatch } from "./captureTaskRouting";
 import { contextualizeTask } from "./taskIntakeInference";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { llmJSON, MODEL_LIGHT } from "./llm";
+import { interpretCapture, generateDomainBrief, materializeDomainBrief } from "./captureInterpret";
 
 async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof" | "network"): Promise<Record<string, string>> {
   const fieldSpec =
@@ -42,7 +43,7 @@ async function resolveAssetDetails(title: string, kind: "learn" | "job" | "proof
 
 export const CAPTURE_ROUTES = [
   "task", "today", "subtask", "job", "learn", "network", "proof",
-  "deadline", "blocker", "decision", "note", "duplicate", "parking_lot", "keep",
+  "deadline", "blocker", "decision", "research", "note", "duplicate", "parking_lot", "keep",
 ] as const;
 export type CaptureRoute = (typeof CAPTURE_ROUTES)[number];
 export type CaptureConfidence = "high" | "medium" | "low";
@@ -70,6 +71,7 @@ const ROUTE_LABEL: Record<CaptureRoute, string> = {
   deadline: "Deadline",
   blocker: "Blocker",
   decision: "Decision",
+  research: "Explore",
   note: "Note",
   duplicate: "Duplicate",
   parking_lot: "Parked",
@@ -136,6 +138,13 @@ export function classifyCapture(id: number, raw: string): CaptureSuggestion {
 
   if (has(t, /\b(someday|maybe|parking lot|later idea|not now|one day|could do)\b/)) {
     return suggestion(id, "parking_lot", "high", "An idea for later, not right now");
+  }
+
+  // Research / exploration — broad domain or field-level input that needs understanding
+  // before any objects are created. Must come before job/learn to catch "explore X roles".
+  const interpretation = interpretCapture(title);
+  if (interpretation.mode === "research" && interpretation.confidence !== "low") {
+    return suggestion(id, "research", interpretation.confidence, interpretation.reason);
   }
 
   // Applications / opportunities. Fellowships are things you apply to; courses are
@@ -316,6 +325,37 @@ export async function routeCapture(id: number, rawRoute: string) {
     return { status: 200, body: { moved: "decision", route, task: updated, reason } };
   }
 
+  if (route === "research") {
+    const interpretation = interpretCapture(task.title);
+    const domain = interpretation.domain || task.title.replace(/^(explore|get into|break into|look into|research|understand)\s+/i, "").trim();
+    const brief = await generateDomainBrief(domain);
+    if (!brief) {
+      const updated = await storage.updateTask(id, buildCaptureTaskPatch(task, {
+        list: "inbox",
+        sourceStatus: "routed:research:pending",
+        sourceNote: `Research: ${domain} (brief generation failed — retry later)`,
+      }) as any);
+      return { status: 200, body: { moved: "research", route, task: updated, reason: "Research started but brief could not be generated" } };
+    }
+    const materialized = await materializeDomainBrief(brief);
+    await storage.updateTask(id, {
+      list: "captured",
+      sourceStatus: "routed:research:complete",
+      sourceNote: `Explored: ${domain}. Created ${materialized.jobIds.length} roles, ${materialized.learnIds.length} learning items, ${materialized.contactIds.length} contacts.`,
+      pinned: false,
+    } as any);
+    return {
+      status: 200,
+      body: {
+        moved: "research",
+        route,
+        brief,
+        materialized,
+        reason: `Explored ${domain} and seeded ${materialized.jobIds.length} roles, ${materialized.learnIds.length} learning items, ${materialized.contactIds.length} contacts`,
+      },
+    };
+  }
+
   if (route === "job") {
     let d: Record<string, string> = {};
     try { d = await resolveAssetDetails(task.title, "job"); } catch { /* use defaults */ }
@@ -390,6 +430,21 @@ export function registerCaptureRoutes(app: Express) {
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     const result = await routeCapture(id, String(req.body?.route || req.body?.category || ""));
     res.status(result.status).json(result.body);
+  });
+
+  app.post("/api/capture/interpret", async (req, res) => {
+    const text = String(req.body?.text || "").trim();
+    if (!text) return res.status(400).json({ error: "No text provided" });
+    res.json({ interpretation: interpretCapture(text) });
+  });
+
+  app.post("/api/explore", async (req, res) => {
+    const domain = String(req.body?.domain || "").trim();
+    if (!domain) return res.status(400).json({ error: "No domain provided" });
+    const brief = await generateDomainBrief(domain);
+    if (!brief) return res.status(500).json({ error: "Could not generate domain brief" });
+    const materialized = await materializeDomainBrief(brief);
+    res.json({ brief, materialized });
   });
 }
 

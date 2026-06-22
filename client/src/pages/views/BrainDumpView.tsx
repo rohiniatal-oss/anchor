@@ -24,6 +24,7 @@ const ROUTE_ACTION_LABEL: Record<string, string> = {
   deadline: "Add a deadline",
   blocker: "Flag as blocked",
   decision: "Needs a decision",
+  research: "Explore this",
   note: "Save as a note",
   duplicate: "Already captured",
   parking_lot: "Park for later",

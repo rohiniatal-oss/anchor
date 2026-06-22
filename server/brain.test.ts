@@ -166,7 +166,7 @@ test("planner collapses to one item when the remaining day is small", () => {
   ];
   const result = planDay(tasks, [], [], [], "medium", { remainingMinutes: 30 });
   assert.equal(result.plan.length, 1);
-  assert.match(result.note, /little day|One useful thing/i);
+  assert.match(result.note, /Short on time|real win for today/i);
 });
 
 test("urgent real deadlines still lead", () => {

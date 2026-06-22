@@ -1865,11 +1865,12 @@ export function planDay(
 
   const planMin = picks.reduce((m, r) => m + (SIZE_MINUTES[r.c.size] ?? 45), 0);
   const fits = planMin <= Math.max(15, budget);
+  const topTitle = picks[0]?.c.title.slice(0, 50).trim() || "";
   const note =
-    mode === "deadline" ? "A deadline's close — the urgent application/material step leads. Do that one and today counts."
-    : budget < 45 ? "Very little day left. One tiny useful application or track move is enough."
-    : budget < 90 ? "One useful application or track move is enough for the time left today."
-    : mode === "low" ? "Lighter day. The first one is all that matters — done is plenty."
+    mode === "deadline" ? `A deadline's close — "${topTitle}" leads. Do that one and today counts.`
+    : budget < 45 ? `Short on time. Just do "${topTitle}" — that's a real win for today.`
+    : budget < 90 ? `Enough time for one solid move. "${topTitle}" is the one that matters most right now.`
+    : mode === "low" ? `Lighter day. Just finish "${topTitle}" and you're done — quality over quantity.`
     : mode === "strategy" && needsBroadPursuitGoalCandidate(context) ? broadPursuitNextMissingRolePlanNote(context.broadPursuitMissingCombinations)
     : mode === "strategy"
       && context.broadPursuitMissingNetworkSupport.length > 0
@@ -1881,9 +1882,9 @@ export function planDay(
       )
     : mode === "strategy" && context.broadPursuitMissingNetworkSupport.length > 0 && context.broadPursuitMissingCombinations.length === 0 ? broadPursuitNextMissingContactPlanNote(context.broadPursuitMissingNetworkSupport)
     : mode === "strategy" && context.broadPursuitMissingLearningSupport.length > 0 && context.broadPursuitMissingCombinations.length === 0 ? broadPursuitNextMissingPrepPlanNote(context.broadPursuitMissingLearningSupport)
-    : mode === "strategy" ? `The main constraint right now is ${focusAreaLabel(context.bottleneckLane)}. Anchor picked the next move to unblock it.`
-    : fits ? "Start at the top. Finish the first one and today already counts."
-    : "Full plate for the time you've got. Just do the first one and call it a win.";
+    : mode === "strategy" ? `The main constraint right now is ${focusAreaLabel(context.bottleneckLane)}. "${topTitle}" is the move to unblock it.`
+    : fits ? `Start with "${topTitle}". Finish that and today already counts.`
+    : `Full plate. Just do "${topTitle}" and call it a win — the rest can wait.`;
 
   return {
     mode,

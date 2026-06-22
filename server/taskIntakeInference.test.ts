@@ -116,6 +116,7 @@ test("thinking category is inferred for planning tasks", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Think about what direction makes sense" });
   assert.equal(inferred.category, "thinking");
   assert.match(inferred.doneWhen, /clearer next step/i);
+  assert.match(inferred.steps, /question you are actually trying to answer/i);
 });
 
 test("unrecognized tasks get empty steps instead of vague ones", () => {

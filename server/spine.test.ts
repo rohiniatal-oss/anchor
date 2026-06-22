@@ -378,7 +378,7 @@ test("GET /api/tasks repairs legacy workflow meta-steps on saved tasks", async (
   );
   assert.match(
     texts,
-    /open jobs|save the first credible role|open the saved role|pipeline action|open the source note|first still-empty lane/i,
+    /open jobs|save the first credible role|open the saved role|pipeline action|open the source note|role type still missing/i,
     "the repaired task should start with a direct actionable move",
   );
 });

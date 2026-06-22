@@ -598,7 +598,7 @@ test("learn fallback uses targeted extraction instructions instead of vague read
 
   assert.match(bundle.crossEngineContext || "", /AI Policy Associate at Centre for AI Safety/i);
   assert.match(bundle.crossEngineContext || "", /due 21 Jun/i);
-  assert.match(joined, /Open the source note and read only the first relevant section/i);
+  assert.match(joined, /Search for or open the most relevant resource on/i);
   assert.match(joined, /Write one useful takeaway in your own words/i);
   assert.match(joined, /Write the one output or decision this should support/i);
   assert.match(joined, /Stop once you have that one useful note/i);
@@ -649,7 +649,7 @@ test("learn fallback with weak notes does not lean on noisy working-note title f
   const { steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.match(joined, /Open the source note and read only the first relevant section/i);
+  assert.match(joined, /Search for or open the most relevant resource on/i);
   assert.match(joined, /Write one useful takeaway in your own words/i);
   assert.doesNotMatch(joined, /Working note from June|EU AI Act working|EU AI Act w/i);
 });
@@ -691,7 +691,7 @@ test("learn fallback reuses stored note phrases when they exist", async () => {
   const { steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.match(joined, /Open the source note and read only the first relevant section/i);
+  assert.match(joined, /Search for or open the most relevant resource on/i);
   assert.match(joined, /Write one useful takeaway in your own words/i);
   assert.match(joined, /Stop once you have that one useful note/i);
   assert.doesNotMatch(joined, /EU AI Act working;/i);
@@ -816,7 +816,7 @@ test("learn fallback with generic notes still tells you what sections to look fo
   const { steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.match(joined, /Open the source note and read only the first relevant section/i);
+  assert.match(joined, /Search for or open the most relevant resource on/i);
   assert.match(joined, /Write one useful takeaway in your own words/i);
   assert.doesNotMatch(joined, /find the most relevant part|write the key insight/i);
 });

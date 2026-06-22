@@ -1316,7 +1316,14 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
   }
   if (source === "learn") return "Open the learning item or a blank note and capture one useful note, brief, or practice result.";
   if (source === "hustle") return "Open the project or public-work item and make the smallest publishable or reusable fragment.";
-  return "Spend 5 minutes on this — just the smallest useful start.";
+  if (candidate?.title) {
+    const t = candidate.title.toLowerCase();
+    if (t.includes("find") || t.includes("search") || t.includes("explore")) return "Open LinkedIn or a job board and search for the first real example.";
+    if (t.includes("compare")) return "Open the two things you're comparing and write one sentence about what's different.";
+    if (t.includes("reach out") || t.includes("contact") || t.includes("message")) return "Pick one person and draft the shortest useful message.";
+    if (t.includes("review") || t.includes("read")) return "Open the thing and read just the first section — then write one useful note.";
+  }
+  return "Open the most relevant thing and spend 5 minutes on just the first step.";
 }
 
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
@@ -1401,7 +1408,8 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
   }
   if (source === "learn") return "This learning move helps you get stronger without stopping applications.";
   if (source === "hustle") return "This writing, project, or public-work move turns learning into something reusable later.";
-  return "This is the best already-live move in the system right now.";
+  if (candidate?.title) return `This task is next because it moves something forward that's already in progress.`;
+  return "This is still a useful next move based on what's in the system.";
 }
 
 function explainRecommendation(
@@ -1470,15 +1478,16 @@ export function explainPersistedPlanItem(item: {
   const wasCarried = why.toLowerCase().includes("carried forward") || why.toLowerCase().includes("carry-forward");
   const wasSkipped = item.status === "skipped" || !!item.skippedAt;
   const wasMoved = item.status === "moved" || !!item.movedAt;
+  const isGenericWhy = !why || why.includes("best already-live move") || why.includes("most useful move") || why.includes("strongest next move");
   const whyThis = wasCarried
     ? "It carried over from yesterday — finishing it or parking it clears the backlog."
     : wasSkipped
     ? "It was skipped before, so it's been made smaller or given a different angle."
     : wasMoved
     ? "It was moved to later but is still worth doing today."
-    : why
-    ? "It was chosen because: " + why
-    : "It's still one of today's most useful moves.";
+    : isGenericWhy
+    ? "It's one of today's most useful moves."
+    : why;
   return {
     summary: why || sourceFrame(source),
     whyNow: why || "This move is still in today's plan.",

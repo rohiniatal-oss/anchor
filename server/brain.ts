@@ -490,21 +490,28 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
   if (context?.broadPursuitMissingNetworkSupport?.length) {
     for (const [index, combination] of context.broadPursuitMissingNetworkSupport.entries()) {
       const label = displayCombination(combination);
+      const relevantJobs = context?.liveJobTargets?.filter((j) => j.company) || [];
+      const companies = [...new Set(relevantJobs.map((j) => j.company))].slice(0, 2);
+      const companyHint = companies.length > 0 ? ` at ${companies.join(" or ")}` : "";
       out.push({
         source: "goal",
         sourceId: 200 + index,
         taskId: null,
-        title: `Add one useful contact for ${label}`,
+        title: companies.length > 0
+          ? `Find someone${companyHint} who can help with ${label}`
+          : `Find one person already working in ${label}`,
         category: "admin",
         size: "medium",
         deadline: "",
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `${label} has no contacts yet. Add one useful contact or outreach path for it next.`,
+        sourceNote: companies.length > 0
+          ? `${label} needs a contact. Try LinkedIn for connections at ${companies.join(", ")} — alumni, former colleagues, or second-degree contacts.`
+          : `${label} has no contacts yet. Search LinkedIn for someone one step ahead in this path.`,
         sourceStatus: "broad_parallel_pursuit_network_support",
-        doneWhen: `One useful contact or outreach path exists for ${label}.`,
-        whyNow: `${label} has no contacts yet`,
+        doneWhen: `One real person added who you'd actually message about ${label}.`,
+        whyNow: `${label} has no contacts yet — one real conversation changes how you prep and apply`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -1288,11 +1295,27 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
       return `Open your job sources and add one real role for ${candidate.targetRole}.`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
-      if (candidate?.targetRole) return `Open Network and add one person you could realistically reach out to for ${candidate.targetRole}.`;
+      if (candidate?.targetRole && context?.liveJobTargets?.length) {
+        const relevantJobs = context.liveJobTargets.filter((j) => j.company);
+        if (relevantJobs.length > 0) {
+          const companies = [...new Set(relevantJobs.map((j) => j.company))].slice(0, 2);
+          return `Search LinkedIn for someone you know at ${companies.join(" or ")} — a second-degree connection, alumni contact, or former colleague who moved there. Add them as a contact for ${candidate.targetRole}.`;
+        }
+      }
+      if (candidate?.targetRole) return `Search LinkedIn for "${candidate.targetRole}" and find one person already in that kind of role. Add them as a contact — even a cold note to someone one step ahead is worth more than no contact.`;
       return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Use Jobs or Learn to start learning about ${candidate.targetRole}.`;
+      if (candidate?.targetRole) {
+        const roleKey = (candidate.targetRole || "").toLowerCase();
+        let suggestion = "";
+        if (/ai|governance|safety/.test(roleKey)) suggestion = `Read one recent AI governance briefing or policy paper and note the main debate. Start with Brookings, CSIS, or the AI Now Institute.`;
+        else if (/chief of staff|operations|operator/.test(roleKey)) suggestion = `Find one example of a Chief of Staff job description and list the top 3 skills it asks for. Note which ones you can already demonstrate.`;
+        else if (/geopoliti|strateg|advisory/.test(roleKey)) suggestion = `Read one recent geopolitics briefing (Chatham House, IISS, or Foreign Affairs) and write a one-paragraph take on the main tension.`;
+        else if (/philanthropy|development|funder/.test(roleKey)) suggestion = `Find one recent report from a major funder or development org in your target area. Note what they're prioritising this year.`;
+        if (suggestion) return suggestion;
+        return `Search for "${candidate.targetRole}" on LinkedIn Learning, Coursera, or Google Scholar. Save the first resource that looks genuinely useful — not the most popular, the most relevant to the roles you're targeting.`;
+      }
       return broadPursuitMissingPrepFirstStep(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {

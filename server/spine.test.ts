@@ -357,7 +357,7 @@ test("GET /api/tasks repairs legacy workflow meta-steps on saved tasks", async (
     doneWhen: "One clear role-family signal is captured",
     minimumOutcome: "",
     steps: JSON.stringify([
-      { text: "Use the finite knowledge workflow", done: false, substeps: ["Orient", "Scope useful slice"] },
+      { text: "Use the finite knowledge workflow", done: false, substeps: ["Get the lay of the land", "Focus on what matters"] },
       { text: "Locate the current stage", done: false },
       { text: "Define this stage output", done: false },
       { text: "Check completion criteria", done: false },

@@ -63,7 +63,7 @@ export default function BrainDumpView() {
     setText("");
     try {
       await mutateAndInvalidate("POST", "/api/tasks", { title: value, list: "inbox", done: false }, ["/api/tasks"]);
-      setCaptureNote("Saved to Brain dump. You can leave it here until you're ready to sort it.");
+      setCaptureNote("Captured. You can leave it here until you're ready to sort it.");
       toast({ title: "Captured.", description: "It's out of your head. You can sort it later." });
     } catch {
       setText(value);
@@ -115,12 +115,12 @@ export default function BrainDumpView() {
     if (!actionable.length) return;
     await Promise.all(actionable.map((t) => mutateAndInvalidate("POST", `/api/capture/${t.id}/route`, { route: triage[t.id].route }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current", ...GOAL_SPINE_QUERY_KEYS])));
     setTriage({});
-    toast({ title: `Filed ${actionable.length} item${actionable.length > 1 ? "s" : ""}`, description: "Brain dump cleared of sorted items." });
+    toast({ title: `Filed ${actionable.length} item${actionable.length > 1 ? "s" : ""}`, description: "All sorted items filed." });
   }
 
   return (
     <div>
-      <SectionHeading title="Brain dump" sub="Empty your head now. Sort it later." />
+      <SectionHeading title="Capture" sub="Empty your head now. Sort it later." />
       <div className="mb-4 rounded-xl border border-card-border bg-card p-3.5">
         <div className="flex gap-2">
           <Input
@@ -150,7 +150,7 @@ export default function BrainDumpView() {
         <div className="mb-5 flex flex-wrap items-start gap-3">
           {sorting ? (
             <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" /> Working out what each one probably is: something to do today, a learning item, part of something you've already saved, or just a note.
+              <Loader2 className="w-4 h-4 animate-spin" /> I'll work out what each one probably is: something to do today, a learning item, part of something you've already saved, or just a note.
             </p>
           ) : Object.keys(triage).length > 0 ? (
             <div className="flex flex-wrap items-center gap-3">

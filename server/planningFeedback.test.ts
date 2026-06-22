@@ -119,6 +119,6 @@ test("prependStep makes the unstick action the first incomplete step", () => {
 });
 
 test("deterministic unstick step handles blocked and deep tasks", () => {
-  assert.match(deterministicUnstickStep(task({ readiness: "blocked", blockerReason: "Need input" })), /missing input|Need input/i);
-  assert.match(deterministicUnstickStep(task({ size: "deep" })), /blank note|first ugly sentence/i);
+  assert.match(deterministicUnstickStep(task({ readiness: "blocked", blockerReason: "Need input" })), /missing|Need input/i);
+  assert.match(deterministicUnstickStep(task({ size: "deep" })), /rough sentence|blank page/i);
 });

@@ -804,7 +804,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     setQuickText("");
     try {
       await mutateAndInvalidate("POST", "/api/tasks", { title: t, list: "inbox", done: false }, ["/api/tasks"]);
-      setQuickCaptureNote("Saved to Brain dump. It's out of your head and off today's plan.");
+      setQuickCaptureNote("Captured. It's out of your head and off today's plan.");
       toast({ title: "Captured.", description: "It's out of your head. I kept it off today's plan." });
     } catch {
       setQuickText(t);
@@ -1129,7 +1129,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
-            This goes to Brain dump, not today's plan. You can sort it later.
+            This goes to Capture, not today's plan. You can sort it later.
           </p>
           {quickCaptureNote ? (
             <button
@@ -1138,7 +1138,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               className="text-xs text-primary hover:underline"
               data-testid="button-open-braindump-after-capture"
             >
-              {quickCaptureNote} Open Brain dump
+              {quickCaptureNote} Open Capture
             </button>
           ) : null}
         </div>

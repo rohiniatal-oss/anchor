@@ -5,7 +5,7 @@ import {
   Loader2, Check, Compass, Lock, ListChecks, Pencil,
   ArrowUp, ArrowDown, Ban, CheckCircle2, RefreshCw,
   Flame, Users, Hammer, GraduationCap, FileText, MessageSquare,
-  Trophy,
+  Trophy, Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,6 +79,72 @@ const READINESS_STAGES = [
   { key: "follow_up", label: "Followed up" },
 ] as const;
 const READINESS_ORDER = ["none", "cv", "cover", "questions", "sample", "referral", "submitted", "follow_up"];
+
+function CompanyBriefSection({ job }: { job: Job }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [brief, setBrief] = useState<any>(null);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (job.companyBrief) {
+      try { setBrief(JSON.parse(job.companyBrief)); } catch {}
+    }
+  }, [job.companyBrief]);
+
+  if (!brief || !job.company) return null;
+
+  const allSuggestions = [
+    ...(brief.landscape?.competitors || []),
+    ...(brief.landscape?.alsoConsider || []),
+  ].filter(Boolean);
+
+  async function saveCompanyAsJob(company: string) {
+    setSaving(company);
+    try {
+      await apiRequest("POST", "/api/jobs", {
+        title: job.title,
+        company,
+        status: "wishlist",
+        roleArchetype: job.roleArchetype || "",
+        relatedTrackId: job.relatedTrackId,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: `Added ${company}`, description: `Saved ${job.title} at ${company} to explore.` });
+    } catch {
+      toast({ title: "Couldn't save", description: "Try again." });
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {brief.whatTheyDo && (
+        <p className="text-[11px] text-muted-foreground leading-snug flex items-start gap-1.5">
+          <Building2 className="w-3 h-3 mt-0.5 shrink-0" />
+          {brief.whatTheyDo}
+        </p>
+      )}
+      {allSuggestions.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] text-muted-foreground">Similar:</span>
+          {allSuggestions.slice(0, 4).map((company: string) => (
+            <button
+              key={company}
+              onClick={() => saveCompanyAsJob(company)}
+              disabled={saving === company}
+              className="text-[11px] px-2 py-0.5 rounded-full border border-primary/20 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 flex items-center gap-1"
+            >
+              {saving === company ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Plus className="w-2.5 h-2.5" />}
+              {company}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ApplicationReadinessBar({ j, expanded }: { j: Job; expanded: boolean }) {
   const { toast } = useToast();
@@ -373,7 +439,7 @@ function JobWarmPath({ j, trackId, contacts, linkedContactIds, savedContactRec, 
     setBusyId(c.id);
     try {
       const r = await mutateAndInvalidate("POST", `/api/contacts/${c.id}/create-next-task`, {}, ["/api/tasks", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS]);
-      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in Brain dump, or in Today if it gets planned." });
+      toast({ title: r?.reused ? "Already on your list." : "Outreach task created.", description: r?.reused ? "There's already an open task for this contact." : "Find it in Capture, or in Today if it gets planned." });
     } catch { toast({ title: "Couldn't create the task", description: "Try again in a moment." }); }
     finally { setBusyId(null); }
   }
@@ -816,6 +882,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, l
                   <span className="font-medium text-muted-foreground">Why you fit: </span>{j.narrativeAngle}
                 </p>
               )}
+              <CompanyBriefSection job={j} />
               {j.jdText && (
                 <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
                   <FileText className="w-3 h-3 shrink-0" /> Job description saved. Used for CV suggestions when you work on this application.
@@ -855,7 +922,7 @@ function JobCard({ j, truth, tracks, tasks, contacts, learns, recommendations, l
               )}
               <CardActions entity="jobs" id={j.id} trackId={trackId} tracks={tracks}
                 nextTaskHint={taskPreviewHint(nextJobTaskTitle(j), openJobTask?.title)}
-                onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />
+                onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Capture, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("jobs")) })} />
             </div>
           )}
         </>

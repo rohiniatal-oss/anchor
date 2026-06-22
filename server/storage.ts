@@ -121,6 +121,7 @@ export interface IStorage {
   getEvents(day: string): Promise<Event[]>;
   replaceEventsForDay(day: string, items: InsertEvent[]): Promise<void>;
   getJobs(): Promise<Job[]>;
+  getJob(id: number): Promise<Job | undefined>;
   createJob(j: InsertJob): Promise<Job>;
   updateJob(id: number, patch: Partial<InsertJob>): Promise<Job | undefined>;
   deleteJob(id: number): Promise<void>;
@@ -242,6 +243,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getJobs() { return db.select().from(jobs).orderBy(desc(jobs.id)).all(); }
+  async getJob(id: number) { return db.select().from(jobs).where(eq(jobs.id, id)).get(); }
   async createJob(j: InsertJob) { return db.insert(jobs).values({ ...j, createdAt: Date.now() }).returning().get(); }
   async updateJob(id: number, patch: Partial<InsertJob>) { return db.update(jobs).set(patch).where(eq(jobs.id, id)).returning().get(); }
   async deleteJob(id: number) {

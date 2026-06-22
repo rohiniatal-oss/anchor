@@ -24,6 +24,7 @@ import { syncGapRecommendations } from "./gapRecommendations";
 import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
 import { autoGenerateNarrativeAngle } from "./narrativeAngle";
+import { generateCompanyBrief } from "./companyIntelligence";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats, LLM_MODELS } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
@@ -186,6 +187,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       generateJobPrepArc(job).catch(() => {});
       autoGenerateNarrativeAngle(job).catch(() => {});
     }
+    if (job.company) generateCompanyBrief(job).catch(() => {});
     res.json(job);
   });
   app.get("/api/jobs", async (_q, res) => res.json(await storage.getJobs()));
@@ -198,6 +200,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       generateJobPrepArc(updated).catch(() => {});
       autoGenerateNarrativeAngle(updated).catch(() => {});
     }
+    if (p.data.company && !(updated.companyBrief || "").trim()) generateCompanyBrief(updated).catch(() => {});
     res.json(updated);
   });
   app.post("/api/jobs/:id/reject", async (req, res) => {
@@ -211,6 +214,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/jobs/:id", async (req, res) => {
     await storage.deleteJob(Number(req.params.id));
     res.json({ ok: true });
+  });
+
+  app.get("/api/jobs/:id/company-brief", async (req, res) => {
+    const job = await storage.getJob(Number(req.params.id));
+    if (!job) return res.status(404).json({ error: "Not found" });
+    if ((job.companyBrief || "").trim()) {
+      try { return res.json(JSON.parse(job.companyBrief)); } catch {}
+    }
+    if (!job.company) return res.json(null);
+    const brief = await generateCompanyBrief(job).catch(() => null);
+    res.json(brief);
   });
 
   app.get("/api/jobs/contact-links", async (_req, res) => {

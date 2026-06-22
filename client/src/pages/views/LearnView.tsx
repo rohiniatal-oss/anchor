@@ -148,7 +148,7 @@ function learnRecommendationShapeLabel(shape?: string | null) {
   if (shape === "ongoing-program") return "Multi-session";
   if (shape === "sequenced-item") return "Multi-step";
   if (shape === "milestone-arc") return "Step-by-step";
-  return "Single starter";
+  return "Quick focus";
 }
 
 function parseSuggestedMaterials(value: unknown): string[] {
@@ -338,7 +338,7 @@ function ProofAssetCard({ h, tracks, tasks, onMove, onRemove }: { h: Hustle; tra
       <ProofStepRail h={h} />
       <CardActions entity="hustles" id={h.id} trackId={trackId} tracks={tracks}
         nextTaskHint={taskPreviewHint(nextHustleTaskTitle(h), openHustleTask?.title)}
-        onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("hustles")) })} />
+        onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Capture, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("hustles")) })} />
     </div>
   );
 }
@@ -818,7 +818,7 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
 
           <CardActions entity="learn" id={l.id} trackId={trackId} tracks={tracks}
             nextTaskHint={taskPreviewHint(nextTaskPreviewTitle, openLearnTask?.title)}
-            onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : `Use '${learnTaskActionLabel(outputState)}' to make one.` })} />
+            onViewTasks={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Capture, or in Today if one has been planned." : `Use '${learnTaskActionLabel(outputState)}' to make one.` })} />
         </div>
       </div>
     </div>

@@ -70,7 +70,7 @@ function firstStepFor(title: string, lane: CanonicalLaneName) {
   if (lane === LANE_NAME.LEARNING_DEVELOPMENT) return "Open the learning item or a blank note for one short practice attempt or useful note.";
   if (lane === LANE_NAME.PROOF_ASSETS) return "Open a blank note and create the smallest useful or publishable piece.";
   if (/role|inspect|requirements/i.test(title)) return "Open LinkedIn or a saved role.";
-  return "Open the task and do the smallest visible first step.";
+  return "Spend 5 minutes on the smallest useful version of this";
 }
 
 export function buildTrackSpine(input: {

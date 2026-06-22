@@ -663,7 +663,7 @@ function ContactCard({ c, tracks, tasks, classifications, onPatch, onRemove, onL
         >
           <Wand2 className="w-3.5 h-3.5" /> Message
         </button>
-        <button onClick={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Brain dump, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("contacts")) })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <button onClick={() => toast({ title: linked > 0 ? `${linked} open task${linked > 1 ? "s" : ""}` : "No tasks yet", description: linked > 0 ? "Look in Capture, or in Today if one has been planned." : noLinkedTasksHelp(taskActionLabelForEntity("contacts")) })} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
           <ListChecks className="w-3.5 h-3.5" /> Tasks
         </button>
         <LinkTrackControl entity="contacts" id={c.id} trackId={trackId} tracks={tracks} />

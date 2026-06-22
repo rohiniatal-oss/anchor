@@ -573,12 +573,13 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
   }
 
   if (/strategy_builder|career_track|marketability/i.test(task.sourceType || "")) {
-    const roleSlice = task.title.replace(/^(find|review|explore|research|identify)\s+/i, "").slice(0, 60).trim();
+    const roleSlice = task.title.replace(/^(save|find|review|explore|research|identify)\s+(one|two|three|a|an|the)?\s*(real\s+)?/i, "").replace(/\s+(role|roles)\b.*$/i, "").slice(0, 60).trim();
+    const gap = task.sourceNote?.replace(/^(From Strategy Builder|Credibility gap:\s*)/i, "").trim();
     return [
-      `Open LinkedIn or a job board and search for "${roleSlice}"`,
-      "Save 1-2 real postings that look credible",
-      "Note the requirements that keep coming up across them",
-      "Write one sentence: what does this role type actually need?",
+      `Open LinkedIn or Indeed and search for "${roleSlice}" roles`,
+      "Save one posting that looks like a real match",
+      gap ? `Check the requirements against your gap: ${gap.slice(0, 80)}` : "List the top 3 requirements and mark which ones you can already back up",
+      "Note the single biggest gap you'd need to close to be credible",
     ];
   }
 
@@ -762,11 +763,15 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
 
   if (!lines.length && /strategy_builder|career_track|marketability/i.test(task.sourceType || "")) {
     lines.push(`STRATEGY / ROLE EXPLORATION GUIDANCE:`);
-    lines.push(`The user is exploring a role type or career path — steps must use real platforms.`);
-    lines.push(`Step 1 should be "Open LinkedIn/Indeed and search for [specific role title from the task]".`);
-    lines.push(`Subsequent steps: save 1-3 real postings, note common requirements, compare to the user's background.`);
-    lines.push(`Do NOT say "research the role" or "explore the landscape" — name the exact search query and platform.`);
-    lines.push(`Final step should produce a saved note or list the user can refer back to.`);
+    lines.push(`The user is deciding whether a role type is real and reachable — not just browsing.`);
+    lines.push(`Step 1: search a real platform (LinkedIn, Indeed) for the specific role type.`);
+    lines.push(`Step 2: save one real posting.`);
+    lines.push(`Step 3: compare its requirements to the user's background — what can they already prove, what's the gap?`);
+    lines.push(`Step 4: decide the single biggest gap to close or person to contact next.`);
+    lines.push(`Do NOT produce generic "note requirements" or "write a summary" steps. Every step must move toward a decision: pursue, park, or close a specific gap.`);
+    if (task.sourceNote && !/^From Strategy Builder$/i.test(task.sourceNote)) {
+      lines.push(`Context from strategy: ${task.sourceNote}`);
+    }
   }
 
   return lines.join("\n");

@@ -25,6 +25,7 @@ import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
 import { autoGenerateNarrativeAngle } from "./narrativeAngle";
 import { generateCompanyBrief } from "./companyIntelligence";
+import { refreshJobScoresInBackground, shouldRefreshJobScore } from "./jobScoring";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats, LLM_MODELS } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
@@ -188,6 +189,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       autoGenerateNarrativeAngle(job).catch(() => {});
     }
     if (job.company) generateCompanyBrief(job).catch(() => {});
+    refreshJobScoresInBackground(job.id, { forceLlm: false });
     res.json(job);
   });
   app.get("/api/jobs", async (_q, res) => res.json(await storage.getJobs()));
@@ -201,6 +203,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
       autoGenerateNarrativeAngle(updated).catch(() => {});
     }
     if (p.data.company && !(updated.companyBrief || "").trim()) generateCompanyBrief(updated).catch(() => {});
+    if (shouldRefreshJobScore(p.data)) {
+      refreshJobScoresInBackground(updated.id, { forceLlm: false });
+    }
     res.json(updated);
   });
   app.post("/api/jobs/:id/reject", async (req, res) => {

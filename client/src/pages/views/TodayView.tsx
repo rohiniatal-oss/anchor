@@ -27,7 +27,8 @@ import {
 import { WIN_CATEGORY_LABEL, type WinCategory } from "@/lib/homeTypes";
 
 type WorkflowStateCtx = { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string };
-type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx };
+type StepDisposition = "applied" | "saved" | "dismissed";
+type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx; executor?: "system" | "user_action" | "user_learning"; output?: string; gaps?: string; ready?: boolean; blocker?: string; disposition?: StepDisposition; completedAt?: string };
 function parseSteps(raw: string): Step[] {
   try { const s = JSON.parse(raw || "[]"); return Array.isArray(s) ? s : []; } catch { return []; }
 }
@@ -174,6 +175,17 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   const { toast } = useToast();
   const [breaking, setBreaking] = useState(false);
   const [unsticking, setUnsticking] = useState(false);
+  const [stuckVisible, setStuckVisible] = useState(false);
+  const [stuckExpanded, setStuckExpanded] = useState(false);
+  const stuckTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    setStuckVisible(false);
+    setStuckExpanded(false);
+    setDispositionPending(false);
+    clearTimeout(stuckTimer.current);
+    stuckTimer.current = setTimeout(() => setStuckVisible(true), 45_000);
+    return () => clearTimeout(stuckTimer.current);
+  }, [pinned.id]);
   // Synthesis panel state — local to RightNow (plan list has its own in TodayView)
   const [synthDraft, setSynthDraft] = useState("");
   const [synthCritique, setSynthCritique] = useState("");
@@ -183,6 +195,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   // the task. Hold it here and re-call breakdown WITH the user's answer as context.
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
+  const [dispositionPending, setDispositionPending] = useState(false);
   const [skipDiagOpen, setSkipDiagOpen] = useState(false);
   const [skipResolving, setSkipResolving] = useState(false);
   const skipDiagShownFor = useRef<number | null>(null);
@@ -247,12 +260,32 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   }
   async function checkStep() {
     if (currentIdx < 0) return;
-    const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true } : s));
+    if (current?.executor === "system" && current?.output && !dispositionPending) {
+      setDispositionPending(true);
+      return;
+    }
+    const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true, completedAt: new Date().toISOString() } : s));
+    setDispositionPending(false);
     await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
     if (next.every((s) => s.done)) {
       await finishTask();
     } else {
       toast({ title: "Nice - next step's up." });
+    }
+  }
+  async function dispositionStep(disposition: StepDisposition) {
+    if (currentIdx < 0) return;
+    setDispositionPending(false);
+    try {
+      const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/step-disposition`, { stepIndex: currentIdx, disposition }, ["/api/tasks"]);
+      if (res?.allStepsDone) {
+        await finishTask();
+      } else {
+        const label = disposition === "applied" ? "Using it" : disposition === "saved" ? "Saved" : "Skipped";
+        toast({ title: `${label} — next step's up.` });
+      }
+    } catch {
+      toast({ title: "Couldn't save that." });
     }
   }
   // Completion goes through the real endpoint: marks done, logs a win, updates the
@@ -431,21 +464,65 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
             </div>
           )}
           <div
-            className="group/step flex items-start gap-3 rounded-xl bg-card border-2 border-primary/25 p-3.5 cursor-pointer"
-            onClick={checkStep}
+            className={`group/step flex items-start gap-3 rounded-xl border-2 p-3.5 ${
+              dispositionPending ? "" : "cursor-pointer"
+            } ${
+              current.executor === "system" && current.output
+                ? "bg-primary/5 border-primary/15"
+                : current.executor === "user_learning"
+                ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-300/30 dark:border-amber-700/30"
+                : "bg-card border-primary/25"
+            }`}
+            onClick={dispositionPending ? undefined : checkStep}
             role="button"
             aria-label="Mark step done"
           >
-            <button
-              onClick={(e) => { e.stopPropagation(); checkStep(); }}
-              data-testid="button-check-step"
-              aria-label="Mark step done"
-              className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center transition-colors group-hover/step:bg-primary group-hover/step:border-primary"
-            >
-              <Check className="w-3 h-3 text-primary opacity-0 group-hover/step:opacity-100 group-hover/step:text-primary-foreground transition-opacity" />
-            </button>
+            {!dispositionPending && (
+              <button
+                onClick={(e) => { e.stopPropagation(); checkStep(); }}
+                data-testid="button-check-step"
+                aria-label="Mark step done"
+                className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center transition-colors group-hover/step:bg-primary group-hover/step:border-primary"
+              >
+                <Check className="w-3 h-3 text-primary opacity-0 group-hover/step:opacity-100 group-hover/step:text-primary-foreground transition-opacity" />
+              </button>
+            )}
             <div className="flex-1 min-w-0">
-              <span className="font-medium leading-snug">{current.text}</span>
+              {current.executor === "system" && current.output ? (
+                <>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-primary/60">Done by Anchor</span>
+                  <div className="mt-1 text-sm whitespace-pre-wrap leading-relaxed">{current.output}</div>
+                  {current.gaps && <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Gap: {current.gaps}</p>}
+                  {dispositionPending ? (
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      <button onClick={() => dispositionStep("applied")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                        <Check className="w-3 h-3" /> Use this
+                      </button>
+                      <button onClick={() => dispositionStep("saved")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-muted hover:bg-muted/80 transition-colors">
+                        <Pin className="w-3 h-3" /> Save for later
+                      </button>
+                      <button onClick={() => dispositionStep("dismissed")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md text-muted-foreground hover:bg-muted/60 transition-colors">
+                        <X className="w-3 h-3" /> Not useful
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground mt-1.5">Tap to review</p>
+                  )}
+                </>
+              ) : current.executor === "user_learning" ? (
+                <>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">You do this one</span>
+                  <p className="mt-1 font-medium leading-snug">{current.text}</p>
+                  {current.output && <p className="mt-1.5 text-xs text-muted-foreground italic">{current.output}</p>}
+                </>
+              ) : (
+                <>
+                  <span className="font-medium leading-snug">{current.text}</span>
+                  {current.executor === "user_action" && current.ready === false && current.blocker && (
+                    <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">{current.blocker}</p>
+                  )}
+                </>
+              )}
               {current.substeps && current.substeps.length > 0 && (
                 <ul className="mt-2 space-y-1">
                   {current.substeps.map((sub, i) => (
@@ -456,16 +533,18 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
                   ))}
                 </ul>
               )}
-              {steps.length > 1 && (
+              {steps.length > 1 && !current.output && (
                 <p className="text-[11px] text-muted-foreground mt-1.5">Tap to mark done - next step will appear</p>
               )}
             </div>
           </div>
-          <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
-              className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary disabled:opacity-60">
+          {stuckVisible && (
+            <button onClick={unstick} disabled={unsticking} data-testid="button-unstick"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-primary disabled:opacity-60">
               {unsticking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-              {unsticking ? "Adding step..." : "Stuck? Get a tiny first step"}
+              {unsticking ? "Adding step..." : "Try a different first step"}
             </button>
+          )}
         </div>
       )}
       {allStepsDone && (
@@ -565,24 +644,35 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
           )}
         </div>
       )}
-      <div className="mt-4 pt-3 border-t border-primary/15 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">Need a smaller next move?</span>
-          <button onClick={shrink} data-testid="button-shrink" className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1">
-            <Wand2 className="w-3.5 h-3.5" /> Make it smaller
-          </button>
+      {stuckVisible && (
+        <div className="mt-4 pt-3 border-t border-primary/15">
+          {!stuckExpanded ? (
+            <button onClick={() => setStuckExpanded(true)} data-testid="button-stuck"
+              className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors inline-flex items-center gap-1">
+              Not sure where to start?
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <button onClick={() => { shrink(); setStuckExpanded(false); }} data-testid="button-shrink" className="w-full text-left text-xs rounded-lg border border-card-border bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+                <span className="font-medium text-primary inline-flex items-center gap-1"><Wand2 className="w-3.5 h-3.5" /> Make it smaller</span>
+                <span className="text-muted-foreground ml-1">— break it into a tinier step</span>
+              </button>
+              <button onClick={() => { moveBlock(); setStuckExpanded(false); }} data-testid="button-move" className="w-full text-left text-xs rounded-lg border border-card-border bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+                <span className="font-medium text-foreground inline-flex items-center gap-1"><MoveRight className="w-3.5 h-3.5" /> Do something else first</span>
+                <span className="text-muted-foreground ml-1">— move this to later today</span>
+              </button>
+              <button onClick={() => { park(); setStuckExpanded(false); }} data-testid="button-park" className="w-full text-left text-xs rounded-lg border border-card-border bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+                <span className="font-medium text-foreground inline-flex items-center gap-1"><MoonStar className="w-3.5 h-3.5" /> Not today</span>
+                <span className="text-muted-foreground ml-1">— park it, no guilt</span>
+              </button>
+              <button onClick={() => { block(); setStuckExpanded(false); }} data-testid="button-block" className="w-full text-left text-xs rounded-lg border border-card-border bg-card px-3 py-2.5 hover:border-primary/30 transition-colors">
+                <span className="font-medium text-foreground inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> I'm waiting on something</span>
+                <span className="text-muted-foreground ml-1">— mark blocked</span>
+              </button>
+            </div>
+          )}
         </div>
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground list-none inline-flex items-center gap-1">
-            Need a different move?
-          </summary>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-card-border bg-card px-3 py-2.5">
-            <button onClick={moveBlock} data-testid="button-move" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><MoveRight className="w-3.5 h-3.5" /> Move to later</button>
-            <button onClick={park} data-testid="button-park" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><MoonStar className="w-3.5 h-3.5" /> Park for another day</button>
-            <button onClick={block} data-testid="button-block" className="text-xs text-muted-foreground hover:text-primary inline-flex items-center gap-1"><X className="w-3.5 h-3.5" /> I'm blocked</button>
-          </div>
-        </details>
-      </div>
+      )}
     </div>
   );
 }

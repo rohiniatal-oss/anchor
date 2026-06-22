@@ -9,6 +9,7 @@ import { COACH_PREAMBLE } from "./userPromptProfile";
 import { buildUserContext, formatContextForPrompt, type UserContext } from "./userContext";
 import { isJobLive, isContactWarm, getTrackId } from "@shared/domainState";
 import { computeLearningGaps } from "./learningStrategy";
+import { executeSteps } from "./stepExecutors";
 import {
   collectTaskBreakdownContext,
   formatContextBlocksForPrompt,
@@ -29,7 +30,9 @@ type WorkflowState = {
   confidence?: string;
   inheritedFrom?: string;
 };
-type BreakdownStep = { text: string; done: false; substeps?: string[]; workflowState?: WorkflowState };
+type StepExecutor = "system" | "user_action" | "user_learning";
+type StepDisposition = "applied" | "saved" | "dismissed";
+type BreakdownStep = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowState; executor?: StepExecutor; outputSpec?: string; output?: string; gaps?: string; disposition?: StepDisposition; completedAt?: string };
 type SourceRecord = Job | Learn | Hustle | Contact | null;
 type SourceBundle = {
   sourceContext: string;
@@ -63,7 +66,7 @@ function contactSource(bundle: SourceBundle): Contact | null {
 const WORKFLOWS: Record<WorkObject, string[]> = {
   Artifact: ["Understand what's needed", "Gather what you need", "Outline", "Draft", "Refine", "Check", "Deliver"],
   Decision: ["Frame the question", "Set criteria", "Explore options", "Weigh up", "Decide", "Commit"],
-  Knowledge: ["Get the lay of the land", "Focus on what matters", "Read / watch", "Pull out the key bits", "Make sense of it", "Save what's useful"],
+  Knowledge: ["Find out what's involved", "Focus on what matters", "Read / watch", "Pull out the key bits", "Make sense of it", "Save what's useful"],
   Capability: ["Understand the skill", "Learn the basics", "Practise", "Try it for real", "Reflect", "Lock it in"],
   Pipeline: ["Define your target", "Build a list", "Prioritise", "Work through the next batch", "Track progress", "Follow up", "Review what's working"],
   Problem: ["Describe what's wrong", "Find the cause", "Consider fixes", "Test", "Fix it", "Confirm it's working"],
@@ -124,7 +127,7 @@ function makeWorkflowState(input: {
   const kind = workflowKindFor(input.workObject, input.sourceKind);
   const workflow = input.workflow.length ? input.workflow : WORKFLOWS[input.workObject as WorkObject] || WORKFLOWS.Artifact;
   const currentStage = input.currentStage || workflow[0];
-  const stageOutput = input.stageOutput || "One concrete next-step result exists";
+  const stageOutput = input.stageOutput || "Something visible has changed";
   const completionCriteria = input.completionCriteria?.length ? input.completionCriteria : defaultCriteria(stageOutput, currentStage);
   const next = nextStage(workflow, currentStage, kind);
   return {
@@ -141,6 +144,12 @@ function makeWorkflowState(input: {
   };
 }
 
+function normalizeExecutor(raw: unknown): StepExecutor | undefined {
+  const v = String(raw || "").toLowerCase();
+  if (v === "system" || v === "user_action" || v === "user_learning") return v;
+  return undefined;
+}
+
 function normalizeStep(raw: unknown): BreakdownStep | null {
   if (typeof raw === "string") {
     const text = cleanText(raw);
@@ -151,7 +160,13 @@ function normalizeStep(raw: unknown): BreakdownStep | null {
   const text = cleanText(record.text || record.step || record.title || record.name);
   if (!text) return null;
   const substeps = normalizeList(Array.isArray(record.substeps) ? record.substeps : record.subSteps, [], 4);
-  return substeps.length ? { text, done: false, substeps } : { text, done: false };
+  const executor = normalizeExecutor(record.executor);
+  const outputSpec = cleanText(record.outputSpec || record.output_spec, 200) || undefined;
+  const step: BreakdownStep = { text, done: false };
+  if (substeps.length) step.substeps = substeps;
+  if (executor) step.executor = executor;
+  if (outputSpec) step.outputSpec = outputSpec;
+  return step;
 }
 function parseBreakdown(raw: string, fallbackObject: WorkObject, inheritedWorkflow?: WorkflowState): { question?: string; steps: BreakdownStep[]; workflowState?: WorkflowState } {
   const text = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
@@ -243,8 +258,8 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
   if (bundle.sourceKind === "learn") {
     const source = learnSource(bundle);
     const workObject: WorkObject = keyword(text, /practice|drill|mock/) ? "Capability" : "Knowledge";
-    const currentStage = workObject === "Capability" ? "Practise" : "Get the lay of the land";
-    const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "One practice output exists" : "One useful slice and output are chosen");
+    const currentStage = workObject === "Capability" ? "Practise" : "Find out what's involved";
+    const stageOutput = source?.requiredOutput || (workObject === "Capability" ? "You've practised it at least once" : "You know what to focus on and have one useful note");
     return makeWorkflowState({ workObject, workflow: WORKFLOWS[workObject], currentStage, stageOutput, inheritedFrom: `learn:${source?.id || (task as any).sourceId || "unknown"}`, confidence: "parent", sourceKind: "learn" });
   }
   if (bundle.sourceKind === "hustle") {
@@ -340,7 +355,10 @@ function looksActionable(text: string) {
 }
 
 function looksGenericFiller(text: string) {
-  return /^(get ready|think about|organize (your )?thoughts|do (some )?research|prepare yourself|gather (your )?thoughts|brainstorm|consider|reflect on|take (some )?time|plan (your )?approach|make a plan|set (up )?a plan)\b/i.test(text.trim());
+  const t = text.trim();
+  if (/^(get ready|think about|organize (your )?thoughts|do (some )?research|prepare yourself|gather (your )?thoughts|brainstorm|consider|reflect on|take (some )?time|plan (your )?approach|make a plan|set (up )?a plan|familiarize|orient yourself|explore the landscape|understand the context|assess the situation|identify key|determine the best|evaluate your|establish a)\b/i.test(t)) return true;
+  if (/^(review your (notes|progress|goals|strategy)|ensure you have|make sure you|verify that|confirm your|revisit your)\b/i.test(t)) return true;
+  return false;
 }
 
 function laneSpecificSearchMove(text: string): string | undefined {
@@ -569,11 +587,22 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     ];
   }
 
+  if (/strategy_builder|career_track|marketability/i.test(task.sourceType || "")) {
+    const roleSlice = task.title.replace(/^(save|find|review|explore|research|identify)\s+(one|two|three|a|an|the)?\s*(real\s+)?/i, "").replace(/\s+(role|roles)\b.*$/i, "").slice(0, 60).trim();
+    const gap = task.sourceNote?.replace(/^(From Strategy Builder|Credibility gap:\s*)/i, "").trim();
+    return [
+      `Open LinkedIn or Indeed and search for "${roleSlice}" roles`,
+      "Save one posting that looks like a real match",
+      gap ? `Check the requirements against your gap: ${gap.slice(0, 80)}` : "List the top 3 requirements and mark which ones you can already back up",
+      "Note the single biggest gap you'd need to close to be credible",
+    ];
+  }
+
   return [
-    "Open the task context",
-    "Write the intended audience or use",
-    "Name the smallest useful version",
-    "Start the first rough line or note",
+    `Open "${task.title.slice(0, 50).trim()}" and find the first thing to act on`,
+    "Write down what the end result should look like",
+    "Do the smallest piece that moves it forward",
+    "Save what you produced",
   ];
 }
 
@@ -614,7 +643,7 @@ function fallbackStagePlan(task: Task, bundle: SourceBundle): { workflowState: W
       : bundle.sourceKind === "hustle" ? PROOF_WORKFLOW
       : WORKFLOWS[object] || WORKFLOWS.Artifact);
   const currentStage = inherited?.currentStage || workflow[0];
-  const stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "One concrete stage output exists";
+  const stageOutput = inherited?.stageOutput || task?.doneWhen || task?.minimumOutcome || "Something visible has changed";
   const workflowState = inherited || makeWorkflowState({ workObject: object, workflow, currentStage, stageOutput, confidence: "fallback", sourceKind: bundle.sourceKind });
   const steps = coerceTaskBreakdownSteps(task, bundle, workflowState, stageActions(task, bundle, workflowState).map((text) => ({ text, done: false as const })));
   return { workflowState, steps };
@@ -745,6 +774,19 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
     lines.push(`PROOF ASSET WORKFLOW GUIDANCE:`);
     lines.push(`Use the PROOF_WORKFLOW: ${PROOF_WORKFLOW.join(" → ")}.`);
     lines.push(`Each step must move the proof asset one stage forward. The output must be saveable.`);
+  }
+
+  if (!lines.length && /strategy_builder|career_track|marketability/i.test(task.sourceType || "")) {
+    lines.push(`STRATEGY / ROLE EXPLORATION GUIDANCE:`);
+    lines.push(`The user is deciding whether a role type is real and reachable — not just browsing.`);
+    lines.push(`Step 1: search a real platform (LinkedIn, Indeed) for the specific role type.`);
+    lines.push(`Step 2: save one real posting.`);
+    lines.push(`Step 3: compare its requirements to the user's background — what can they already prove, what's the gap?`);
+    lines.push(`Step 4: decide the single biggest gap to close or person to contact next.`);
+    lines.push(`Do NOT produce generic "note requirements" or "write a summary" steps. Every step must move toward a decision: pursue, park, or close a specific gap.`);
+    if (task.sourceNote && !/^From Strategy Builder$/i.test(task.sourceNote)) {
+      lines.push(`Context from strategy: ${task.sourceNote}`);
+    }
   }
 
   return lines.join("\n");
@@ -1037,6 +1079,44 @@ async function buildCrossEngineContext(
   return { text: parts.join("\n"), contactName: bestContactName };
 }
 
+function parseStepOutputs(stepsJson: string): Array<{ text: string; output: string; disposition?: StepDisposition }> {
+  try {
+    const arr = JSON.parse(stepsJson || "[]");
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((s: any) => s && s.done && s.output && typeof s.output === "string")
+      .map((s: any) => ({ text: s.text || "", output: s.output, disposition: s.disposition }));
+  } catch { return []; }
+}
+
+async function collectPriorStepOutputs(task: Task): Promise<string[]> {
+  const outputs: string[] = [];
+  const thisSteps = parseStepOutputs(task.steps);
+  for (const s of thisSteps) {
+    outputs.push(`[This task, ${s.disposition || "completed"}] ${s.text}: ${s.output}`);
+  }
+
+  const trackId = task.relatedTrackId;
+  if (!trackId) return outputs;
+
+  try {
+    const allTasks = await storage.getTasks();
+    const siblings = allTasks.filter((t) =>
+      t.id !== task.id && t.relatedTrackId === trackId && t.done
+    ).slice(-5);
+
+    for (const sibling of siblings) {
+      const siblingOutputs = parseStepOutputs(sibling.steps);
+      for (const s of siblingOutputs) {
+        if (s.disposition === "dismissed") continue;
+        outputs.push(`[${sibling.title}, ${s.disposition || "completed"}] ${s.text}: ${s.output}`);
+      }
+    }
+  } catch {}
+
+  return outputs;
+}
+
 export async function buildSourceContext(task: Task, userContext?: UserContext): Promise<SourceBundle> {
   const sharedUserContext = userContext || await buildUserContext();
   const taskSourceNote = meaningfulTaskContextText(task.sourceNote);
@@ -1120,6 +1200,16 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
       sourceContext = `This is a PROOF-ASSET / project step. Title: ${h.title}. Stage: ${h.stage}. Content pillar: ${h.contentPillar || "unset"}. Core claim: ${h.coreClaim || "unset"}. ${h.note ? "Notes: " + h.note : ""}`;
       playbook = "Use the parent output workflow first: claim -> audience -> examples -> draft -> save. Never auto-change the stage automatically.";
     }
+  } else if (task.sourceType === "strategy_builder" || task.sourceType === "career_track" || task.sourceType === "marketability_engine") {
+    sourceKind = "task";
+    const trackId = task.relatedTrackId;
+    let trackName = "";
+    if (trackId) {
+      const tracks = await storage.getCareerTracks();
+      trackName = tracks.find((tr) => tr.id === trackId)?.name || "";
+    }
+    sourceContext = `This is a STRATEGY task — exploring or building a career path.${trackName ? ` Career track: ${trackName}.` : ""} Title: ${task.title}. ${task.doneWhen ? `Done when: ${task.doneWhen}. ` : ""}${taskSourceNote ? "Notes: " + taskSourceNote + ". " : ""}${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
+    playbook = "The user is exploring role types or building strategy. Steps must be concrete actions on real job boards, LinkedIn, or saved notes — not abstract planning. Each step should produce something saved: a role link, a note about requirements, or a comparison.";
   } else if (task.sourceUrl || taskSourceNote) {
     sourceContext = `${taskSourceNote ? "Context: " + taskSourceNote : ""} ${task.sourceUrl ? "URL: " + task.sourceUrl : ""}`;
   }
@@ -1139,10 +1229,15 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
       const allTasks = await storage.getTasks();
       const doneSiblings = allTasks
         .filter((t) => t.id !== task.id && t.sourceType === task.sourceType && t.sourceId === task.sourceId && t.done)
-        .slice(-5)
-        .map((t) => t.title);
+        .slice(-5);
       if (doneSiblings.length) {
-        sourceContext += ` Already completed for this ${sourceKind}: ${doneSiblings.join("; ")}.`;
+        const siblingDetails = doneSiblings.map((t) => {
+          const outputs = parseStepOutputs(t.steps);
+          const useful = outputs.filter((o) => o.disposition !== "dismissed").slice(0, 2);
+          if (useful.length) return `${t.title} (produced: ${useful.map((o) => o.output.slice(0, 100)).join("; ")})`;
+          return t.title;
+        });
+        sourceContext += ` Already completed for this ${sourceKind}: ${siblingDetails.join("; ")}.`;
       }
     } catch {}
   }
@@ -1194,7 +1289,12 @@ export function buildTaskBreakdownPrompt(input: {
     `Prefer inherited workflow context over rediscovering from scratch, but let task intent refine the stage. Do not imply the parent has progressed; only provide the next workflow hint. ` +
     `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
     `Use user-authored context ahead of external public evidence. Use external public evidence only to sharpen public facts and current constraints. Do not mention provider mechanics or invent sources not shown in the prompt. ` +
-    `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
+    `For each step, classify where the value lives:\n` +
+    `- "system": the value is the artifact (a list of roles, extracted requirements, a draft). The system will execute it.\n` +
+    `- "user_action": the value is an external act only the user can take (submit, send, save to their account, schedule).\n` +
+    `- "user_learning": the value is in the user doing it — reading, practising, judging, absorbing. The system frames it: the resource, why it matters now, and the one question to hold.\n` +
+    `Test: would doing this FOR the user destroy its value? If yes → user_learning. If a tool can produce the artifact and handing it over loses nothing → system.\n\n` +
+    `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","executor":"system|user_action|user_learning","outputSpec":"what the output must contain"}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
     `${globalGuidance}\n` +
     `For learning or research work: if stored notes, topic breakdown, checkpoints, links, prior outputs, live role context, or user-authored note excerpts are present, use them directly. Name the actual section, concept, checkpoint, deadline, company, role, or prior output when available. Do not assume page content beyond what is shown. If the context is sparse or partial, tell the user exactly what to search for, what to extract, and what output to produce.\n\n` +
     `When COMPANY INTELLIGENCE is present in the source context, use it directly in steps. Never say "research the company" when you already have what they do, their team, and market context. Instead reference the specific insight: name competitors, quote the prep angle, use the fit analysis to sharpen CV bullets. When outreach suggestions are present, name the specific archetype in networking steps instead of generic "reach out to someone".\n\n` +
@@ -1211,7 +1311,7 @@ export function buildTaskBreakdownPrompt(input: {
     ) : ""}` +
     `${providerContext ? `\n${providerContext}\n\n` : ""}` +
     `Default work object if uncertain: ${fallbackObject}\n` +
-    `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || "smallest useful outcome is complete"}\n` +
+    `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || `something about "${task.title.slice(0, 50)}" is visibly further along`}\n` +
     `${bundle.cvText && bundle.jdText ? (
       `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
       `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +
@@ -1246,6 +1346,10 @@ export function registerTaskBreakdownRoutes(app: Express) {
       return res.json(updated);
     }
 
+    const existingSteps = parseExistingSteps(task.steps);
+    const completedSteps = existingSteps.filter((s) => s.done && s.output);
+    const priorOutputs = await collectPriorStepOutputs(task);
+
     const sharedUserContext = await buildUserContext();
     const bundle = await buildSourceContext(task, sharedUserContext);
     const fallbackObject = (bundle.parentWorkflow?.workObject as WorkObject) || classifyWorkObject(task, bundle);
@@ -1257,6 +1361,10 @@ export function registerTaskBreakdownRoutes(app: Express) {
       mockMode: req.body?.externalResearchMockMode,
     });
 
+    const priorOutputContext = priorOutputs.length
+      ? `\nPRIOR COMPLETED OUTPUTS (do not repeat this work — build on it):\n${priorOutputs.map((o) => `- ${o}`).join("\n")}\n`
+      : "";
+
     let question = "";
     let steps: BreakdownStep[] = [];
     let workflowState: WorkflowState | undefined;
@@ -1265,7 +1373,9 @@ export function registerTaskBreakdownRoutes(app: Express) {
         task,
         bundle,
         fallbackObject,
-        userContextText: context ? `${userCtx}\nUser context: ${context}` : userCtx,
+        userContextText: context
+          ? `${userCtx}\nUser context: ${context}${priorOutputContext}`
+          : `${userCtx}${priorOutputContext}`,
         contextBlocks: collectedContext.blocks,
       }), { model: LLM_MODELS.breakdown });
       const parsed = parseBreakdown(raw, fallbackObject, bundle.parentWorkflow);
@@ -1284,12 +1394,86 @@ export function registerTaskBreakdownRoutes(app: Express) {
     } else {
       steps = coerceTaskBreakdownSteps(task, bundle, workflowState, steps);
     }
+
+    if (completedSteps.length) {
+      steps = [...completedSteps, ...steps.filter((s) => !s.done)];
+    }
     steps = attachWorkflowState(steps, workflowState);
+
+    const hasTypedSteps = steps.some((s) => s.executor);
+    if (hasTypedSteps) {
+      const researchBlocks = [
+        ...(collectedContext.blocks?.externalResearch || []),
+        ...(collectedContext.blocks?.userAuthored || []),
+      ];
+      try {
+        const executed = await executeSteps(steps, {
+          taskTitle: task.title,
+          sourceType: task.sourceType,
+          sourceNote: task.sourceNote,
+          doneWhen: task.doneWhen,
+          userContext: userCtx,
+          researchBlocks,
+          priorCompletedOutputs: priorOutputs,
+        });
+        steps = executed.map((e) => ({
+          text: e.text,
+          done: e.done,
+          executor: e.executor,
+          outputSpec: e.outputSpec,
+          output: e.output,
+          gaps: e.gaps,
+          disposition: e.disposition,
+          completedAt: e.completedAt,
+          ...(e.ready === false ? { ready: false, blocker: e.blocker } : {}),
+        }));
+      } catch {}
+    }
+
     const updated = await storage.updateTask(id, {
       steps: JSON.stringify(steps),
       minimumOutcome: workflowState.stageOutput || task.minimumOutcome,
     });
     res.json(updated);
   });
+
+  app.post("/api/tasks/:id/step-disposition", async (req, res) => {
+    const id = Number(req.params.id);
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+
+    const stepIndex = Number(req.body?.stepIndex);
+    const disposition = String(req.body?.disposition || "") as StepDisposition;
+    if (!["applied", "saved", "dismissed"].includes(disposition)) {
+      return res.status(400).json({ error: "Invalid disposition" });
+    }
+    if (isNaN(stepIndex) || stepIndex < 0) {
+      return res.status(400).json({ error: "Invalid step index" });
+    }
+
+    const steps = parseExistingSteps(task.steps);
+    if (stepIndex >= steps.length) {
+      return res.status(400).json({ error: "Step index out of range" });
+    }
+
+    steps[stepIndex] = {
+      ...steps[stepIndex],
+      done: true,
+      disposition,
+      completedAt: new Date().toISOString(),
+    };
+
+    const updated = await storage.updateTask(id, { steps: JSON.stringify(steps) });
+    const allDone = steps.every((s) => s.done);
+    res.json({ ...updated, allStepsDone: allDone });
+  });
+}
+
+function parseExistingSteps(stepsJson: string): BreakdownStep[] {
+  try {
+    const arr = JSON.parse(stepsJson || "[]");
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((s: any) => s && typeof s.text === "string");
+  } catch { return []; }
 }
 

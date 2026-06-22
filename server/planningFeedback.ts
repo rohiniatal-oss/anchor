@@ -278,5 +278,11 @@ export function deterministicUnstickStep(task: Task) {
   }
   if (task.size === "deep") return "Write one rough sentence to break the blank page";
   if (/email|message|reach|follow/i.test(task.title)) return "Write the first line";
-  return "Pick the one part of this you can do in 5 minutes";
+  const t = (task.title || "").toLowerCase();
+  if (/review|research|explore|investigate/.test(t)) return "Open the first source and note what stands out";
+  if (/find|search|identify/.test(t)) return "Search for the first real example and save it";
+  if (/compare|evaluate/.test(t)) return "Open two options side by side and note one difference";
+  if (/list|map|audit/.test(t)) return "Write the first three items that come to mind";
+  if (/plan|outline|design/.test(t)) return "Write one sentence describing the end result you want";
+  return `Open "${(task.title || "this task").slice(0, 40).trim()}" and note the first useful thing you find`;
 }

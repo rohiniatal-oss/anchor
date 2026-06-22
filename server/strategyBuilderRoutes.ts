@@ -238,9 +238,13 @@ export function registerStrategyBuilderRoutes(app: Express) {
     const archetype = safeText(req.body?.archetype, 140);
     if (!archetype) return res.status(400).json({ error: "Need archetype" });
     const track = await storage.createCareerTrack({ name: archetype, slug: slug(archetype), description: safeText(req.body?.fitLogic, 300), targetRoleArchetype: archetype, priority: req.body?.priority === "convert" ? 80 : req.body?.priority === "explore" ? 60 : 30, status: req.body?.priority === "pause" ? "paused" : "active", whyItFits: safeText(req.body?.fitLogic, 300) } as any);
-    const taskTitle = safeText(req.body?.nextExperiment || `Explore ${archetype}`, 180);
-    const firstStep = `Search for "${archetype}" on LinkedIn or a job board and save one role that looks real`;
-    const task = await storage.createTask({ title: taskTitle, list: "inbox", block: null, done: false, pinned: false, steps: JSON.stringify([{ text: firstStep, done: false }]), sort: 0, category: "learning", size: "medium", status: "not_started", skipped: 0, doneWhen: `You've found at least one real ${archetype} role and noted what it asks for`, sourceType: "career_track", sourceId: track.id, sourceNote: "From Strategy Builder", relatedTrackId: track.id } as any);
+    const taskTitle = safeText(req.body?.nextExperiment || `Save one real ${archetype} role and note the top requirement you'd need to prove`, 180);
+    const credGap = safeText(req.body?.credibilityGap, 200);
+    const firstStep = `Open LinkedIn or Indeed, search "${archetype}", and save one role that looks real`;
+    const secondStep = credGap
+      ? `Read the requirements — which ones do you already have evidence for? (Gap: ${credGap})`
+      : `Read the requirements and note which ones you can already back up`;
+    const task = await storage.createTask({ title: taskTitle, list: "inbox", block: null, done: false, pinned: false, steps: JSON.stringify([{ text: firstStep, done: false }, { text: secondStep, done: false }]), sort: 0, category: "learning", size: "medium", status: "not_started", skipped: 0, doneWhen: `One real ${archetype} role is saved and you know the biggest gap to close`, sourceType: "career_track", sourceId: track.id, sourceNote: credGap ? `Credibility gap: ${credGap}` : "From Strategy Builder", relatedTrackId: track.id } as any);
     res.json({ ok: true, track, task });
   });
 

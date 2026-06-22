@@ -17,9 +17,24 @@ function deadlineDaysFromNow(deadline: string): number | null {
   return Math.ceil((d.getTime() - new Date().getTime()) / 86400000);
 }
 
+const STALE_DONE_WHEN = [
+  "One clear role example or learning note is captured",
+  "One clear example or learning note captured",
+];
+
+function freshDoneWhen(item: any): string | null {
+  const dw = item.doneWhen?.trim();
+  if (!dw || STALE_DONE_WHEN.some((s) => dw.toLowerCase() === s.toLowerCase())) {
+    if (item.title) return `You've reviewed "${item.title.slice(0, 50).trim()}" and noted what stands out`;
+    return null;
+  }
+  return dw;
+}
+
 function decoratePlanItems(items: any[]) {
   return items.map((item) => ({
     ...item,
+    doneWhen: freshDoneWhen(item) || item.doneWhen,
     explanation: explainPersistedPlanItem(item),
   }));
 }

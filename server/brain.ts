@@ -586,7 +586,7 @@ function jobDoneWhen(action: JobTruthAction) {
 function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; why: string; truthAction?: JobTruthAction } {
   const role = `${j.title}${j.company ? " — " + j.company : ""}`;
   if (j.nextStep && j.nextStep.trim()) {
-    return { action: `${j.nextStep.trim()} — ${role}`, size: guessSize(j.nextStep), doneWhen: "That step is done", why: "your own next step on this role" };
+    return { action: `${j.nextStep.trim()} — ${role}`, size: guessSize(j.nextStep), doneWhen: `"${j.nextStep.trim().slice(0, 50)}" is done for ${j.title || "this role"}`, why: "your own next step on this role" };
   }
   const truth = computeJobTruthStrip(j);
   return {
@@ -930,8 +930,8 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         title: t.title.replace(/^✨\s*/, ""), category: t.category, size: t.size,
         deadline: t.deadline, status: t.status, skipped: t.skipped,
         sourceUrl: t.sourceUrl || "", sourceNote: t.sourceNote || "", sourceStatus: t.sourceStatus || "",
-        doneWhen: t.doneWhen || t.minimumOutcome || "The smallest useful outcome is complete",
-        whyNow: isLaneAlignedSystemMove ? "spine says this supports the active track or marketability plan" : "already on today's list",
+        doneWhen: t.doneWhen || t.minimumOutcome || `"${t.title.slice(0, 50).trim()}" is visibly further along`,
+        whyNow: isLaneAlignedSystemMove ? "it directly supports the path you're building right now" : "you put it on today's list",
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
@@ -983,7 +983,8 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: "learning", size: guessSize(l.title),
         deadline: dl, status: "not_started", skipped: 0,
         sourceUrl: l.url || "", sourceNote: l.note || "", sourceStatus: l.learnStatus || "active",
-        doneWhen: l.requiredOutput || "You've made real progress", whyNow: "strengthens an area your target roles keep asking for",
+        doneWhen: l.requiredOutput || `You've learned one useful thing about "${l.title.slice(0, 50).trim()}"`,
+        whyNow: l.applicationDeadline ? "there's a deadline coming up" : "it fills a gap your target roles keep asking for",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
@@ -1017,7 +1018,8 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: cat, size: guessSize(h.nextStep),
         deadline: "", status: "not_started", skipped: 0,
         sourceUrl: "", sourceNote: h.note || "", sourceStatus: h.stage,
-        doneWhen: "That step is done", whyNow: "keeps this project or public work moving and can build credibility over time",
+        doneWhen: `"${(h.nextStep || h.title).slice(0, 50).trim()}" is done or clearly further along`,
+        whyNow: "keeping this project moving builds credibility you can point to",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
       });
@@ -1260,9 +1262,9 @@ function whyLine(r: RankedCandidate, context: StrategicContext) {
   const lane = candidateStrategicLane(r.c, context);
   const top = r.trace.filter(Boolean).slice(0, 2).join("; ");
   if (r.c.source === "goal" && (needsBroadPursuitGoalCandidate(context) || needsBroadPursuitSupportGoalCandidate(context))) {
-    return `You are testing several paths in parallel. ${top || context.laneUnlockMove || "Best available next move"}.`;
+    return `You are testing several paths in parallel. ${top || context.laneUnlockMove || "This is the strongest move across them"}.`;
   }
-  return `This helps with ${focusAreaLabel(lane)}. ${top || context.laneUnlockMove || "Best available next move"}.`;
+  return `This helps with ${focusAreaLabel(lane)}. ${top || context.laneUnlockMove || "It's the strongest available move right now"}.`;
 }
 
 function parseBrief(raw?: string): { whatTheyDo?: string; relevantTeam?: string; whyYouFit?: string; prepAngle?: string; landscape?: { competitors?: string[]; alsoConsider?: string[]; marketContext?: string }; outreachSuggestions?: Array<{ archetype?: string; searchTip?: string }> } | null {
@@ -1323,7 +1325,8 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
     if (t.includes("reach out") || t.includes("contact") || t.includes("message")) return "Pick one person and draft the shortest useful message.";
     if (t.includes("review") || t.includes("read")) return "Open the thing and read just the first section — then write one useful note.";
   }
-  return "Open the most relevant thing and spend 5 minutes on just the first step.";
+  if (candidate?.title) return `Open "${candidate.title.slice(0, 40).trim()}" and do the first thing that comes to mind.`;
+  return "Open this and do the first thing that comes to mind — even 2 minutes counts.";
 }
 
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
@@ -1364,7 +1367,7 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
   }
   if (source === "learn") return "Stop after one useful note, brief, practice result, or reusable example exists.";
   if (source === "hustle") return "Stop after one reusable or publishable piece exists, or the next concrete step is finished.";
-  return "Stop after one concrete move changes the state of the work.";
+  return "Stop when something is visibly different from when you started.";
 }
 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
@@ -1408,8 +1411,8 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
   }
   if (source === "learn") return "This learning move helps you get stronger without stopping applications.";
   if (source === "hustle") return "This writing, project, or public-work move turns learning into something reusable later.";
-  if (candidate?.title) return `This task is next because it moves something forward that's already in progress.`;
-  return "This is still a useful next move based on what's in the system.";
+  if (candidate?.title) return `"${candidate.title.slice(0, 60).trim()}" is already in progress — this keeps it moving.`;
+  return "This is still a useful next move right now.";
 }
 
 function explainRecommendation(
@@ -1459,7 +1462,7 @@ function explainRankedPlanItem(
     whyNow: supportingReasons[0] || current.c.whyNow || context.reason || `The main constraint is ${focusArea}.`,
     whyThis: next
       ? `It outranks the next option because it helps more with ${focusArea} right now.`
-      : `It remains in the plan because it is still a useful move in ${focusArea}.`,
+      : `It's the strongest available move for ${focusArea} right now.`,
     supportingReasons,
     firstStep: firstStepForSource(current.c.source, current.c, context),
     stopRule: stopRuleForSource(current.c.source, current.c, context),
@@ -1495,7 +1498,7 @@ export function explainPersistedPlanItem(item: {
     ? "It was skipped before, so it's been made smaller or given a different angle."
     : wasMoved
     ? "It was moved to later but is still worth doing today."
-    : coreSentence || "It's one of today's most useful moves.";
+    : coreSentence || (item.title ? `"${item.title.slice(0, 50).trim()}" is worth doing today.` : "It's one of today's most useful moves.");
 
   const whyNow = hadShrink
     ? "This was made smaller so starting is easier."
@@ -1503,7 +1506,9 @@ export function explainPersistedPlanItem(item: {
     ? `The main constraint right now is ${mainFocus.toLowerCase()}.`
     : item.doneWhen
     ? `The next useful thing is: ${item.doneWhen.toLowerCase()}.`
-    : "This move is still in today's plan.";
+    : item.title
+    ? `"${item.title.slice(0, 50).trim()}" is still on today's plan.`
+    : "It's still on today's plan.";
 
   const supportingReasons: string[] = [];
   if (coreSentence && mainFocus && coreSentence !== whyThis) supportingReasons.push(coreSentence);

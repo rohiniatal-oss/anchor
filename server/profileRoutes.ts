@@ -8,12 +8,17 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 export function registerProfileRoutes(app: Express) {
   app.get("/api/profile", async (_req, res) => {
     const profile = await storage.getProfile();
-    res.json(profile ?? { cvText: "" });
+    res.json(profile ?? { cvText: "", targetRoles: "", locationPreferences: "", searchPhase: "" });
   });
 
   app.patch("/api/profile", async (req, res) => {
-    const cvText = String(req.body?.cvText ?? "");
-    const profile = await storage.upsertProfile({ cvText });
+    const patch = {
+      ...(req.body?.cvText !== undefined ? { cvText: String(req.body.cvText ?? "") } : {}),
+      ...(req.body?.targetRoles !== undefined ? { targetRoles: String(req.body.targetRoles ?? "").trim().slice(0, 800) } : {}),
+      ...(req.body?.locationPreferences !== undefined ? { locationPreferences: String(req.body.locationPreferences ?? "").trim().slice(0, 500) } : {}),
+      ...(req.body?.searchPhase !== undefined ? { searchPhase: String(req.body.searchPhase ?? "").trim().slice(0, 120) } : {}),
+    };
+    const profile = await storage.upsertProfile(patch);
     res.json(profile);
   });
 

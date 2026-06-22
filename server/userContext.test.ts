@@ -34,6 +34,7 @@ test("buildUserContext returns fit-discovery when active tracks exist but no liv
   const ctx = await buildUserContext();
   assert.equal(ctx.phase, "fit-discovery");
   assert.ok(ctx.trackSummaries.includes("AI Policy"));
+  assert.match(ctx.explicitGoals, /Active career tracks: AI Policy/i);
 });
 
 test("buildUserContext returns active-pursuit when active tracks have live jobs", async () => {
@@ -93,9 +94,25 @@ test("formatContextForPrompt includes all context sections", async () => {
   const ctx = await buildUserContext();
   const prompt = formatContextForPrompt(ctx);
   assert.ok(prompt.includes("User profile:"));
+  assert.ok(prompt.includes("Explicit goals/preferences:"));
   assert.ok(prompt.includes("Phase:"));
   assert.ok(prompt.includes("Active tracks:"));
   assert.ok(prompt.includes("Activity:"));
+});
+
+test("buildUserContext includes explicit profile goals and preferences", async () => {
+  await h.storage.upsertProfile({
+    cvText: "CV",
+    targetRoles: "AI strategy, chief of staff",
+    locationPreferences: "UAE first, remote ok, London ok",
+    searchPhase: "actively applying",
+  });
+  const { buildUserContext, formatContextForPrompt } = await import("./userContext");
+  const ctx = await buildUserContext();
+  assert.match(ctx.explicitGoals, /AI strategy, chief of staff/);
+  assert.match(ctx.explicitGoals, /UAE first/);
+  assert.match(ctx.explicitGoals, /actively applying/);
+  assert.match(formatContextForPrompt(ctx), /Explicit goals\/preferences:.*UAE first/i);
 });
 
 test("formatContextForPrompt includes CV text when present", async () => {
@@ -103,6 +120,7 @@ test("formatContextForPrompt includes CV text when present", async () => {
   const ctx: import("./userContext").UserContext = {
     profile: "Test user",
     cv: "Some CV text",
+    explicitGoals: "",
     phase: "exploration",
     trackSummaries: "",
     recentWins: "",
@@ -120,6 +138,7 @@ test("formatContextForPrompt omits CV mention when null", async () => {
   const ctx: import("./userContext").UserContext = {
     profile: "Test user",
     cv: null,
+    explicitGoals: "",
     phase: "exploration",
     trackSummaries: "",
     recentWins: "",

@@ -216,6 +216,104 @@ test("brain prefers the more gettable role across flexible target locations", ()
   assert.match(result.explanation.firstStep, /Open the role|application materials/i);
 });
 
+test("brain uses saved profile location preferences instead of hardcoded defaults", () => {
+  const jobs = [
+    job({
+      id: 11,
+      title: "Remote AI Strategy Advisor",
+      company: "Remote Lab",
+      location: "Remote",
+      fitScore: 70,
+      warmPathScore: 20,
+      frictionScore: 20,
+    }),
+    job({
+      id: 12,
+      title: "Dubai AI Strategy Advisor",
+      company: "Dubai Lab",
+      location: "Dubai, UAE",
+      fitScore: 70,
+      warmPathScore: 20,
+      frictionScore: 20,
+    }),
+  ];
+
+  const result = recommend([], jobs, [], [], "medium", [], [], {}, {
+    locationPreferences: "Remote first; London ok",
+  });
+
+  assert.equal(result.pick?.source, "job");
+  assert.equal(result.pick?.sourceId, 11);
+  assert.ok(result.trace?.some((line: string) => /top location preference/i.test(line)));
+});
+
+test("brain uses saved target role preferences to rank otherwise similar jobs", () => {
+  const jobs = [
+    job({
+      id: 21,
+      title: "Policy Research Associate",
+      company: "Policy Lab",
+      location: "Remote",
+      roleArchetype: "policy research",
+      fitScore: 70,
+      warmPathScore: 20,
+      frictionScore: 20,
+    }),
+    job({
+      id: 22,
+      title: "AI Strategy Advisor",
+      company: "AI Lab",
+      location: "Remote",
+      roleArchetype: "AI strategy advisory",
+      fitScore: 70,
+      warmPathScore: 20,
+      frictionScore: 20,
+    }),
+  ];
+
+  const result = recommend([], jobs, [], [], "medium", [], [], {}, {
+    targetRoles: "AI strategy, chief of staff",
+    locationPreferences: "Remote first",
+  });
+
+  assert.equal(result.pick?.source, "job");
+  assert.equal(result.pick?.sourceId, 22);
+  assert.ok(result.trace?.some((line: string) => /saved target role types/i.test(line)));
+});
+
+test("saved actively applying phase moves sparse plans toward application work", () => {
+  const tasks = [
+    task({ id: 31, title: "Inspect one role family and note useful attributes", category: "thinking", size: "quick" }),
+    task({ id: 32, title: "Draft one cover letter paragraph for saved role", category: "job", size: "quick" }),
+    task({ id: 33, title: "Read AI governance hiring guide", category: "learning", size: "quick" }),
+  ];
+
+  const result = planDay(tasks, [], [], [], "medium", { remainingMinutes: 120 }, [], [], new Map(), {}, {
+    searchPhase: "actively applying",
+  });
+
+  assert.equal(result.trace.bottleneck, "Applications");
+  assert.match(result.trace.reason, /actively applying/i);
+  assert.equal(result.plan[0].candidate.sourceId, 32);
+  assert.ok(result.plan[0].explanation.supportingReasons.some((line) => /saved search phase/i.test(line)));
+});
+
+test("saved upskilling phase moves sparse plans toward learning work", () => {
+  const tasks = [
+    task({ id: 41, title: "Inspect one role family and note useful attributes", category: "thinking", size: "quick" }),
+    task({ id: 42, title: "Draft one cover letter paragraph for saved role", category: "job", size: "quick" }),
+    task({ id: 43, title: "Practice one AI governance regulation answer", category: "learning", size: "quick" }),
+  ];
+
+  const result = planDay(tasks, [], [], [], "medium", { remainingMinutes: 120 }, [], [], new Map(), {}, {
+    searchPhase: "upskilling",
+  });
+
+  assert.equal(result.trace.bottleneck, "Learning and development");
+  assert.match(result.trace.reason, /upskilling/i);
+  assert.equal(result.plan[0].candidate.sourceId, 43);
+});
+
 test("job recommendations use recruiting truth for contact-route roles", () => {
   const jobs = [
     job({

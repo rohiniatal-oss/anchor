@@ -196,7 +196,7 @@ export interface IStorage {
   getLearnProofLinkIds(): Promise<Set<number>>;
   // Profile
   getProfile(): Promise<UserProfile | null>;
-  upsertProfile(patch: { cvText: string }): Promise<UserProfile>;
+  upsertProfile(patch: Partial<Pick<UserProfile, "cvText" | "targetRoles" | "locationPreferences" | "searchPhase">>): Promise<UserProfile>;
   // Network Builder
   getNetworkGaps(trackId?: number): Promise<NetworkGap[]>;
   upsertNetworkGaps(trackId: number, gaps: InsertNetworkGap[]): Promise<NetworkGap[]>;
@@ -577,13 +577,13 @@ export class DatabaseStorage implements IStorage {
   async getProfile() {
     return db.select().from(userProfile).get() ?? null;
   }
-  async upsertProfile(patch: { cvText: string }) {
+  async upsertProfile(patch: Partial<Pick<UserProfile, "cvText" | "targetRoles" | "locationPreferences" | "searchPhase">>) {
     const existing = await this.getProfile();
     if (existing) {
-      return db.update(userProfile).set({ cvText: patch.cvText, updatedAt: Date.now() })
+      return db.update(userProfile).set({ ...patch, updatedAt: Date.now() })
         .where(eq(userProfile.id, existing.id)).returning().get();
     }
-    return db.insert(userProfile).values({ cvText: patch.cvText, updatedAt: Date.now() }).returning().get();
+    return db.insert(userProfile).values({ cvText: "", targetRoles: "", locationPreferences: "", searchPhase: "", ...patch, updatedAt: Date.now() }).returning().get();
   }
 
   // Network Builder

@@ -1,7 +1,9 @@
-import type { CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
+import type { CareerTrack, Contact, Hustle, Job, Learn, Task, UserProfile } from "@shared/schema";
 import { getLearnOutputState, isOpportunityActionable } from "@shared/domainState";
 import { GOAL_WORKSTREAM } from "@shared/goalWorkstreams";
+import { nextContactTaskTitle } from "@shared/taskPreview";
 import { buildTrackSpine } from "./trackSpine";
+import { contractForTaskIntent } from "./taskIntent";
 import {
   broadPursuitMissingContactsContextReason,
   broadPursuitMissingContactsDoneWhen,
@@ -127,6 +129,12 @@ type StrategicContext = {
   planningPosture: "exploration" | "conversion" | "interview" | "capability";
   activeOpportunityCount: number;
   clarifyBeforePush: boolean;
+  searchPhase: string;
+  profilePosture: StrategicContext["planningPosture"] | "";
+  targetRoles: string;
+  targetRolePreferenceTerms: string[][];
+  locationPreferences: string;
+  locationPreferenceTerms: string[][];
 };
 
 const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
@@ -150,6 +158,12 @@ const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
   planningPosture: "exploration",
   activeOpportunityCount: 0,
   clarifyBeforePush: false,
+  searchPhase: "",
+  profilePosture: "",
+  targetRoles: "",
+  targetRolePreferenceTerms: [],
+  locationPreferences: "UAE first, remote ok, London ok",
+  locationPreferenceTerms: [["uae", "dubai", "abu dhabi", "emirates"], ["remote"], ["london"]],
 };
 
 type RankedCandidate = { c: Candidate; s: number; trace: string[] };
@@ -174,6 +188,7 @@ export type RecommendationExplanation = {
 
 type SourceKind = Candidate["source"] | "task";
 type NetworkingIntent = "conversion" | "interview" | "exploration" | "capability";
+type PlanningProfile = Partial<Pick<UserProfile, "targetRoles" | "locationPreferences" | "searchPhase">> | null | undefined;
 
 function daysUntil(deadline: string): number | null {
   if (!deadline) return null;
@@ -188,6 +203,57 @@ function locationTier(location: string) {
   if (/\b(remote|distributed|anywhere|work from home|wfh)\b/.test(lower)) return "Remote";
   if (/\b(london|uk|united kingdom|england)\b/.test(lower)) return "London";
   return "Other";
+}
+
+function normalizeLocationTerm(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function expandLocationPreferenceTerm(term: string) {
+  const t = normalizeLocationTerm(term);
+  if (!t) return [];
+  if (/\buae\b|dubai|abu dhabi|emirates/.test(t)) return ["uae", "dubai", "abu dhabi", "emirates"];
+  if (/remote|distributed|anywhere|wfh|work from home/.test(t)) return ["remote", "distributed", "anywhere", "work from home", "wfh"];
+  if (/london/.test(t)) return ["london"];
+  if (/\buk\b|united kingdom|england/.test(t)) return ["uk", "united kingdom", "england", "london"];
+  if (/new york|nyc/.test(t)) return ["new york", "nyc"];
+  if (/washington|dc/.test(t)) return ["washington", "dc"];
+  return [t];
+}
+
+function locationPreferenceTerms(preferences?: string | null) {
+  const raw = (preferences || DEFAULT_STRATEGIC_CONTEXT.locationPreferences).trim();
+  const parts = raw
+    .split(/[,;\n]|(?:\s+>\s+)|(?:\s+then\s+)/i)
+    .map((part) => part.replace(/\b(first|preferred|preference|ok|okay|fine|fallback|open to|priority)\b/gi, " "))
+    .map((part) => expandLocationPreferenceTerm(part))
+    .filter((terms) => terms.length > 0);
+  return parts.length ? parts : DEFAULT_STRATEGIC_CONTEXT.locationPreferenceTerms;
+}
+
+function rolePreferenceTerms(targetRoles?: string | null) {
+  return (targetRoles || "")
+    .split(/[,;\n]|(?:\s+\/\s+)|(?:\s+\|\s+)|(?:\s+ or\s+)/i)
+    .map((part) => normalizeText(part))
+    .map((part) => significantWords(part))
+    .filter((words) => words.length > 0);
+}
+
+function rolePreferenceMomentum(c: Candidate, context: StrategicContext) {
+  const preferences = context.targetRolePreferenceTerms || [];
+  if (!preferences.length) return { score: 0, reason: "" };
+  const candidateWords = new Set(significantWords(`${c.title} ${c.sourceNote} ${c.targetRole || ""} ${(c as any).roleArchetype || ""}`));
+  let best = 0;
+  for (const terms of preferences) {
+    const overlap = terms.filter((term) => candidateWords.has(term)).length;
+    if (overlap === 0) continue;
+    const coverage = overlap / Math.max(1, terms.length);
+    const score = overlap >= 2 || coverage >= 0.67 ? 18 : 9;
+    best = Math.max(best, score);
+  }
+  return best > 0
+    ? { score: best, reason: best >= 18 ? "matches your saved target role types" : "partly matches your saved target role types" }
+    : { score: 0, reason: "" };
 }
 
 function guessSize(title: string, fallback = "medium"): string {
@@ -304,6 +370,33 @@ function planningPostureFromGoalFrame(
   return "exploration";
 }
 
+function planningPostureFromSearchPhase(searchPhase?: string | null): StrategicContext["planningPosture"] | "" {
+  const phase = normalizeText(searchPhase || "");
+  if (!phase) return "";
+  if (/\b(interview|interviewing|panel|case|assessment|process)\b/.test(phase)) return "interview";
+  if (/\b(apply|applying|application|applications|active pursuit|actively|submitting|pipeline)\b/.test(phase)) return "conversion";
+  if (/\b(upskill|upskilling|learning|learn|capability|skill|skills|prep|prepping)\b/.test(phase)) return "capability";
+  if (/\b(explore|exploring|discovery|deciding|figuring|narrowing|researching)\b/.test(phase)) return "exploration";
+  return "";
+}
+
+function mergePlanningPosture(
+  inferred: StrategicContext["planningPosture"],
+  profilePosture: StrategicContext["planningPosture"] | "",
+  activeOpportunityCount: number,
+): StrategicContext["planningPosture"] {
+  if (!profilePosture) return inferred;
+  if (profilePosture === "exploration" && activeOpportunityCount > 0) return inferred;
+  return profilePosture;
+}
+
+function laneForProfilePosture(posture: StrategicContext["planningPosture"] | ""): CanonicalLaneName | "" {
+  if (posture === "conversion" || posture === "interview") return LANE_NAME.APPLICATIONS;
+  if (posture === "capability") return LANE_NAME.LEARNING_DEVELOPMENT;
+  if (posture === "exploration") return LANE_NAME.DIRECTION;
+  return "";
+}
+
 function desiredLaneOrder(posture: StrategicContext["planningPosture"]): CanonicalLaneName[] {
   if (posture === "interview") return [LANE_NAME.APPLICATIONS, LANE_NAME.NETWORK, LANE_NAME.LEARNING_DEVELOPMENT, LANE_NAME.PROOF_ASSETS, LANE_NAME.DIRECTION, LANE_NAME.STABILITY];
   if (posture === "conversion") return [LANE_NAME.APPLICATIONS, LANE_NAME.NETWORK, LANE_NAME.LEARNING_DEVELOPMENT, LANE_NAME.PROOF_ASSETS, LANE_NAME.DIRECTION, LANE_NAME.STABILITY];
@@ -334,23 +427,32 @@ function buildStrategicContext(
   hustles: Hustle[],
   contacts: Contact[] = [],
   tracks: CareerTrack[] = [],
+  profile?: PlanningProfile,
 ): StrategicContext {
   const spine = buildTrackSpine({ tasks, jobs, learn, hustles, contacts, tracks });
   const lane = spine.globalLanes.find((l) => l.name === spine.bestMove.lane) || spine.globalLanes[0];
   const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts, hustles, tracks);
   const broadPursuitCoverage = deriveBroadPursuitCoverage(tasks, jobs, [], learn, contacts, hustles, tracks);
-  const planningPosture = planningPostureFromGoalFrame(
+  const inferredPlanningPosture = planningPostureFromGoalFrame(
     goalFrame,
     spine.bestMove.lane,
     learn.some((l) => !l.done && l.learnStatus !== "closed"),
   );
   const activeOpportunityCount = countActiveOpportunities(jobs);
+  const searchPhase = (profile?.searchPhase || "").trim();
+  const profilePosture = planningPostureFromSearchPhase(searchPhase);
+  const planningPosture = mergePlanningPosture(inferredPlanningPosture, profilePosture, activeOpportunityCount);
   const viableApplicationTruth = jobs
     .map(computeJobTruthStrip)
     .filter((truth) => truth.action !== "reject");
-  const clarifyBeforePush = viableApplicationTruth.length > 0
+  const clarifyBeforePush = profilePosture !== "interview"
+    && viableApplicationTruth.length > 0
     && viableApplicationTruth.every((truth) => truth.action === "clarify");
   const liveJobTargets = jobs.filter((j) => isOpportunityActionable(j)).map((j) => ({ title: j.title, company: j.company, roleArchetype: j.roleArchetype || "" }));
+  const targetRoles = (profile?.targetRoles || "").trim();
+  const targetRolePreferences = rolePreferenceTerms(targetRoles);
+  const locationPreferences = (profile?.locationPreferences || DEFAULT_STRATEGIC_CONTEXT.locationPreferences).trim();
+  const parsedLocationPreferences = locationPreferenceTerms(locationPreferences);
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
   const broadPursuitSupportOpen = goalFrame.decisionMode === "broad-parallel-pursuit"
     && broadPursuitCoverage.missing.length === 0
@@ -367,6 +469,9 @@ function buildStrategicContext(
     && !broadPursuitHasMixedSupportGaps
     && goalFrame.recommendedFocus === GOAL_WORKSTREAM.PREP_UPSKILLING
     && broadPursuitCoverage.missingLearningSupport.length > 0;
+  const profileLane = laneForProfilePosture(profilePosture);
+  const inferredLane = spine.bestMove.lane;
+  const effectiveProfileLane = profileLane && !broadPursuitNeedsRealRoles && !broadPursuitSupportOpen ? profileLane : "";
   return {
     bottleneck: broadPursuitNeedsRealRoles
       ? LANE_NAME.APPLICATIONS
@@ -376,7 +481,7 @@ function buildStrategicContext(
         ? LANE_NAME.NETWORK
         : broadPursuitNeedsLearningSupport
           ? LANE_NAME.LEARNING_DEVELOPMENT
-          : spine.bestMove.lane,
+          : effectiveProfileLane || inferredLane,
     reason: broadPursuitNeedsRealRoles
       ? broadPursuitMissingRolesContextReason(broadPursuitCoverage.missing, spine.bestMove.trackName || undefined)
       : broadPursuitHasMixedSupportGaps
@@ -386,9 +491,11 @@ function buildStrategicContext(
         )
       : broadPursuitNeedsNetworkSupport
         ? broadPursuitMissingContactsContextReason(broadPursuitCoverage.missingNetworkSupport)
-        : broadPursuitNeedsLearningSupport
+      : broadPursuitNeedsLearningSupport
           ? broadPursuitMissingPrepContextReason(broadPursuitCoverage.missingLearningSupport)
-      : `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Current focus: ${spine.bestMove.trackName}.` : ""}`,
+      : effectiveProfileLane
+        ? `Saved search phase "${searchPhase}" makes ${laneFocusAreaLabel(effectiveProfileLane)} the right focus.`
+        : `${spine.bestMove.reason}${spine.bestMove.trackName ? ` Current focus: ${spine.bestMove.trackName}.` : ""}`,
     applicationsPremature: false,
     recommendedExploration: spine.bestMove.trackName || spine.activeTrack?.name || "",
     laneModel: { trace: spine.trace },
@@ -400,7 +507,7 @@ function buildStrategicContext(
         ? LANE_NAME.NETWORK
         : broadPursuitNeedsLearningSupport
           ? LANE_NAME.LEARNING_DEVELOPMENT
-          : spine.bestMove.lane,
+          : effectiveProfileLane || inferredLane,
     laneStage: broadPursuitNeedsRealRoles || broadPursuitSupportOpen ? "active" : lane?.stage || "active",
     laneUnlockMove: broadPursuitNeedsRealRoles
       ? broadPursuitMissingRolesUnlockMove()
@@ -426,6 +533,12 @@ function buildStrategicContext(
     planningPosture,
     activeOpportunityCount,
     clarifyBeforePush,
+    searchPhase,
+    profilePosture,
+    targetRoles,
+    targetRolePreferenceTerms: targetRolePreferences,
+    locationPreferences,
+    locationPreferenceTerms: parsedLocationPreferences,
   };
 }
 
@@ -618,15 +731,26 @@ function readinessMomentum(readiness: string) {
   }
 }
 
-function locationMomentum(location: string) {
+function locationMomentum(location: string, context: StrategicContext) {
+  const loc = normalizeLocationTerm(location || "");
+  if (!loc) return { score: 0, reason: "" };
+  const preferences = context.locationPreferenceTerms.length
+    ? context.locationPreferenceTerms
+    : DEFAULT_STRATEGIC_CONTEXT.locationPreferenceTerms;
+  const matchIndex = preferences.findIndex((terms) => terms.some((term) => loc.includes(term)));
+  if (matchIndex >= 0) {
+    const scores = [24, 18, 12, 8];
+    return {
+      score: scores[Math.min(matchIndex, scores.length - 1)],
+      reason: matchIndex === 0 ? "matches your top location preference" : "fits your saved location preferences",
+    };
+  }
   const tier = locationTier(location);
-  if (tier === "UAE") return { score: 24, reason: "matches your top flexible location tier" };
-  if (tier === "Remote") return { score: 18, reason: "fits your remote-flexible search" };
-  if (tier === "London") return { score: 12, reason: "fits your London fallback search" };
+  if (tier !== "Other" && !context.locationPreferences.trim()) return { score: 8, reason: "has a workable location signal" };
   return { score: 0, reason: "" };
 }
 
-function jobMomentum(c: Candidate) {
+function jobMomentum(c: Candidate, context: StrategicContext) {
   let s = 0;
   const trace: string[] = [];
 
@@ -638,9 +762,13 @@ function jobMomentum(c: Candidate) {
     trace.push("already in application pipeline");
   }
 
-  const location = locationMomentum(c.location || "");
+  const location = locationMomentum(c.location || "", context);
   s += location.score;
   if (location.reason) trace.push(location.reason);
+
+  const rolePreference = rolePreferenceMomentum(c, context);
+  s += rolePreference.score;
+  if (rolePreference.reason) trace.push(rolePreference.reason);
 
   if (c.warmPathScore != null) {
     const warmBoost = Math.round((c.warmPathScore / 100) * 22);
@@ -708,7 +836,7 @@ function contactNextStep(c: Contact): { action: string; size: string; doneWhen: 
     };
   }
   return {
-    action: `Draft ${ask} outreach to ${target}`,
+    action: nextContactTaskTitle(c),
     size: "quick",
     doneWhen: "A message draft is ready to send",
     why: "network access needs one concrete message, not vague intent",
@@ -976,7 +1104,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         narrativeAngle: j.narrativeAngle || "",
         jobTruthAction: truthAction,
         linkedContactNames: (jobContactLinks[j.id] || []).map((id) => contactsById.get(id)).filter(Boolean).map((c) => c!.who || c!.name || "a contact"),
-        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
+        relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: j.roleArchetype || j.title || "", followUpDate: "",
         companyBrief: j.companyBrief || "",
       });
     }
@@ -1096,6 +1224,13 @@ function actionCategoryPriorityBand(category: ActionCategory, context: Strategic
     if (category === "develop") return 4;
     return 5;
   }
+  if (context.planningPosture === "interview") {
+    if (category === "prepare") return 1;
+    if (category === "pursue") return 2;
+    if (category === "develop") return 3;
+    if (category === "decide") return 4;
+    return 5;
+  }
   const shouldPromoteDevelopment = context.planningPosture === "capability";
   if (shouldPromoteDevelopment) {
     if (category === "develop") return 1;
@@ -1109,6 +1244,13 @@ function actionCategoryPriorityBand(category: ActionCategory, context: Strategic
   if (category === "decide") return 3;
   if (category === "develop") return 4;
   return 5;
+}
+
+function priorityCategoryForProfilePosture(posture: StrategicContext["planningPosture"]): ActionCategory {
+  if (posture === "interview") return "prepare";
+  if (posture === "conversion") return "pursue";
+  if (posture === "capability") return "develop";
+  return "decide";
 }
 
 export function pickDayMode(cands: Candidate[], energy: Energy, context?: StrategicContext): DayMode {
@@ -1138,7 +1280,7 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   }
 
   if (c.source === "job") {
-    const momentum = jobMomentum(c);
+    const momentum = jobMomentum(c, context);
     s += momentum.score;
     trace.push(...momentum.trace);
   }
@@ -1227,6 +1369,10 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
     trace.push("strengthening this area first will make your applications more competitive");
   } else if ((context.planningPosture === "conversion" || context.planningPosture === "interview") && actionCategory === "develop") {
     trace.push("active applications and interviews take priority right now");
+  }
+  if (context.profilePosture && actionCategory === priorityCategoryForProfilePosture(context.profilePosture)) {
+    s += 34;
+    trace.push(`matches your saved search phase: ${context.searchPhase}`);
   }
 
   const startability = startabilityMomentum(c);
@@ -1352,6 +1498,14 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
   if (source === "learn") return "Open the learning item or a blank note and capture one useful note, brief, or practice result.";
   if (source === "hustle") return "Open the project or public-work item and make the smallest publishable or reusable fragment.";
   if (candidate?.title) {
+    const contract = contractForTaskIntent({
+      title: candidate.title,
+      category: candidate.category,
+      sourceType: candidate.source,
+      sourceNote: candidate.sourceNote,
+      doneWhen: candidate.doneWhen,
+    });
+    if (contract.intent !== "admin_action") return contract.firstStep;
     const t = candidate.title.toLowerCase();
     if (t.includes("find") || t.includes("search") || t.includes("explore")) return "Open LinkedIn or a job board and search for the first real example.";
     if (t.includes("compare")) return "Open the two things you're comparing and write one sentence about what's different.";
@@ -1564,8 +1718,9 @@ export function planDay(
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
   learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(),
   jobContactLinks: Record<number, number[]> = {},
+  profile?: PlanningProfile,
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
-  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
+  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks, profile);
   const priorityCandidates: Candidate[] = [];
   if (needsBroadPursuitGoalCandidate(context)) {
     priorityCandidates.push(buildBroadPursuitGoalCandidate(context));
@@ -1906,8 +2061,9 @@ export function recommend(
   tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], energy: Energy,
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
   jobContactLinks: Record<number, number[]> = {},
+  profile?: PlanningProfile,
 ) {
-  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks);
+  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks, profile);
   const priorityCandidates: Candidate[] = [];
   if (needsBroadPursuitGoalCandidate(context)) {
     priorityCandidates.push(buildBroadPursuitGoalCandidate(context));

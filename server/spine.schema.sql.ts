@@ -241,6 +241,9 @@ CREATE TABLE IF NOT EXISTS activity_log (
 CREATE TABLE IF NOT EXISTS user_profile (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   cv_text TEXT NOT NULL DEFAULT '',
+  target_roles TEXT NOT NULL DEFAULT '',
+  location_preferences TEXT NOT NULL DEFAULT '',
+  search_phase TEXT NOT NULL DEFAULT '',
   updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS discovery_sessions (
@@ -379,4 +382,7 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE contacts ADD COLUMN linkedin_url TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE wins ADD COLUMN takeaway TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE jobs ADD COLUMN company_brief TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE user_profile ADD COLUMN target_roles TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE user_profile ADD COLUMN location_preferences TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE user_profile ADD COLUMN search_phase TEXT NOT NULL DEFAULT ''`,
 ];

@@ -200,6 +200,9 @@ export const hustles = sqliteTable("hustles", {
 export const userProfile = sqliteTable("user_profile", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   cvText: text("cv_text").notNull().default(""),
+  targetRoles: text("target_roles").notNull().default(""),
+  locationPreferences: text("location_preferences").notNull().default(""),
+  searchPhase: text("search_phase").notNull().default(""),
   updatedAt: integer("updated_at").notNull(),
 });
 

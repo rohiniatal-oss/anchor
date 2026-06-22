@@ -6,6 +6,7 @@ import { isJobLive, isContactWarm, getTrackId } from "@shared/domainState";
 export type UserContext = {
   profile: string;
   cv: string | null;
+  explicitGoals: string;
   phase: string;
   trackSummaries: string;
   recentWins: string;
@@ -30,6 +31,11 @@ export async function buildUserContext(): Promise<UserContext> {
   const cv = profile?.cvText || null;
 
   const activeTracks = tracks.filter((t) => t.status === "active");
+  const explicitGoalParts = [
+    profile?.targetRoles ? `Target role types: ${profile.targetRoles}` : "",
+    profile?.locationPreferences ? `Location preferences: ${profile.locationPreferences}` : "",
+    profile?.searchPhase ? `Current search phase: ${profile.searchPhase}` : "",
+  ].filter(Boolean);
   const trackSummaries = activeTracks.map((t) => {
     const trackJobs = jobs.filter((j) => getTrackId("jobs", j) === t.id);
     const liveJobs = trackJobs.filter(isJobLive);
@@ -37,7 +43,9 @@ export async function buildUserContext(): Promise<UserContext> {
     const warmContacts = trackContacts.filter(isContactWarm);
     const te = evidence.byTrack.get(t.id);
     const exec = te?.executionRatio != null ? `${Math.round(te.executionRatio * 100)}% execution` : "no activity";
-    return `${t.name}: ${liveJobs.length} live roles, ${warmContacts.length} warm contacts, ${exec}`;
+    const target = t.targetRoleArchetype ? `target: ${t.targetRoleArchetype}` : "";
+    const why = t.whyItFits ? `why: ${t.whyItFits}` : "";
+    return `${t.name}${target ? ` (${target})` : ""}: ${liveJobs.length} live roles, ${warmContacts.length} warm contacts, ${exec}${why ? `, ${why}` : ""}`;
   }).join("; ");
 
   const sortedWins = wins.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -75,7 +83,12 @@ export async function buildUserContext(): Promise<UserContext> {
     .map((h) => `${h.title}${h.coreClaim ? ` — "${h.coreClaim}"` : ""}${h.stage ? ` [${h.stage}]` : ""}`)
     .join("; ");
 
-  return { profile: USER_PROFILE, cv, phase, trackSummaries, recentWins, recentTakeaways, activitySignal, activeLearning, proofAssets };
+  const trackGoalGrounding = activeTracks.length
+    ? `Active career tracks: ${activeTracks.map((t) => `${t.name}${t.targetRoleArchetype ? ` (${t.targetRoleArchetype})` : ""}`).join(", ")}`
+    : "";
+  const explicitGoals = [...explicitGoalParts, trackGoalGrounding].filter(Boolean).join("; ");
+
+  return { profile: USER_PROFILE, cv, explicitGoals, phase, trackSummaries, recentWins, recentTakeaways, activitySignal, activeLearning, proofAssets };
 }
 
 function liveJobCount(jobs: any[]) {
@@ -83,7 +96,7 @@ function liveJobCount(jobs: any[]) {
 }
 
 export function contextFingerprint(ctx: UserContext): string {
-  const key = `${ctx.phase}|${ctx.trackSummaries}|${(ctx.cv || "").slice(0, 200)}|${ctx.activeLearning}|${ctx.proofAssets}`;
+  const key = `${ctx.phase}|${ctx.explicitGoals}|${ctx.trackSummaries}|${(ctx.cv || "").slice(0, 200)}|${ctx.activeLearning}|${ctx.proofAssets}`;
   let hash = 0;
   for (let i = 0; i < key.length; i++) {
     hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
@@ -93,6 +106,7 @@ export function contextFingerprint(ctx: UserContext): string {
 
 export function formatContextForPrompt(ctx: UserContext): string {
   const parts = [`User profile: ${ctx.profile}`];
+  if (ctx.explicitGoals) parts.push(`Explicit goals/preferences: ${ctx.explicitGoals}.`);
   if (ctx.cv) parts.push(`\nCV (abbreviated): ${ctx.cv.slice(0, 1200)}`);
   parts.push(`\nPhase: ${ctx.phase}.`);
   if (ctx.trackSummaries) parts.push(`Active tracks: ${ctx.trackSummaries}.`);

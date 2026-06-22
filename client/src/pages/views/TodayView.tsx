@@ -702,7 +702,7 @@ function TodayBrief({
 }) {
   return (
     <div className="mb-5 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5" data-testid="today-brief">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:justify-between sm:gap-3">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-primary font-semibold">{brief.eyebrow}</p>
           <p className="text-sm text-muted-foreground mt-1">{brief.intro}</p>
@@ -710,7 +710,7 @@ function TodayBrief({
         <button
           type="button"
           onClick={onToggleDetails}
-          className="shrink-0 text-xs text-primary font-medium hover:underline"
+          className="text-xs text-primary font-medium hover:underline sm:shrink-0"
           data-testid="button-toggle-today-strategy"
         >
           {showDetails ? "Hide fuller strategy" : "See fuller strategy"}
@@ -1203,18 +1203,18 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         </>
       )}
       <div className="mb-5 rounded-xl border border-card-border bg-card p-3.5">
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             value={quickText}
             onChange={(e) => { setQuickText(e.target.value); if (quickCaptureNote) setQuickCaptureNote(""); }}
             onKeyDown={(e) => { if (e.key === "Enter") quickCapture(); }}
             placeholder="Get a thought out of your head..."
-            className="h-10"
+            className="h-10 min-w-0 sm:flex-1"
             data-testid="input-quick-capture"
             disabled={capturingQuick}
           />
           <Button
-            className="h-10 px-3 shrink-0"
+            className="h-10 w-full px-3 sm:w-auto sm:shrink-0"
             variant="outline"
             onClick={quickCapture}
             data-testid="button-quick-capture"

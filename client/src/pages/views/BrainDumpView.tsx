@@ -123,17 +123,17 @@ export default function BrainDumpView() {
     <div>
       <SectionHeading title="Capture" sub="Empty your head now. Sort it later." />
       <div className="mb-4 rounded-xl border border-card-border bg-card p-3.5">
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             value={text}
             onChange={(e) => { setText(e.target.value); if (captureNote) setCaptureNote(""); }}
             onKeyDown={(e) => { if (e.key === "Enter") add(); }}
             placeholder="Get a thought out of your head..."
-            className="h-11"
+            className="h-11 min-w-0 sm:flex-1"
             data-testid="input-braindump"
             disabled={adding}
           />
-          <Button className="h-11 px-4" onClick={add} data-testid="button-add-braindump" disabled={adding || !text.trim()}>
+          <Button className="h-11 w-full px-4 sm:w-auto sm:shrink-0" onClick={add} data-testid="button-add-braindump" disabled={adding || !text.trim()}>
             {adding ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
             {adding ? "Saving..." : "Capture"}
           </Button>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Switch, Route, Router } from "wouter";
+import { Switch, Route, Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { apiRequest, queryClient } from "./lib/queryClient";
 import { todayKey } from "./lib/utils";
@@ -21,7 +21,9 @@ function useNormalizedHashLocation() {
 }
 
 function RestartFromHereButton() {
+  const [location] = useLocation();
   const [busy, setBusy] = useState(false);
+  if (routeBase(location) !== "/") return null;
 
   async function restart() {
     setBusy(true);

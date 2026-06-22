@@ -1460,8 +1460,8 @@ function explainRecommendation(
   const supportingReasons = top.trace.filter(Boolean).slice(0, 4);
   const whyNow = supportingReasons[0] || context.reason || "This is the strongest available move right now.";
   const whyThis = second
-    ? `It beats the next option because it helps more with ${focusArea} right now.`
-    : `It is the clearest available move in ${focusArea} right now.`;
+    ? `It beats "${second.c.title.slice(0, 40).trim()}" because it helps more with ${focusArea} right now.`
+    : `It's the only move that directly advances ${focusArea} right now.`;
 
   return {
     summary: `${sourceFrame(pick.source, pick, context)} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
@@ -1494,8 +1494,8 @@ function explainRankedPlanItem(
     summary: `${frame} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
     whyNow: supportingReasons[0] || current.c.whyNow || context.reason || `The main constraint is ${focusArea}.`,
     whyThis: next
-      ? `It outranks the next option because it helps more with ${focusArea} right now.`
-      : `It's the strongest available move for ${focusArea} right now.`,
+      ? `It outranks "${next.c.title.slice(0, 40).trim()}" because it helps more with ${focusArea} right now.`
+      : `It's the only move that directly advances ${focusArea} right now.`,
     supportingReasons,
     firstStep: firstStepForSource(current.c.source, current.c, context),
     stopRule: stopRuleForSource(current.c.source, current.c, context),

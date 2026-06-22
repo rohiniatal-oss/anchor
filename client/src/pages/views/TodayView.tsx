@@ -27,7 +27,7 @@ import {
 import { WIN_CATEGORY_LABEL, type WinCategory } from "@/lib/homeTypes";
 
 type WorkflowStateCtx = { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string };
-type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx };
+type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx; executor?: "system" | "user_action" | "user_learning"; output?: string; gaps?: string; ready?: boolean; blocker?: string };
 function parseSteps(raw: string): Step[] {
   try { const s = JSON.parse(raw || "[]"); return Array.isArray(s) ? s : []; } catch { return []; }
 }
@@ -441,7 +441,13 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
             </div>
           )}
           <div
-            className="group/step flex items-start gap-3 rounded-xl bg-card border-2 border-primary/25 p-3.5 cursor-pointer"
+            className={`group/step flex items-start gap-3 rounded-xl border-2 p-3.5 cursor-pointer ${
+              current.executor === "system" && current.output
+                ? "bg-primary/5 border-primary/15"
+                : current.executor === "user_learning"
+                ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-300/30 dark:border-amber-700/30"
+                : "bg-card border-primary/25"
+            }`}
             onClick={checkStep}
             role="button"
             aria-label="Mark step done"
@@ -455,7 +461,27 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
               <Check className="w-3 h-3 text-primary opacity-0 group-hover/step:opacity-100 group-hover/step:text-primary-foreground transition-opacity" />
             </button>
             <div className="flex-1 min-w-0">
-              <span className="font-medium leading-snug">{current.text}</span>
+              {current.executor === "system" && current.output ? (
+                <>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-primary/60">Done by Anchor</span>
+                  <div className="mt-1 text-sm whitespace-pre-wrap leading-relaxed">{current.output}</div>
+                  {current.gaps && <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Gap: {current.gaps}</p>}
+                  <p className="text-[11px] text-muted-foreground mt-1.5">Tap to confirm and move on</p>
+                </>
+              ) : current.executor === "user_learning" ? (
+                <>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">You do this one</span>
+                  <p className="mt-1 font-medium leading-snug">{current.text}</p>
+                  {current.output && <p className="mt-1.5 text-xs text-muted-foreground italic">{current.output}</p>}
+                </>
+              ) : (
+                <>
+                  <span className="font-medium leading-snug">{current.text}</span>
+                  {current.executor === "user_action" && current.ready === false && current.blocker && (
+                    <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">{current.blocker}</p>
+                  )}
+                </>
+              )}
               {current.substeps && current.substeps.length > 0 && (
                 <ul className="mt-2 space-y-1">
                   {current.substeps.map((sub, i) => (
@@ -466,7 +492,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
                   ))}
                 </ul>
               )}
-              {steps.length > 1 && (
+              {steps.length > 1 && !current.output && (
                 <p className="text-[11px] text-muted-foreground mt-1.5">Tap to mark done - next step will appear</p>
               )}
             </div>

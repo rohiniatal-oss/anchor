@@ -9,6 +9,7 @@ import { COACH_PREAMBLE } from "./userPromptProfile";
 import { buildUserContext, formatContextForPrompt, type UserContext } from "./userContext";
 import { isJobLive, isContactWarm, getTrackId } from "@shared/domainState";
 import { computeLearningGaps } from "./learningStrategy";
+import { executeSteps } from "./stepExecutors";
 import {
   collectTaskBreakdownContext,
   formatContextBlocksForPrompt,
@@ -29,7 +30,8 @@ type WorkflowState = {
   confidence?: string;
   inheritedFrom?: string;
 };
-type BreakdownStep = { text: string; done: false; substeps?: string[]; workflowState?: WorkflowState };
+type StepExecutor = "system" | "user_action" | "user_learning";
+type BreakdownStep = { text: string; done: false; substeps?: string[]; workflowState?: WorkflowState; executor?: StepExecutor; outputSpec?: string; output?: string; gaps?: string };
 type SourceRecord = Job | Learn | Hustle | Contact | null;
 type SourceBundle = {
   sourceContext: string;
@@ -141,6 +143,12 @@ function makeWorkflowState(input: {
   };
 }
 
+function normalizeExecutor(raw: unknown): StepExecutor | undefined {
+  const v = String(raw || "").toLowerCase();
+  if (v === "system" || v === "user_action" || v === "user_learning") return v;
+  return undefined;
+}
+
 function normalizeStep(raw: unknown): BreakdownStep | null {
   if (typeof raw === "string") {
     const text = cleanText(raw);
@@ -151,7 +159,13 @@ function normalizeStep(raw: unknown): BreakdownStep | null {
   const text = cleanText(record.text || record.step || record.title || record.name);
   if (!text) return null;
   const substeps = normalizeList(Array.isArray(record.substeps) ? record.substeps : record.subSteps, [], 4);
-  return substeps.length ? { text, done: false, substeps } : { text, done: false };
+  const executor = normalizeExecutor(record.executor);
+  const outputSpec = cleanText(record.outputSpec || record.output_spec, 200) || undefined;
+  const step: BreakdownStep = { text, done: false };
+  if (substeps.length) step.substeps = substeps;
+  if (executor) step.executor = executor;
+  if (outputSpec) step.outputSpec = outputSpec;
+  return step;
 }
 function parseBreakdown(raw: string, fallbackObject: WorkObject, inheritedWorkflow?: WorkflowState): { question?: string; steps: BreakdownStep[]; workflowState?: WorkflowState } {
   const text = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
@@ -1231,7 +1245,12 @@ export function buildTaskBreakdownPrompt(input: {
     `Prefer inherited workflow context over rediscovering from scratch, but let task intent refine the stage. Do not imply the parent has progressed; only provide the next workflow hint. ` +
     `Ask ONE short question only if classification or current stage would likely be wrong without it. Otherwise make sensible assumptions. ` +
     `Use user-authored context ahead of external public evidence. Use external public evidence only to sharpen public facts and current constraints. Do not mention provider mechanics or invent sources not shown in the prompt. ` +
-    `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
+    `For each step, classify where the value lives:\n` +
+    `- "system": the value is the artifact (a list of roles, extracted requirements, a draft). The system will execute it.\n` +
+    `- "user_action": the value is an external act only the user can take (submit, send, save to their account, schedule).\n` +
+    `- "user_learning": the value is in the user doing it — reading, practising, judging, absorbing. The system frames it: the resource, why it matters now, and the one question to hold.\n` +
+    `Test: would doing this FOR the user destroy its value? If yes → user_learning. If a tool can produce the artifact and handing it over loses nothing → system.\n\n` +
+    `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","executor":"system|user_action|user_learning","outputSpec":"what the output must contain"}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
     `${globalGuidance}\n` +
     `For learning or research work: if stored notes, topic breakdown, checkpoints, links, prior outputs, live role context, or user-authored note excerpts are present, use them directly. Name the actual section, concept, checkpoint, deadline, company, role, or prior output when available. Do not assume page content beyond what is shown. If the context is sparse or partial, tell the user exactly what to search for, what to extract, and what output to produce.\n\n` +
     `When COMPANY INTELLIGENCE is present in the source context, use it directly in steps. Never say "research the company" when you already have what they do, their team, and market context. Instead reference the specific insight: name competitors, quote the prep angle, use the fit analysis to sharpen CV bullets. When outreach suggestions are present, name the specific archetype in networking steps instead of generic "reach out to someone".\n\n` +
@@ -1322,6 +1341,34 @@ export function registerTaskBreakdownRoutes(app: Express) {
       steps = coerceTaskBreakdownSteps(task, bundle, workflowState, steps);
     }
     steps = attachWorkflowState(steps, workflowState);
+
+    const hasTypedSteps = steps.some((s) => s.executor);
+    if (hasTypedSteps) {
+      const researchBlocks = [
+        ...(collectedContext.blocks?.externalResearch || []),
+        ...(collectedContext.blocks?.userAuthored || []),
+      ];
+      try {
+        const executed = await executeSteps(steps, {
+          taskTitle: task.title,
+          sourceType: task.sourceType,
+          sourceNote: task.sourceNote,
+          doneWhen: task.doneWhen,
+          userContext: userCtx,
+          researchBlocks,
+        });
+        steps = executed.map((e) => ({
+          text: e.text,
+          done: e.done as false,
+          executor: e.executor,
+          outputSpec: e.outputSpec,
+          output: e.output,
+          gaps: e.gaps,
+          ...(e.ready === false ? { ready: false, blocker: e.blocker } : {}),
+        }));
+      } catch {}
+    }
+
     const updated = await storage.updateTask(id, {
       steps: JSON.stringify(steps),
       minimumOutcome: workflowState.stageOutput || task.minimumOutcome,

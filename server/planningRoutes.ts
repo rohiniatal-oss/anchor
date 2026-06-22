@@ -98,6 +98,18 @@ async function buildShrinkContext(task: { id: number; title: string; sourceType?
   return lines.join("\n");
 }
 
+export function buildCantStartMicroStepPrompt(shrinkContext: string) {
+  return [
+    "This task keeps slipping because the first step isn't clear enough. Break it into 3-4 micro-steps.",
+    "The first step must be under 2 minutes, immediately startable, and physical: open something, write one line, send one thing, save one item, or mark one choice.",
+    "Use this usefulness test for every step: name the concrete object, the action to take on it, and the output or checkpoint that proves the step is done.",
+    "Prefer reducing the user's decision load over asking them to think, review, or research from scratch.",
+    "Return ONLY a JSON array of strings.",
+    "",
+    shrinkContext,
+  ].join("\n");
+}
+
 type SkipReason = "cant_start" | "too_big" | "too_hard" | "wrong_moment" | "dont_want_to" | "doesnt_matter";
 
 async function diagnoseSkipReason(task: any): Promise<{ reason: SkipReason; confidence: "auto" | "ask" }> {
@@ -459,10 +471,7 @@ export function registerPlanningRoutes(app: Express) {
           try {
             const shrinkContext = await buildShrinkContext(task);
             const arr = await llmJSON<string[]>(
-              "This task keeps slipping because the first step isn't clear enough. Break it into 3-4 micro-steps. " +
-              "The first step must be under 2 minutes, immediately startable, and physical (open something, write one line, send one thing). " +
-              "Each step should be specific to the actual task — never generic filler. " +
-              'Return ONLY a JSON array of strings.\n\n' + shrinkContext,
+              buildCantStartMicroStepPrompt(shrinkContext),
               { model: MODEL_LIGHT },
             ) || [];
             if (arr.length) {

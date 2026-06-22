@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { categoryForPlanItem } from "./planningRoutes";
+import { buildCantStartMicroStepPrompt, categoryForPlanItem } from "./planningRoutes";
 
 test("goal-derived contact support items become admin tasks when started", () => {
   assert.equal(categoryForPlanItem({
@@ -26,4 +26,12 @@ test("goal-derived missing-role items still become job tasks when started", () =
     title: "Add one real role for each missing path",
     doneWhen: "One concrete role or application move exists for each missing path",
   }), "job");
+});
+
+test("cant-start shrink prompt uses usefulness criteria instead of generic-filler bans", () => {
+  const prompt = buildCantStartMicroStepPrompt("Task: \"Draft follow-up to Priya\"");
+
+  assert.match(prompt, /concrete object, the action to take on it, and the output or checkpoint/i);
+  assert.match(prompt, /reducing the user's decision load/i);
+  assert.doesNotMatch(prompt, /generic filler/i);
 });

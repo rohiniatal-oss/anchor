@@ -678,6 +678,8 @@ test("role-market-scan prompt asks the llm to suggest the likely first gap and w
   assert.match(prompt, /Do the assessment for the user/i);
   assert.match(prompt, /suggest the likely first requirement they cannot clearly evidence today/i);
   assert.match(prompt, /frontier safety framing, stakeholder translation/i);
+  assert.match(prompt, /Use this usefulness test for every step/i);
+  assert.match(prompt, /posting, requirement, evidence source, person, or prep artifact/i);
   assert.match(prompt, /State the likely gap, why it is likely, and the matching learn\/practice\/proof move/i);
   assert.match(prompt, /Name the likely first gap and the matching learning move directly in the steps/i);
   assert.match(prompt, /recommend the matching next learning move/i);

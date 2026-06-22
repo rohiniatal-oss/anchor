@@ -1125,6 +1125,7 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
       `- The point is not just to collect roles. Use the first credible posting to infer what this path is actually asking for.\n` +
       `- Do the assessment for the user. After extracting the repeated requirements, suggest the likely first requirement they cannot clearly evidence today instead of asking them to invent the gap from scratch.\n` +
       `${gapLabels.length ? `- If the connected context already suggests likely weak spots, start with them directly: ${gapLabels.join(", ")}.\n` : ""}` +
+      `- Use this usefulness test for every step: name the concrete posting, requirement, evidence source, person, or prep artifact; name the action; name the saved output or decision it produces.\n` +
       `- State the likely gap, why it is likely, and the matching learn/practice/proof move. The user should mostly confirm that diagnosis, not invent it.\n` +
       `- Name the likely first gap and the matching learning move directly in the steps instead of asking the user to pick what to learn.\n` +
       `- Distinguish whether that likely gap is mainly knowledge, skill, or proof/evidence, then recommend the matching next learning move.\n` +
@@ -1211,7 +1212,8 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
     lines.push(`Step 2: save one real posting.`);
     lines.push(`Step 3: compare its requirements to the user's background - what can they already prove, what's the gap?`);
     lines.push(`Step 4: decide the single biggest gap to close or person to contact next.`);
-    lines.push(`Do NOT produce generic "note requirements" or "write a summary" steps. Every step must move toward a decision: pursue, park, or close a specific gap.`);
+    lines.push(`Use this usefulness test for every step: name the concrete posting, requirement, evidence source, person, or prep artifact; name the action; name the saved output or decision it produces.`);
+    lines.push(`Every step must move toward a decision: pursue this path, park it, contact a person, or close a specific gap.`);
     if (task.sourceNote && !/^From Strategy Builder$/i.test(task.sourceNote)) {
       lines.push(`Context from strategy: ${task.sourceNote}`);
     }

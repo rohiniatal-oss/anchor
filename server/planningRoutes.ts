@@ -621,6 +621,7 @@ export function registerPlanningRoutes(app: Express) {
   app.post("/api/plan-items/:id/start", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    try {
     const item = await storage.getPlanItem(id);
     if (!item) return res.status(404).json({ error: "Plan item not found" });
     const day = String(req.body?.day || item.plannedFor || new Date().toISOString().slice(0, 10));
@@ -675,6 +676,10 @@ export function registerPlanningRoutes(app: Express) {
     await storage.updatePlanItem(item.id, { taskId: task!.id, status: "started", startedAt: Date.now() } as any);
     await storage.logActivity({ eventType: "started", sourceType: item.sourceType || "task", sourceId: item.sourceId ?? undefined, taskId: task!.id, planItemId: item.id } as any);
     res.json({ ok: true, task });
+    } catch (err: any) {
+      console.error("start plan item failed:", err);
+      res.status(500).json({ error: err?.message || "Failed to start item" });
+    }
   });
 
   app.post("/api/plan/recompute", async (req, res) => {

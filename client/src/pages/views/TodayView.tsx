@@ -850,9 +850,13 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   // item id, creates/reuses the backing task, links taskId both ways, derives the
   // block from the slot (no hardcoded "morning"), and preserves source/doneWhen.
   async function startItem(it: PlanItemT, silent = false) {
-    await mutateAndInvalidate("POST", `/api/plan-items/${it.id}/start`, { day }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
-    setPlan(null); setPlanItems([]);
-    if (!silent) toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
+    try {
+      await mutateAndInvalidate("POST", `/api/plan-items/${it.id}/start`, { day }, ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles"]);
+      setPlan(null); setPlanItems([]);
+      if (!silent) toast({ title: "Started - this is your focus.", description: "Tiny steps next. One at a time." });
+    } catch {
+      toast({ title: "Couldn't start that", description: "Try again in a moment." });
+    }
   }
 
   const executionState = deriveTodayExecutionState({

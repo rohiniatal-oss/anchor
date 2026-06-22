@@ -1316,7 +1316,14 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
   }
   if (source === "learn") return "Open the learning item or a blank note and capture one useful note, brief, or practice result.";
   if (source === "hustle") return "Open the project or public-work item and make the smallest publishable or reusable fragment.";
-  return "Spend 5 minutes on this — just the smallest useful start.";
+  if (candidate?.title) {
+    const t = candidate.title.toLowerCase();
+    if (t.includes("find") || t.includes("search") || t.includes("explore")) return "Open LinkedIn or a job board and search for the first real example.";
+    if (t.includes("compare")) return "Open the two things you're comparing and write one sentence about what's different.";
+    if (t.includes("reach out") || t.includes("contact") || t.includes("message")) return "Pick one person and draft the shortest useful message.";
+    if (t.includes("review") || t.includes("read")) return "Open the thing and read just the first section — then write one useful note.";
+  }
+  return "Open the most relevant thing and spend 5 minutes on just the first step.";
 }
 
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
@@ -1401,7 +1408,8 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
   }
   if (source === "learn") return "This learning move helps you get stronger without stopping applications.";
   if (source === "hustle") return "This writing, project, or public-work move turns learning into something reusable later.";
-  return "This is the best already-live move in the system right now.";
+  if (candidate?.title) return `This task is next because it moves something forward that's already in progress.`;
+  return "This is still a useful next move based on what's in the system.";
 }
 
 function explainRecommendation(
@@ -1445,9 +1453,10 @@ function explainRankedPlanItem(
     if (brief?.landscape?.competitors?.length) supportingReasons.push(`Also hiring: ${brief.landscape.competitors.slice(0, 3).join(", ")}`);
     if (brief?.landscape?.alsoConsider?.length) supportingReasons.push(`Worth exploring: ${brief.landscape.alsoConsider.slice(0, 2).join(", ")}`);
   }
+  const frame = sourceFrame(current.c.source, current.c, context);
   return {
-    summary: `${sourceFrame(current.c.source, current.c, context)} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
-    whyNow: supportingReasons[0] || current.c.whyNow || context.reason,
+    summary: `${frame} Main focus: ${focusArea}${context.activeTrackName ? ` in ${context.activeTrackName}` : ""}.`,
+    whyNow: supportingReasons[0] || current.c.whyNow || context.reason || `The main constraint is ${focusArea}.`,
     whyThis: next
       ? `It outranks the next option because it helps more with ${focusArea} right now.`
       : `It remains in the plan because it is still a useful move in ${focusArea}.`,
@@ -1464,26 +1473,48 @@ export function explainPersistedPlanItem(item: {
   status?: string | null;
   skippedAt?: number | null;
   movedAt?: number | null;
+  title?: string | null;
 }): RecommendationExplanation {
   const source = (item.sourceType || "task") as SourceKind;
-  const why = (item.whySelected || "").trim();
-  const wasCarried = why.toLowerCase().includes("carried forward") || why.toLowerCase().includes("carry-forward");
+  const rawWhy = (item.whySelected || "").trim();
+  const wasCarried = rawWhy.toLowerCase().includes("carried forward") || rawWhy.toLowerCase().includes("carry-forward");
   const wasSkipped = item.status === "skipped" || !!item.skippedAt;
   const wasMoved = item.status === "moved" || !!item.movedAt;
+
+  const madeSmaller = /this was made smaller so starting is easier\.?/i;
+  const hadShrink = madeSmaller.test(rawWhy);
+  const why = rawWhy.replace(madeSmaller, "").trim();
+
+  const mainFocusMatch = why.match(/Main focus:\s*(.+?)\.?\s*$/i);
+  const mainFocus = mainFocusMatch?.[1]?.trim() || "";
+  const coreSentence = mainFocusMatch ? why.slice(0, mainFocusMatch.index).trim() : why;
+
   const whyThis = wasCarried
     ? "It carried over from yesterday — finishing it or parking it clears the backlog."
     : wasSkipped
     ? "It was skipped before, so it's been made smaller or given a different angle."
     : wasMoved
     ? "It was moved to later but is still worth doing today."
-    : why
-    ? "It was chosen because: " + why
-    : "It's still one of today's most useful moves.";
+    : coreSentence || "It's one of today's most useful moves.";
+
+  const whyNow = hadShrink
+    ? "This was made smaller so starting is easier."
+    : mainFocus
+    ? `The main constraint right now is ${mainFocus.toLowerCase()}.`
+    : item.doneWhen
+    ? `The next useful thing is: ${item.doneWhen.toLowerCase()}.`
+    : "This move is still in today's plan.";
+
+  const supportingReasons: string[] = [];
+  if (coreSentence && mainFocus && coreSentence !== whyThis) supportingReasons.push(coreSentence);
+  if (mainFocus && !whyNow.includes(mainFocus.toLowerCase())) supportingReasons.push(`Main focus: ${mainFocus}`);
+
+  const summaryBase = coreSentence || sourceFrame(source);
   return {
-    summary: why || sourceFrame(source),
-    whyNow: why || "This move is still in today's plan.",
+    summary: hadShrink ? `${summaryBase} This was made smaller so starting is easier.` : summaryBase,
+    whyNow,
     whyThis,
-    supportingReasons: why ? [why] : [],
+    supportingReasons,
     firstStep: firstStepForSource(source),
     stopRule: item.doneWhen?.trim() ? `Stop when: ${item.doneWhen.trim()}` : stopRuleForSource(source),
   };

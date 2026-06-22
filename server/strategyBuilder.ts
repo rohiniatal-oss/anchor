@@ -67,7 +67,7 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     capabilitySignal: "One short AI governance note, brief, or interview example you could reuse later.",
     peopleToFind: ["AI governance strategy operator", "policy-to-implementation lead", "frontier AI safety/governance programme manager"],
     resourceNeed: "A current AI governance landscape primer plus one implementation case study.",
-    nextExperiment: "Review three AI governance strategy roles and note the requirements that keep coming up.",
+    nextExperiment: "Find three real AI governance strategy roles and note what they keep asking for.",
     source: "fallback",
   },
   {
@@ -78,7 +78,7 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     capabilitySignal: "One short geopolitical-commercial note, brief, or interview example you could reuse later.",
     peopleToFind: ["geopolitical advisory principal", "commercial diplomacy operator", "sovereign advisory recruiter"],
     resourceNeed: "A recent market/geopolitical risk briefing source and one sample advisory memo format.",
-    nextExperiment: "Compare three geopolitical advisory roles and identify the strongest wedge.",
+    nextExperiment: "Find three real geopolitical advisory roles and note what they have in common.",
     source: "fallback",
   },
   {
@@ -89,7 +89,7 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     capabilitySignal: "One operating memo, cadence note, or decision example you could reuse later.",
     peopleToFind: ["current chief of staff", "founder-office operator", "startup talent partner"],
     resourceNeed: "Founder-office case studies and role scorecards.",
-    nextExperiment: "Interview one chief of staff type to test what actually gets hired.",
+    nextExperiment: "Find one chief of staff role and note what they actually ask for.",
     source: "fallback",
   },
   {
@@ -100,7 +100,7 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     capabilitySignal: "One short strategy note or interview example for a funder or public-sector priority area.",
     peopleToFind: ["foundation strategy lead", "development finance operator", "programme strategy director"],
     resourceNeed: "A funder landscape or development finance strategy primer.",
-    nextExperiment: "Compare two philanthropy strategy roles with two AI governance roles for energy and fit.",
+    nextExperiment: "Find two philanthropy strategy roles and compare them with AI governance ones — which feels more energising?",
     source: "fallback",
   },
 ];
@@ -149,6 +149,7 @@ async function getMarketGroundedArchetypes(tasks: Task[], jobs: Job[], learn: Le
       `${formatContextForPrompt(ctx)} ` +
       `Using current labour-market patterns and the saved system snapshot, recommend 3-5 role archetypes to explore/convert/watch. ` +
       `For each, return: archetype, priority (explore|convert|watch|pause), fitLogic, credibilityGap, capabilitySignal, peopleToFind (2-4 person TYPES, not names), resourceNeed, nextExperiment, marketSignal. ` +
+      `nextExperiment must be a plain-language action the user can do today — e.g. "Find three real X roles and note what they ask for". No jargon, no consultant-speak, no abstract nouns like "wedge" or "lever". ` +
       `MarketSignal should summarize why this lane exists now, not cite URLs. Do not invent specific open roles or specific people. ` +
       `Return ONLY JSON: {"roleArchetypes":[...]}. Snapshot: ${JSON.stringify(systemSnapshot)}`,
     );

@@ -336,7 +336,7 @@ function looksMetaStep(text: string) {
 }
 
 function looksActionable(text: string) {
-  return /^(open|write|draft|list|choose|mark|highlight|copy|paste|find|send|ask|save|start|set|create|name|pick|read|scan|skim|note|pull|collect|gather|match|rewrite|outline|reply|message|email|book|review|map|flag|compare|decide|record|log|extract|inspect)\b/i.test(text.trim());
+  return /^(open|write|draft|list|choose|mark|highlight|copy|paste|find|search|send|ask|save|start|set|create|name|pick|read|scan|skim|note|pull|collect|gather|match|rewrite|outline|reply|message|email|book|review|map|flag|compare|decide|record|log|extract|inspect)\b/i.test(text.trim());
 }
 
 function looksGenericFiller(text: string) {
@@ -535,7 +535,7 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
 
   if (object === "Knowledge") {
     return [
-      task.sourceUrl ? "Open the source and read only the first relevant section" : "Open the source note and read only the first relevant section",
+      task.sourceUrl ? "Open the source and read only the first relevant section" : `Search for or open the most relevant resource on "${task.title.slice(0, 60)}"`,
       "Write one useful takeaway in your own words",
       "Write the one output or decision this should support",
       "Stop once you have that one useful note",

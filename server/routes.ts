@@ -25,10 +25,11 @@ import { generateJobPrepArc } from "./learningCurriculum";
 import { generateHustleArc } from "./learningCurriculum";
 import { autoGenerateNarrativeAngle } from "./narrativeAngle";
 import { generateCompanyBrief } from "./companyIntelligence";
-import { refreshJobScoresInBackground, shouldRefreshJobScore } from "./jobScoring";
+import { refreshJobScoresInBackground, refreshWarmPathScoresInBackground, shouldRefreshJobScore } from "./jobScoring";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats, LLM_MODELS } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
+import { contextualizeTask } from "./taskIntakeInference";
 
 const acceptRecommendationSchema = z.object({
   entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
@@ -153,14 +154,17 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   app.get("/api/tasks", async (_q, res) => {
     const current = await storage.getTasks();
-    const repaired = await Promise.all(current.map(async (task) => {
+    await Promise.all(current.map(async (task) => { await contextualizeTask(task.id); }));
+    const refreshed = await storage.getTasks();
+    const repaired = await Promise.all(refreshed.map(async (task) => {
       const normalized = await normalizeExistingTaskBreakdown(task);
       if (!normalized.changed) return task;
       return await storage.updateTask(task.id, {
         title: normalized.title,
         steps: normalized.steps,
+        doneWhen: normalized.doneWhen,
         minimumOutcome: normalized.minimumOutcome,
-      } as any) || { ...task, steps: normalized.steps, minimumOutcome: normalized.minimumOutcome };
+      } as any) || { ...task, title: normalized.title, steps: normalized.steps, doneWhen: normalized.doneWhen, minimumOutcome: normalized.minimumOutcome };
     }));
     res.json(repaired);
   });
@@ -241,6 +245,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const contactId = Number(req.body?.contactId);
     if (!Number.isFinite(jobId) || !Number.isFinite(contactId)) return res.status(400).json({ error: "Bad ids" });
     const link = await storage.linkContactToJob(contactId, jobId);
+    refreshWarmPathScoresInBackground([jobId]);
     res.json(link);
   });
 
@@ -249,6 +254,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     const contactId = Number(req.params.contactId);
     if (!Number.isFinite(jobId) || !Number.isFinite(contactId)) return res.status(400).json({ error: "Bad ids" });
     await storage.unlinkContactFromJob(contactId, jobId);
+    refreshWarmPathScoresInBackground([jobId]);
     res.json({ ok: true });
   });
 
@@ -304,8 +310,27 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
   crud(app, "wins", () => storage.getWins(), insertWinSchema,
     (d) => storage.createWin(d), () => Promise.resolve(undefined), (id) => storage.deleteWin(id));
-  crud(app, "contacts", () => storage.getContacts(), insertContactSchema,
-    (d) => storage.createContact(d), (id, d) => storage.updateContact(id, d), (id) => storage.deleteContact(id));
+  app.get("/api/contacts", async (_q, res) => res.json(await storage.getContacts()));
+  app.post("/api/contacts", async (req, res) => {
+    const p = insertContactSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const created = await storage.createContact(p.data);
+    refreshWarmPathScoresInBackground();
+    res.json(created);
+  });
+  app.patch("/api/contacts/:id", async (req, res) => {
+    const p = insertContactSchema.partial().safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: p.error.flatten() });
+    const updated = await storage.updateContact(Number(req.params.id), p.data);
+    if (!updated) return res.status(404).json({ error: "Not found" });
+    refreshWarmPathScoresInBackground();
+    res.json(updated);
+  });
+  app.delete("/api/contacts/:id", async (req, res) => {
+    await storage.deleteContact(Number(req.params.id));
+    refreshWarmPathScoresInBackground();
+    res.json({ ok: true });
+  });
   app.get("/api/recommendations", async (_q, res) => {
     res.json(await storage.getRecommendations());
   });

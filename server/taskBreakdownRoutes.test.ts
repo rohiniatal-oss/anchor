@@ -86,6 +86,92 @@ test("goal-source breakdown sharpens the first role-search move for a specific m
   assert.match(steps.map((step) => String(step.text || "")).join(" | "), /find one real role for the first role type still missing|Record the company and role title/i);
 });
 
+test("goal-source contact-support breakdown uses contact workflow instead of generic role search", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Find one person at Ofcom to ask how teams hire for AI governance strategy",
+    category: "admin",
+    sourceType: "goal",
+    sourceId: 2,
+    sourceStatus: "broad_parallel_pursuit_network_support",
+    sourceNote: "Use Policy Advisor at Ofcom as the reference path. AI governance strategy needs a real hiring signal.",
+    doneWhen: "One real person is saved with why they are worth messaging and the one question you would ask about AI governance strategy.",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+
+  const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
+  const joined = steps.map((step) => String(step.text || "")).join(" | ");
+
+  assert.equal(workflowState.currentStage, "Find the right person");
+  assert.match(joined, /Open LinkedIn and search for someone already doing AI governance strategy/i);
+  assert.match(joined, /Save the person whose path is closest to AI governance strategy/i);
+  assert.match(joined, /Draft a soft ask about how teams hire for AI governance strategy/i);
+  assert.doesNotMatch(joined, /open jobs|save the first credible role|pipeline action/i);
+});
+
+test("goal-source learning-support breakdown starts from a requirement gap instead of generic learning", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Use Policy Advisor at Ofcom to identify the first missing requirement for AI governance strategy",
+    category: "learning",
+    sourceType: "goal",
+    sourceId: 3,
+    sourceStatus: "broad_parallel_pursuit_learning_support",
+    sourceNote: "Treat Policy & Regulatory Frameworks as the likely first knowledge gap from Policy Advisor at Ofcom. Use the role to confirm or disprove that diagnosis, save one line on why, then read one targeted source.",
+    doneWhen: "The first missing requirement and the smallest prep move are saved for AI governance strategy.",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+
+  const { workflowState, steps } = await buildDeterministicTaskBreakdown(task);
+  const joined = steps.map((step) => String(step.text || "")).join(" | ");
+
+  assert.equal(workflowState.workObject, "Knowledge");
+  assert.match(joined, /Open Policy Advisor at Ofcom and use it as the reference role for AI governance strategy/i);
+  assert.match(joined, /Treat Policy & Regulatory Frameworks as the likely first knowledge gap for AI governance strategy/i);
+  assert.match(joined, /Save one sentence on why Policy & Regulatory Frameworks looks like the first knowledge gap/i);
+  assert.match(joined, /read one targeted source on Policy & Regulatory Frameworks/i);
+  assert.doesNotMatch(joined, /open jobs|save the first credible role|start learning about/i);
+});
+
+test("goal-source learning-support breakdown preserves the planner gap over broader context gaps", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Use AI Chief of Staff at Model Lab to identify the first missing requirement for AI operations",
+    category: "learning",
+    sourceType: "goal",
+    sourceId: 3,
+    sourceStatus: "broad_parallel_pursuit_learning_support",
+    sourceNote: "Treat Product & Delivery as the likely first skill gap from AI Chief of Staff at Model Lab. Use the role to confirm or disprove that diagnosis, save one line on why, then do one short drill.",
+    doneWhen: "The first missing requirement and the smallest prep move are saved for AI operations.",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+  const bundle = {
+    sourceKind: "goal",
+    source: null,
+    sourceContext: "",
+    playbook: "",
+    parentContext: "",
+    crossEngineContext: "Capability areas still worth strengthening: frontier safety framing, stakeholder translation.",
+  } as any;
+
+  const { steps } = await buildDeterministicTaskBreakdown(task, bundle);
+  const joined = steps.map((step) => String(step.text || "")).join(" | ");
+
+  assert.match(joined, /Open AI Chief of Staff at Model Lab and use it as the reference role/i);
+  assert.match(joined, /Treat Product & Delivery as the likely first skill gap/i);
+  assert.match(joined, /do one short drill on Product & Delivery/i);
+  assert.doesNotMatch(joined, /frontier safety framing|stakeholder translation/i);
+});
+
 test("strategy role-scan breakdown turns broad exploration into a real posting plus repeated requirements", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
   const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
@@ -108,8 +194,10 @@ test("strategy role-scan breakdown turns broad exploration into a real posting p
   assert.match(joined, /Open LinkedIn or the target job board and search "AI governance strategy roles"/i);
   assert.match(joined, /Save the first real posting that matches the path closely enough to learn from/i);
   assert.match(joined, /Extract the 3 repeated requirements or background signals/i);
-  assert.match(joined, /Mark which signals you can already evidence/i);
-  assert.match(joined, /Stop once one real role and one requirements pattern are captured/i);
+  assert.match(joined, /Treat AI Governance & Safety as the likely first knowledge gap to test/i);
+  assert.match(joined, /confirm or disprove that diagnosis/i);
+  assert.match(joined, /If AI Governance & Safety is the gap, read one targeted source on AI Governance & Safety/i);
+  assert.match(joined, /one real role, one repeated requirements pattern, and one next learning move are captured/i);
   assert.doesNotMatch(joined, /open a note and list the first thing you need to understand|get the lay of the land|review notes/i);
 });
 
@@ -152,7 +240,8 @@ test("role-scan coercion replaces generic model steps with the concrete scan con
   assert.equal(steps.length, 5);
   assert.match(joined, /Save the first real posting/i);
   assert.match(joined, /Extract the 3 repeated requirements/i);
-  assert.match(joined, /Stop once one real role and one requirements pattern are captured/i);
+  assert.match(joined, /Treat AI Governance & Safety as the likely first knowledge gap to test/i);
+  assert.match(joined, /one next learning move are captured/i);
   assert.doesNotMatch(joined, /lay of the land|Research AI governance roles|Summarize your findings/i);
 });
 
@@ -174,8 +263,8 @@ test("plain networking task breakdown pre-structures the outreach instead of fal
   const { steps } = await buildDeterministicTaskBreakdown(task);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.match(joined, /Open a blank message to one Bain alum/i);
-  assert.match(joined, /Use this angle: you are exploring AI strategy roles/i);
+  assert.match(joined, /Open LinkedIn and search for one Bain alum AI strategy roles/i);
+  assert.match(joined, /Save one real person who fits one Bain alum/i);
   assert.match(joined, /Ask for quick advice about AI strategy roles/i);
   assert.doesNotMatch(joined, /find the first thing to act on|get ready|research|job board/i);
 });
@@ -211,6 +300,39 @@ test("normalizeExistingTaskBreakdown repairs saved legacy meta-steps into direct
     /use the|locate the|define this stage output|check completion criteria|break this stage into actions/i,
   );
   assert.match(String(steps[0]?.text || ""), /open jobs|save the first real role|open the saved role|pipeline action|find one real role|still missing one|first path|most promising saved role/i);
+});
+
+test("normalizeExistingTaskBreakdown repairs legacy generic contact task titles and outcomes", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { normalizeExistingTaskBreakdown } = await import("./taskBreakdownRoutes");
+  const { storage } = await import("./storage");
+
+  const contact = await storage.createContact({
+    name: "",
+    who: "Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat",
+    status: "to_contact",
+    relationshipStrength: "cold",
+    targetRole: "AI strategy roles",
+    askType: "soft",
+    note: "Captured from Brain Dump",
+  } as any);
+
+  const repaired = await normalizeExistingTaskBreakdown({
+    title: "Draft soft outreach to Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat",
+    category: "admin",
+    sourceType: "contact",
+    sourceId: contact.id,
+    sourceNote: "From Brain Dump",
+    doneWhen: "A message is drafted and ready to send",
+    minimumOutcome: "A draft message",
+    sourceUrl: "",
+    steps: "[]",
+  } as any);
+
+  assert.equal(repaired.changed, true);
+  assert.equal(repaired.title, "Find one Bain alum to ask about AI strategy roles");
+  assert.match(String(repaired.doneWhen || ""), /One real person is chosen and the outreach ask is ready/i);
+  assert.match(String(repaired.minimumOutcome || ""), /One real person is chosen and the outreach ask is ready/i);
 });
 
 test("contact-source breakdown uses the real contact context in deterministic fallback", async () => {
@@ -249,7 +371,7 @@ test("contact-source breakdown uses the real contact context in deterministic fa
   assert.match(steps.map((step) => String(step.text || "")).join(" | "), /Sarah|Palantir/i);
 });
 
-test("contact-source outreach breakdown supplies the angle and ask instead of generic message mechanics", async () => {
+test("generic contact-source outreach finds one real person before drafting", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
   const { buildDeterministicTaskBreakdown } = await import("./taskBreakdownRoutes");
   const { storage } = await import("./storage");
@@ -279,11 +401,13 @@ test("contact-source outreach breakdown supplies the angle and ask instead of ge
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
   assert.equal(bundle.sourceKind, "contact");
-  assert.equal(workflowState.currentStage, "Draft a message");
+  assert.equal(workflowState.currentStage, "Find the right person");
   assert.match(bundle.sourceContext || "", /Person: Bain alum/i);
-  assert.match(joined, /Open a draft message to Bain alum/i);
-  assert.match(joined, /reality-check which AI strategy roles are actually worth pursuing/i);
+  assert.match(bundle.sourceContext || "", /target archetype, not a named person yet/i);
+  assert.match(joined, /Open LinkedIn and search for Bain alum AI strategy roles/i);
+  assert.match(joined, /Save one real person who fits Bain alum/i);
   assert.match(joined, /Ask for a 15-minute chat or quick steer on AI strategy roles/i);
+  assert.match(joined, /Draft the message only if this person looks worth contacting/i);
   assert.doesNotMatch(joined, /review notes|research this person/i);
 });
 
@@ -406,6 +530,7 @@ test("contact prompt tells the llm to personalize outreach from stored facts ins
   assert.match(bundle.sourceContext || "", /Shared network: Bain/i);
   assert.match(bundle.sourceContext || "", /Existing draft: Hi/i);
   assert.match(prompt, /Anchor remains the planner; your job is to personalize the move using only the facts provided/i);
+  assert.match(prompt, /If the "contact" is only an archetype and no real person is identified yet, first identify one plausible real person before drafting outreach/i);
   assert.match(prompt, /Do not tell the user to review notes, research the person, or figure out why they are reaching out/i);
   assert.match(prompt, /Convert available context into a suggested outreach angle, a smallest credible ask, and a clear stop condition/i);
   assert.match(prompt, /If current public information about the person, team, or organization is already provided, use at most 1-2 relevant signals to sharpen why now, the angle, or the ask/i);
@@ -453,6 +578,80 @@ test("conversation-prep prompt tells the llm to prepare questions rather than dr
   assert.match(prompt, /If a referral path, target role, hiring question, or team context already exists, use it directly/i);
 });
 
+test("goal-backed learning-support prompt tells the llm to infer the likely first gap and matching learning move", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildTaskBreakdownPrompt } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Use AI Governance Advisor at DeepMind to identify the first missing requirement for AI governance strategy",
+    category: "learning",
+    sourceType: "goal",
+    sourceId: 3,
+    sourceStatus: "broad_parallel_pursuit_learning_support",
+    sourceNote: "Treat frontier safety framing as the likely first knowledge gap from AI Governance Advisor at DeepMind. Use the role to confirm or disprove that diagnosis, save one line on why, then read one targeted source.",
+    doneWhen: "The first missing requirement and the smallest prep move are saved for AI governance strategy.",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+  const bundle = {
+    sourceKind: "goal",
+    source: null,
+    sourceContext: "This is a STRATEGIC GOAL / learning-support item.",
+    playbook: "Anchor remains the planner.",
+    parentContext: "",
+    crossEngineContext: "Live roles nearby: AI Governance Advisor at DeepMind; Policy Advisor at Ofcom.\nCapability areas still worth strengthening: frontier safety framing, cross-jurisdiction regulation, stakeholder translation.",
+  } as any;
+
+  const prompt = buildTaskBreakdownPrompt({ task, bundle, fallbackObject: "Knowledge" });
+
+  assert.match(prompt, /For goal-backed learning support:/i);
+  assert.match(prompt, /Do the assessment for the user/i);
+  assert.match(prompt, /Do not ask them to invent the gap from scratch/i);
+  assert.match(prompt, /goal note already names the likely gap: frontier safety framing \(knowledge gap\)/i);
+  assert.match(prompt, /Start from AI Governance Advisor at DeepMind as the reference role/i);
+  assert.match(prompt, /frontier safety framing, cross-jurisdiction regulation, stakeholder translation/i);
+  assert.match(prompt, /State the likely gap, why it is likely, and the matching learn\/practice\/proof move/i);
+  assert.match(prompt, /Name the likely first gap and the matching learning move directly in the steps/i);
+  assert.match(prompt, /Tell the user what to learn, practice, or draft next if that likely gap holds/i);
+  assert.match(prompt, /Distinguish between a knowledge gap, a skill gap, and a proof\/evidence gap/i);
+  assert.match(prompt, /name the target concept, the source or role evidence to inspect, and the output to save/i);
+});
+
+test("role-market-scan prompt asks the llm to suggest the likely first gap and what to learn", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
+  const { buildTaskBreakdownPrompt } = await import("./taskBreakdownRoutes");
+
+  const task = {
+    title: "Find three real AI governance strategy roles and note what they keep asking for",
+    category: "job",
+    sourceType: "strategy_builder",
+    sourceId: 1,
+    sourceNote: "From Strategy Builder",
+    doneWhen: "One real role, one repeated requirements pattern, and one next learning move are captured",
+    minimumOutcome: "",
+    sourceUrl: "",
+  } as any;
+  const bundle = {
+    sourceKind: "task",
+    source: null,
+    sourceContext: "This is a STRATEGY task - exploring or building a career path.",
+    playbook: "",
+    parentContext: "",
+    crossEngineContext: "Relevant career focus: AI governance strategy.\nCapability areas still worth strengthening: frontier safety framing, stakeholder translation.",
+  } as any;
+
+  const prompt = buildTaskBreakdownPrompt({ task, bundle, fallbackObject: "Pipeline" });
+
+  assert.match(prompt, /For role exploration and market-scan work:/i);
+  assert.match(prompt, /Do the assessment for the user/i);
+  assert.match(prompt, /suggest the likely first requirement they cannot clearly evidence today/i);
+  assert.match(prompt, /frontier safety framing, stakeholder translation/i);
+  assert.match(prompt, /State the likely gap, why it is likely, and the matching learn\/practice\/proof move/i);
+  assert.match(prompt, /Name the likely first gap and the matching learning move directly in the steps/i);
+  assert.match(prompt, /recommend the matching next learning move/i);
+  assert.match(prompt, /name the exact evidence to extract and the output it should produce/i);
+});
+
 test("weak generic task notes are ignored so prompt context falls back to structured Anchor data", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
   const { buildSourceContext, buildTaskBreakdownPrompt } = await import("./taskBreakdownRoutes");
@@ -479,7 +678,7 @@ test("weak generic task notes are ignored so prompt context falls back to struct
     title: "Write cover letter for Policy Advisor at Ofcom",
     category: "job",
     sourceType: "job",
-    sourceId: job.id,
+    sourceId: 1,
     sourceNote: "Working note from June",
     doneWhen: "A tailored cover letter draft exists",
     minimumOutcome: "",
@@ -492,7 +691,8 @@ test("weak generic task notes are ignored so prompt context falls back to struct
 
   assert.doesNotMatch(bundle.sourceContext || "", /Working note from June/i);
   assert.match(bundle.sourceContext || "", /Policy Advisor at Ofcom/i);
-  assert.match(prompt, /Use available context to create specific actions, not generic advice/i);
+  assert.match(prompt, /Use available context to create specific actions, not advice or a restatement of the context/i);
+  assert.match(prompt, /A useful step names three things: the object to open or edit, the action to take, and the output that will exist afterwards/i);
   assert.match(prompt, /Steps must use real content from context above/i);
   assert.match(prompt, /APPLICATION WORKFLOW GUIDANCE/i);
 });
@@ -534,37 +734,39 @@ test("job cover-letter fallback uses the stored narrative angle and strongest ro
   assert.doesNotMatch(joined, /review notes|research Ofcom/i);
 });
 
-test("global breakdown prompt sets a quality bar against generic filler and for immediately startable actions", async () => {
+test("global breakdown prompt defines useful steps by object action and output", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
-  const { buildSourceContext, buildTaskBreakdownPrompt } = await import("./taskBreakdownRoutes");
-  const { buildUserContext } = await import("./userContext");
-  const { storage } = await import("./storage");
-
-  const job = await storage.createJob({
-    title: "Policy Advisor",
-    company: "Ofcom",
-    status: "wishlist",
-    applicationReadiness: "cv",
-  } as any);
+  const { buildTaskBreakdownPrompt } = await import("./taskBreakdownRoutes");
 
   const task = {
     title: "Write cover letter for Policy Advisor at Ofcom",
     category: "job",
     sourceType: "job",
-    sourceId: job.id,
+    sourceId: 1,
     sourceNote: "",
     doneWhen: "A tailored cover letter draft exists",
     minimumOutcome: "",
     sourceUrl: "",
   } as any;
-
-  const userContext = await buildUserContext();
-  const bundle = await buildSourceContext(task, userContext);
+  const bundle = {
+    sourceKind: "job",
+    source: {
+      title: "Policy Advisor",
+      company: "Ofcom",
+      status: "wishlist",
+      applicationReadiness: "cv",
+    },
+    sourceContext: "JOB CONTEXT: Policy Advisor at Ofcom. Application readiness: cv.",
+    playbook: "",
+    parentContext: "",
+  } as any;
   const prompt = buildTaskBreakdownPrompt({ task, bundle, fallbackObject: "Artifact" });
 
   assert.match(prompt, /The first step must be immediately startable and produce a visible result/i);
-  assert.match(prompt, /Use available context to create specific actions, not generic advice or a restatement of the context/i);
-  assert.match(prompt, /Avoid filler like review notes, do research, take notes, or summarize unless the task is genuinely research-heavy/i);
+  assert.match(prompt, /Use available context to create specific actions, not advice or a restatement of the context/i);
+  assert.match(prompt, /A useful step names three things: the object to open or edit, the action to take, and the output that will exist afterwards/i);
+  assert.match(prompt, /after each step, one visible object should be different/i);
+  assert.match(prompt, /Research, review, reading, and summarising are valid only when the step names what to look for/i);
   assert.match(prompt, /Maximum 5 steps\. If fewer suffice, use fewer/i);
 });
 

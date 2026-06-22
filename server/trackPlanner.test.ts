@@ -18,6 +18,6 @@ test("thin tracks ask for one real role and one requirements pattern", () => {
   });
 
   assert.match(plan.primaryNeed.move, /find one real AI strategy role/i);
-  assert.match(plan.primaryNeed.doneWhen, /one real role and one repeated requirements pattern/i);
+  assert.match(plan.primaryNeed.doneWhen, /one real role, one repeated requirements pattern, and one next learning move/i);
   assert.doesNotMatch(plan.primaryNeed.move, /review three|three .*roles/i);
 });

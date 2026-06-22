@@ -1,9 +1,9 @@
 import type { CareerTrack, Contact, Hustle, Job, Learn, Task, UserProfile } from "@shared/schema";
 import { getLearnOutputState, isOpportunityActionable } from "@shared/domainState";
 import { GOAL_WORKSTREAM } from "@shared/goalWorkstreams";
-import { nextContactTaskTitle } from "@shared/taskPreview";
+import { isGenericContactPlaceholder, nextContactTaskTitle } from "@shared/taskPreview";
 import { buildTrackSpine } from "./trackSpine";
-import { contractForTaskIntent } from "./taskIntent";
+import { contractForTaskIntent, likelyLearningGapPlan } from "./taskIntent";
 import {
   broadPursuitMissingContactsContextReason,
   broadPursuitMissingContactsDoneWhen,
@@ -603,16 +603,18 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
   if (context?.broadPursuitMissingNetworkSupport?.length) {
     for (const [index, combination] of context.broadPursuitMissingNetworkSupport.entries()) {
       const label = displayCombination(combination);
-      const relevantJobs = context?.liveJobTargets?.filter((j) => j.company) || [];
+      const relevantJobs = relevantLiveJobTargets(label, context).filter((j) => j.company);
+      const roleReference = formatLiveRoleReference(relevantJobs[0]);
       const companies = [...new Set(relevantJobs.map((j) => j.company))].slice(0, 2);
-      const companyHint = companies.length > 0 ? ` at ${companies.join(" or ")}` : "";
       out.push({
         source: "goal",
         sourceId: 200 + index,
         taskId: null,
-        title: companies.length > 0
-          ? `Find someone${companyHint} who can help with ${label}`
-          : `Find one person already working in ${label}`,
+        title: roleReference
+          ? `Find one person close to ${roleReference} to ask how teams hire for ${label}`
+          : companies.length > 0
+          ? `Find one person at ${companies.join(" or ")} to ask how teams hire for ${label}`
+          : `Find one person already doing ${label} to ask how teams hire for it`,
         category: "admin",
         size: "medium",
         deadline: "",
@@ -623,7 +625,7 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
           ? `${label} needs a contact. Try LinkedIn for connections at ${companies.join(", ")} — alumni, former colleagues, or second-degree contacts.`
           : `${label} has no contacts yet. Search LinkedIn for someone one step ahead in this path.`,
         sourceStatus: "broad_parallel_pursuit_network_support",
-        doneWhen: `One real person added who you'd actually message about ${label}.`,
+        doneWhen: `One real person is saved with why they are worth messaging and the one question you would ask about ${label}.`,
         whyNow: `${label} has no contacts yet — one real conversation changes how you prep and apply`,
         fitScore: null,
         blocked: false,
@@ -649,21 +651,29 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
   if (context?.broadPursuitMissingLearningSupport?.length) {
     for (const [index, combination] of context.broadPursuitMissingLearningSupport.entries()) {
       const label = displayCombination(combination);
+      const relevantJobs = relevantLiveJobTargets(label, context);
+      const roleReference = formatLiveRoleReference(relevantJobs[0]);
+      const likelyGap = likelyLearningGapPlan({ rolePath: roleReference || label });
+      const learningMove = conciseLearningMove(likelyGap.learningMoveStep);
       out.push({
         source: "goal",
         sourceId: 300 + index,
         taskId: null,
-        title: `Start learning about ${label}`,
+        title: roleReference
+          ? `Use ${roleReference} to check whether ${likelyGap.label} is the first missing requirement for ${label}`
+          : `Use one live ${label} role to check whether ${likelyGap.label} is the first missing requirement`,
         category: "learning",
         size: "medium",
         deadline: "",
         status: "not_started",
         skipped: 0,
         sourceUrl: "",
-        sourceNote: `${label} has no learning resources yet. Start learning about it next.`,
+        sourceNote: roleReference
+          ? `Treat ${likelyGap.label} as the likely first gap (${likelyGap.gapTypeLabel}) from ${roleReference}. Use the role to confirm or disprove that diagnosis, save one line on why, then use this prep move: ${learningMove}.`
+          : `${label} still needs targeted prep. Treat ${likelyGap.label} as the likely first gap (${likelyGap.gapTypeLabel}) from one real role, confirm or disprove it, then use this prep move: ${learningMove}.`,
         sourceStatus: "broad_parallel_pursuit_learning_support",
-        doneWhen: `One focused learning item exists for ${label}.`,
-        whyNow: `${label} has no learning resources yet`,
+        doneWhen: `The likely first gap and the matching smallest prep move are saved for ${label}.`,
+        whyNow: `${label} still lacks a clear prep target from a real role`,
         fitScore: null,
         blocked: false,
         blockerReason: "",
@@ -686,6 +696,32 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
     }
   }
   return out;
+}
+
+function relevantLiveJobTargets(label: string, context?: StrategicContext) {
+  const jobs = context?.liveJobTargets || [];
+  if (!jobs.length) return [];
+  const labelWords = significantWords(label);
+  return [...jobs]
+    .map((job) => {
+      const jobWords = new Set(significantWords(`${job.title} ${job.company} ${job.roleArchetype || ""}`));
+      const overlap = labelWords.filter((word) => jobWords.has(word)).length;
+      return { job, overlap };
+    })
+    .sort((a, b) => b.overlap - a.overlap || Number(!!b.job.company) - Number(!!a.job.company))
+    .map((entry) => entry.job);
+}
+
+function formatLiveRoleReference(job?: { title: string; company: string }) {
+  if (!job) return "";
+  return `${job.title}${job.company ? ` at ${job.company}` : ""}`;
+}
+
+function conciseLearningMove(raw: string) {
+  return raw
+    .replace(/^Use this matching next learning move if that gap holds:\s*/i, "")
+    .replace(/^If .+? is the gap,\s*/i, "")
+    .replace(/, then stop once one real role, one repeated requirements pattern, and one next learning move are captured$/i, "");
 }
 
 function jobMoveSize(action: JobTruthAction) {
@@ -833,6 +869,20 @@ function contactNextStep(c: Contact): { action: string; size: string; doneWhen: 
       size: "quick",
       doneWhen: "The message is sent",
       why: "draft exists, so this can become real access quickly",
+    };
+  }
+  if (isGenericContactPlaceholder(c)) {
+    const action = nextContactTaskTitle(c);
+    const contract = contractForTaskIntent({
+      title: action,
+      sourceType: "contact",
+      sourceNote: `${c.why || c.note || ""} ${c.targetOrg || ""} ${c.targetRole || ""}`,
+    });
+    return {
+      action,
+      size: "quick",
+      doneWhen: contract.doneWhen,
+      why: "you need one real person and one clear ask before drafting outreach",
     };
   }
   return {
@@ -1070,6 +1120,28 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
       const blocked = t.readiness === "blocked" || !!t.blockerReason;
       const dismissedCount = countDismissedStepOutputs(t.steps);
       const effectiveSkipped = t.skipped + dismissedCount;
+      const linkedContact = t.sourceType === "contact" && t.sourceId != null ? contactsById.get(t.sourceId) : undefined;
+      const baseTaskIntent = contractForTaskIntent({
+        title: t.title,
+        category: t.category,
+        sourceType: t.sourceType,
+        sourceNote: t.sourceNote,
+        doneWhen: t.doneWhen,
+        minimumOutcome: t.minimumOutcome,
+        blockerReason: t.blockerReason,
+      });
+      const repairedTaskTitle = linkedContact && isGenericContactPlaceholder(linkedContact)
+        ? nextContactTaskTitle(linkedContact)
+        : t.title.replace(/^âœ¨\s*/, "");
+      const repairedTaskIntent = linkedContact && isGenericContactPlaceholder(linkedContact)
+        ? contractForTaskIntent({
+          title: repairedTaskTitle,
+          sourceType: "contact",
+          sourceNote: `${t.sourceNote || ""} ${linkedContact.why || linkedContact.note || ""} ${linkedContact.targetOrg || ""} ${linkedContact.targetRole || ""}`,
+        })
+        : baseTaskIntent.intent === "role_market_scan"
+          ? baseTaskIntent
+          : null;
       out.push({
         source: "task", sourceId: t.id, taskId: t.id,
         title: t.title.replace(/^✨\s*/, ""), category: t.category, size: t.size,
@@ -1081,6 +1153,8 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
         relationshipStrength: "", askType: "", messageDraft: "", sourceNetwork: "", targetOrg: "", targetRole: "", followUpDate: "",
         blockedBy: t.blockedBy || "",
+        ...(repairedTaskTitle !== t.title ? { title: repairedTaskTitle } : {}),
+        ...(repairedTaskIntent?.doneWhen ? { doneWhen: repairedTaskIntent.doneWhen } : {}),
       });
     }
   }
@@ -1442,18 +1516,26 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
       if (candidate?.targetRole && context?.liveJobTargets?.length) {
-        const relevantJobs = context.liveJobTargets.filter((j) => j.company);
+        const relevantJobs = relevantLiveJobTargets(candidate.targetRole, context).filter((j) => j.company);
         if (relevantJobs.length > 0) {
-          const companies = [...new Set(relevantJobs.map((j) => j.company))].slice(0, 2);
-          return `Search LinkedIn for someone you know at ${companies.join(" or ")} — a second-degree connection, alumni contact, or former colleague who moved there. Add them as a contact for ${candidate.targetRole}.`;
+          const leadJob = relevantJobs[0];
+          const roleReference = formatLiveRoleReference(leadJob);
+          return `Search LinkedIn for someone connected to ${leadJob.company} whose path is closest to ${roleReference}. Add them as a contact for ${candidate.targetRole}.`;
         }
       }
       if (candidate?.targetRole) return `Search LinkedIn for "${candidate.targetRole}" and find one person already in that kind of role. Add them as a contact — even a cold note to someone one step ahead is worth more than no contact.`;
       return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
     }
-    if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) {
-        const roleKey = (candidate.targetRole || "").toLowerCase();
+    if (candidate && candidate.sourceStatus === "broad_parallel_pursuit_learning_support") {
+      const referenceRole = candidate.title.match(/^Use (.+?) to check whether .+? is the first missing requirement for /i)?.[1];
+      const gapFromTitle = candidate.title.match(/^Use .+? to check whether (.+?) is the first missing requirement for /i)?.[1];
+      if (referenceRole) {
+        return `Open ${referenceRole} and treat ${gapFromTitle} as the likely first gap to confirm or disprove.`;
+      }
+      if (candidate.targetRole) {
+        const likelyGap = gapFromTitle || likelyLearningGapPlan({ rolePath: candidate.targetRole }).label;
+        return `Open one live role or role note for ${candidate.targetRole} and treat ${likelyGap} as the likely first gap to confirm or disprove.`;
+        /* const roleKey = String(candidate?.targetRole || "").toLowerCase();
         let suggestion = "";
         if (/ai|governance|safety/.test(roleKey)) suggestion = `Read one recent AI governance briefing or policy paper and note the main debate. Start with Brookings, CSIS, or the AI Now Institute.`;
         else if (/chief of staff|operations|operator/.test(roleKey)) suggestion = `Find one example of a Chief of Staff job description and list the top 3 skills it asks for. Note which ones you can already demonstrate.`;
@@ -1461,6 +1543,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
         else if (/philanthropy|development|funder/.test(roleKey)) suggestion = `Find one recent report from a major funder or development org in your target area. Note what they're prioritising this year.`;
         if (suggestion) return suggestion;
         return `Search for "${candidate.targetRole}" on LinkedIn Learning, Coursera, or Google Scholar. Save the first resource that looks genuinely useful — not the most popular, the most relevant to the roles you're targeting.`;
+        */
       }
       return broadPursuitMissingPrepFirstStep(context?.broadPursuitMissingLearningSupport || []);
     }
@@ -1489,6 +1572,18 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
     return "Open the role, your CV, and the application materials for this step.";
   }
   if (source === "contact") {
+    if (candidate?.title) {
+      const contract = contractForTaskIntent({
+        title: candidate.title,
+        category: candidate.category,
+        sourceType: candidate.source,
+        sourceNote: candidate.sourceNote,
+        doneWhen: candidate.doneWhen,
+      });
+      if (candidate.sourceStatus === "to_contact" && /one real person is chosen and the outreach ask is ready/i.test(contract.doneWhen)) {
+        return contract.firstStep;
+      }
+    }
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
     if (intent === "conversion") return "Open the thread and write the shortest message that advances the live role right now.";
     if (intent === "interview") return "Open the thread and ask the one question that sharpens the interview or active process.";
@@ -1522,11 +1617,11 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
       return `Stop after ${candidate.targetRole} has one concrete role or application move.`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
-      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one useful contact or outreach path.`;
+      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one useful person and one concrete hiring question ready.`;
       return broadPursuitMissingContactsStopRule();
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one learning focus.`;
+      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one likely first gap and one matching smallest prep move saved.`;
       return broadPursuitMissingPrepStopRule();
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1546,6 +1641,18 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
     return "Stop after one concrete application or materials step is complete.";
   }
   if (source === "contact") {
+    if (candidate?.title) {
+      const contract = contractForTaskIntent({
+        title: candidate.title,
+        category: candidate.category,
+        sourceType: candidate.source,
+        sourceNote: candidate.sourceNote,
+        doneWhen: candidate.doneWhen,
+      });
+      if (candidate.sourceStatus === "to_contact" && /one real person is chosen and the outreach ask is ready/i.test(contract.doneWhen)) {
+        return contract.stopCondition;
+      }
+    }
     const intent = candidate && context ? contactIntent(candidate, context) : "exploration";
     if (intent === "conversion") return "Stop after the live-role message is drafted, sent, or clearly scheduled.";
     if (intent === "interview") return "Stop after the interview question or prep ask is sent or clearly scheduled.";
@@ -1554,6 +1661,16 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
   }
   if (source === "learn") return "Stop after one useful note, brief, practice result, or reusable example exists.";
   if (source === "hustle") return "Stop after one reusable or publishable piece exists, or the next concrete step is finished.";
+  if (candidate?.title) {
+    const contract = contractForTaskIntent({
+      title: candidate.title,
+      category: candidate.category,
+      sourceType: candidate.source,
+      sourceNote: candidate.sourceNote,
+      doneWhen: candidate.doneWhen,
+    });
+    if (contract.intent !== "admin_action") return contract.stopCondition;
+  }
   return "Stop when something is visibly different from when you started.";
 }
 
@@ -1567,7 +1684,7 @@ function sourceFrame(source: SourceKind, candidate?: Candidate, context?: Strate
       return broadPursuitMissingContactsSourceFrame(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `${candidate.targetRole} has no learning resources yet — start learning about it now.`;
+      if (candidate?.targetRole) return `${candidate.targetRole} still lacks one clearly named prep gap - use the closest live role to identify it and choose one matching prep move.`;
       return broadPursuitMissingPrepSourceFrame(context?.broadPursuitMissingLearningSupport || []);
     }
     if (context?.broadPursuitMissingCombinations?.length) {

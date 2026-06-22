@@ -67,6 +67,7 @@ test("blocker capture patch keeps blocked readiness and adds an unblock-oriented
     sourceStatus: "blocker_update",
   });
   assert.equal(patch.readiness, "blocked");
-  assert.match(String(patch.steps), /what is blocked and what would unblock it/i);
+  assert.match(String(patch.steps), /Write what is blocked/i);
+  assert.match(String(patch.steps), /Choose the smallest unblock request or workaround/i);
   assert.equal(patch.minimumOutcome, "The blocker is attached to the right item or resolved");
 });

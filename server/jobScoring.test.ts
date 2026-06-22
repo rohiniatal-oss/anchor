@@ -58,6 +58,23 @@ test("warm path score returns zero when no contact is relevant to the role", () 
   assert.equal(score, 0);
 });
 
+test("explicitly linked contacts create a warm-path signal even when metadata is sparse", () => {
+  const score = computeWarmPathScore(job({ company: "Stealth AI" }), [
+    {
+      id: 9,
+      targetOrg: "",
+      targetRole: "",
+      sector: "",
+      relationshipStrength: "warm",
+      status: "replied",
+      relatedTrackId: null,
+      why: "",
+    } as any,
+  ], { linkedContactIds: [9] });
+
+  assert.ok(score >= 70, `expected an explicit linked contact to create a usable warm-path score, got ${score}`);
+});
+
 test("job score refresh triggers on role facts but not explicit score edits", () => {
   assert.equal(shouldRefreshJobScore({ jdText: "new JD" }), true);
   assert.equal(shouldRefreshJobScore({ company: "Ofcom" }), true);

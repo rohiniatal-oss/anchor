@@ -210,6 +210,8 @@ CREATE TABLE IF NOT EXISTS day_plan_items (
   title TEXT NOT NULL DEFAULT '',
   why_selected TEXT NOT NULL DEFAULT '',
   done_when TEXT NOT NULL DEFAULT '',
+  source_note TEXT NOT NULL DEFAULT '',
+  source_status TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'planned',
   planned_for TEXT NOT NULL DEFAULT '',
   started_at INTEGER,
@@ -385,4 +387,6 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE user_profile ADD COLUMN target_roles TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE user_profile ADD COLUMN location_preferences TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE user_profile ADD COLUMN search_phase TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE day_plan_items ADD COLUMN source_note TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE day_plan_items ADD COLUMN source_status TEXT NOT NULL DEFAULT ''`,
 ];

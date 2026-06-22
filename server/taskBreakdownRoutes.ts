@@ -8,9 +8,10 @@ import { computeJobTruthStrip } from "./jobTruth";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { buildUserContext, formatContextForPrompt, type UserContext } from "./userContext";
 import { isJobLive, isContactWarm, getTrackId } from "@shared/domainState";
+import { contactTopicHint, isGenericContactPlaceholder, nextContactTaskTitle, normalizeContactWho } from "@shared/taskPreview";
 import { computeLearningGaps } from "./learningStrategy";
 import { executeSteps } from "./stepExecutors";
-import { contractForTaskIntent, hasRoleMarketScanContract, isRoleMarketScanInput } from "./taskIntent";
+import { contractForTaskIntent, hasRoleMarketScanContract, isRoleMarketScanInput, likelyLearningGapPlan, roleMarketScanLabel } from "./taskIntent";
 import {
   collectTaskBreakdownContext,
   formatContextBlocksForPrompt,
@@ -48,6 +49,8 @@ type SourceBundle = {
   contactName?: string;
 };
 
+type GoalTaskMode = "role_signal" | "network_support" | "learning_support" | "cleanup" | "general";
+
 function jobSource(bundle: SourceBundle): Job | null {
   return bundle.sourceKind === "job" ? bundle.source as Job | null : null;
 }
@@ -74,7 +77,7 @@ const WORKFLOWS: Record<WorkObject, string[]> = {
 };
 
 const APPLICATION_WORKFLOW = ["Understand the role", "Match your experience", "Address gaps", "Build materials", "Submit", "Follow up"];
-const CONTACT_WORKFLOW = ["Decide what to ask", "Draft a message", "Send", "Prepare for the conversation", "Follow up", "Stay in touch"];
+const CONTACT_WORKFLOW = ["Find the right person", "Decide what to ask", "Draft a message", "Send", "Prepare for the conversation", "Follow up", "Stay in touch"];
 const PROOF_WORKFLOW = ["Define your angle", "Pick your audience", "Gather examples", "Write a draft", "Save a useful version"];
 
 function compact(value: unknown, max = 90) {
@@ -216,6 +219,147 @@ function classifyWorkObject(task: Task, bundle: SourceBundle): WorkObject {
   return "Artifact";
 }
 
+function goalTaskMode(task: Pick<Task, "title" | "doneWhen" | "minimumOutcome" | "sourceNote" | "sourceStatus">): GoalTaskMode {
+  const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${task?.sourceNote || ""} ${task?.sourceStatus || ""}`.toLowerCase();
+  if (/broad_parallel_pursuit_network_support/.test(text)) return "network_support";
+  if (/broad_parallel_pursuit_learning_support/.test(text)) return "learning_support";
+  if (/reduce .*next three|next three live moves|park the rest|cleanup/.test(text)) return "cleanup";
+  if (/\b(contact|contacts|outreach|reach out|message|network|conversation|chat|insider|person)\b/.test(text)) return "network_support";
+  if (/\b(learning|learn|practice|drill|resource|requirement gap|missing requirement|prep support|prep move|skill gap)\b/.test(text)) return "learning_support";
+  if (/\b(role|application move|missing path|still-empty|still empty|credible role|live role)\b/.test(text)) return "role_signal";
+  return "general";
+}
+
+function goalTargetLabel(task: Pick<Task, "title" | "doneWhen" | "minimumOutcome" | "sourceNote">): string {
+  const title = compactText(task?.title || "");
+  const exactTitlePatterns = [
+    /^find one real (.+?) person(?: at .+?)? for a reality-check chat$/i,
+    /^find one person(?: at .+?)? to ask how teams hire for (.+)$/i,
+    /^pick the first requirement gap for (.+?) and save one learning move$/i,
+    /^use one live (.+?) role to identify the first missing requirement$/i,
+    /^use .+? to identify the first missing requirement for (.+)$/i,
+    /^add one real role for (.+)$/i,
+  ];
+  for (const pattern of exactTitlePatterns) {
+    const match = title.match(pattern);
+    if (match?.[1]) return compactText(match[1]);
+  }
+  const candidates = [
+    title.match(/:\s*(.+)$/)?.[1] || "",
+    String(task?.doneWhen || task?.minimumOutcome || "").match(/\bfor\s+(.+?)(?:[.?!]|$)/i)?.[1] || "",
+    String(task?.sourceNote || "").match(/\bfor\s+(.+?)(?:[.?!]|$)/i)?.[1] || "",
+  ];
+  for (const candidate of candidates) {
+    const cleaned = compactText(candidate)
+      .replace(/\band save one learning move$/i, "")
+      .replace(/\band save why .*$/i, "")
+      .replace(/\b(and|with)\s+one\s+(real\s+)?(person|contact|learning move|resource|role).*$/i, "")
+      .replace(/\bfor\s+a\s+reality-check.*$/i, "")
+      .replace(/\bfor\s+one\s+(real\s+)?role.*$/i, "")
+      .replace(/[.?!]+$/g, "")
+      .trim();
+    if (cleaned) return cleaned;
+  }
+  return "this path";
+}
+
+function goalCompanyHint(task: Pick<Task, "sourceNote">): string {
+  const note = compactText(task?.sourceNote || "");
+  const hinted = note.match(/\bat\s+([A-Za-z0-9 ,/&-]+?)(?:\s+[—-]\s+|[.?!]|$)/);
+  return compactText(hinted?.[1] || "").replace(/\s*,\s*/g, " or ");
+}
+
+function contextListFromCrossEngine(label: string, crossEngineContext?: string, max = 3): string[] {
+  if (!crossEngineContext) return [];
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = crossEngineContext.match(new RegExp(`${escaped}\\s*:\\s*([^\\n]+)`));
+  if (!match?.[1]) return [];
+  return match[1]
+    .split(/[;,]/)
+    .map((entry) => compactText(entry).replace(/\s*\([^)]*\)\s*$/g, ""))
+    .filter(Boolean)
+    .slice(0, max);
+}
+
+function liveRoleCompanyHintFromContext(crossEngineContext?: string): string {
+  const liveRole = firstLiveRoleLabelFromContext(crossEngineContext);
+  const match = liveRole.match(/\bat\s+(.+)$/i);
+  return compactText(match?.[1] || "");
+}
+
+function capabilityGapLabelsFromContext(crossEngineContext?: string): string[] {
+  return contextListFromCrossEngine("Capability areas still worth strengthening", crossEngineContext);
+}
+
+function likelyLearningGapFromContext(rolePath: string, crossEngineContext?: string, preferredLabel?: string) {
+  if (preferredLabel) return likelyLearningGapPlan({ rolePath, label: preferredLabel });
+  const gapLabels = capabilityGapLabelsFromContext(crossEngineContext);
+  return likelyLearningGapPlan({ rolePath, label: gapLabels[0] || "" });
+}
+
+function plannerLearningGapFromNote(sourceNote?: string | null): { label?: string; gapType?: "knowledge" | "skill" | "proof"; roleReference?: string } {
+  const note = compactText(sourceNote || "");
+  if (!note) return {};
+  const explicit = note.match(/\bTreat\s+(.+?)\s+as\s+the\s+likely\s+first\s+(knowledge|skill|proof)\s+gap\b/i)
+    || note.match(/\bTreat\s+(.+?)\s+as\s+the\s+likely\s+first\s+gap\s*\((knowledge|skill|proof)\)\b/i);
+  const legacy = note.match(/\bStart\s+with\s+(.+?)\s+as\s+the\s+likely\s+first\s+(?:knowledge\s+|skill\s+|proof\s+)?gap\b/i);
+  const label = compactText(explicit?.[1] || legacy?.[1] || "").replace(/[.?!]+$/g, "");
+  const rawGapType = String(explicit?.[2] || "").toLowerCase();
+  const gapType = rawGapType === "knowledge" || rawGapType === "skill" || rawGapType === "proof" ? rawGapType : undefined;
+  const fromRole = note.match(/\bfrom\s+(.+?)(?:[.?!]|,\s*save\b|,\s*confirm\b|,\s*then\b|$)/i)?.[1] || "";
+  const useRole = note.match(/\bUse\s+(.+?)\s+as\s+the\s+reference\s+role\b/i)?.[1] || "";
+  return {
+    label: label || undefined,
+    gapType,
+    roleReference: compactText(fromRole || useRole || "").replace(/[.?!]+$/g, "") || undefined,
+  };
+}
+
+function goalNetworkSupportSteps(task: Pick<Task, "title" | "doneWhen" | "minimumOutcome" | "sourceNote">, bundle?: SourceBundle): string[] {
+  const label = goalTargetLabel(task);
+  const focus = relevantFocusFromContext(bundle?.crossEngineContext) || label;
+  const companyHint = goalCompanyHint(task) || liveRoleCompanyHintFromContext(bundle?.crossEngineContext);
+  const searchTarget = [label, companyHint].filter(Boolean).join(" at ");
+  const liveRole = firstLiveRoleLabelFromContext(bundle?.crossEngineContext);
+  return [
+    `Open LinkedIn and search for someone already doing ${searchTarget || focus}`,
+    liveRole
+      ? `Save the person whose path is closest to ${liveRole}`
+      : `Save the person whose path is closest to ${focus}`,
+    `Write why this person is a credible reality-check for ${label} right now`,
+    `Draft a soft ask about how teams hire for ${label}`,
+  ];
+}
+
+function goalLearningSupportSteps(task: Pick<Task, "title" | "doneWhen" | "minimumOutcome" | "sourceNote">, bundle?: SourceBundle): string[] {
+  const label = goalTargetLabel(task);
+  const plannedGap = plannerLearningGapFromNote(task.sourceNote);
+  const liveRole = plannedGap.roleReference || firstLiveRoleLabelFromContext(bundle?.crossEngineContext);
+  const rolePathForGap = plannedGap.label ? liveRole || label : label;
+  const likelyGap = likelyLearningGapFromContext(rolePathForGap, bundle?.crossEngineContext, plannedGap.label);
+  const gapTypeLabel = plannedGap.gapType ? `${plannedGap.gapType} gap` : likelyGap.gapTypeLabel;
+  return [
+    liveRole
+      ? `Open ${liveRole} and use it as the reference role for ${label}`
+      : `Open one live role, saved role note, or JD for ${label}`,
+    `Treat ${likelyGap.label} as the likely first ${gapTypeLabel} for ${label}; use the role only to confirm or disprove that diagnosis`,
+    `Save one sentence on why ${likelyGap.label} looks like the first ${gapTypeLabel}: what this path asks for and what you cannot yet prove, do, or explain clearly`,
+    likelyGap.learningMoveStep
+      .replace(/^Use this matching next learning move if that gap holds:\s*/i, "Use this matching next learning move if that gap holds: ")
+      .replace(/, then stop once one real role, one repeated requirements pattern, and one next learning move are captured$/i, ""),
+  ];
+}
+
+function goalCleanupSteps(task: Pick<Task, "title" | "doneWhen" | "minimumOutcome" | "sourceNote">): string[] {
+  const label = goalTargetLabel(task);
+  return [
+    `Open the live task list for ${label === "this path" ? "your active path" : label}`,
+    "Keep only the next 3 moves that could change an application, conversation, or proof outcome",
+    "Park or later the rest",
+    "Save the trimmed list so today has a clear front door",
+  ];
+}
+
 export function parentWorkflowFor(task: Task | Record<string, any>, bundle: SourceBundle): WorkflowState | undefined {
   if ((task as any).parentId) {
     const parentStepsRaw = (task as any).parentSteps;
@@ -274,7 +418,10 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
     const source = contactSource(bundle);
     const status = source?.status || "to_contact";
     const askType = source?.askType || "unspecified";
-    const currentStage = keyword(text, /follow.?up|check.?in|reply/) ? "Follow up"
+    const genericPlaceholder = !!source && isGenericContactPlaceholder(source);
+    const currentStage = genericPlaceholder && status !== "messaged" && status !== "replied" && status !== "in_conversation"
+      ? "Find the right person"
+      : keyword(text, /follow.?up|check.?in|reply/) ? "Follow up"
       : keyword(text, /draft|outreach|reach out|message|email/) ? "Draft a message"
       : keyword(text, /prep|prepare|conversation/) ? "Prepare for the conversation"
       : status === "replied" || status === "in_conversation" ? "Prepare for the conversation"
@@ -282,7 +429,8 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
       : askType === "referral" ? "Draft a message"
       : askType === "follow_up" ? "Follow up"
       : "Decide what to ask";
-    const stageOutput = currentStage === "Decide what to ask" ? "The ask is clear and specific"
+    const stageOutput = currentStage === "Find the right person" ? "One real person is identified and the outreach angle is ready"
+      : currentStage === "Decide what to ask" ? "The ask is clear and specific"
       : currentStage === "Draft a message" ? "A personalised outreach draft exists"
       : currentStage === "Follow up" ? "Follow-up action is sent or logged"
       : currentStage === "Prepare for the conversation" ? "Conversation prep notes are ready"
@@ -290,6 +438,40 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
     return makeWorkflowState({ workObject: "Artifact", workflow: CONTACT_WORKFLOW, currentStage, stageOutput, inheritedFrom: `contact:${source?.id || (task as any).sourceId || "unknown"}`, confidence: "parent", sourceKind: "contact" });
   }
   if (bundle.sourceKind === "goal") {
+    const mode = goalTaskMode(task as Task);
+    if (mode === "network_support") {
+      return makeWorkflowState({
+        workObject: "Pipeline",
+        workflow: CONTACT_WORKFLOW,
+        currentStage: "Find the right person",
+        stageOutput: "One real person is identified with a credible ask",
+        inheritedFrom: `goal:${(task as any).sourceId || "parallel-pursuit-network"}`,
+        confidence: "parent",
+        sourceKind: "goal",
+      });
+    }
+    if (mode === "learning_support") {
+      return makeWorkflowState({
+        workObject: "Knowledge",
+        workflow: WORKFLOWS.Knowledge,
+        currentStage: "Focus on what matters",
+        stageOutput: "One missing requirement and one smallest prep move are saved",
+        inheritedFrom: `goal:${(task as any).sourceId || "parallel-pursuit-learning"}`,
+        confidence: "parent",
+        sourceKind: "goal",
+      });
+    }
+    if (mode === "cleanup") {
+      return makeWorkflowState({
+        workObject: "Pipeline",
+        workflow: WORKFLOWS.Pipeline,
+        currentStage: "Review what's working",
+        stageOutput: "Only the next three live moves remain",
+        inheritedFrom: `goal:${(task as any).sourceId || "parallel-pursuit-cleanup"}`,
+        confidence: "parent",
+        sourceKind: "goal",
+      });
+    }
     const currentStage = keyword(text, /still-empty combination|still-empty lane|credible role|plausible lane|fill the lane/) ? "Build a list"
       : keyword(text, /saved role|application move|live role|pipeline action/) ? "Work through the next batch"
       : keyword(text, /lane|pipeline/) ? "Build a list"
@@ -313,6 +495,7 @@ export function parentWorkflowFor(task: Task | Record<string, any>, bundle: Sour
 }
 
 export async function normalizeExistingTaskBreakdown(task: Task) {
+  const repairedTaskShape = await normalizeExistingTaskShape(task);
   const raw = String(task.steps || "[]");
   let parsed: BreakdownStep[] = [];
   try {
@@ -323,7 +506,16 @@ export async function normalizeExistingTaskBreakdown(task: Task) {
   } catch {
     parsed = [];
   }
-  if (!parsed.length) return { changed: false as const };
+  if (!parsed.length) {
+    if (!repairedTaskShape.changed) return { changed: false as const };
+    return {
+      changed: true as const,
+      title: repairedTaskShape.title,
+      doneWhen: repairedTaskShape.doneWhen,
+      minimumOutcome: repairedTaskShape.minimumOutcome,
+      steps: raw,
+    };
+  }
 
   const bundle = await buildSourceContext(task);
   const fallback = fallbackStagePlan(task, bundle);
@@ -332,15 +524,65 @@ export async function normalizeExistingTaskBreakdown(task: Task) {
     fallback.workflowState,
   );
   const steps = JSON.stringify(repaired);
-  if (steps === raw && (fallback.workflowState.stageOutput || "") === String(task.minimumOutcome || "")) {
+  const nextTitle = repairedTaskShape.title;
+  const nextDoneWhen = repairedTaskShape.doneWhen;
+  const nextMinimumOutcome = repairedTaskShape.minimumOutcome || fallback.workflowState.stageOutput || task.minimumOutcome;
+  if (
+    steps === raw
+    && nextTitle === task.title
+    && nextDoneWhen === String(task.doneWhen || "")
+    && nextMinimumOutcome === String(task.minimumOutcome || "")
+  ) {
     return { changed: false as const };
   }
   return {
     changed: true as const,
     steps,
-    title: task.title,
-    minimumOutcome: fallback.workflowState.stageOutput || task.minimumOutcome,
+    title: nextTitle,
+    doneWhen: nextDoneWhen,
+    minimumOutcome: nextMinimumOutcome,
   };
+}
+
+async function normalizeExistingTaskShape(task: Task) {
+  let title = String(task.title || "");
+  let doneWhen = String(task.doneWhen || "");
+  let minimumOutcome = String(task.minimumOutcome || "");
+
+  if (task.sourceType === "contact" && task.sourceId) {
+    const contact = (await storage.getContacts()).find((entry) => entry.id === task.sourceId);
+    if (contact && shouldRepairLegacyContactTask(task, contact)) {
+      const repairedTitle = nextContactTaskTitle(contact);
+      const intent = contractForTaskIntent({
+        title: repairedTitle,
+        sourceType: "contact",
+        sourceNote: `${task.sourceNote || ""} ${contact.why || contact.note || ""} ${contact.targetOrg || ""} ${contact.targetRole || ""}`,
+      });
+      title = repairedTitle;
+      doneWhen = intent.doneWhen || doneWhen;
+      minimumOutcome = intent.doneWhen || minimumOutcome;
+    }
+  }
+
+  return {
+    changed: title !== String(task.title || "")
+      || doneWhen !== String(task.doneWhen || "")
+      || minimumOutcome !== String(task.minimumOutcome || ""),
+    title,
+    doneWhen,
+    minimumOutcome,
+  };
+}
+
+function shouldRepairLegacyContactTask(task: Task, contact: Contact) {
+  if (!isGenericContactPlaceholder(contact)) return false;
+  const title = compactText(task.title).toLowerCase();
+  if (!title) return false;
+  if (title === nextContactTaskTitle(contact).toLowerCase()) return false;
+  if (/^draft\b.*\b(outreach|message|chat ask|follow-up|follow up|reconnect|referral)\b/.test(title)) return true;
+  if (/^(reach out to|message|email|reply to|follow up with|follow-up with)\b/.test(title)) return true;
+  const rawWho = normalizeContactWho(contact.who).toLowerCase();
+  return !!rawWho && title.includes(rawWho) && /\b(draft|outreach|message|chat|reach out)\b/.test(title);
 }
 
 export function attachWorkflowState(steps: BreakdownStep[], workflowState?: WorkflowState): BreakdownStep[] {
@@ -356,7 +598,7 @@ function looksActionable(text: string) {
   return /^(open|write|draft|list|choose|mark|highlight|copy|paste|find|search|send|ask|save|start|set|create|name|pick|read|scan|skim|note|pull|collect|gather|match|rewrite|outline|reply|message|email|book|review|map|flag|compare|decide|record|log|extract|inspect)\b/i.test(text.trim());
 }
 
-function looksGenericFiller(text: string) {
+function looksUnstartablePlaceholder(text: string) {
   const t = text.trim();
   if (/^(get ready|think about|organize (your )?thoughts|do (some )?research|prepare yourself|gather (your )?thoughts|brainstorm|consider|reflect on|take (some )?time|plan (your )?approach|make a plan|set (up )?a plan|familiarize|orient yourself|explore the landscape|understand the context|assess the situation|identify key|determine the best|evaluate your|establish a)\b/i.test(t)) return true;
   if (/^(review your (notes|progress|goals|strategy)|ensure you have|make sure you|verify that|confirm your|revisit your)\b/i.test(t)) return true;
@@ -382,6 +624,18 @@ function isRoleMarketScanTask(task: Task, bundle: SourceBundle): boolean {
   });
 }
 
+function roleMarketScanSteps(task: Task, bundle: SourceBundle): string[] {
+  const rolePath = roleMarketScanLabel(task.title || "");
+  const likelyGap = likelyLearningGapFromContext(rolePath, bundle?.crossEngineContext);
+  return [
+    `Open LinkedIn or the target job board and search "${rolePath}"`,
+    "Save the first real posting that matches the path closely enough to learn from",
+    "Extract the 3 repeated requirements or background signals from that posting",
+    likelyGap.assessmentStep,
+    likelyGap.learningMoveStep,
+  ];
+}
+
 function taskIntentContract(task: Task, bundle: SourceBundle) {
   return contractForTaskIntent({
     title: task?.title,
@@ -403,10 +657,17 @@ function shouldUsePlainTaskIntent(task: Task, bundle: SourceBundle): boolean {
 function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: WorkflowState) {
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
   const intentContract = taskIntentContract(task, bundle);
-  if (isRoleMarketScanTask(task, bundle) || shouldUsePlainTaskIntent(task, bundle)) {
+  if (isRoleMarketScanTask(task, bundle)) {
+    return roleMarketScanSteps(task, bundle)[0];
+  }
+  if (shouldUsePlainTaskIntent(task, bundle)) {
     return intentContract.firstStep;
   }
   if (bundle.sourceKind === "goal") {
+    const mode = goalTaskMode(task);
+    if (mode === "network_support") return goalNetworkSupportSteps(task, bundle)[0];
+    if (mode === "learning_support") return goalLearningSupportSteps(task, bundle)[0];
+    if (mode === "cleanup") return goalCleanupSteps(task)[0];
     if (workflowState?.currentStage === "Define your target") return "Open Jobs and look at the first role type still missing a real role";
     if (workflowState?.currentStage === "Build a list") return laneSpecificSearchMove(text) || "Open Jobs and save the first credible role for one role type still missing one";
     if (workflowState?.currentStage === "Work through the next batch") return "Open the saved role and take the next concrete pipeline action";
@@ -430,6 +691,9 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
     if (workflowState?.currentStage === "Gather examples") return "Open a note and paste the 3 strongest proof points";
     return "Open a blank draft and write the one claim this piece should make";
   }
+  if (bundle.sourceKind === "contact" && workflowState?.currentStage === "Find the right person") {
+    return `Open LinkedIn and search for ${contactSearchQuery(contactSource(bundle), bundle)}`;
+  }
   if (workflowState?.workObject === "Decision") return "Open a note and write the decision question in one line";
   if (workflowState?.workObject === "Problem") return "Write one sentence describing what is not working";
   if (workflowState?.workObject === "Knowledge") return task.sourceUrl ? "Open the source and read only the first relevant section" : "Open a note and list the first thing you need to understand";
@@ -442,12 +706,16 @@ function compactText(value: unknown): string {
 }
 
 function contactFallbackName(contact: Contact | null, bundle: SourceBundle): string {
-  return compactText(contact?.name) || compactText(contact?.who) || compactText(bundle.contactName) || "the contact";
+  return compactText(contact?.name) || normalizeContactWho(String(contact?.who || "")) || compactText(bundle.contactName) || "the contact";
+}
+
+function genericContactLabel(contact: Contact | null, bundle: SourceBundle): string {
+  return contactFallbackName(contact, bundle).replace(/^(a|an)\s+/i, "").trim() || "relevant contact";
 }
 
 function contactOpportunityLabel(contact: Contact | null): string {
   const org = compactText((contact as any)?.targetOrg);
-  const role = compactText((contact as any)?.targetRole);
+  const role = contact ? contactTopicHint(contact) : "";
   return [role, org].filter(Boolean).join(" at ") || "the opportunity";
 }
 
@@ -469,14 +737,38 @@ function contactAskLine(task: Task, contact: Contact | null, orgRole: string): s
   return `Ask for quick advice on ${orgRole}`;
 }
 
+function contactNeedsIdentification(contact: Contact | null) {
+  return !!contact && isGenericContactPlaceholder(contact);
+}
+
+function contactSearchQuery(contact: Contact | null, bundle: SourceBundle) {
+  const label = genericContactLabel(contact, bundle);
+  const targetOrg = compactText((contact as any)?.targetOrg);
+  const targetRole = compactText((contact as any)?.targetRole);
+  return [label, targetRole, targetOrg]
+    .filter(Boolean)
+    .filter((part, index, parts) => parts.findIndex((candidate) => candidate.toLowerCase() === part.toLowerCase()) === index)
+    .join(" ");
+}
+
 function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowState): string[] {
   const object = workflowState.workObject;
   const currentStage = workflowState.currentStage;
   const text = `${task?.title || ""} ${task?.doneWhen || ""} ${task?.minimumOutcome || ""} ${bundle.sourceContext}`.toLowerCase();
 
   const intentContract = taskIntentContract(task, bundle);
-  if (isRoleMarketScanTask(task, bundle) || shouldUsePlainTaskIntent(task, bundle)) {
+  if (isRoleMarketScanTask(task, bundle)) {
+    return roleMarketScanSteps(task, bundle);
+  }
+  if (shouldUsePlainTaskIntent(task, bundle)) {
     return intentContract.steps;
+  }
+
+  if (bundle.sourceKind === "goal") {
+    const mode = goalTaskMode(task);
+    if (mode === "network_support") return goalNetworkSupportSteps(task, bundle);
+    if (mode === "learning_support") return goalLearningSupportSteps(task, bundle);
+    if (mode === "cleanup") return goalCleanupSteps(task);
   }
 
   if (bundle.sourceKind === "goal" || (object === "Pipeline" && keyword(text, /lane|role|pipeline|application/))) {
@@ -579,6 +871,13 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     const angle = contactOutreachAngle(c, orgRole);
     const ask = contactAskLine(task, c, orgRole);
     const lastMessage = compactText((c as any)?.lastMessage);
+    if (currentStage === "Find the right person") return [
+      `Open LinkedIn and search for ${contactSearchQuery(c, bundle)}`,
+      `Save one real person who fits ${genericContactLabel(c, bundle)}`,
+      orgRole !== "the opportunity" ? `Write why this person is a credible ask for ${orgRole}` : "Write why this person is a credible ask right now",
+      ask,
+      "Draft the message only if this person looks worth contacting",
+    ];
     if (currentStage === "Decide what to ask") return [
       `Open ${name}'s contact card`,
       angle,
@@ -697,7 +996,7 @@ export function coerceTaskBreakdownSteps(task: Task, bundle: SourceBundle, workf
     return [step.text];
   });
   const hadMeta = flattened.some((text) => looksMetaStep(text));
-  const stripped = dedupeTexts((flattened.length ? flattened : stageActions(task, bundle, workflowState)).filter((text) => !looksMetaStep(text) && !looksGenericFiller(text)));
+  const stripped = dedupeTexts((flattened.length ? flattened : stageActions(task, bundle, workflowState)).filter((text) => !looksMetaStep(text) && !looksUnstartablePlaceholder(text)));
   const fallbackActions = stageActions(task, bundle, workflowState);
   const baseActions = isRoleMarketScanTask(task, bundle) && !hasRoleMarketScanContract(stripped)
     ? fallbackActions
@@ -709,7 +1008,10 @@ export function coerceTaskBreakdownSteps(task: Task, bundle: SourceBundle, workf
       ? [starter, ...baseActions]
       : baseActions,
   );
-  const maxSteps = isRoleMarketScanTask(task, bundle) ? 5 : 4;
+  const maxSteps = isRoleMarketScanTask(task, bundle)
+    || (bundle.sourceKind === "contact" && workflowState?.currentStage === "Find the right person")
+    ? 5
+    : 4;
   return ordered.slice(0, maxSteps).map((text) => ({ text, done: false as const }));
 }
 
@@ -736,7 +1038,7 @@ function meaningfulTaskContextText(note: unknown): string {
 }
 
 function contactDisplayName(c: Contact): string {
-  return [c.name || c.who, (c as any).linkedinUrl ? `(${(c as any).linkedinUrl})` : ""].filter(Boolean).join(" ").trim() || "Unknown contact";
+  return [compactText(c.name) || normalizeContactWho(c.who), (c as any).linkedinUrl ? `(${(c as any).linkedinUrl})` : ""].filter(Boolean).join(" ").trim() || "Unknown contact";
 }
 
 function relevantFocusFromContext(crossEngineContext?: string): string {
@@ -748,7 +1050,7 @@ function relevantFocusFromContext(crossEngineContext?: string): string {
 function firstLiveRoleLabelFromContext(crossEngineContext?: string): string {
   if (!crossEngineContext) return "";
   const match = crossEngineContext.match(/Live roles nearby:\s*([^.]+)/);
-  const first = match?.[1]?.split(";")[0]?.trim();
+  const first = match?.[1]?.split(";")[0]?.replace(/\s*\([^)]*\)\s*$/g, "").trim();
   return first || "";
 }
 
@@ -756,15 +1058,16 @@ function globalBreakdownQualityGuidance(): string {
   return (
     `Quality bar for every breakdown:\n` +
     `- The first step must be immediately startable and produce a visible result.\n` +
-    `- Use available context to create specific actions, not generic advice or a restatement of the context.\n` +
-    `- Avoid filler like review notes, do research, take notes, or summarize unless the task is genuinely research-heavy and that is the shortest useful move.\n` +
+    `- Use available context to create specific actions, not advice or a restatement of the context.\n` +
+    `- A useful step names three things: the object to open or edit, the action to take, and the output that will exist afterwards.\n` +
+    `- Product test: after each step, one visible object should be different: a saved role, highlighted JD, drafted paragraph, chosen gap, sent message, or logged decision.\n` +
+    `- Research, review, reading, and summarising are valid only when the step names what to look for and what decision, draft, list, or note it should produce.\n` +
     `- Each step must describe ONE concrete action with a clear result.\n` +
-    `- Never write steps that only say 'research X' without specifying what to find or produce.\n` +
     `- Steps must use real content from context above - names, deadlines, existing drafts, capabilities.\n` +
     `- The final step must produce or verify the stage output defined in the workflow.\n` +
     `- Maximum 5 steps. If fewer suffice, use fewer.\n` +
-    `- NEVER use these phrases: "get ready", "think about", "organize thoughts", "prepare yourself", "brainstorm ideas", "consider options". Replace with what to actually open, write, or produce.\n` +
-    `- Every step must name the specific thing acted on. BAD: "Review the requirements". GOOD: "Highlight the 3 must-have skills from the JD".`
+    `- If a step mostly asks the user to think, convert it into a visible move: write the decision question, mark the strongest option, draft the paragraph, or choose the next action.\n` +
+    `- Use this check before returning: could the user start this step in under 30 seconds, and would they know when it is done?`
   );
 }
 
@@ -785,6 +1088,50 @@ function isConversationPrepTask(task: Task, bundle: SourceBundle) {
 }
 
 function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
+  const goalMode = bundle.sourceKind === "goal" ? goalTaskMode(task) : null;
+  if (goalMode === "network_support") {
+    const liveRole = firstLiveRoleLabelFromContext(bundle.crossEngineContext);
+    return (
+      `For goal-backed contact support:\n` +
+      `- This is not generic networking and not a blank search. Pre-structure the move around one likely person archetype, one reason they matter now, and one smallest credible ask.\n` +
+      `- Do not tell the user to figure out who to contact from scratch if the target path is already known.\n` +
+      `${liveRole ? `- Use ${liveRole} as the closest live reference point when choosing who counts as the right person.\n` : ""}` +
+      `- Make the first step identify the most relevant person type or company path, not "find someone in the field".\n` +
+      `- End with a saved why-them line and a draftable soft ask, not open-ended networking homework.\n`
+    );
+  }
+  if (goalMode === "learning_support") {
+    const liveRole = firstLiveRoleLabelFromContext(bundle.crossEngineContext);
+    const gapLabels = capabilityGapLabelsFromContext(bundle.crossEngineContext);
+    const plannedGap = plannerLearningGapFromNote(task.sourceNote);
+    return (
+      `For goal-backed learning support:\n` +
+      `- Do the assessment for the user. Do not ask them to invent the gap from scratch; infer the most likely first gap from the role/path context already provided.\n` +
+      `${plannedGap.label ? `- The goal note already names the likely gap: ${plannedGap.label}${plannedGap.gapType ? ` (${plannedGap.gapType} gap)` : ""}. Preserve that diagnosis unless the provided role context clearly contradicts it.\n` : ""}` +
+      `${plannedGap.roleReference ? `- Start from ${plannedGap.roleReference} as the reference role.\n` : liveRole ? `- Start from ${liveRole} as the reference role.\n` : `- Start from one real role, JD, or saved role note for the target path.\n`}` +
+      `${gapLabels.length ? `- If the context suggests likely weak spots, name them directly: ${gapLabels.join(", ")}.\n` : ""}` +
+      `- State the likely gap, why it is likely, and the matching learn/practice/proof move. The user should mostly confirm that diagnosis, not discover it from scratch.\n` +
+      `- Name the likely first gap and the matching learning move directly in the steps instead of asking the user to choose both.\n` +
+      `- Tell the user what to learn, practice, or draft next if that likely gap holds.\n` +
+      `- Distinguish between a knowledge gap, a skill gap, and a proof/evidence gap, then choose the matching next move.\n` +
+      `- Prefer the smallest move that could make the path more credible this week: a targeted resource, a short drill, or one proof example.\n` +
+      `- If the move involves learning or review, name the target concept, the source or role evidence to inspect, and the output to save.\n`
+    );
+  }
+  if (isRoleMarketScanTask(task, bundle)) {
+    const gapLabels = capabilityGapLabelsFromContext(bundle.crossEngineContext);
+    return (
+      `For role exploration and market-scan work:\n` +
+      `- The point is not just to collect roles. Use the first credible posting to infer what this path is actually asking for.\n` +
+      `- Do the assessment for the user. After extracting the repeated requirements, suggest the likely first requirement they cannot clearly evidence today instead of asking them to invent the gap from scratch.\n` +
+      `${gapLabels.length ? `- If the connected context already suggests likely weak spots, start with them directly: ${gapLabels.join(", ")}.\n` : ""}` +
+      `- State the likely gap, why it is likely, and the matching learn/practice/proof move. The user should mostly confirm that diagnosis, not invent it.\n` +
+      `- Name the likely first gap and the matching learning move directly in the steps instead of asking the user to pick what to learn.\n` +
+      `- Distinguish whether that likely gap is mainly knowledge, skill, or proof/evidence, then recommend the matching next learning move.\n` +
+      `- Phrase uncertain diagnoses cautiously as a likely first gap or a requirement to verify, not as a certainty.\n` +
+      `- If the move involves research or summarising, name the exact evidence to extract and the output it should produce.\n`
+    );
+  }
   if (isConversationPrepTask(task, bundle)) {
     return (
       `For contact conversation prep:\n` +
@@ -796,11 +1143,13 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
     );
   }
   if (isOutreachOrMessageTask(task, bundle)) {
+    const genericContact = bundle.sourceKind === "contact" && contactNeedsIdentification(contactSource(bundle));
     return (
       `For outreach, follow-up, or message work:\n` +
       `- Anchor remains the planner; your job is to personalize the move using only the facts provided.\n` +
       `- Do not tell the user to review notes, research the person, or figure out why they are reaching out if a reason, target, prior thread, or relationship signal already exists.\n` +
       `- Convert available context into a suggested outreach angle, a smallest credible ask, and a clear stop condition.\n` +
+      (genericContact ? `- If the "contact" is only an archetype and no real person is identified yet, first identify one plausible real person before drafting outreach.\n` : "") +
       `- If current public information about the person, team, or organization is already provided, use at most 1-2 relevant signals to sharpen why now, the angle, or the ask.\n` +
       `- Do not turn the task into open-ended research. Use public evidence only when it materially improves relevance for this specific message.\n` +
       `- For simple follow-ups, thank-yous, or status updates, keep public research silent unless a current fact clearly changes what should be sent.\n` +
@@ -1206,8 +1555,20 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
     sourceKind = "goal";
     const tracks = await storage.getCareerTracks();
     const activeTrackNames = tracks.filter((track) => track.status !== "archived").map((track) => track.name).slice(0, 6);
-    sourceContext = `This is a STRATEGIC GOAL / broad-pursuit item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one real role-opening move exists"}. ${taskSourceNote ? "Goal note: " + taskSourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
-    playbook = "Use the parent pipeline workflow first. The goal is not abstract comparison; it is to turn each plausible path into one real role or application move. Prefer filling missing paths with concrete pipeline actions over reflection.";
+    const mode = goalTaskMode(task);
+    if (mode === "network_support") {
+      sourceContext = `This is a STRATEGIC GOAL / contact-support item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one real person and a credible ask exist"}. ${taskSourceNote ? "Goal note: " + taskSourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
+      playbook = "Anchor remains the planner. This goal is not abstract networking; it is to identify one real person worth messaging, capture why them, and define the soft ask. Do not collapse into role search once the missing path is already known.";
+    } else if (mode === "learning_support") {
+      sourceContext = `This is a STRATEGIC GOAL / learning-support item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one missing requirement and one smallest prep move are saved"}. ${taskSourceNote ? "Goal note: " + taskSourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
+      playbook = "Anchor remains the planner. This goal is not generic reading; start from one real requirement gap, then choose one targeted resource, drill, or example-building move that would make the path more credible.";
+    } else if (mode === "cleanup") {
+      sourceContext = `This is a STRATEGIC GOAL / cleanup item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "only the next three live moves remain"}. ${taskSourceNote ? "Goal note: " + taskSourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
+      playbook = "Anchor remains the planner. Reduce decision load by keeping only the next three live moves that could change an application, conversation, or proof outcome.";
+    } else {
+      sourceContext = `This is a STRATEGIC GOAL / broad-pursuit item. Title: ${task.title}. Done when: ${task.doneWhen || task.minimumOutcome || "one real role-opening move exists"}. ${taskSourceNote ? "Goal note: " + taskSourceNote + ". " : ""}${activeTrackNames.length ? "Active tracks: " + activeTrackNames.join("; ") + ". " : ""}`;
+      playbook = "Use the parent pipeline workflow first. The goal is not abstract comparison; it is to turn each plausible path into one real role or application move. Prefer filling missing paths with concrete pipeline actions over reflection.";
+    }
   } else if (task.sourceType === "job" && task.sourceId) {
     const j = (await storage.getJobs()).find((x) => x.id === task.sourceId);
     if (j) {
@@ -1267,7 +1628,7 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
     if (c) {
       source = c;
       sourceKind = "contact";
-      sourceContext = `This is a CONTACT / NETWORKING item. Person: ${contactDisplayName(c)}. Status: ${c.status}. Relationship strength: ${c.relationshipStrength}. Ask type: ${c.askType || "unspecified"}. ${c.who ? "Who they are: " + c.who + ". " : ""}${c.sourceNetwork ? "Shared network: " + c.sourceNetwork + ". " : ""}${c.why ? "Why they matter: " + c.why + ". " : ""}${c.targetOrg ? "Target company: " + c.targetOrg + ". " : ""}${c.targetRole ? "Target role: " + c.targetRole + ". " : ""}${c.messageDraft ? "Existing draft: " + c.messageDraft + ". " : ""}${c.lastMessage ? "Last message: " + c.lastMessage + ". " : ""}${c.nextFollowUpDate ? "Next follow-up: " + c.nextFollowUpDate + ". " : ""}${c.referralPotential ? "Referral potential: " + c.referralPotential + ". " : ""}`;
+      sourceContext = `This is a CONTACT / NETWORKING item. Person: ${contactDisplayName(c)}. Status: ${c.status}. Relationship strength: ${c.relationshipStrength}. Ask type: ${c.askType || "unspecified"}. ${contactNeedsIdentification(c) ? "This is a target archetype, not a named person yet. Identify one real person before drafting outreach. " : ""}${c.who ? "Who they are: " + normalizeContactWho(c.who) + ". " : ""}${c.sourceNetwork ? "Shared network: " + c.sourceNetwork + ". " : ""}${c.why ? "Why they matter: " + c.why + ". " : ""}${c.targetOrg ? "Target company: " + c.targetOrg + ". " : ""}${contactTopicHint(c) ? "Target role: " + contactTopicHint(c) + ". " : ""}${c.messageDraft ? "Existing draft: " + c.messageDraft + ". " : ""}${c.lastMessage ? "Last message: " + c.lastMessage + ". " : ""}${c.nextFollowUpDate ? "Next follow-up: " + c.nextFollowUpDate + ". " : ""}${c.referralPotential ? "Referral potential: " + c.referralPotential + ". " : ""}`;
       playbook = "Use the parent networking workflow first. Turn this into one specific outreach, follow-up, referral ask, or relationship move. Never auto-change contact status.";
     }
   } else if (task.sourceType === "hustle" && task.sourceId) {
@@ -1331,8 +1692,8 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
   return { sourceContext, playbook, sourceKind, source, parentContext, parentWorkflow, cvText, jdText, crossEngineContext, contactName };
 }
 
-export async function buildDeterministicTaskBreakdown(task: Task) {
-  const bundle = await buildSourceContext(task);
+export async function buildDeterministicTaskBreakdown(task: Task, bundleOverride?: SourceBundle) {
+  const bundle = bundleOverride || await buildSourceContext(task);
   const fallback = fallbackStagePlan(task, bundle);
   return { bundle, workflowState: fallback.workflowState, steps: fallback.steps };
 }

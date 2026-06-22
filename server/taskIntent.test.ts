@@ -11,9 +11,24 @@ test("role market scan intent creates a real-posting requirements flow", () => {
   assert.equal(contract.intent, "role_market_scan");
   assert.equal(contract.category, "job");
   assert.match(contract.firstStep, /search "AI governance strategy roles"/i);
-  assert.match(contract.doneWhen, /one real role and one repeated requirements pattern/i);
+  assert.match(contract.doneWhen, /one real role, one repeated requirements pattern, and one next learning move/i);
+  assert.match(contract.steps.join(" "), /Treat AI Governance & Safety as the likely first knowledge gap to test/i);
+  assert.match(contract.steps.join(" "), /confirm or disprove that diagnosis/i);
+  assert.match(contract.steps.join(" "), /If AI Governance & Safety is the gap, read one targeted source on AI Governance & Safety/i);
   assert.equal(contract.maxSteps, 5);
   assert.equal(hasRoleMarketScanContract(contract.steps), true);
+});
+
+test("role market scan does not collapse into a status update when doneWhen mentions a next learning move", () => {
+  const contract = contractForTaskIntent({
+    title: "Inspect three AI governance strategy roles and capture repeated requirements.",
+    category: "learning",
+    sourceType: "task",
+    doneWhen: "One real role, one repeated requirements pattern, and one next learning move are captured",
+  });
+
+  assert.equal(contract.intent, "role_market_scan");
+  assert.match(contract.firstStep, /search "AI governance strategy roles"/i);
 });
 
 test("role market scan label removes task mechanics from the search phrase", () => {
@@ -23,18 +38,55 @@ test("role market scan label removes task mechanics from the search phrase", () 
   );
 });
 
-test("networking tasks start from the ask rather than generic research", () => {
+test("unknown role scans avoid fake-specific learning-gap labels", () => {
+  const contract = contractForTaskIntent({
+    title: "Find three climate philanthropy roles and note what they keep asking for",
+    sourceType: "strategy_builder",
+  });
+  const joined = contract.steps.join(" ");
+
+  assert.match(joined, /strongest repeated requirement in the posting/i);
+  assert.match(joined, /confirm or disprove that diagnosis/i);
+  assert.doesNotMatch(joined, /AI Governance & Safety|Policy & Regulatory Frameworks|Product & Delivery/i);
+  assert.doesNotMatch(joined, /the first repeated requirement as the likely first knowledge gap/i);
+});
+
+test("generic networking tasks find the right real person before drafting outreach", () => {
   const contract = contractForTaskIntent({
     title: "Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat",
     sourceType: "contact",
   });
 
   assert.equal(contract.intent, "networking_message");
-  assert.match(contract.firstStep, /blank message to a Bain alum/i);
-  assert.match(contract.steps.join(" "), /exploring AI strategy roles/i);
+  assert.match(contract.firstStep, /linkedin and search for Bain alum AI strategy roles/i);
+  assert.match(contract.steps.join(" "), /save one real person who fits Bain alum/i);
   assert.match(contract.steps.join(" "), /Ask for a 15-minute chat about AI strategy roles/i);
+  assert.match(contract.doneWhen, /one real person is chosen and the outreach ask is ready/i);
   assert.doesNotMatch(contract.steps.join(" "), /research|provider|external/i);
   assert.doesNotMatch(contract.steps.join(" "), /write the smallest specific ask|why you are reaching out now/i);
+});
+
+test("find-one-person networking titles still keep the success condition at person-plus-ask, not drafted-message", () => {
+  const contract = contractForTaskIntent({
+    title: "Find one Bain alum to ask about AI strategy roles",
+    sourceType: "contact",
+  });
+
+  assert.equal(contract.intent, "networking_message");
+  assert.match(contract.firstStep, /linkedin and search for Bain alum AI strategy roles/i);
+  assert.match(contract.doneWhen, /one real person is chosen and the outreach ask is ready/i);
+  assert.match(contract.stopCondition, /one real person and a sendable ask are ready/i);
+});
+
+test("named networking tasks still start from the draft", () => {
+  const contract = contractForTaskIntent({
+    title: "Draft follow-up message to Priya about Ofcom AI policy roles",
+    sourceType: "contact",
+  });
+
+  assert.equal(contract.intent, "networking_message");
+  assert.match(contract.firstStep, /blank message to Priya/i);
+  assert.match(contract.doneWhen, /message is drafted, sent, or clearly scheduled/i);
 });
 
 test("comparison and decision tasks stay distinct", () => {

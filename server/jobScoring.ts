@@ -65,10 +65,12 @@ function roleOverlapScore(job: Job, contact: Contact) {
   return Math.min(20, overlap * 7);
 }
 
-export function computeWarmPathScore(job: Job, contacts: Contact[]): number {
+export function computeWarmPathScore(job: Job, contacts: Contact[], opts: { linkedContactIds?: Iterable<number> } = {}): number {
+  const linkedContactIds = new Set(Array.from(opts.linkedContactIds || []));
   let best = 0;
   for (const contact of contacts) {
     let score = 0;
+    if (linkedContactIds.has(Number((contact as any).id))) score = Math.max(score, 42);
     if (hasCompanyMatch(job, contact)) score += 45;
     if (job.relatedTrackId && contact.relatedTrackId === job.relatedTrackId) score += 25;
     score += roleOverlapScore(job, contact);
@@ -156,8 +158,11 @@ export function sanitizeJobScore(raw: LlmJobScore | null, job: Job): JobScorePat
 }
 
 export async function scoreJobNow(job: Job, opts: { forceLlm?: boolean } = {}): Promise<JobScorePatch> {
-  const contacts = await storage.getContacts();
-  const warmPathScore = computeWarmPathScore(job, contacts);
+  const [contacts, jobContactLinks] = await Promise.all([
+    storage.getContacts(),
+    storage.getAllJobContactLinks(),
+  ]);
+  const warmPathScore = computeWarmPathScore(job, contacts, { linkedContactIds: jobContactLinks[job.id] || [] });
   const patch: JobScorePatch = { warmPathScore };
 
   if (shouldCallLlm(job, !!opts.forceLlm)) {
@@ -181,5 +186,26 @@ export async function refreshJobScores(jobId: number, opts: { forceLlm?: boolean
 export function refreshJobScoresInBackground(jobId: number, opts: { forceLlm?: boolean } = {}) {
   refreshJobScores(jobId, opts).catch((error) => {
     console.error("Job scoring skipped:", error);
+  });
+}
+
+export async function refreshWarmPathScores(jobIds?: number[]) {
+  const [jobs, contacts, jobContactLinks] = await Promise.all([
+    storage.getJobs(),
+    storage.getContacts(),
+    storage.getAllJobContactLinks(),
+  ]);
+  const targetIds = jobIds?.length ? new Set(jobIds) : null;
+  const candidates = jobs.filter((job) => job.status !== "closed" && (!targetIds || targetIds.has(job.id)));
+  await Promise.all(candidates.map(async (job) => {
+    const warmPathScore = computeWarmPathScore(job, contacts, { linkedContactIds: jobContactLinks[job.id] || [] });
+    if ((job.warmPathScore ?? null) === warmPathScore) return;
+    await storage.updateJob(job.id, { warmPathScore } as any);
+  }));
+}
+
+export function refreshWarmPathScoresInBackground(jobIds?: number[]) {
+  refreshWarmPathScores(jobIds).catch((error) => {
+    console.error("Warm-path refresh skipped:", error);
   });
 }

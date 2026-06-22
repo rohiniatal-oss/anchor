@@ -100,6 +100,61 @@ function suggestion(id: number, route: CaptureRoute, confidence: CaptureConfiden
   };
 }
 
+function cleanNetworkPhrase(value: string) {
+  return compact(value)
+    .replace(/^(to|with)\s+/i, "")
+    .replace(/[.?!]+$/g, "")
+    .trim();
+}
+
+function extractNetworkTopic(title: string) {
+  const text = compact(title);
+  const match = text.match(/\babout\s+(.+?)(?:\s+\band ask\b|\s+\bask for\b|\s+\bfor\b\s+(?:a|an)\s+\d+|\s+\bfor\b\s+15|\s+\bfor\b\s+fifteen|$)/i)
+    || text.match(/\bregarding\s+(.+?)(?:\s+\band ask\b|\s+\bask for\b|$)/i);
+  return cleanNetworkPhrase(match?.[1] || "");
+}
+
+function extractNetworkWho(title: string) {
+  const text = compact(title);
+  const match = text.match(/\b(?:message|email|reply to|reply|follow up with|follow-up with|reach out to|reconnect with|talk to|contact|ask)\s+(.+?)(?:\s+\babout\b|\s+\bregarding\b|\s+\band ask\b|\s+\bask for\b|\s+\bfor\b\s+(?:a|an)\s+\d+|\s+\bfor\b\s+15|\s+\bfor\b\s+fifteen|$)/i)
+    || text.match(/\b(?:to|with)\s+(.+?)(?:\s+\babout\b|\s+\bregarding\b|\s+\band ask\b|\s+\bask for\b|$)/i);
+  return cleanNetworkPhrase(match?.[1] || "");
+}
+
+function inferNetworkAskType(title: string) {
+  const text = compact(title).toLowerCase();
+  if (/\breferral\b|\brefer\b|\bintro\b|\bintroduc/.test(text)) return "referral";
+  if (/\bfollow[- ]?up\b|\breply\b|\bcheck[- ]?in\b/.test(text)) return "follow_up";
+  if (/\breconnect\b/.test(text)) return "reconnect";
+  if (/\badvice\b|\bchat\b|\bcoffee\b|\bsteer\b|\bguidance\b/.test(text)) return "advice";
+  return "soft";
+}
+
+function inferNetworkTargetOrg(who: string) {
+  const atOrFrom = who.match(/\b(?:at|from)\s+([A-Z][A-Za-z0-9&'.-]+)/);
+  if (atOrFrom?.[1]) return atOrFrom[1];
+  return "";
+}
+
+function deterministicNetworkCaptureDetails(title: string) {
+  const who = extractNetworkWho(title);
+  const targetRole = extractNetworkTopic(title);
+  const targetOrg = inferNetworkTargetOrg(who);
+  const askType = inferNetworkAskType(title);
+  const why = targetRole
+    ? `Can give a practical steer on ${targetRole}`
+    : targetOrg
+      ? `Can help you understand whether ${targetOrg} is worth pursuing`
+      : "Can give a practical steer on the next networking move";
+  return {
+    who: who.replace(/^(a|an)\s+/i, "").trim() || "relevant contact",
+    targetOrg,
+    targetRole,
+    askType,
+    why,
+  };
+}
+
 // Deterministic first-pass classifier. The LLM can polish later, but routing must
 // be auditable and conservative. Ambiguous items return `keep` with a question.
 export function classifyCapture(id: number, raw: string): CaptureSuggestion {
@@ -382,9 +437,20 @@ export async function routeCapture(id: number, rawRoute: string) {
   if (route === "network") {
     let d: Record<string, string> = {};
     try { d = await resolveAssetDetails(task.title, "network"); } catch { /* use defaults */ }
+    const inferredDetails = deterministicNetworkCaptureDetails(task.title);
+    const cleanedWho = cleanNetworkPhrase(d.who || "");
     const created = await storage.createContact({
-      name: "", who: d.who || task.title, sector: "", why: d.why || "Captured in brain dump", status: "to_contact",
-      relationshipStrength: "cold", askType: d.askType || "soft",
+      name: "",
+      who: cleanedWho && cleanedWho.toLowerCase() !== task.title.toLowerCase() ? cleanedWho : inferredDetails.who,
+      sector: "",
+      why: cleanNetworkPhrase(d.why || "") || inferredDetails.why,
+      note: `Captured from Brain Dump: ${task.title}`,
+      status: "to_contact",
+      relationshipStrength: "cold",
+      sourceNetwork: "",
+      targetOrg: cleanNetworkPhrase((d as any).targetOrg || "") || inferredDetails.targetOrg,
+      targetRole: cleanNetworkPhrase((d as any).targetRole || "") || inferredDetails.targetRole,
+      askType: cleanNetworkPhrase(d.askType || "") || inferredDetails.askType,
     } as any);
     await markCaptureRouted(task, route, "contact", created.id, reason);
     return { status: 200, body: { moved: "network", route, contact: created, reason } };

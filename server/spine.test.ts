@@ -30,6 +30,23 @@ before(async () => {
 after(async () => { await h.close(); });
 beforeEach(() => { h.reset(); });
 
+async function waitFor(assertion: () => Promise<void> | void, opts: { timeoutMs?: number; intervalMs?: number } = {}) {
+  const timeoutMs = opts.timeoutMs ?? 600;
+  const intervalMs = opts.intervalMs ?? 25;
+  const started = Date.now();
+  let lastError: unknown = null;
+  while (Date.now() - started < timeoutMs) {
+    try {
+      await assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Timed out waiting for async condition");
+}
+
 // helper: a plan + one item, returning ids
 async function makePlanWithItem(opts: Partial<{
   sourceType: string; sourceId: number | null; taskId: number | null;
@@ -378,9 +395,74 @@ test("GET /api/tasks repairs legacy workflow meta-steps on saved tasks", async (
   );
   assert.match(
     texts,
-    /open jobs|save the first credible role|open the saved role|pipeline action|open the source note|role type still missing/i,
+    /Open LinkedIn or the target job board and search|Save the first real posting|likely first knowledge gap to test|confirm or disprove that diagnosis|likely gap/i,
     "the repaired task should start with a direct actionable move",
   );
+});
+
+test("GET /api/tasks repairs legacy generic contact task titles and outcomes", async () => {
+  const contact = await h.storage.createContact({
+    name: "",
+    who: "Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat",
+    note: "Captured from Brain Dump",
+    status: "to_contact",
+    relationshipStrength: "cold",
+    targetRole: "AI strategy roles",
+    askType: "soft",
+  } as any);
+
+  await h.storage.createTask({
+    title: "Draft soft outreach to Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat",
+    list: "inbox",
+    done: false,
+    status: "not_started",
+    category: "admin",
+    sourceType: "contact",
+    sourceId: contact.id,
+    sourceNote: "From Brain Dump",
+    doneWhen: "A message is drafted and ready to send",
+    minimumOutcome: "A draft message",
+    steps: "[]",
+  } as any);
+
+  const r = await api(h.base, "GET", "/api/tasks");
+  assert.equal(r.status, 200);
+  const repaired = r.json.find((task: any) => /find one bain alum to ask about ai strategy roles/i.test(String(task.title || "")));
+  assert.ok(repaired, "the repaired contact task should be returned");
+  assert.equal(repaired.title, "Find one Bain alum to ask about AI strategy roles");
+  assert.match(String(repaired.doneWhen || ""), /One real person is chosen and the outreach ask is ready/i);
+  assert.match(String(repaired.minimumOutcome || ""), /One real person is chosen and the outreach ask is ready/i);
+  const texts = JSON.parse(repaired.steps || "[]").map((step: any) => String(step.text || "")).join(" | ");
+  assert.match(texts, /Open LinkedIn and search for Bain alum AI strategy roles/i);
+  assert.match(texts, /Save one real person who fits Bain alum/i);
+});
+
+test("GET /api/tasks contextualizes legacy captured networking tasks before the UI sees them", async () => {
+  await h.storage.createTask({
+    title: "Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat",
+    list: "captured",
+    done: false,
+    status: "not_started",
+    category: "job",
+    sourceType: "capture",
+    sourceId: 1,
+    sourceNote: "From Brain Dump",
+    doneWhen: "The next visible action is complete",
+    minimumOutcome: "",
+    steps: "[]",
+  } as any);
+
+  const r = await api(h.base, "GET", "/api/tasks");
+  assert.equal(r.status, 200);
+  const repaired = r.json.find((task: any) => /^reach out to a bain alum about ai strategy roles/i.test(String(task.title || "")));
+  assert.ok(repaired, "the captured task should be returned");
+  assert.equal(repaired.category, "admin");
+  assert.match(String(repaired.doneWhen || ""), /One real person is chosen and the outreach ask is ready/i);
+  assert.match(String(repaired.minimumOutcome || ""), /One real person is chosen and the outreach ask is ready/i);
+  const texts = JSON.parse(repaired.steps || "[]").map((step: any) => String(step.text || "")).join(" | ");
+  assert.match(texts, /Open LinkedIn and search for Bain alum AI strategy roles/i);
+  assert.match(texts, /Save one real person who fits Bain alum/i);
+  assert.match(texts, /Ask for a 15-minute chat about AI strategy roles/i);
 });
 
 // P4.6a #5 — the unified front-door is the ONE strategy payload, and the legacy
@@ -713,6 +795,86 @@ test("proofIntent round-trips via PATCH and flips the output state", async () =>
   assert.equal(r.status, 200);
   const after = (await h.storage.getLearn()).find((x) => x.id === l.id)!;
   assert.equal(getLearnOutputState(after), "producing", "opting in moves it to producing");
+});
+
+test("creating a contact refreshes warm-path scores for matching jobs", async () => {
+  const job = await h.storage.createJob({
+    title: "Policy Advisor",
+    company: "Ofcom",
+    status: "wishlist",
+    relatedTrackId: 1,
+    warmPathScore: null,
+  } as any);
+
+  const created = await api(h.base, "POST", "/api/contacts", {
+    name: "James",
+    who: "Senior Policy Advisor",
+    targetOrg: "Ofcom",
+    targetRole: "AI governance policy",
+    relationshipStrength: "warm",
+    status: "replied",
+    askType: "advice",
+  });
+  assert.equal(created.status, 200);
+
+  await waitFor(async () => {
+    const refreshed = await h.storage.getJob(job.id);
+    assert.ok((refreshed?.warmPathScore ?? 0) > 0, `expected warmPathScore to refresh after contact creation, got ${refreshed?.warmPathScore}`);
+  });
+});
+
+test("linking a sparse contact to a job still creates a warm-path signal", async () => {
+  const job = await h.storage.createJob({
+    title: "Chief of Staff",
+    company: "Stealth AI",
+    status: "wishlist",
+    warmPathScore: null,
+  } as any);
+  const contact = await h.storage.createContact({
+    name: "Amina",
+    who: "Trusted operator",
+    relationshipStrength: "warm",
+    status: "replied",
+    targetOrg: "",
+    targetRole: "",
+  } as any);
+
+  const linked = await api(h.base, "POST", `/api/jobs/${job.id}/link-contact`, { contactId: contact.id });
+  assert.equal(linked.status, 200);
+
+  await waitFor(async () => {
+    const refreshed = await h.storage.getJob(job.id);
+    assert.ok((refreshed?.warmPathScore ?? 0) >= 70, `expected explicit link to raise warmPathScore, got ${refreshed?.warmPathScore}`);
+  });
+});
+
+test("unlinking a contact removes the warm-path boost when no other contact supports the job", async () => {
+  const job = await h.storage.createJob({
+    title: "Chief of Staff",
+    company: "Stealth AI",
+    status: "wishlist",
+    warmPathScore: null,
+  } as any);
+  const contact = await h.storage.createContact({
+    name: "Amina",
+    who: "Trusted operator",
+    relationshipStrength: "warm",
+    status: "replied",
+    targetOrg: "",
+    targetRole: "",
+  } as any);
+  await h.storage.linkContactToJob(contact.id, job.id);
+
+  const seeded = await (await import("./jobScoring")).refreshWarmPathScores([job.id]).then(async () => h.storage.getJob(job.id));
+  assert.ok((seeded?.warmPathScore ?? 0) >= 70, "linked contact should create a strong warm-path score before unlinking");
+
+  const unlinked = await api(h.base, "DELETE", `/api/jobs/${job.id}/unlink-contact/${contact.id}`, {});
+  assert.equal(unlinked.status, 200);
+
+  await waitFor(async () => {
+    const refreshed = await h.storage.getJob(job.id);
+    assert.equal(refreshed?.warmPathScore ?? 0, 0);
+  });
 });
 
 // plan recompute does not produce duplicate started/linked tasks — starting an

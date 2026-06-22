@@ -66,6 +66,8 @@ async function buildAndPersistPlan(day: string, energy: "low" | "medium" | "high
       title: c.title,
       whySelected: pi.explanation.summary || pi.why,
       doneWhen: c.doneWhen,
+      sourceNote: c.sourceNote || "",
+      sourceStatus: c.sourceStatus || "",
       status: prev ? prev.status : "planned",
       plannedFor: day,
       startedAt: prev?.startedAt ?? undefined,

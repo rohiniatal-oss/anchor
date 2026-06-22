@@ -1,4 +1,5 @@
 import { LANE_NAME, normalizeLaneName, type CanonicalLaneName } from "./lanes";
+import { isGenericContactPlaceholder } from "@shared/taskPreview";
 
 export type TaskIntentKind =
   | "role_market_scan"
@@ -35,6 +36,14 @@ export type TaskIntentContract = {
   maxSteps: number;
 };
 
+export type LikelyLearningGapPlan = {
+  label: string;
+  gapType: "knowledge" | "skill" | "proof";
+  gapTypeLabel: string;
+  assessmentStep: string;
+  learningMoveStep: string;
+};
+
 function textFor(input: TaskIntentInput) {
   return [
     input.title,
@@ -65,8 +74,9 @@ export function isRoleMarketScanInput(input: TaskIntentInput) {
 
 export function inferTaskIntent(input: TaskIntentInput): TaskIntentKind {
   const text = textFor(input);
+  const title = String(input.title || "").toLowerCase();
   if (containsAny(text, ["blocked", "stuck", "waiting on", "waiting for", "need from", "missing info", "depends on"])) return "blocked_unblock";
-  if (/\b(mark|set|move|close|closed|archive|rejected|withdrawn|status)\b/.test(text)) return "status_update";
+  if (/\b(mark|set|close|closed|archive|rejected|withdrawn|status)\b/.test(title) || /\bmove\b.+\b(to|into)\b/.test(title)) return "status_update";
   if (/\b(interview|case study|presentation|panel|mock interview|prep call|written test)\b/.test(text)) return "interview_prep";
   if (/\b(reach out|follow up|follow-up|reply|message|email|intro|introduce|reconnect|contact|network|referral|coffee chat|coffee)\b/.test(text)) return "networking_message";
   if (isRoleMarketScanInput(input)) return "role_market_scan";
@@ -90,14 +100,76 @@ export function roleMarketScanLabel(title: string) {
   return cleaned.slice(0, 80) || "the role path";
 }
 
+function classifyLikelyGap(label: string) {
+  const text = String(label || "").toLowerCase();
+  if (/\b(strongest repeated requirement|most repeated requirement|top repeated requirement|requirement in the posting)\b/.test(text)) {
+    return "skill" as const;
+  }
+  if (/\b(publication|published|portfolio|proof|evidence|track record|case study|credential|credibility|example)\b/.test(text)) {
+    return "proof" as const;
+  }
+  if (/\b(writing|communications|communication|story|storytelling|messaging|translation|delivery|operations|ops|program|project|product|execution|stakeholder)\b/.test(text)) {
+    return "skill" as const;
+  }
+  return "knowledge" as const;
+}
+
+function inferLikelyGapLabel(rolePath: string) {
+  const text = String(rolePath || "").toLowerCase();
+  if (/\b(ai governance|ai safety|frontier|alignment|responsible ai)\b/.test(text)) return "AI Governance & Safety";
+  if (/\b(policy|regulat|advisor|governance|compliance|public affairs)\b/.test(text)) return "Policy & Regulatory Frameworks";
+  if (/\b(chief of staff|operations|ops|implementation|delivery|program|project|product)\b/.test(text)) return "Product & Delivery";
+  if (/\b(strategy|stakeholder|communications|communication|writing|narrative|translation)\b/.test(text)) return "Strategic Communications & Writing";
+  if (/\b(research|analyst|analysis|data|quant|econom)\b/.test(text)) return "Quantitative & Data Literacy";
+  return "the strongest repeated requirement in the posting";
+}
+
+function gapTypeLabel(gapType: LikelyLearningGapPlan["gapType"]) {
+  if (gapType === "skill") return "skill gap";
+  if (gapType === "proof") return "proof gap";
+  return "knowledge gap";
+}
+
+export function likelyLearningGapPlan(input: { rolePath?: string | null; label?: string | null }): LikelyLearningGapPlan {
+  const label = String(input.label || "").trim() || inferLikelyGapLabel(String(input.rolePath || ""));
+  const gapType = classifyLikelyGap(label);
+  const gapLabel = gapTypeLabel(gapType);
+  if (gapType === "skill") {
+    return {
+      label,
+      gapType,
+      gapTypeLabel: gapLabel,
+      assessmentStep: `Treat ${label} as the likely first ${gapLabel} to test. Check the posting only to confirm or disprove that diagnosis, then save one line on why it does or does not look like the first gap`,
+      learningMoveStep: `If ${label} is the gap, do one short drill on ${label} against the posting and save the output, then stop once one real role, one repeated requirements pattern, and one next learning move are captured`,
+    };
+  }
+  if (gapType === "proof") {
+    return {
+      label,
+      gapType,
+      gapTypeLabel: gapLabel,
+      assessmentStep: `Treat ${label} as the likely first ${gapLabel} to test. Check the posting only to confirm or disprove that diagnosis, then save one line on why it does or does not look like the first gap`,
+      learningMoveStep: `If ${label} is the gap, draft one concrete example that proves ${label}, then stop once one real role, one repeated requirements pattern, and one next learning move are captured`,
+    };
+  }
+  return {
+    label,
+    gapType,
+    gapTypeLabel: gapLabel,
+    assessmentStep: `Treat ${label} as the likely first ${gapLabel} to test. Check the posting only to confirm or disprove that diagnosis, then save one line on why it does or does not look like the first gap`,
+    learningMoveStep: `If ${label} is the gap, read one targeted source on ${label} and save 3 lines on how it shows up in the role, then stop once one real role, one repeated requirements pattern, and one next learning move are captured`,
+  };
+}
+
 function roleMarketScanSteps(title: string) {
   const rolePath = roleMarketScanLabel(title);
+  const likelyGap = likelyLearningGapPlan({ rolePath });
   return [
     `Open LinkedIn or the target job board and search "${rolePath}"`,
     "Save the first real posting that matches the path closely enough to learn from",
     "Extract the 3 repeated requirements or background signals from that posting",
-    "Mark which signals you can already evidence and which one is the biggest gap",
-    "Stop once one real role and one requirements pattern are captured",
+    likelyGap.assessmentStep,
+    likelyGap.learningMoveStep,
   ];
 }
 
@@ -115,6 +187,8 @@ function cleanPhrase(value: string) {
 
 function networkingRecipient(title: string) {
   const text = titleText(title);
+  const findOne = text.match(/^find one\s+(.+?)\s+to\s+ask(?:\s+\babout\b|\s+\bfor\b|\s+\bregarding\b|$)/i);
+  if (findOne?.[1]) return cleanPhrase(findOne[1]) || "the contact";
   const explicit = text.match(/\b(?:to|with)\s+(.+?)(?:\s+\babout\b|\s+\bregarding\b|\s+\bre:\b|\s+\band ask\b|\s+\bfor\b|$)/i);
   if (explicit?.[1]) return cleanPhrase(explicit[1]) || "the contact";
   const reachOut = text.match(/\breach out\s+(.+?)(?:\s+\babout\b|\s+\bregarding\b|\s+\band ask\b|\s+\bfor\b|$)/i);
@@ -140,10 +214,25 @@ function networkingAsk(title: string, topic: string) {
   return `Ask for quick advice${about}`;
 }
 
+function genericRecipientSearchLabel(recipient: string) {
+  return titleText(recipient).replace(/^(a|an)\s+/i, "").trim() || "relevant contact";
+}
+
 function networkingMessageSteps(title: string) {
   const recipient = networkingRecipient(title);
   const topic = networkingTopic(title);
   const ask = networkingAsk(title, topic);
+  if (isGenericContactPlaceholder({ name: "", who: recipient } as any)) {
+    const recipientLabel = genericRecipientSearchLabel(recipient);
+    const searchQuery = [recipientLabel, topic].filter(Boolean).join(" ");
+    return [
+      `Open LinkedIn and search for ${searchQuery}`,
+      `Save one real person who fits ${recipientLabel}`,
+      topic ? `Write why this person is a credible ask for ${topic}` : "Write why this person is a credible ask right now",
+      ask,
+      "Draft the message only if this person looks worth contacting",
+    ];
+  }
   const angle = topic
     ? `Use this angle: you are exploring ${topic} and want one practical steer`
     : "Use this angle: you have a specific, low-pressure reason to reconnect now";
@@ -164,7 +253,7 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
     return {
       intent,
       category: "job",
-      doneWhen: "One real role and one repeated requirements pattern are captured",
+      doneWhen: "One real role, one repeated requirements pattern, and one next learning move are captured",
       firstStep: steps[0],
       steps,
       stopCondition: steps[4],
@@ -173,8 +262,21 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
   }
 
   if (intent === "networking_message") {
+    const genericRecipient = isGenericContactPlaceholder({ name: "", who: networkingRecipient(title) } as any);
     const steps = networkingMessageSteps(title);
-    return { intent, category: "admin", doneWhen: "A message is drafted, sent, or clearly scheduled", firstStep: steps[0], steps, stopCondition: "Stop once the message is drafted, sent, or scheduled", maxSteps: 4 };
+    return {
+      intent,
+      category: "admin",
+      doneWhen: genericRecipient
+        ? "One real person is chosen and the outreach ask is ready"
+        : "A message is drafted, sent, or clearly scheduled",
+      firstStep: steps[0],
+      steps,
+      stopCondition: genericRecipient
+        ? "Stop once one real person and a sendable ask are ready"
+        : "Stop once the message is drafted, sent, or scheduled",
+      maxSteps: genericRecipient ? 5 : 4,
+    };
   }
 
   if (intent === "interview_prep") {

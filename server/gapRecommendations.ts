@@ -58,7 +58,14 @@ export async function syncGapRecommendations(): Promise<void> {
       continue;
     }
 
-    if (rec.collection === "learning-corpus" && rec.linkedGapKey) {
+    if (rec.collection === "direction-signals") {
+      if ((liveJobsByTrack.get(trackId) ?? 0) > 0)
+        await storage.updateRecommendation(rec.id, { status: "stale" });
+    } else if (rec.collection === "learning-corpus" && rec.linkedGapKey) {
+      if ((liveJobsByTrack.get(trackId) ?? 0) === 0) {
+        await storage.updateRecommendation(rec.id, { status: "stale" });
+        continue;
+      }
       const open = openGapDomainsByTrack.get(trackId);
       if (!open?.has(rec.linkedGapKey))
         await storage.updateRecommendation(rec.id, { status: "stale" });
@@ -81,11 +88,55 @@ export async function syncGapRecommendations(): Promise<void> {
 
   const trackById = new Map(tracks.map((t) => [t.id, t]));
 
-  // ── Step 2: create learning-theme recs for open gaps with no existing coverage ──
+  // ── Step 2: create direction-evidence recs before learning on tracks with no live roles ──
+  for (const track of tracks) {
+    if (track.status !== "active") continue;
+    if ((liveJobsByTrack.get(track.id) ?? 0) > 0) continue;
+
+    const covered = freshRecs.some(
+      (r) =>
+        r.linkedTrackId === track.id &&
+        r.collection === "direction-signals" &&
+        COVERED_STATUSES.has(r.status),
+    );
+    if (covered) continue;
+
+    await storage.createRecommendation({
+      collection: "direction-signals",
+      kind: "role-market-evidence",
+      status: "new",
+      source: "system",
+      title: `Find one real ${track.name} role and extract the first requirements pattern`,
+      whySuggested: `You do not have enough live role evidence for ${track.name} yet. Check one real role before spending more time on prep, learning, or networking.`,
+      linkedTrackId: track.id,
+      linkedGapKey: "role-evidence",
+      linkedCombination: "",
+      freshnessLabel: "",
+      sourceLabel: "Anchor",
+      sourceUrl: "",
+      rankScore: track.priority * 10 + 200,
+      rankReason: `${track.name} has no live saved roles yet`,
+      executionShape: "single-step",
+      acceptanceEntityType: "task",
+      acceptanceDraft: JSON.stringify({
+        title: `Find one real ${track.name} role and extract the first requirements pattern`,
+        category: "job",
+        size: "medium",
+        doneWhen: "One real role, one repeated requirements pattern, and one next learning move are captured",
+        relatedTrackId: track.id,
+      }),
+      confidenceScore: null,
+      duplicateOfId: null,
+      contextHash: ctxHash,
+    });
+  }
+
+  // ── Step 3: create learning-theme recs for open gaps with no existing coverage ──
   const newLearningRecs: Array<{ id: number; domain: string; label: string; trackId: number }> = [];
 
   for (const lg of learningGapsResult.tracks) {
     if (lg.status !== "active") continue;
+    if ((liveJobsByTrack.get(lg.trackId) ?? 0) === 0) continue;
     for (const domain of lg.gapDomains) {
       const covered = freshRecs.some(
         (r) =>
@@ -145,7 +196,7 @@ export async function syncGapRecommendations(): Promise<void> {
     }
   }
 
-  // ── Step 3: create network-target recs for active tracks with jobs but no contacts ──
+  // ── Step 4: create network-target recs for active tracks with jobs but no contacts ──
   for (const track of tracks) {
     if (track.status !== "active") continue;
     if ((liveJobsByTrack.get(track.id) ?? 0) === 0) continue;

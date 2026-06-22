@@ -150,6 +150,7 @@ function parseTaskSteps(raw: string) {
 
 export function categoryForPlanItem(item: {
   sourceType?: string | null;
+  sourceStatus?: string | null;
   title?: string | null;
   whySelected?: string | null;
   doneWhen?: string | null;
@@ -159,9 +160,12 @@ export function categoryForPlanItem(item: {
   if (item.sourceType === "hustle") return "hustle";
   if (item.sourceType === "contact") return "admin";
   if (item.sourceType === "goal") {
-    const text = `${item.title || ""} ${item.whySelected || ""} ${item.doneWhen || ""}`.toLowerCase();
-    if (/contact|outreach|reach out|message|network/i.test(text)) return "admin";
-    if (/learning focus|learning support|learn|learning/i.test(text)) return "learning";
+    const sourceStatus = String(item.sourceStatus || "").toLowerCase();
+    if (sourceStatus === "broad_parallel_pursuit_network_support") return "admin";
+    if (sourceStatus === "broad_parallel_pursuit_learning_support") return "learning";
+    const text = `${item.title || ""} ${item.whySelected || ""} ${item.doneWhen || ""} ${sourceStatus}`.toLowerCase();
+    if (/contact|outreach|reach out|message|network|real person|reality-check|reality check|chat|how teams hire|find one person|person at/i.test(text)) return "admin";
+    if (/learning focus|learning support|learn|learning|missing requirement|prep move|targeted prep/i.test(text)) return "learning";
     return "job";
   }
   return "admin";
@@ -224,9 +228,10 @@ async function ensureExecutionReadyTask(task: any) {
     const updated = await storage.updateTask(task.id, {
       title: repaired.title,
       steps: repaired.steps,
+      doneWhen: repaired.doneWhen,
       minimumOutcome: repaired.minimumOutcome,
     } as any);
-    task = updated || { ...task, title: repaired.title, steps: repaired.steps, minimumOutcome: repaired.minimumOutcome };
+    task = updated || { ...task, title: repaired.title, steps: repaired.steps, doneWhen: repaired.doneWhen, minimumOutcome: repaired.minimumOutcome };
   }
   if (parseTaskSteps(task.steps || "[]").length > 0) return task;
 
@@ -302,6 +307,8 @@ async function buildPlan(day: string, energy: Energy) {
       title: c.title,
       whySelected: pi.explanation.summary || pi.why,
       doneWhen: c.doneWhen,
+      sourceNote: c.sourceNote || "",
+      sourceStatus: c.sourceStatus || "",
       status: prev ? prev.status : "planned",
       plannedFor: day,
       startedAt: prev?.startedAt ?? undefined,
@@ -667,6 +674,8 @@ export function registerPlanningRoutes(app: Express) {
       doneWhen: item.doneWhen || task?.doneWhen || "",
       sourceType: item.sourceType || task?.sourceType || "",
       sourceId: item.sourceId ?? task?.sourceId ?? undefined,
+      sourceNote: item.sourceNote || task?.sourceNote || "",
+      sourceStatus: item.sourceStatus || task?.sourceStatus || "",
     };
     if (task) {
       task = await storage.updateTask(task.id, preserve);
@@ -686,6 +695,8 @@ export function registerPlanningRoutes(app: Express) {
         doneWhen: item.doneWhen || "",
         sourceType: item.sourceType || "",
         sourceId: item.sourceId ?? undefined,
+        sourceNote: item.sourceNote || "",
+        sourceStatus: item.sourceStatus || "",
         planItemId: item.id,
       } as any);
     }

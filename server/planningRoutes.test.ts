@@ -5,16 +5,18 @@ import { categoryForPlanItem } from "./planningRoutes";
 test("goal-derived contact support items become admin tasks when started", () => {
   assert.equal(categoryForPlanItem({
     sourceType: "goal",
-    title: "Add one useful contact for AI / technology strategy x Strategy / advisory",
-    doneWhen: "One useful contact or outreach path exists for AI / technology strategy x Strategy / advisory",
+    sourceStatus: "broad_parallel_pursuit_network_support",
+    title: "Find one person at Frontier Lab to ask how teams hire for AI / technology strategy x Strategy / advisory",
+    doneWhen: "One real person is saved with why they are worth messaging and the one question you would ask about AI / technology strategy x Strategy / advisory.",
   }), "admin");
 });
 
 test("goal-derived prep support items become learning tasks when started", () => {
   assert.equal(categoryForPlanItem({
     sourceType: "goal",
-    title: "Add one learning item for AI / technology strategy x Ops / chief of staff",
-    doneWhen: "One learning item exists for AI / technology strategy x Ops / chief of staff",
+    sourceStatus: "broad_parallel_pursuit_learning_support",
+    title: "Use AI Chief of Staff at Model Lab to identify the first missing requirement for AI / technology strategy x Ops / chief of staff",
+    doneWhen: "The first missing requirement and the smallest prep move are saved for AI / technology strategy x Ops / chief of staff.",
   }), "learning");
 });
 

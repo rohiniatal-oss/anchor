@@ -158,6 +158,56 @@ test("planner prefers a concrete task over a vague task when both are otherwise 
   assert.equal(result.plan[0].candidate.sourceId, 112);
 });
 
+test("planner repairs generic contact-backed task titles and success conditions before ranking", () => {
+  const tasks = [
+    task({
+      id: 120,
+      title: "Draft soft outreach to Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat",
+      category: "admin",
+      list: "today",
+      sourceType: "contact",
+      sourceId: 50,
+      sourceNote: "From Brain Dump",
+      doneWhen: "A message is drafted and ready to send",
+    }),
+  ];
+  const contacts = [
+    contact({
+      id: 50,
+      name: "",
+      who: "Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat",
+      status: "to_contact",
+      askType: "soft",
+      targetRole: "AI strategy roles",
+    }),
+  ];
+
+  const result = planDay(tasks as any, [], [], [], "medium", { remainingMinutes: 120 }, contacts as any, []);
+  assert.equal(result.plan[0].candidate.title, "Find one Bain alum to ask about AI strategy roles");
+  assert.match(result.plan[0].candidate.doneWhen, /One real person is chosen and the outreach ask is ready/i);
+  assert.match(result.plan[0].explanation.firstStep, /Open LinkedIn and search for Bain alum AI strategy roles/i);
+  assert.match(result.plan[0].explanation.stopRule, /one real person and a sendable ask are ready/i);
+});
+
+test("planner repairs task-backed role scans to the stronger gap-plus-learning contract", () => {
+  const tasks = [
+    task({
+      id: 121,
+      title: "Inspect three AI governance strategy roles and capture repeated requirements.",
+      category: "learning",
+      list: "today",
+      sourceType: "task",
+      doneWhen: "One clear role-family signal is captured",
+      minimumOutcome: "One clear role-family signal is captured",
+    }),
+  ];
+
+  const result = planDay(tasks as any, [], [], [], "medium", { remainingMinutes: 120 });
+  assert.match(result.plan[0].candidate.doneWhen, /one real role, one repeated requirements pattern, and one next learning move/i);
+  assert.match(result.plan[0].explanation.firstStep, /search "AI governance strategy roles"/i);
+  assert.match(result.plan[0].explanation.stopRule, /one next learning move are captured/i);
+});
+
 test("planner collapses to one item when the remaining day is small", () => {
   const tasks = [
     task({ id: 1, title: "Inspect one role family", category: "learning", size: "quick" }),
@@ -461,8 +511,10 @@ test("planner surfaces missing broad-pursuit contact support once live role type
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, [], tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /Find someone/i);
-  assert.match(result.plan[0].explanation.firstStep, /LinkedIn/i);
+  assert.match(result.plan[0].candidate.title, /how teams hire|find one person/i);
+  assert.match(result.plan[0].candidate.title, /Frontier Lab|Model Lab|Risk Desk|Policy Lab/i);
+  assert.match(result.plan[0].explanation.firstStep, /Frontier Lab|Model Lab|Risk Desk|Policy Lab/i);
+  assert.doesNotMatch(result.plan[0].explanation.firstStep, /Risk Desk.*Policy Lab|Policy Lab.*Risk Desk/i);
   assert.match(result.note, /outreach, more focused learning support, or both/i);
 });
 
@@ -516,8 +568,9 @@ test("planner surfaces missing broad-pursuit prep support after contact support 
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, contacts as any, tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /learning/i);
-  assert.match(result.plan[0].explanation.firstStep, /briefing|job description|report|LinkedIn Learning|Coursera/i);
+  assert.match(result.plan[0].candidate.title, /check whether .* is the first missing requirement/i);
+  assert.match(result.plan[0].candidate.doneWhen, /likely first gap and the matching smallest prep move/i);
+  assert.match(result.plan[0].explanation.firstStep, /Frontier Lab|likely first gap|confirm or disprove/i);
   assert.match(result.note, /learning focus|learning support/i);
 });
 
@@ -588,7 +641,10 @@ test("planner describes mixed broad-pursuit support gaps without hiding prep beh
 
   const result = planDay([], jobs as any, [], learn as any, "medium", { remainingMinutes: 240 }, contacts as any, tracks);
   assert.match(result.note, /outreach, more focused learning support, or both/i);
-  assert.ok(result.plan.some((item) => /learning/i.test(item.candidate.title)), "learning support should stay visible alongside outreach gaps");
+  assert.ok(
+    result.plan.some((item) => item.candidate.category === "learning" || /missing requirement|prep move/i.test(item.candidate.title)),
+    "learning support should stay visible alongside outreach gaps",
+  );
 });
 
 test("planner keeps a real application move ahead of broad-pursuit support gaps", () => {

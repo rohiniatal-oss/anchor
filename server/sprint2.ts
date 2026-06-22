@@ -338,6 +338,8 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         title: c.title,
         whySelected: item.explanation?.summary || item.why,
         doneWhen: c.doneWhen,
+        sourceNote: c.sourceNote || "",
+        sourceStatus: c.sourceStatus || "",
         status: previousAction ? previousAction.status : "planned",
         plannedFor: day,
         startedAt: previousAction?.startedAt ?? null,

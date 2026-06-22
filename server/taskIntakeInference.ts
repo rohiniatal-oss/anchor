@@ -1,6 +1,7 @@
 import { llmJSON, MODEL_LIGHT } from "./llm";
 import { storage } from "./storage";
 import { contractForTaskIntent, inferTaskIntent } from "./taskIntent";
+import { isGenericContactPlaceholder, nextContactTaskTitle } from "@shared/taskPreview";
 
 function containsAny(text: string, terms: string[]) {
   const t = (text || "").toLowerCase();
@@ -33,9 +34,9 @@ export function intakeWords(text: string) {
 }
 
 export function inferTaskCategory(title: string, current?: string) {
-  if (current && current !== "admin") return current;
   const intentContract = contractForTaskIntent({ title, category: current });
   if (intentContract.intent !== "admin_action") return intentContract.category;
+  if (current && current !== "admin") return current;
   const hasJobSignal = containsAny(title, ["cv", "cover", "application", "apply", "interview", "role", "job", "fellowship", "hiring"]);
   const hasThinkingVerb = containsAny(title, ["think", "reflect", "direction", "options", "decide", "consider"]);
   if (hasThinkingVerb && !hasJobSignal) return "thinking";
@@ -106,6 +107,44 @@ function inferFirstStep(title: string, category: string) {
   return null;
 }
 
+function normalizeStepTexts(rawSteps?: string) {
+  try {
+    const parsed = JSON.parse(String(rawSteps || "[]"));
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((step) => String(step?.text || "").trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function isWeakLegacyDoneWhen(doneWhen: string, intent: ReturnType<typeof contractForTaskIntent>["intent"]) {
+  const text = String(doneWhen || "").trim().toLowerCase();
+  if (!text) return true;
+  if (intent === "role_market_scan") {
+    return /one clear role-family signal is captured|at least two real role examples are saved|main patterns or requirements they share/.test(text);
+  }
+  if (intent === "networking_message") {
+    return /a message is drafted and ready to send|the next visible action is complete|one person and a clear ask are drafted or sent/.test(text);
+  }
+  return /you've done something concrete|something concrete is done|the next visible action is complete/.test(text);
+}
+
+function shouldReplaceWithIntentSteps(rawSteps: string | undefined, contract: ReturnType<typeof contractForTaskIntent>) {
+  if (contract.intent === "admin_action") return false;
+  const texts = normalizeStepTexts(rawSteps);
+  if (!texts.length) return true;
+  if (contract.intent === "role_market_scan") {
+    return texts.some((text) => /use the finite knowledge workflow|locate the current stage|define this stage output|check completion criteria|break this stage into actions|first thing you need to understand|orient|scope useful slice|find out what's involved|focus on what matters|read \/ watch|pull out the key bits|make sense of it|save what's useful/i.test(text));
+  }
+  return false;
+}
+
+function contractStepsJson(contract: ReturnType<typeof contractForTaskIntent>) {
+  return JSON.stringify(contract.steps.map((text) => ({ text, done: false })));
+}
+
 export function inferStarterSteps(title: string, category: string, currentSteps?: string) {
   const raw = String(currentSteps || "").trim();
   if (raw && raw !== "[]") return raw;
@@ -130,8 +169,21 @@ export function buildTaskIntakeDefaults(raw: {
 }) {
   const title = String(raw?.title || "").trim();
   const category = inferTaskCategory(title, raw?.category);
+  const intentContract = contractForTaskIntent({
+    title,
+    category,
+    sourceType: "task",
+    doneWhen: raw?.doneWhen,
+    minimumOutcome: raw?.minimumOutcome,
+    blockerReason: raw?.blockerReason,
+  });
   const estimate = inferTaskEstimate(title, raw?.size);
-  const doneWhen = raw?.doneWhen || inferDoneWhen(title, category);
+  const doneWhen = raw?.doneWhen && !isWeakLegacyDoneWhen(raw.doneWhen, intentContract.intent)
+    ? raw.doneWhen
+    : inferDoneWhen(title, category);
+  const steps = shouldReplaceWithIntentSteps(raw?.steps, intentContract)
+    ? contractStepsJson(intentContract)
+    : inferStarterSteps(title, category, raw?.steps);
   return {
     title,
     category,
@@ -140,8 +192,8 @@ export function buildTaskIntakeDefaults(raw: {
     estimateConfidence: raw?.estimateConfidence || "low",
     estimateReason: raw?.estimateReason || `intake_guess:${estimate.reason}`,
     doneWhen,
-    steps: inferStarterSteps(title, category, raw?.steps),
-    minimumOutcome: raw?.minimumOutcome || doneWhen,
+    steps,
+    minimumOutcome: raw?.minimumOutcome && !isWeakLegacyDoneWhen(raw.minimumOutcome, intentContract.intent) ? raw.minimumOutcome : doneWhen,
     readiness: raw?.readiness || (raw?.blockerReason ? "blocked" : "ready"),
     status: raw?.status || "not_started",
   };
@@ -152,6 +204,25 @@ export async function contextualizeTask(taskId: number): Promise<void> {
   if (!task) return;
 
   const patch: Record<string, any> = {};
+  const normalized = buildTaskIntakeDefaults({
+    title: task.title,
+    category: task.category,
+    size: task.size,
+    estimateMinutes: task.estimateMinutes,
+    estimateConfidence: task.estimateConfidence,
+    estimateReason: task.estimateReason,
+    doneWhen: task.doneWhen,
+    steps: task.steps,
+    minimumOutcome: task.minimumOutcome,
+    readiness: task.readiness,
+    blockerReason: task.blockerReason,
+    status: task.status,
+  });
+
+  if (normalized.category !== task.category) patch.category = normalized.category;
+  if (normalized.doneWhen !== task.doneWhen) patch.doneWhen = normalized.doneWhen;
+  if (normalized.minimumOutcome !== task.minimumOutcome) patch.minimumOutcome = normalized.minimumOutcome;
+  if (normalized.steps !== task.steps) patch.steps = normalized.steps;
 
   if (task.sourceType === "job" && task.sourceId) {
     const job = (await storage.getJobs()).find((j) => j.id === task.sourceId);
@@ -169,6 +240,21 @@ export async function contextualizeTask(taskId: number): Promise<void> {
   } else if (task.sourceType === "contact" && task.sourceId) {
     const contact = (await storage.getContacts()).find((c) => c.id === task.sourceId);
     if (contact) {
+      if (isGenericContactPlaceholder(contact)) {
+        const title = nextContactTaskTitle(contact);
+        const contract = contractForTaskIntent({
+          title,
+          category: task.category,
+          sourceType: "contact",
+          sourceNote: `${task.sourceNote || ""} ${contact.why || contact.note || ""} ${contact.targetOrg || ""} ${contact.targetRole || ""}`,
+          doneWhen: task.doneWhen,
+          minimumOutcome: task.minimumOutcome,
+        });
+        if (title !== task.title) patch.title = title;
+        patch.doneWhen = contract.doneWhen;
+        patch.minimumOutcome = contract.doneWhen;
+        if (shouldReplaceWithIntentSteps(task.steps, contract)) patch.steps = contractStepsJson(contract);
+      }
       if (!task.doneWhen) {
         patch.doneWhen = contact.status === "messaged" || contact.status === "in_conversation"
           ? `Next step with ${contact.name || "the contact"} is done`

@@ -11,7 +11,7 @@ beforeEach(() => { h.reset(); });
 
 async function makePlanWithItem(opts: Partial<{
   sourceType: string; sourceId: number | null; taskId: number | null;
-  title: string; doneWhen: string; slot: string;
+  title: string; doneWhen: string; slot: string; sourceNote: string; sourceStatus: string;
 }> = {}) {
   const plan = await h.storage.createPlan({ date: DAY, status: "active" } as any);
   const item = await h.storage.createPlanItem({
@@ -24,6 +24,8 @@ async function makePlanWithItem(opts: Partial<{
     title: opts.title ?? "Task",
     whySelected: "Because",
     doneWhen: opts.doneWhen ?? "Done",
+    sourceNote: opts.sourceNote ?? "",
+    sourceStatus: opts.sourceStatus ?? "",
     status: "planned",
     plannedFor: DAY,
     createdAt: Date.now(),
@@ -95,8 +97,8 @@ test("plan-item start keeps broad-pursuit contact-support goal items as admin/ne
     sourceType: "goal",
     sourceId: 2,
     taskId: null,
-    title: "Add one useful contact for AI / technology strategy x Strategy / advisory",
-    doneWhen: "One useful contact or outreach path exists for AI / technology strategy x Strategy / advisory",
+    title: "Find one person at Frontier Lab or Model Lab to ask how teams hire for AI / technology strategy x Strategy / advisory",
+    doneWhen: "One real person is saved with why they are worth messaging and the one question you would ask about AI / technology strategy x Strategy / advisory.",
     slot: "now",
   });
 
@@ -105,7 +107,7 @@ test("plan-item start keeps broad-pursuit contact-support goal items as admin/ne
   assert.equal(started.json.task.category, "admin");
   const steps = JSON.parse(started.json.task.steps || "[]");
   assert.ok(steps.length >= 1, "contact-support goal tasks should get concrete steps");
-  assert.match(String(steps[0]?.text || ""), /open jobs|role type still missing|save the first credible role|find one real role/i);
+  assert.match(String(steps[0]?.text || ""), /linkedin|real person|reality-check/i);
 });
 
 test("plan-item start keeps broad-pursuit prep-support goal items as learning tasks", async () => {
@@ -113,17 +115,21 @@ test("plan-item start keeps broad-pursuit prep-support goal items as learning ta
     sourceType: "goal",
     sourceId: 3,
     taskId: null,
-    title: "Add one learning item for AI / technology strategy x Ops / chief of staff",
-    doneWhen: "One learning item exists for AI / technology strategy x Ops / chief of staff",
+    title: "Use AI Chief of Staff at Model Lab to identify the first missing requirement for AI / technology strategy x Ops / chief of staff",
+    doneWhen: "The first missing requirement and the smallest prep move are saved for AI / technology strategy x Ops / chief of staff.",
+    sourceStatus: "broad_parallel_pursuit_learning_support",
+    sourceNote: "Use AI Chief of Staff at Model Lab as the reference role. Treat Product & Delivery as the likely first skill gap, save one line on why, then choose the matching prep move.",
     slot: "now",
   });
 
   const started = await api(h.base, "POST", `/api/plan-items/${item.id}/start`, { day: DAY });
   assert.equal(started.status, 200);
   assert.equal(started.json.task.category, "learning");
+  assert.equal(started.json.task.sourceStatus, "broad_parallel_pursuit_learning_support");
+  assert.match(String(started.json.task.sourceNote || ""), /Product & Delivery|reference role|skill gap|matching prep move/i);
   const steps = JSON.parse(started.json.task.steps || "[]");
   assert.ok(steps.length >= 1, "prep-support goal tasks should get concrete steps");
-  assert.match(String(steps[0]?.text || ""), /learn|prep|note|read|open/i);
+  assert.match(String(steps[0]?.text || ""), /AI Chief of Staff at Model Lab|open one live role|saved role note|jd/i);
 });
 
 test("broad-pursuit adaptive plan names missing paths when some lanes already have live roles", async () => {
@@ -177,4 +183,118 @@ test("broad-pursuit adaptive plan names missing paths when some lanes already ha
   assert.match(current.json.plan.note, /Geopolitics/i);
   assert.match(current.json.items[0].title, /missing path|real role/i);
   assert.match(current.json.items[0].doneWhen, /role|application/i);
+});
+
+test("plan recompute preserves goal-source planner metadata on broad-pursuit support items", async () => {
+  await h.storage.createCareerTrack({
+    name: "AI strategy",
+    slug: "ai-strategy",
+    status: "active",
+    targetRoleArchetype: "AI strategy / advisory",
+    whyItFits: "Technology strategy and advisory fit",
+    description: "Explore AI strategy roles in parallel",
+  } as any);
+  await h.storage.createCareerTrack({
+    name: "AI operations",
+    slug: "ai-operations",
+    status: "active",
+    targetRoleArchetype: "chief of staff / operations",
+    whyItFits: "Operating roles are plausible",
+    description: "Parallel operating lane",
+  } as any);
+  await h.storage.createCareerTrack({
+    name: "Geopolitical advisory",
+    slug: "geopolitical-advisory",
+    status: "active",
+    targetRoleArchetype: "geopolitical advisory",
+    whyItFits: "Strong geopolitical and advisory fit",
+    description: "Parallel geopolitical advisory lane",
+  } as any);
+  await h.storage.createCareerTrack({
+    name: "Geopolitics operations",
+    slug: "geopolitics-operations",
+    status: "active",
+    targetRoleArchetype: "geopolitics chief of staff operations",
+    whyItFits: "Geopolitical operating roles are plausible",
+    description: "Parallel geopolitical operating lane",
+  } as any);
+
+  await h.storage.createJob({
+    title: "AI Strategy Associate",
+    company: "Frontier Lab",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    location: "Remote",
+    roleArchetype: "strategy / advisory",
+    relatedTrackId: 1,
+  } as any);
+  await h.storage.createJob({
+    title: "AI Chief of Staff",
+    company: "Model Lab",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    location: "Remote",
+    roleArchetype: "chief of staff / operations",
+    relatedTrackId: 2,
+  } as any);
+  await h.storage.createJob({
+    title: "Geopolitical Advisory Associate",
+    company: "Risk Desk",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    location: "Remote",
+    roleArchetype: "strategy / advisory",
+    relatedTrackId: 3,
+  } as any);
+  await h.storage.createJob({
+    title: "Geopolitics Chief of Staff",
+    company: "Policy Lab",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    location: "Remote",
+    roleArchetype: "chief of staff / operations",
+    relatedTrackId: 4,
+  } as any);
+  await h.storage.createContact({
+    name: "AI strategy operator",
+    who: "AI strategy operator",
+    status: "to_contact",
+    relationshipStrength: "warm",
+    askType: "advice",
+    relatedTrackId: 1,
+  } as any);
+  await h.storage.createContact({
+    name: "Chief of staff operator",
+    who: "Chief of staff operator",
+    status: "to_contact",
+    relationshipStrength: "warm",
+    askType: "advice",
+    relatedTrackId: 2,
+  } as any);
+  await h.storage.createContact({
+    name: "Geopolitical advisory operator",
+    who: "Geopolitical advisory operator",
+    status: "to_contact",
+    relationshipStrength: "warm",
+    askType: "advice",
+    relatedTrackId: 3,
+  } as any);
+  await h.storage.createContact({
+    name: "Geopolitics chief of staff operator",
+    who: "Geopolitics chief of staff operator",
+    status: "to_contact",
+    relationshipStrength: "warm",
+    askType: "advice",
+    relatedTrackId: 4,
+  } as any);
+
+  const recompute = await api(h.base, "POST", "/api/plan/recompute", { day: DAY, energy: "medium" });
+  assert.equal(recompute.status, 200);
+  const current = await api(h.base, "GET", `/api/plan/current?day=${DAY}`);
+  assert.equal(current.status, 200);
+
+  const learningSupport = current.json.items.find((item: any) => item.sourceStatus === "broad_parallel_pursuit_learning_support");
+  assert.ok(learningSupport, "expected a persisted learning-support goal item");
+  assert.match(String(learningSupport.sourceNote || ""), /likely first gap|prep move|real role/i);
+  assert.equal(learningSupport.sourceType, "goal");
 });

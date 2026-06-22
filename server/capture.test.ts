@@ -94,12 +94,30 @@ test("routing to Network creates a contact and preserves the original capture", 
 
   const contacts = await h.storage.getContacts();
   assert.equal(contacts.length, 1);
-  assert.equal(contacts[0].who, cap.title);
+  assert.equal(contacts[0].who, "Sarah");
+  assert.equal(contacts[0].targetRole, "Anthropic policy jobs");
+  assert.match(contacts[0].why, /Anthropic policy jobs/i);
+  assert.match(contacts[0].note, /Message Sarah about Anthropic policy jobs/i);
 
   const original = (await h.storage.getTasks()).find((t) => t.id === cap.id)!;
   assert.equal(original.list, "captured", "original capture is preserved, not deleted");
   assert.equal(original.sourceType, "capture");
   assert.match(original.sourceStatus, /routed:network:contact/);
+});
+
+test("generic networking capture stores a target archetype instead of the whole raw sentence", async () => {
+  const cap = await h.storage.createTask({ title: "Reach out to a Bain alum about AI strategy roles and ask for a 15 minute chat", list: "inbox", done: false } as any);
+  const r = await api(h.base, "POST", `/api/capture/${cap.id}/route`, { route: "network" });
+  assert.equal(r.status, 200);
+
+  const contacts = await h.storage.getContacts();
+  assert.equal(contacts.length, 1);
+  assert.equal(contacts[0].who, "Bain alum");
+  assert.equal(contacts[0].targetOrg, "");
+  assert.equal(contacts[0].targetRole, "AI strategy roles");
+  assert.equal(contacts[0].askType, "advice");
+  assert.match(contacts[0].why, /AI strategy roles/i);
+  assert.notEqual(contacts[0].who, cap.title);
 });
 
 test("routing to Learn creates a learn item and preserves provenance", async () => {
@@ -156,7 +174,8 @@ test("routing a blocker makes the capture blocked and gives it an unblock-orient
   const task = (await h.storage.getTasks()).find((t) => t.id === cap.id)!;
   assert.equal(task.readiness, "blocked");
   assert.match(task.blockerReason || "", /farah/i);
-  assert.match(task.steps, /what is blocked and what would unblock it/i);
+  assert.match(task.steps, /Write what is blocked/i);
+  assert.match(task.steps, /Choose the smallest unblock request or workaround/i);
   assert.equal(task.minimumOutcome, task.doneWhen);
   assert.match(task.sourceStatus, /blocker_update/);
 });

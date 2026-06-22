@@ -355,12 +355,14 @@ export const dayPlanItems = sqliteTable("day_plan_items", {
   planId: integer("plan_id").notNull(),
   sequence: integer("sequence").notNull().default(0),
   slot: text("slot").notNull().default("now"), // now|next|later|bonus
-  sourceType: text("source_type").notNull().default("task"), // task|job|learn|hustle|contact
+  sourceType: text("source_type").notNull().default("task"), // task|job|learn|hustle|contact|goal
   sourceId: integer("source_id"), // id of source object
   taskId: integer("task_id"), // backing task if materialised
   title: text("title").notNull().default(""),
   whySelected: text("why_selected").notNull().default(""), // specific, not generic
   doneWhen: text("done_when").notNull().default(""),
+  sourceNote: text("source_note").notNull().default(""), // planner/source context preserved for later task materialization
+  sourceStatus: text("source_status").notNull().default(""), // mirror of planner/source state, especially for goal items
   status: text("status").notNull().default("planned"), // planned|started|completed|skipped|moved|parked
   plannedFor: text("planned_for").notNull().default(""), // YYYY-MM-DD
   startedAt: integer("started_at"),

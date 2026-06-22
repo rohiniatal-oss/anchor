@@ -494,16 +494,19 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
                   <div className="mt-1 text-sm whitespace-pre-wrap leading-relaxed">{current.output}</div>
                   {current.gaps && <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Gap: {current.gaps}</p>}
                   {dispositionPending ? (
-                    <div className="mt-2.5 flex flex-wrap gap-2">
-                      <button onClick={() => dispositionStep("applied")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-                        <Check className="w-3 h-3" /> Use this
-                      </button>
-                      <button onClick={() => dispositionStep("saved")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-muted hover:bg-muted/80 transition-colors">
-                        <Pin className="w-3 h-3" /> Save for later
-                      </button>
-                      <button onClick={() => dispositionStep("dismissed")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md text-muted-foreground hover:bg-muted/60 transition-colors">
-                        <X className="w-3 h-3" /> Not useful
-                      </button>
+                    <div className="mt-2.5 space-y-1.5">
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => dispositionStep("applied")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                          <Check className="w-3 h-3" /> Use this
+                        </button>
+                        <button onClick={() => dispositionStep("saved")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-muted hover:bg-muted/80 transition-colors">
+                          <Pin className="w-3 h-3" /> Save for later
+                        </button>
+                        <button onClick={() => dispositionStep("dismissed")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md text-muted-foreground hover:bg-muted/60 transition-colors">
+                          <X className="w-3 h-3" /> Not useful
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground/70 leading-snug">Use this = done, move on. Save = I'll keep it for next time. Not useful = I'll try a different approach.</p>
                     </div>
                   ) : (
                     <p className="text-[11px] text-muted-foreground mt-1.5">Tap to review</p>

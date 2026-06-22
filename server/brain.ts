@@ -593,7 +593,7 @@ function jobDoneWhen(action: JobTruthAction) {
 function jobNextStep(j: Job): { action: string; size: string; doneWhen: string; why: string; truthAction?: JobTruthAction } {
   const role = `${j.title}${j.company ? " — " + j.company : ""}`;
   if (j.nextStep && j.nextStep.trim()) {
-    return { action: `${j.nextStep.trim()} — ${role}`, size: guessSize(j.nextStep), doneWhen: `"${j.nextStep.trim().slice(0, 50)}" is done for ${j.title || "this role"}`, why: "your own next step on this role" };
+    return { action: `${j.nextStep.trim()} — ${role}`, size: guessSize(j.nextStep), doneWhen: `You've finished "${j.nextStep.trim().slice(0, 40)}" for ${j.title || "this role"} and know what comes next`, why: "your own next step on this role" };
   }
   const truth = computeJobTruthStrip(j);
   return {
@@ -947,7 +947,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         title: t.title.replace(/^✨\s*/, ""), category: t.category, size: t.size,
         deadline: t.deadline, status: t.status, skipped: effectiveSkipped,
         sourceUrl: t.sourceUrl || "", sourceNote: t.sourceNote || "", sourceStatus: t.sourceStatus || "",
-        doneWhen: t.doneWhen || t.minimumOutcome || `"${t.title.slice(0, 50).trim()}" is visibly further along`,
+        doneWhen: t.doneWhen || t.minimumOutcome || `You can point to one concrete thing you did on "${t.title.slice(0, 40).trim()}"`,
         whyNow: isLaneAlignedSystemMove ? "it directly supports the path you're building right now" : "you put it on today's list",
         fitScore: null, blocked, blockerReason: t.blockerReason || "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
@@ -1000,7 +1000,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: "learning", size: guessSize(l.title),
         deadline: dl, status: "not_started", skipped: 0,
         sourceUrl: l.url || "", sourceNote: l.note || "", sourceStatus: l.learnStatus || "active",
-        doneWhen: l.requiredOutput || `You've learned one useful thing about "${l.title.slice(0, 50).trim()}"`,
+        doneWhen: l.requiredOutput || `You have one note, example, or takeaway from "${l.title.slice(0, 40).trim()}" that you could use in an interview or application`,
         whyNow: l.applicationDeadline ? "there's a deadline coming up" : "it fills a gap your target roles keep asking for",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",
@@ -1035,7 +1035,7 @@ export function gatherCandidates(tasks: Task[], jobs: Job[], learn: Learn[], hus
         category: cat, size: guessSize(h.nextStep),
         deadline: "", status: "not_started", skipped: 0,
         sourceUrl: "", sourceNote: h.note || "", sourceStatus: h.stage,
-        doneWhen: `"${(h.nextStep || h.title).slice(0, 50).trim()}" is done or clearly further along`,
+        doneWhen: `You have something shareable or reusable from "${(h.nextStep || h.title).slice(0, 40).trim()}" — even a draft or outline counts`,
         whyNow: "keeping this project moving builds credibility you can point to",
         fitScore: null, blocked: false, blockerReason: "", eligibilityRisk: "",
         location: "", warmPathScore: null, strategicValue: null, frictionScore: null, applicationReadiness: "", deadlineConfidence: "", narrativeAngle: "",

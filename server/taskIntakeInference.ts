@@ -86,14 +86,15 @@ function inferFirstStep(title: string, category: string) {
   if (containsAny(title, ["memo", "essay", "article", "substack", "post", "draft", "outline", "write"])) return "Open a blank doc and sketch the rough outline";
   if (containsAny(title, ["check", "confirm", "find"])) return "Open the relevant source and look for the missing fact";
   if (category === "health") return "Start the smallest version that still counts";
-  if (containsAny(title, ["think", "plan", "reflect", "consider", "explore", "direction", "strategy", "options"])) return "Open a note and write down what's on your mind about this";
-  return "Spend 5 minutes on the smallest useful version of this";
+  return null;
 }
 
 export function inferStarterSteps(title: string, category: string, currentSteps?: string) {
   const raw = String(currentSteps || "").trim();
   if (raw && raw !== "[]") return raw;
-  return JSON.stringify([{ text: inferFirstStep(title, category), done: false }]);
+  const step = inferFirstStep(title, category);
+  if (!step) return "[]";
+  return JSON.stringify([{ text: step, done: false }]);
 }
 
 export function buildTaskIntakeDefaults(raw: {
@@ -127,6 +128,18 @@ export function buildTaskIntakeDefaults(raw: {
     readiness: raw?.readiness || (raw?.blockerReason ? "blocked" : "ready"),
     status: raw?.status || "not_started",
   };
+}
+
+export async function contextualizeTask(taskId: number): Promise<void> {
+  const task = (await storage.getTasks()).find((t) => t.id === taskId);
+  if (!task) return;
+
+  const steps = JSON.parse(task.steps || "[]");
+  if (steps.length > 0) return;
+
+  // Don't manufacture steps for tasks we don't understand.
+  // The LLM enrichment (llmEnrichTask) will add a real step later,
+  // and the UI shows the task title directly when there are no steps.
 }
 
 export async function llmEnrichTask(taskId: number): Promise<void> {

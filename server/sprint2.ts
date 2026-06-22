@@ -13,7 +13,7 @@ import {
 } from "./broadPursuitCopy";
 import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
-import { buildTaskIntakeDefaults, intakeWords, llmEnrichTask } from "./taskIntakeInference";
+import { buildTaskIntakeDefaults, contextualizeTask, intakeWords, llmEnrichTask } from "./taskIntakeInference";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
@@ -471,6 +471,12 @@ export function registerSprint2Routes(app: Express) {
         taskId: task.id,
         metadata: JSON.stringify({ estimateMinutes: task.estimateMinutes, estimateReason: task.estimateReason, category: task.category }),
       } as any);
+      const steps = JSON.parse(task.steps || "[]");
+      if (steps.length === 0) {
+        await contextualizeTask(task.id);
+        const refreshed = (await storage.getTasks()).find((t) => t.id === task.id);
+        if (refreshed) return res.json(refreshed);
+      }
       res.json(task);
       if (task.estimateConfidence === "low") {
         llmEnrichTask(task.id).catch(() => {});

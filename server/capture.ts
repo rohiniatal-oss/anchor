@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "./storage";
 import type { Task } from "@shared/schema";
 import { buildCaptureTaskPatch } from "./captureTaskRouting";
+import { contextualizeTask } from "./taskIntakeInference";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { llmJSON, MODEL_LIGHT } from "./llm";
 
@@ -233,7 +234,12 @@ export async function routeCapture(id: number, rawRoute: string) {
       sourceStatus: route === "today" ? "routed:today:task" : "routed:task:task",
       sourceNote: reason,
     });
-    const updated = await storage.updateTask(id, patch);
+    let updated = await storage.updateTask(id, patch);
+    const steps = JSON.parse(updated?.steps || "[]");
+    if (steps.length === 0) {
+      await contextualizeTask(id);
+      updated = (await storage.getTasks()).find((t) => t.id === id) || updated;
+    }
     if (route === "today") {
       try {
         const day = new Date().toISOString().slice(0, 10);

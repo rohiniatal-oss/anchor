@@ -27,7 +27,8 @@ import {
 import { WIN_CATEGORY_LABEL, type WinCategory } from "@/lib/homeTypes";
 
 type WorkflowStateCtx = { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string };
-type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx; executor?: "system" | "user_action" | "user_learning"; output?: string; gaps?: string; ready?: boolean; blocker?: string };
+type StepDisposition = "applied" | "saved" | "dismissed";
+type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowStateCtx; executor?: "system" | "user_action" | "user_learning"; output?: string; gaps?: string; ready?: boolean; blocker?: string; disposition?: StepDisposition; completedAt?: string };
 function parseSteps(raw: string): Step[] {
   try { const s = JSON.parse(raw || "[]"); return Array.isArray(s) ? s : []; } catch { return []; }
 }
@@ -180,6 +181,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   useEffect(() => {
     setStuckVisible(false);
     setStuckExpanded(false);
+    setDispositionPending(false);
     clearTimeout(stuckTimer.current);
     stuckTimer.current = setTimeout(() => setStuckVisible(true), 45_000);
     return () => clearTimeout(stuckTimer.current);
@@ -193,6 +195,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   // the task. Hold it here and re-call breakdown WITH the user's answer as context.
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
+  const [dispositionPending, setDispositionPending] = useState(false);
   const [skipDiagOpen, setSkipDiagOpen] = useState(false);
   const [skipResolving, setSkipResolving] = useState(false);
   const skipDiagShownFor = useRef<number | null>(null);
@@ -257,12 +260,32 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
   }
   async function checkStep() {
     if (currentIdx < 0) return;
-    const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true } : s));
+    if (current?.executor === "system" && current?.output && !dispositionPending) {
+      setDispositionPending(true);
+      return;
+    }
+    const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true, completedAt: new Date().toISOString() } : s));
+    setDispositionPending(false);
     await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
     if (next.every((s) => s.done)) {
       await finishTask();
     } else {
       toast({ title: "Nice - next step's up." });
+    }
+  }
+  async function dispositionStep(disposition: StepDisposition) {
+    if (currentIdx < 0) return;
+    setDispositionPending(false);
+    try {
+      const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/step-disposition`, { stepIndex: currentIdx, disposition }, ["/api/tasks"]);
+      if (res?.allStepsDone) {
+        await finishTask();
+      } else {
+        const label = disposition === "applied" ? "Using it" : disposition === "saved" ? "Saved" : "Skipped";
+        toast({ title: `${label} — next step's up.` });
+      }
+    } catch {
+      toast({ title: "Couldn't save that." });
     }
   }
   // Completion goes through the real endpoint: marks done, logs a win, updates the
@@ -441,32 +464,50 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, pinnedPlanIte
             </div>
           )}
           <div
-            className={`group/step flex items-start gap-3 rounded-xl border-2 p-3.5 cursor-pointer ${
+            className={`group/step flex items-start gap-3 rounded-xl border-2 p-3.5 ${
+              dispositionPending ? "" : "cursor-pointer"
+            } ${
               current.executor === "system" && current.output
                 ? "bg-primary/5 border-primary/15"
                 : current.executor === "user_learning"
                 ? "bg-amber-50/50 dark:bg-amber-950/20 border-amber-300/30 dark:border-amber-700/30"
                 : "bg-card border-primary/25"
             }`}
-            onClick={checkStep}
+            onClick={dispositionPending ? undefined : checkStep}
             role="button"
             aria-label="Mark step done"
           >
-            <button
-              onClick={(e) => { e.stopPropagation(); checkStep(); }}
-              data-testid="button-check-step"
-              aria-label="Mark step done"
-              className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center transition-colors group-hover/step:bg-primary group-hover/step:border-primary"
-            >
-              <Check className="w-3 h-3 text-primary opacity-0 group-hover/step:opacity-100 group-hover/step:text-primary-foreground transition-opacity" />
-            </button>
+            {!dispositionPending && (
+              <button
+                onClick={(e) => { e.stopPropagation(); checkStep(); }}
+                data-testid="button-check-step"
+                aria-label="Mark step done"
+                className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center transition-colors group-hover/step:bg-primary group-hover/step:border-primary"
+              >
+                <Check className="w-3 h-3 text-primary opacity-0 group-hover/step:opacity-100 group-hover/step:text-primary-foreground transition-opacity" />
+              </button>
+            )}
             <div className="flex-1 min-w-0">
               {current.executor === "system" && current.output ? (
                 <>
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-primary/60">Done by Anchor</span>
                   <div className="mt-1 text-sm whitespace-pre-wrap leading-relaxed">{current.output}</div>
                   {current.gaps && <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">Gap: {current.gaps}</p>}
-                  <p className="text-[11px] text-muted-foreground mt-1.5">Tap to confirm and move on</p>
+                  {dispositionPending ? (
+                    <div className="mt-2.5 flex flex-wrap gap-2">
+                      <button onClick={() => dispositionStep("applied")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                        <Check className="w-3 h-3" /> Use this
+                      </button>
+                      <button onClick={() => dispositionStep("saved")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md bg-muted hover:bg-muted/80 transition-colors">
+                        <Pin className="w-3 h-3" /> Save for later
+                      </button>
+                      <button onClick={() => dispositionStep("dismissed")} className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md text-muted-foreground hover:bg-muted/60 transition-colors">
+                        <X className="w-3 h-3" /> Not useful
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground mt-1.5">Tap to review</p>
+                  )}
                 </>
               ) : current.executor === "user_learning" ? (
                 <>

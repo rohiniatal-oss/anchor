@@ -31,7 +31,8 @@ type WorkflowState = {
   inheritedFrom?: string;
 };
 type StepExecutor = "system" | "user_action" | "user_learning";
-type BreakdownStep = { text: string; done: false; substeps?: string[]; workflowState?: WorkflowState; executor?: StepExecutor; outputSpec?: string; output?: string; gaps?: string };
+type StepDisposition = "applied" | "saved" | "dismissed";
+type BreakdownStep = { text: string; done: boolean; substeps?: string[]; workflowState?: WorkflowState; executor?: StepExecutor; outputSpec?: string; output?: string; gaps?: string; disposition?: StepDisposition; completedAt?: string };
 type SourceRecord = Job | Learn | Hustle | Contact | null;
 type SourceBundle = {
   sourceContext: string;
@@ -1078,6 +1079,44 @@ async function buildCrossEngineContext(
   return { text: parts.join("\n"), contactName: bestContactName };
 }
 
+function parseStepOutputs(stepsJson: string): Array<{ text: string; output: string; disposition?: StepDisposition }> {
+  try {
+    const arr = JSON.parse(stepsJson || "[]");
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((s: any) => s && s.done && s.output && typeof s.output === "string")
+      .map((s: any) => ({ text: s.text || "", output: s.output, disposition: s.disposition }));
+  } catch { return []; }
+}
+
+async function collectPriorStepOutputs(task: Task): Promise<string[]> {
+  const outputs: string[] = [];
+  const thisSteps = parseStepOutputs(task.steps);
+  for (const s of thisSteps) {
+    outputs.push(`[This task, ${s.disposition || "completed"}] ${s.text}: ${s.output}`);
+  }
+
+  const trackId = task.relatedTrackId;
+  if (!trackId) return outputs;
+
+  try {
+    const allTasks = await storage.getTasks();
+    const siblings = allTasks.filter((t) =>
+      t.id !== task.id && t.relatedTrackId === trackId && t.done
+    ).slice(-5);
+
+    for (const sibling of siblings) {
+      const siblingOutputs = parseStepOutputs(sibling.steps);
+      for (const s of siblingOutputs) {
+        if (s.disposition === "dismissed") continue;
+        outputs.push(`[${sibling.title}, ${s.disposition || "completed"}] ${s.text}: ${s.output}`);
+      }
+    }
+  } catch {}
+
+  return outputs;
+}
+
 export async function buildSourceContext(task: Task, userContext?: UserContext): Promise<SourceBundle> {
   const sharedUserContext = userContext || await buildUserContext();
   const taskSourceNote = meaningfulTaskContextText(task.sourceNote);
@@ -1190,10 +1229,15 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
       const allTasks = await storage.getTasks();
       const doneSiblings = allTasks
         .filter((t) => t.id !== task.id && t.sourceType === task.sourceType && t.sourceId === task.sourceId && t.done)
-        .slice(-5)
-        .map((t) => t.title);
+        .slice(-5);
       if (doneSiblings.length) {
-        sourceContext += ` Already completed for this ${sourceKind}: ${doneSiblings.join("; ")}.`;
+        const siblingDetails = doneSiblings.map((t) => {
+          const outputs = parseStepOutputs(t.steps);
+          const useful = outputs.filter((o) => o.disposition !== "dismissed").slice(0, 2);
+          if (useful.length) return `${t.title} (produced: ${useful.map((o) => o.output.slice(0, 100)).join("; ")})`;
+          return t.title;
+        });
+        sourceContext += ` Already completed for this ${sourceKind}: ${siblingDetails.join("; ")}.`;
       }
     } catch {}
   }
@@ -1302,6 +1346,10 @@ export function registerTaskBreakdownRoutes(app: Express) {
       return res.json(updated);
     }
 
+    const existingSteps = parseExistingSteps(task.steps);
+    const completedSteps = existingSteps.filter((s) => s.done && s.output);
+    const priorOutputs = await collectPriorStepOutputs(task);
+
     const sharedUserContext = await buildUserContext();
     const bundle = await buildSourceContext(task, sharedUserContext);
     const fallbackObject = (bundle.parentWorkflow?.workObject as WorkObject) || classifyWorkObject(task, bundle);
@@ -1313,6 +1361,10 @@ export function registerTaskBreakdownRoutes(app: Express) {
       mockMode: req.body?.externalResearchMockMode,
     });
 
+    const priorOutputContext = priorOutputs.length
+      ? `\nPRIOR COMPLETED OUTPUTS (do not repeat this work — build on it):\n${priorOutputs.map((o) => `- ${o}`).join("\n")}\n`
+      : "";
+
     let question = "";
     let steps: BreakdownStep[] = [];
     let workflowState: WorkflowState | undefined;
@@ -1321,7 +1373,9 @@ export function registerTaskBreakdownRoutes(app: Express) {
         task,
         bundle,
         fallbackObject,
-        userContextText: context ? `${userCtx}\nUser context: ${context}` : userCtx,
+        userContextText: context
+          ? `${userCtx}\nUser context: ${context}${priorOutputContext}`
+          : `${userCtx}${priorOutputContext}`,
         contextBlocks: collectedContext.blocks,
       }), { model: LLM_MODELS.breakdown });
       const parsed = parseBreakdown(raw, fallbackObject, bundle.parentWorkflow);
@@ -1340,6 +1394,10 @@ export function registerTaskBreakdownRoutes(app: Express) {
     } else {
       steps = coerceTaskBreakdownSteps(task, bundle, workflowState, steps);
     }
+
+    if (completedSteps.length) {
+      steps = [...completedSteps, ...steps.filter((s) => !s.done)];
+    }
     steps = attachWorkflowState(steps, workflowState);
 
     const hasTypedSteps = steps.some((s) => s.executor);
@@ -1356,14 +1414,17 @@ export function registerTaskBreakdownRoutes(app: Express) {
           doneWhen: task.doneWhen,
           userContext: userCtx,
           researchBlocks,
+          priorCompletedOutputs: priorOutputs,
         });
         steps = executed.map((e) => ({
           text: e.text,
-          done: e.done as false,
+          done: e.done,
           executor: e.executor,
           outputSpec: e.outputSpec,
           output: e.output,
           gaps: e.gaps,
+          disposition: e.disposition,
+          completedAt: e.completedAt,
           ...(e.ready === false ? { ready: false, blocker: e.blocker } : {}),
         }));
       } catch {}
@@ -1375,5 +1436,44 @@ export function registerTaskBreakdownRoutes(app: Express) {
     });
     res.json(updated);
   });
+
+  app.post("/api/tasks/:id/step-disposition", async (req, res) => {
+    const id = Number(req.params.id);
+    const task = (await storage.getTasks()).find((t) => t.id === id);
+    if (!task) return res.status(404).json({ error: "Not found" });
+
+    const stepIndex = Number(req.body?.stepIndex);
+    const disposition = String(req.body?.disposition || "") as StepDisposition;
+    if (!["applied", "saved", "dismissed"].includes(disposition)) {
+      return res.status(400).json({ error: "Invalid disposition" });
+    }
+    if (isNaN(stepIndex) || stepIndex < 0) {
+      return res.status(400).json({ error: "Invalid step index" });
+    }
+
+    const steps = parseExistingSteps(task.steps);
+    if (stepIndex >= steps.length) {
+      return res.status(400).json({ error: "Step index out of range" });
+    }
+
+    steps[stepIndex] = {
+      ...steps[stepIndex],
+      done: true,
+      disposition,
+      completedAt: new Date().toISOString(),
+    };
+
+    const updated = await storage.updateTask(id, { steps: JSON.stringify(steps) });
+    const allDone = steps.every((s) => s.done);
+    res.json({ ...updated, allStepsDone: allDone });
+  });
+}
+
+function parseExistingSteps(stepsJson: string): BreakdownStep[] {
+  try {
+    const arr = JSON.parse(stepsJson || "[]");
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((s: any) => s && typeof s.text === "string");
+  } catch { return []; }
 }
 

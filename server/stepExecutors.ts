@@ -4,6 +4,8 @@ import type { ContextBlock } from "./contextProviders/types";
 
 type StepExecutor = "system" | "user_action" | "user_learning";
 
+export type StepDisposition = "applied" | "saved" | "dismissed";
+
 export type ExecutedStep = {
   text: string;
   done: boolean;
@@ -13,6 +15,8 @@ export type ExecutedStep = {
   gaps?: string;
   ready?: boolean;
   blocker?: string;
+  disposition?: StepDisposition;
+  completedAt?: string;
 };
 
 type ExecutionContext = {
@@ -22,6 +26,7 @@ type ExecutionContext = {
   doneWhen?: string | null;
   userContext?: string;
   researchBlocks?: ContextBlock[];
+  priorCompletedOutputs?: string[];
 };
 
 function clean(v: unknown, max = 300) {
@@ -105,13 +110,27 @@ function frameLearning(
 }
 
 export async function executeSteps(
-  steps: Array<{ text: string; done: boolean; executor?: StepExecutor; outputSpec?: string; substeps?: string[] }>,
+  steps: Array<{ text: string; done: boolean; executor?: StepExecutor; outputSpec?: string; substeps?: string[]; output?: string; disposition?: StepDisposition; completedAt?: string }>,
   ctx: ExecutionContext,
 ): Promise<ExecutedStep[]> {
-  const outputs: string[] = [];
+  const outputs: string[] = [...(ctx.priorCompletedOutputs || [])];
   const executed: ExecutedStep[] = [];
 
   for (const step of steps) {
+    if (step.done && step.output) {
+      outputs.push(step.output);
+      executed.push({
+        text: step.text,
+        done: true,
+        executor: step.executor,
+        outputSpec: step.outputSpec,
+        output: step.output,
+        disposition: step.disposition,
+        completedAt: step.completedAt,
+      });
+      continue;
+    }
+
     const executor = step.executor || inferExecutor(step.text);
     let result: ExecutedStep;
 

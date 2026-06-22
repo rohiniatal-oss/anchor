@@ -11,10 +11,10 @@ test("role market scan intent creates a real-posting requirements flow", () => {
   assert.equal(contract.intent, "role_market_scan");
   assert.equal(contract.category, "job");
   assert.match(contract.firstStep, /search "AI governance strategy roles"/i);
-  assert.match(contract.doneWhen, /one real role, one repeated requirements pattern, and one next learning move/i);
-  assert.match(contract.steps.join(" "), /Treat AI Governance & Safety as the likely first knowledge gap to test/i);
-  assert.match(contract.steps.join(" "), /confirm or disprove that diagnosis/i);
-  assert.match(contract.steps.join(" "), /If AI Governance & Safety is the gap, read one targeted source on AI Governance & Safety/i);
+  assert.match(contract.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
+  assert.match(contract.steps.join(" "), /Pull out the 3 strongest asks/i);
+  assert.match(contract.steps.join(" "), /Map the posting against your own evidence/i);
+  assert.match(contract.steps.join(" "), /Choose one small prep move for AI Governance & Safety/i);
   assert.equal(contract.maxSteps, 5);
   assert.equal(hasRoleMarketScanContract(contract.steps), true);
 });
@@ -36,6 +36,10 @@ test("role market scan label removes task mechanics from the search phrase", () 
     roleMarketScanLabel("Review three AI governance strategy roles and note the requirements that keep coming up."),
     "AI governance strategy roles",
   );
+  assert.equal(
+    roleMarketScanLabel("Save one real geopolitical advisory role and note which of your experiences would back up the top requirement."),
+    "geopolitical advisory roles",
+  );
 });
 
 test("unknown role scans avoid fake-specific learning-gap labels", () => {
@@ -46,9 +50,21 @@ test("unknown role scans avoid fake-specific learning-gap labels", () => {
   const joined = contract.steps.join(" ");
 
   assert.match(joined, /strongest repeated requirement in the posting/i);
-  assert.match(joined, /confirm or disprove that diagnosis/i);
+  assert.match(joined, /Map the posting against your own evidence/i);
   assert.doesNotMatch(joined, /AI Governance & Safety|Policy & Regulatory Frameworks|Product & Delivery/i);
   assert.doesNotMatch(joined, /the first repeated requirement as the likely first knowledge gap/i);
+});
+
+test("single-role evidence-mapping tasks are treated as role market scans", () => {
+  const contract = contractForTaskIntent({
+    title: "Save one real geopolitical advisory role and note which of your experiences would back up the top requirement.",
+    sourceType: "career_track",
+  });
+
+  assert.equal(contract.intent, "role_market_scan");
+  assert.match(contract.firstStep, /search "geopolitical advisory roles"/i);
+  assert.match(contract.doneWhen, /strongest asks are mapped to your evidence/i);
+  assert.doesNotMatch(contract.steps.join(" "), /note which of your experiences|top requirement you'd need to prove/i);
 });
 
 test("generic networking tasks find the right real person before drafting outreach", () => {

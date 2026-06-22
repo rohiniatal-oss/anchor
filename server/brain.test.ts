@@ -203,9 +203,9 @@ test("planner repairs task-backed role scans to the stronger gap-plus-learning c
   ];
 
   const result = planDay(tasks as any, [], [], [], "medium", { remainingMinutes: 120 });
-  assert.match(result.plan[0].candidate.doneWhen, /one real role, one repeated requirements pattern, and one next learning move/i);
+  assert.match(result.plan[0].candidate.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
   assert.match(result.plan[0].explanation.firstStep, /search "AI governance strategy roles"/i);
-  assert.match(result.plan[0].explanation.stopRule, /one next learning move are captured/i);
+  assert.match(result.plan[0].explanation.stopRule, /choose one small prep move|prep move/i);
 });
 
 test("planner collapses to one item when the remaining day is small", () => {
@@ -461,10 +461,10 @@ test("planner surfaces the still-empty broad-pursuit combinations when some lane
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, [], tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /missing path|real role/i);
+  assert.match(result.plan[0].candidate.title, /missing path|real .*posting/i);
   assert.match(result.plan[0].candidate.sourceNote || "", /Geopolitics/i);
   assert.match(result.note, /testing several paths in parallel/i);
-  assert.match(result.plan[0].explanation.firstStep, /Open your job sources/i);
+  assert.match(result.plan[0].explanation.firstStep, /Open LinkedIn or a target job board/i);
 });
 
 test("planner surfaces missing broad-pursuit contact support once live role types exist", () => {
@@ -570,7 +570,7 @@ test("planner surfaces missing broad-pursuit prep support after contact support 
   assert.equal(result.plan[0].candidate.source, "goal");
   assert.match(result.plan[0].candidate.title, /check whether .* is the first missing requirement/i);
   assert.match(result.plan[0].candidate.doneWhen, /likely first gap and the matching smallest prep move/i);
-  assert.match(result.plan[0].explanation.firstStep, /Frontier Lab|likely first gap|confirm or disprove/i);
+  assert.match(result.plan[0].explanation.firstStep, /Frontier Lab|likely first gap|first missing requirement/i);
   assert.match(result.note, /learning focus|learning support/i);
 });
 

@@ -122,7 +122,7 @@ export async function syncGapRecommendations(): Promise<void> {
         title: `Find one real ${track.name} role and extract the first requirements pattern`,
         category: "job",
         size: "medium",
-        doneWhen: "One real role, one repeated requirements pattern, and one next learning move are captured",
+        doneWhen: "One real posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen",
         relatedTrackId: track.id,
       }),
       confidenceScore: null,

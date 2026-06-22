@@ -629,8 +629,8 @@ function roleMarketScanSteps(task: Task, bundle: SourceBundle): string[] {
   const likelyGap = likelyLearningGapFromContext(rolePath, bundle?.crossEngineContext);
   return [
     `Open LinkedIn or the target job board and search "${rolePath}"`,
-    "Save the first real posting that matches the path closely enough to learn from",
-    "Extract the 3 repeated requirements or background signals from that posting",
+    "Save one real posting that looks close enough to the work you might actually want",
+    "Pull out the 3 strongest asks: skills, experience, credentials, or judgement signals",
     likelyGap.assessmentStep,
     likelyGap.learningMoveStep,
   ];

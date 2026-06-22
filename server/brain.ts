@@ -560,7 +560,7 @@ function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
     source: "goal",
     sourceId: 1,
     taskId: null,
-    title: label ? `Add one real role for ${label}` : broadPursuitMissingRolesTitle(),
+    title: label ? `Save one real ${label} posting and map it to your evidence` : broadPursuitMissingRolesTitle(),
     category: "job",
     size: "deep",
     deadline: "",
@@ -568,11 +568,11 @@ function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
     skipped: 0,
     sourceUrl: "",
     sourceNote: label
-      ? `${label} has no real role yet. Add one concrete role or application move for it next.`
+      ? `${label} has no real posting yet. Use one concrete posting to see what this path asks for and what you would need to prove.`
       : broadPursuitMissingRolesSourceNote(context?.broadPursuitMissingCombinations || []),
     sourceStatus: "broad_parallel_pursuit",
     doneWhen: label
-      ? `One concrete role or application move exists for ${label}.`
+      ? `One real ${label} posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen.`
       : broadPursuitMissingRolesDoneWhen(),
     whyNow: label
       ? `${label} has no real opening yet`
@@ -1365,7 +1365,10 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
   }
   if (c.source === "goal") {
     s += 42;
-    if (c.sourceStatus === "broad_parallel_pursuit_network_support") trace.push("some live role paths still need someone useful to reach out to");
+    if (c.sourceStatus === "broad_parallel_pursuit") {
+      s += 82;
+      trace.push("one plausible path still has no real posting to learn from");
+    } else if (c.sourceStatus === "broad_parallel_pursuit_network_support") trace.push("some live role paths still need someone useful to reach out to");
     else if (c.sourceStatus === "broad_parallel_pursuit_learning_support") {
       trace.push("some live role paths still need focused learning support");
       if (context.broadPursuitMissingNetworkSupport.length > 0) {
@@ -1512,7 +1515,7 @@ function parseBrief(raw?: string): { whatTheyDo?: string; relevantTeam?: string;
 function firstStepForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
-      return `Open your job sources and add one real role for ${candidate.targetRole}.`;
+      return `Open LinkedIn or a target job board and search for "${displayCombination(candidate.targetRole)}".`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
       if (candidate?.targetRole && context?.liveJobTargets?.length) {
@@ -1614,7 +1617,7 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
-      return `Stop after ${candidate.targetRole} has one concrete role or application move.`;
+      return `Stop after one real ${displayCombination(candidate.targetRole)} posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen.`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
       if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one useful person and one concrete hiring question ready.`;
@@ -1677,7 +1680,7 @@ function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: 
 function sourceFrame(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
-      return `${candidate.targetRole} has no real role or application move yet — adding one is the best next move.`;
+      return `${displayCombination(candidate.targetRole)} has no real posting yet — use one posting to see what the path asks for before narrowing.`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
       if (candidate?.targetRole) return `${candidate.targetRole} has no contacts yet — add one useful person to reach out to.`;

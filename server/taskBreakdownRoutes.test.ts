@@ -135,7 +135,7 @@ test("goal-source learning-support breakdown starts from a requirement gap inste
   assert.match(joined, /Open Policy Advisor at Ofcom and use it as the reference role for AI governance strategy/i);
   assert.match(joined, /Treat Policy & Regulatory Frameworks as the likely first knowledge gap for AI governance strategy/i);
   assert.match(joined, /Save one sentence on why Policy & Regulatory Frameworks looks like the first knowledge gap/i);
-  assert.match(joined, /read one targeted source on Policy & Regulatory Frameworks/i);
+  assert.match(joined, /Choose one small prep move for Policy & Regulatory Frameworks/i);
   assert.doesNotMatch(joined, /open jobs|save the first credible role|start learning about/i);
 });
 
@@ -168,7 +168,7 @@ test("goal-source learning-support breakdown preserves the planner gap over broa
 
   assert.match(joined, /Open AI Chief of Staff at Model Lab and use it as the reference role/i);
   assert.match(joined, /Treat Product & Delivery as the likely first skill gap/i);
-  assert.match(joined, /do one short drill on Product & Delivery/i);
+  assert.match(joined, /Choose one small prep move for Product & Delivery/i);
   assert.doesNotMatch(joined, /frontier safety framing|stakeholder translation/i);
 });
 
@@ -201,7 +201,7 @@ test("goal-source learning-support breakdown preserves typed planner gap notes",
 
   assert.match(joined, /Open AI Chief of Staff at Model Lab/i);
   assert.match(joined, /Treat Product & Delivery as the likely first skill gap/i);
-  assert.match(joined, /do one short drill on Product & Delivery/i);
+  assert.match(joined, /Choose one small prep move for Product & Delivery/i);
   assert.doesNotMatch(joined, /strongest repeated requirement in the posting/i);
 });
 
@@ -225,12 +225,11 @@ test("strategy role-scan breakdown turns broad exploration into a real posting p
 
   assert.equal(workflowState.workObject, "Pipeline");
   assert.match(joined, /Open LinkedIn or the target job board and search "AI governance strategy roles"/i);
-  assert.match(joined, /Save the first real posting that matches the path closely enough to learn from/i);
-  assert.match(joined, /Extract the 3 repeated requirements or background signals/i);
-  assert.match(joined, /Treat AI Governance & Safety as the likely first knowledge gap to test/i);
-  assert.match(joined, /confirm or disprove that diagnosis/i);
-  assert.match(joined, /If AI Governance & Safety is the gap, read one targeted source on AI Governance & Safety/i);
-  assert.match(joined, /one real role, one repeated requirements pattern, and one next learning move are captured/i);
+  assert.match(joined, /Save one real posting that looks close enough to the work you might actually want/i);
+  assert.match(joined, /Pull out the 3 strongest asks/i);
+  assert.match(joined, /Map the posting against your own evidence/i);
+  assert.match(joined, /Choose one small prep move for AI Governance & Safety/i);
+  assert.match(joined, /strongest asks/i);
   assert.doesNotMatch(joined, /open a note and list the first thing you need to understand|get the lay of the land|review notes/i);
 });
 
@@ -271,10 +270,10 @@ test("role-scan coercion replaces generic model steps with the concrete scan con
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
   assert.equal(steps.length, 5);
-  assert.match(joined, /Save the first real posting/i);
-  assert.match(joined, /Extract the 3 repeated requirements/i);
-  assert.match(joined, /Treat AI Governance & Safety as the likely first knowledge gap to test/i);
-  assert.match(joined, /one next learning move are captured/i);
+  assert.match(joined, /Save one real posting/i);
+  assert.match(joined, /Pull out the 3 strongest asks/i);
+  assert.match(joined, /Map the posting against your own evidence/i);
+  assert.match(joined, /Choose one small prep move for AI Governance & Safety/i);
   assert.doesNotMatch(joined, /lay of the land|Research AI governance roles|Summarize your findings/i);
 });
 

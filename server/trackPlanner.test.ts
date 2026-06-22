@@ -17,7 +17,7 @@ test("thin tracks ask for one real role and one requirements pattern", () => {
     contacts: [],
   });
 
-  assert.match(plan.primaryNeed.move, /find one real AI strategy role/i);
-  assert.match(plan.primaryNeed.doneWhen, /one real role, one repeated requirements pattern, and one next learning move/i);
+  assert.match(plan.primaryNeed.move, /save one real AI strategy posting and map it to your evidence/i);
+  assert.match(plan.primaryNeed.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
   assert.doesNotMatch(plan.primaryNeed.move, /review three|three .*roles/i);
 });

@@ -67,7 +67,7 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     capabilitySignal: "One short AI governance note, brief, or interview example you could reuse later.",
     peopleToFind: ["AI governance strategy operator", "policy-to-implementation lead", "frontier AI safety/governance programme manager"],
     resourceNeed: "A current AI governance landscape primer plus one implementation case study.",
-    nextExperiment: "Save one real AI governance strategy role and write down the top 3 requirements you'd need to prove.",
+    nextExperiment: "Save one real AI governance strategy posting, map its strongest asks to your evidence, and choose the first gap to close.",
     source: "fallback",
   },
   {
@@ -78,7 +78,7 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     capabilitySignal: "One short geopolitical-commercial note, brief, or interview example you could reuse later.",
     peopleToFind: ["geopolitical advisory principal", "commercial diplomacy operator", "sovereign advisory recruiter"],
     resourceNeed: "A recent market/geopolitical risk briefing source and one sample advisory memo format.",
-    nextExperiment: "Save one real geopolitical advisory role and note which of your experiences would back up the top requirement.",
+    nextExperiment: "Save one real geopolitical advisory posting, map its strongest asks to your evidence, and choose the first gap to close.",
     source: "fallback",
   },
   {
@@ -89,7 +89,7 @@ const BASE_ARCHETYPES: RoleArchetypeRecommendation[] = [
     capabilitySignal: "One operating memo, cadence note, or decision example you could reuse later.",
     peopleToFind: ["current chief of staff", "founder-office operator", "startup talent partner"],
     resourceNeed: "Founder-office case studies and role scorecards.",
-    nextExperiment: "Save one real chief-of-staff role and decide whether you could back up the operator ownership they're asking for.",
+    nextExperiment: "Save one real chief-of-staff posting, map its operator asks to your evidence, and choose the first gap to close.",
     source: "fallback",
   },
   {
@@ -128,7 +128,7 @@ function sanitizeRole(raw: any): RoleArchetypeRecommendation | null {
     capabilitySignal: String(raw.capabilitySignal || raw.proofNeeded || "One example, note, or answer you could reuse for this path.").slice(0, 220),
     peopleToFind: Array.isArray(raw.peopleToFind) ? raw.peopleToFind.slice(0, 4).map((x: any) => String(x).slice(0, 90)) : ["role insider", "hiring manager or talent partner"],
     resourceNeed: String(raw.resourceNeed || "One current market/resource primer with a concrete output.").slice(0, 220),
-    nextExperiment: String(raw.nextExperiment || `Save one real ${raw.archetype} role and note the top requirement you'd need to prove.`).slice(0, 220),
+    nextExperiment: String(raw.nextExperiment || `Save one real ${raw.archetype} posting, map its strongest asks to your evidence, and choose the first gap to close.`).slice(0, 220),
     marketSignal: String(raw.marketSignal || "").slice(0, 280),
     source: "market",
   };
@@ -149,7 +149,7 @@ async function getMarketGroundedArchetypes(tasks: Task[], jobs: Job[], learn: Le
       `${formatContextForPrompt(ctx)} ` +
       `Using current labour-market patterns and the saved system snapshot, recommend 3-5 role archetypes to explore/convert/watch. ` +
       `For each, return: archetype, priority (explore|convert|watch|pause), fitLogic, credibilityGap, capabilitySignal, peopleToFind (2-4 person TYPES, not names), resourceNeed, nextExperiment, marketSignal. ` +
-      `nextExperiment must end with a concrete outcome — saving a role, writing a comparison, or deciding something. NOT "find and note" or "review and observe". Good: "Save one real X role and write down the top requirement you'd need to prove". Bad: "Find three X roles and note what they ask for". No jargon, no abstract nouns like "wedge" or "lever". ` +
+      `nextExperiment must end with a concrete outcome: a saved posting, the role's strongest asks mapped to the user's existing evidence, and one first gap or prep move. Good: "Save one real X posting, map its strongest asks to your evidence, and choose the first gap to close." Bad: "Find three X roles and note what they ask for" or "write down the top requirement you'd need to prove". No jargon, no abstract nouns like "wedge" or "lever". ` +
       `MarketSignal should summarize why this lane exists now, not cite URLs. Do not invent specific open roles or specific people. ` +
       `Return ONLY JSON: {"roleArchetypes":[...]}. Snapshot: ${JSON.stringify(systemSnapshot)}`,
     );

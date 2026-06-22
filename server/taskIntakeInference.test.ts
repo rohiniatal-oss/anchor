@@ -33,9 +33,9 @@ test("learning tasks get a smallest-start reading step", () => {
 test("role research tasks get a save-real-examples starter step", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Review three AI governance strategy roles and note the requirements that keep coming up." });
   assert.equal(inferred.category, "job");
-  assert.match(inferred.doneWhen, /one real role, one repeated requirements pattern, and one next learning move/i);
+  assert.match(inferred.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
   assert.match(inferred.steps, /search .*AI governance strategy roles/i);
-  assert.match(inferred.steps, /Treat AI Governance & Safety as the likely first knowledge gap to test/i);
+  assert.match(inferred.steps, /Map the posting against your own evidence/i);
 });
 
 test("legacy role-scan metadata is upgraded to the stronger intent contract", () => {
@@ -54,11 +54,10 @@ test("legacy role-scan metadata is upgraded to the stronger intent contract", ()
   });
 
   assert.equal(inferred.category, "job");
-  assert.match(inferred.doneWhen, /one real role, one repeated requirements pattern, and one next learning move/i);
-  assert.match(inferred.minimumOutcome, /one real role, one repeated requirements pattern, and one next learning move/i);
+  assert.match(inferred.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
+  assert.match(inferred.minimumOutcome, /posting is saved, its strongest asks are mapped to your evidence/i);
   assert.match(inferred.steps, /search .*AI governance strategy roles/i);
-  assert.match(inferred.steps, /Treat AI Governance & Safety as the likely first knowledge gap to test/i);
-  assert.match(inferred.steps, /confirm or disprove that diagnosis/i);
+  assert.match(inferred.steps, /Map the posting against your own evidence/i);
 });
 
 test("broad application tasks are shrunk to one live role move", () => {

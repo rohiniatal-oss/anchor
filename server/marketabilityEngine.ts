@@ -143,7 +143,7 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
       moves.push({
         kind: "asset", lane: "Direction", priority: 82, trackId: track.id, trackName: name,
         title: `Find one real ${name} role and extract the first requirements pattern`,
-        doneWhen: "One real role, one repeated requirements pattern, and one next learning move are captured",
+        doneWhen: "One real posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen",
         reason: "Without role examples, general prep can drift away from the market.",
         outputType: "note",
       });

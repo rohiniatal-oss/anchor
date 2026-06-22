@@ -68,7 +68,7 @@ export function isRoleMarketScanInput(input: TaskIntentInput) {
   const taskishSource = !input.sourceKind || input.sourceKind === "task";
   const directionLane = normalizeLaneName(String(input.lane || "")) === LANE_NAME.DIRECTION;
   const roleSignal = /\b(role|roles|job|jobs|posting|postings|hiring|team|teams|application|applications|company|companies)\b/.test(text);
-  const scanSignal = /\b(find|search|scan|map|identify|inspect|review|explor|lay of the land|what they ask for|requirements|assess candidates|credible|pattern)\b/.test(text);
+  const scanSignal = /\b(find|search|save|scan|map|identify|inspect|review|explor|lay of the land|what they ask for|requirement|requirements|assess candidates|credible|pattern|prove|back up|evidence|gap)\b/.test(text);
   return roleSignal && scanSignal && (strategySource || taskishSource || directionLane);
 }
 
@@ -91,6 +91,7 @@ export function inferTaskIntent(input: TaskIntentInput): TaskIntentKind {
 export function roleMarketScanLabel(title: string) {
   const cleaned = String(title || "")
     .replace(/^(save|find|review|explore|research|identify|inspect|map)\s+(one|two|three|four|five|1|2|3|4|5|a|an|the)?\s*(real\s+)?/i, "")
+    .replace(/\s+and\s+(note|write down|map|decide|choose|capture|extract)\b.*$/i, "")
     .replace(/\s+and\s+note\s+what.*$/i, "")
     .replace(/\s+and\s+extract\s+what.*$/i, "")
     .replace(/\s+and\s+note\s+the\s+requirements.*$/i, "")
@@ -139,8 +140,8 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
       label,
       gapType,
       gapTypeLabel: gapLabel,
-      assessmentStep: `Treat ${label} as the likely first ${gapLabel} to test. Check the posting only to confirm or disprove that diagnosis, then save one line on why it does or does not look like the first gap`,
-      learningMoveStep: `If ${label} is the gap, do one short drill on ${label} against the posting and save the output, then stop once one real role, one repeated requirements pattern, and one next learning move are captured`,
+      assessmentStep: `Map the posting against your own evidence and decide whether ${label} is the first ${gapLabel} to close`,
+      learningMoveStep: `Choose one small prep move for ${label}: a 10-minute drill, one reusable example, or one targeted source`,
     };
   }
   if (gapType === "proof") {
@@ -148,16 +149,16 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
       label,
       gapType,
       gapTypeLabel: gapLabel,
-      assessmentStep: `Treat ${label} as the likely first ${gapLabel} to test. Check the posting only to confirm or disprove that diagnosis, then save one line on why it does or does not look like the first gap`,
-      learningMoveStep: `If ${label} is the gap, draft one concrete example that proves ${label}, then stop once one real role, one repeated requirements pattern, and one next learning move are captured`,
+      assessmentStep: `Map the posting against your own evidence and decide whether ${label} is the first ${gapLabel} to close`,
+      learningMoveStep: `Choose one small prep move for ${label}: draft one proof example, tighten one story, or save the missing evidence you need`,
     };
   }
   return {
     label,
     gapType,
     gapTypeLabel: gapLabel,
-    assessmentStep: `Treat ${label} as the likely first ${gapLabel} to test. Check the posting only to confirm or disprove that diagnosis, then save one line on why it does or does not look like the first gap`,
-    learningMoveStep: `If ${label} is the gap, read one targeted source on ${label} and save 3 lines on how it shows up in the role, then stop once one real role, one repeated requirements pattern, and one next learning move are captured`,
+    assessmentStep: `Map the posting against your own evidence and decide whether ${label} is the first ${gapLabel} to close`,
+    learningMoveStep: `Choose one small prep move for ${label}: read one targeted source, save one useful note, or draft one interview answer`,
   };
 }
 
@@ -166,8 +167,8 @@ function roleMarketScanSteps(title: string) {
   const likelyGap = likelyLearningGapPlan({ rolePath });
   return [
     `Open LinkedIn or the target job board and search "${rolePath}"`,
-    "Save the first real posting that matches the path closely enough to learn from",
-    "Extract the 3 repeated requirements or background signals from that posting",
+    "Save one real posting that looks close enough to the work you might actually want",
+    "Pull out the 3 strongest asks: skills, experience, credentials, or judgement signals",
     likelyGap.assessmentStep,
     likelyGap.learningMoveStep,
   ];
@@ -253,7 +254,7 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
     return {
       intent,
       category: "job",
-      doneWhen: "One real role, one repeated requirements pattern, and one next learning move are captured",
+      doneWhen: "One real posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen",
       firstStep: steps[0],
       steps,
       stopCondition: steps[4],
@@ -367,6 +368,6 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
 export function hasRoleMarketScanContract(texts: string[]) {
   const joined = texts.join(" | ").toLowerCase();
   return /\bsave\b.*\b(real|posting|role|job)\b/.test(joined)
-    && /\b(extract|note|list|capture)\b.*\b(requirements?|signals?|asks?|pattern)\b/.test(joined)
+    && /\b(extract|note|list|capture|pull out|map)\b.*\b(requirements?|signals?|asks?|pattern|evidence)\b/.test(joined)
     && /\b(stop|done|mark|gap|evidence|captured)\b/.test(joined);
 }

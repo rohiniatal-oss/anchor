@@ -130,7 +130,7 @@ test("current plan refreshes stale single-lane carry-forward work when broad par
   const refreshed = await api(h.base, "GET", `/api/plan/current?day=${DAY}&energy=medium&availableMinutes=180`);
   assert.equal(refreshed.status, 200);
   assert.equal(refreshed.json.items[0]?.sourceType, "goal");
-  assert.match(refreshed.json.items[0]?.title || "", /missing path|real role/i);
+  assert.match(refreshed.json.items[0]?.title || "", /missing path|real .*posting/i);
 });
 
 test("current plan does not invent broad-pursuit lane-filling over a single live lane", async () => {

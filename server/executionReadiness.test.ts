@@ -181,8 +181,8 @@ test("broad-pursuit adaptive plan names missing paths when some lanes already ha
   assert.equal(current.status, 200);
   assert.match(current.json.plan.note, /missing path/i);
   assert.match(current.json.plan.note, /Geopolitics/i);
-  assert.match(current.json.items[0].title, /missing path|real role/i);
-  assert.match(current.json.items[0].doneWhen, /role|application/i);
+  assert.match(current.json.items[0].title, /missing path|real .*posting/i);
+  assert.match(current.json.items[0].doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
 });
 
 test("plan recompute preserves goal-source planner metadata on broad-pursuit support items", async () => {

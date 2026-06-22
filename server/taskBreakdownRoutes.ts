@@ -3,6 +3,7 @@ import { llm, llmJSON, LLM_MODELS } from "./llm";
 import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import { deterministicUnstickStep } from "./planningFeedback";
+import { parseCompanyBrief } from "./companyIntelligence";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { buildUserContext, formatContextForPrompt, type UserContext } from "./userContext";
 import { isJobLive, isContactWarm, getTrackId } from "@shared/domainState";
@@ -852,6 +853,13 @@ async function buildCrossEngineContext(
       );
       if (relevantLearn.length) parts.push(`Capabilities already evidenced (relevant to this role): ${relevantLearn.join(", ")}.`);
     }
+    const brief = parseCompanyBrief(job.companyBrief || "");
+    if (brief?.outreachSuggestions?.length) {
+      const suggestions = brief.outreachSuggestions.slice(0, 3)
+        .map((s) => `${s.archetype} — ${s.why}`)
+        .join("; ");
+      parts.push(`Outreach suggestions from company research: ${suggestions}.`);
+    }
   }
 
   if (!needsTrackContext && sourceKind === "learn" && source) {
@@ -885,6 +893,13 @@ async function buildCrossEngineContext(
         .map((contact) => `${contact.name} (${contact.relationshipStrength || "cold"}${contact.targetOrg ? `, ${contact.targetOrg}` : ""})`)
         .join("; ")}.`);
       bestContactName = linkedContacts[0]?.name;
+    }
+    const trackBrief = parseCompanyBrief(job.companyBrief || "");
+    if (trackBrief?.outreachSuggestions?.length && !linkedContacts.length) {
+      const suggestions = trackBrief.outreachSuggestions.slice(0, 3)
+        .map((s) => `${s.archetype} — ${s.why}`)
+        .join("; ");
+      parts.push(`Outreach suggestions from company research: ${suggestions}.`);
     }
   }
 
@@ -999,7 +1014,17 @@ export async function buildSourceContext(task: Task, userContext?: UserContext):
     if (j) {
       source = j;
       sourceKind = "job";
-      sourceContext = `This is a JOB / OPPORTUNITY item. Role: ${j.title} at ${j.company}. Status: ${j.status}. Readiness: ${j.applicationReadiness}. ${j.deadline ? `Deadline: ${formatDeadlineLabel(j.deadline)}. ` : ""}Fit score: ${j.fitScore ?? "unknown"}. Archetype: ${j.roleArchetype || "unknown"}. Narrative angle: ${j.narrativeAngle || "unset"}. ${j.note ? "Posting notes: " + j.note : ""} ${j.url ? "URL: " + j.url : ""}`;
+      const briefParts: string[] = [];
+      const brief = parseCompanyBrief(j.companyBrief || "");
+      if (brief) {
+        if (brief.whatTheyDo) briefParts.push(`What they do: ${brief.whatTheyDo}`);
+        if (brief.relevantTeam) briefParts.push(`Team: ${brief.relevantTeam}`);
+        if (brief.whyYouFit) briefParts.push(`Your fit: ${brief.whyYouFit}`);
+        if (brief.prepAngle) briefParts.push(`Prep angle: ${brief.prepAngle}`);
+        if (brief.landscape?.marketContext) briefParts.push(`Market context: ${brief.landscape.marketContext}`);
+        if (brief.landscape?.competitors?.length) briefParts.push(`Competitors: ${brief.landscape.competitors.join(", ")}`);
+      }
+      sourceContext = `This is a JOB / OPPORTUNITY item. Role: ${j.title} at ${j.company}. Status: ${j.status}. Readiness: ${j.applicationReadiness}. ${j.deadline ? `Deadline: ${formatDeadlineLabel(j.deadline)}. ` : ""}Fit score: ${j.fitScore ?? "unknown"}. Archetype: ${j.roleArchetype || "unknown"}. Narrative angle: ${j.narrativeAngle || "unset"}. ${j.note ? "Posting notes: " + j.note : ""} ${j.url ? "URL: " + j.url : ""}${briefParts.length ? `\nCOMPANY INTELLIGENCE:\n${briefParts.join("\n")}` : ""}`;
       playbook = "Use the parent application workflow first. CV/cover/answers/submission are Artifact; role research is Knowledge; multi-role search or networking is Pipeline. Never auto-change job status.";
     }
   } else if (task.sourceType === "learn" && task.sourceId) {
@@ -1131,6 +1156,7 @@ export function buildTaskBreakdownPrompt(input: {
     `Return ONLY JSON: {"workObject":"...","workflow":["..."],"workflowKind":"finite|continuous","currentStage":"...","stageOutput":"...","completionCriteria":["..."],"confidence":"high|medium|low","steps":[{"text":"...","substeps":["..."]}],"advanceCondition":"..."} or {"question":"..."}.\n\n` +
     `${globalGuidance}\n` +
     `For learning or research work: if stored notes, topic breakdown, checkpoints, links, prior outputs, live role context, or user-authored note excerpts are present, use them directly. Name the actual section, concept, checkpoint, deadline, company, role, or prior output when available. Do not assume page content beyond what is shown. If the context is sparse or partial, tell the user exactly what to search for, what to extract, and what output to produce.\n\n` +
+    `When COMPANY INTELLIGENCE is present in the source context, use it directly in steps. Never say "research the company" when you already have what they do, their team, and market context. Instead reference the specific insight: name competitors, quote the prep angle, use the fit analysis to sharpen CV bullets. When outreach suggestions are present, name the specific archetype in networking steps instead of generic "reach out to someone".\n\n` +
     `${taskGuidance ? `${taskGuidance}\n` : ""}` +
     `${providerGuidance ? `${providerGuidance}\n` : ""}` +
     `${sparseContextGuidance ? `${sparseContextGuidance}\n` : ""}` +
@@ -1156,12 +1182,29 @@ export function buildTaskBreakdownPrompt(input: {
   );
 }
 
+export function isAtomicTask(task: Task): boolean {
+  const t = task.title.toLowerCase();
+  const atomicVerbs = /^(send|email|reply|forward|pay|book|cancel|confirm|check|open|read|skim|call|text|message|sign|renew|submit|post|share|download|upload|print|return)\b/;
+  if (!atomicVerbs.test(t)) return false;
+  if (task.sourceType === "job" || task.sourceType === "learn" || task.sourceType === "hustle") return false;
+  if (task.size === "deep") return false;
+  return true;
+}
+
 export function registerTaskBreakdownRoutes(app: Express) {
   app.post("/api/tasks/:id/breakdown", async (req, res) => {
     const id = Number(req.params.id);
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
     const context = String(req.body?.context || "").slice(0, 500);
+
+    if (isAtomicTask(task) && !context) {
+      const stepText = task.doneWhen || task.title;
+      const steps: BreakdownStep[] = [{ text: stepText, done: false }];
+      const updated = await storage.updateTask(id, { steps: JSON.stringify(steps) });
+      return res.json(updated);
+    }
+
     const sharedUserContext = await buildUserContext();
     const bundle = await buildSourceContext(task, sharedUserContext);
     const fallbackObject = (bundle.parentWorkflow?.workObject as WorkObject) || classifyWorkObject(task, bundle);

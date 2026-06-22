@@ -1008,3 +1008,69 @@ test("collectTaskBreakdownContext stays empty when there is no linked provider c
   assert.equal(collected.blocks.userAuthored?.length || 0, 0);
   assert.equal(collected.blocks.externalResearch?.length || 0, 0);
 });
+
+test("isAtomicTask identifies simple single-action tasks", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-atomic-${process.pid}.db`);
+  const { isAtomicTask: isAtomic } = await import("./taskBreakdownRoutes");
+
+  const base = { title: "", sourceType: "", size: "medium" } as any;
+  assert.equal(isAtomic({ ...base, title: "Send Sarah the doc" }), true);
+  assert.equal(isAtomic({ ...base, title: "Email the team about Friday" }), true);
+  assert.equal(isAtomic({ ...base, title: "Reply to the recruiter" }), true);
+  assert.equal(isAtomic({ ...base, title: "Check the deadline" }), true);
+  assert.equal(isAtomic({ ...base, title: "Pay the invoice" }), true);
+
+  assert.equal(isAtomic({ ...base, title: "Apply to McKinsey" }), false, "apply is not atomic — needs real breakdown");
+  assert.equal(isAtomic({ ...base, title: "Prepare for the interview" }), false, "prepare is multi-step");
+  assert.equal(isAtomic({ ...base, title: "Research the company" }), false, "research is multi-step");
+  assert.equal(isAtomic({ ...base, title: "Send Sarah the doc", sourceType: "job" }), false, "job-linked tasks always get full breakdown");
+  assert.equal(isAtomic({ ...base, title: "Send the draft", size: "deep" }), false, "deep tasks always get full breakdown");
+});
+
+test("buildSourceContext includes company brief for job tasks", async () => {
+  process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-brief-${process.pid}.db`);
+  const { buildSourceContext } = await import("./taskBreakdownRoutes");
+  const { storage } = await import("./storage");
+
+  const brief = JSON.stringify({
+    whatTheyDo: "McKinsey advises Fortune 500 companies on strategy and operations",
+    relevantTeam: "Digital & Analytics practice",
+    whyYouFit: "Your consulting background maps directly to their transformation work",
+    landscape: {
+      competitors: ["BCG", "Bain"],
+      alsoConsider: ["Deloitte Strategy"],
+      marketContext: "Strategy consulting hiring is up 15% this year",
+    },
+    outreachSuggestions: [{ archetype: "SIPA alum at McKinsey", why: "Alumni network", searchTip: "LinkedIn" }],
+    prepAngle: "Read their latest Digital report on AI adoption",
+  });
+
+  const job = await storage.createJob({
+    title: "Strategy Consultant",
+    company: "McKinsey",
+    url: "",
+    status: "interested",
+    companyBrief: brief,
+  } as any);
+
+  const task = {
+    id: 9999,
+    title: "Apply to McKinsey Strategy role",
+    sourceType: "job",
+    sourceId: job.id,
+    category: "job",
+    doneWhen: "Application submitted",
+    minimumOutcome: "",
+    sourceUrl: "",
+    sourceNote: "",
+    steps: "[]",
+  } as any;
+
+  const bundle = await buildSourceContext(task);
+  assert.ok(bundle.sourceContext.includes("COMPANY INTELLIGENCE"), "source context should include company intel section");
+  assert.ok(bundle.sourceContext.includes("McKinsey advises"), "should include whatTheyDo");
+  assert.ok(bundle.sourceContext.includes("Digital & Analytics"), "should include relevantTeam");
+  assert.ok(bundle.sourceContext.includes("consulting background"), "should include whyYouFit");
+  assert.ok(bundle.sourceContext.includes("BCG"), "should include competitors");
+  assert.ok(bundle.sourceContext.includes("Read their latest"), "should include prepAngle");
+});

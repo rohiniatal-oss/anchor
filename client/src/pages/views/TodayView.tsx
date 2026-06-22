@@ -477,13 +477,13 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
             }`}
             onClick={dispositionPending ? undefined : checkStep}
             role="button"
-            aria-label="Mark step done"
+            aria-label="Finish current step"
           >
             {!dispositionPending && (
               <button
                 onClick={(e) => { e.stopPropagation(); checkStep(); }}
                 data-testid="button-check-step"
-                aria-label="Mark step done"
+                aria-label="Finish current step"
                 className="mt-0.5 w-5 h-5 shrink-0 rounded-md border-2 border-primary grid place-items-center transition-colors group-hover/step:bg-primary group-hover/step:border-primary"
               >
                 <Check className="w-3 h-3 text-primary opacity-0 group-hover/step:opacity-100 group-hover/step:text-primary-foreground transition-opacity" />
@@ -539,7 +539,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
                 </ul>
               )}
               {steps.length > 1 && !current.output && (
-                <p className="text-[11px] text-muted-foreground mt-1.5">Tap to mark done - next step will appear</p>
+                <p className="text-[11px] text-muted-foreground mt-1.5">Finish this step - the next step will appear</p>
               )}
             </div>
           </div>

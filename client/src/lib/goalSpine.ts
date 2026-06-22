@@ -388,18 +388,14 @@ export function goalMorningBriefWithExecution(
   if (execution.hasPinnedFocus) {
     return {
       ...base,
-      eyebrow: "You already have a focus",
+      eyebrow: "Current focus",
       intro: execution.pinnedAvoided
-        ? "Do not rethink the whole day. Just do the next tiny step on the thing already in front of you."
-        : "Do not rethink the whole day. Stay with the thing already in motion.",
-      bestUseLabel: "Best use of right now",
+        ? "You already picked the thing. Make the next move small enough to start now."
+        : "The decision is already made. Work the next visible step, then let Anchor advance you.",
+      bestUseLabel: "How to use this",
       bestUseText: execution.pinnedAvoided
-        ? execution.pinnedTitle
-          ? `Do the next tiny step on this task: ${execution.pinnedTitle}.`
-          : "Do the next tiny step on your current focus."
-        : execution.pinnedTitle
-          ? `Continue this task: ${execution.pinnedTitle}.`
-          : "Continue your current focus.",
+        ? "Do one checkbox-sized move. If it still feels too big, ask for a different first step."
+        : "Use the card below: finish the visible step, then stop or move to the next one.",
     };
   }
 

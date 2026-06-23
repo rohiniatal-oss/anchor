@@ -6,6 +6,7 @@ import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./track
 import { buildBottleneckDiagnosis } from "./trackResearchBottlenecks";
 import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";
 import { buildRequirementModel, REQUIREMENT_MODEL_VERSION } from "./trackResearchRequirementModel";
+import { enhanceRequirementModelWithLlm } from "./trackResearchRequirementSynthesis";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -168,7 +169,8 @@ async function handleTrackResearch(req: any, res: any) {
 
   const currentIntelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
   const sourceResearchAt = Number(currentIntelligence.researchedAt || Date.now());
-  const requirementModel = buildRequirementModel(result.track, result.brief, sourceResearchAt);
+  const draftRequirementModel = buildRequirementModel(result.track, result.brief, sourceResearchAt);
+  const requirementModel = await enhanceRequirementModelWithLlm(result.track, result.brief, draftRequirementModel);
   const architecture = buildCareerArchitecture(result.track, result.brief, result.organizedWorkspace);
   const bottleneckDiagnosis = buildBottleneckDiagnosis(result.track, result.brief, architecture);
   const organizedWorkspace = architectureWorkspaceView(result.organizedWorkspace, architecture, bottleneckDiagnosis);

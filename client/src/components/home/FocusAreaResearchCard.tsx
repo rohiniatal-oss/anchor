@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { mutateAndInvalidate } from "@/lib/api";
 import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { TrackResearchReview } from "@/components/home/TrackResearchReview";
+import { TrackDevelopmentPlan } from "@/components/home/TrackDevelopmentPlan";
 
 type FocusAreaResearchCardProps = {
   onResearched?: (trackId?: number) => void;
@@ -36,13 +37,13 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
       setLastTrack({
         id: track?.id,
         name: track?.name || brief?.trackName || domain,
-        summary: brief?.summary || track?.description || "Anchor created a researched track plan for this focus area.",
+        summary: brief?.summary || track?.description || "Anchor created an evidence-backed requirement model for this target.",
         evidenceCount: Array.isArray(result?.evidencePack) ? result.evidencePack.length : undefined,
       });
       setFocus("");
       onResearched?.(track?.id);
     } catch (e: any) {
-      setError(e?.message || "Could not research this focus area. Try again in a moment.");
+      setError(e?.message || "Could not research this career target. Try again in a moment.");
     } finally {
       setBusy(false);
     }
@@ -56,11 +57,11 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold leading-snug">Explore a career direction</h2>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Search and plan</span>
+            <h2 className="text-sm font-semibold leading-snug">Build toward a career direction</h2>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Research requirements</span>
           </div>
           <p className="mt-1 text-xs leading-snug text-muted-foreground">
-            Give Anchor an area of focus. It will build a search plan, gather evidence, map roles and gaps, then create a structured track plan.
+            Tell Anchor the direction you want. It will research what the market requires, assess the evidence you already have, and build a structured development plan for the rest.
           </p>
 
           <form
@@ -74,14 +75,14 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
               value={focus}
               onChange={(event) => setFocus(event.target.value)}
               placeholder="AI strategy, geopolitical risk, government delivery..."
-              aria-label="Career direction to explore"
+              aria-label="Career direction to build toward"
               data-testid="input-focus-area"
               disabled={busy}
               className="h-10"
             />
             <Button type="submit" disabled={busy || !focus.trim()} className="h-10 shrink-0" data-testid="button-research-focus-area">
               {busy ? <Sparkles className="mr-1 h-4 w-4 animate-pulse" /> : <Search className="mr-1 h-4 w-4" />}
-              {busy ? "Searching sources" : "Build researched plan"}
+              {busy ? "Researching requirements" : "Research target"}
             </Button>
           </form>
 
@@ -108,15 +109,16 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
 
           {lastTrack && (
             <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2" data-testid="focus-area-result">
-              <p className="text-xs font-medium text-primary">Track plan created: {lastTrack.name}</p>
+              <p className="text-xs font-medium text-primary">Target researched: {lastTrack.name}</p>
               <p className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground">{lastTrack.summary}</p>
               {typeof lastTrack.evidenceCount === "number" && (
-                <p className="mt-1 text-[11px] text-muted-foreground">Used {lastTrack.evidenceCount} evidence item{lastTrack.evidenceCount === 1 ? "" : "s"} to build the plan.</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Used {lastTrack.evidenceCount} market evidence item{lastTrack.evidenceCount === 1 ? "" : "s"} to build the requirement model.</p>
               )}
             </div>
           )}
 
           <TrackResearchReview trackId={lastTrack?.id} />
+          <TrackDevelopmentPlan trackId={lastTrack?.id} />
         </div>
       </div>
     </section>

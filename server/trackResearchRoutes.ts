@@ -2,7 +2,8 @@ import type { Express } from "express";
 import { storage } from "./storage";
 import { runStructuredTrackResearch } from "./trackResearchMethod";
 import { materializeTrackResearch } from "./trackResearchAgent";
-import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
+import { buildCareerArchitecture } from "./trackResearchArchitecture";
+import { applyGapDrivenActivationFilter } from "./trackResearchActivation";
 import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";
 
 function parseJsonObject(value: string): Record<string, any> | null {
@@ -214,6 +215,7 @@ export function registerTrackResearchRoutes(app: Express) {
       organizedWorkspace,
       careerArchitecture,
       automaticSelection: careerArchitecture?.automaticSelection || intelligence?.automaticSelection || null,
+      activationPlan: intelligence?.activationPlan || null,
       activationInventory: intelligence?.activationInventory || null,
     });
   });
@@ -230,18 +232,19 @@ export function registerTrackResearchRoutes(app: Express) {
     const brief = buildBriefFromIntelligence(track, intelligence);
     const careerArchitecture = deriveCareerArchitecture(track, intelligence) || buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
     const organizedWorkspace = architectureWorkspaceView(intelligence.organizedWorkspace || null, careerArchitecture);
-    const activationBrief = applyAutomaticActivationFilter(brief, careerArchitecture);
+    const activationBrief = applyGapDrivenActivationFilter(brief, careerArchitecture);
     const materialized = await materializeTrackResearch(track, activationBrief as any);
     const nextIntelligence = {
       ...intelligence,
       organizedWorkspace,
       careerArchitecture,
       automaticSelection: careerArchitecture.automaticSelection,
+      activationPlan: activationBrief.activationPlan,
       activationInventory: materialized,
       activatedAt: Date.now(),
       lastUpdated: Date.now(),
     };
     const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
-    res.json({ track: updatedTrack || track, materialized, organizedWorkspace, careerArchitecture });
+    res.json({ track: updatedTrack || track, materialized, organizedWorkspace, careerArchitecture, activationPlan: activationBrief.activationPlan });
   });
 }

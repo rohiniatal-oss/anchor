@@ -5,6 +5,7 @@ import { materializeTrackResearch } from "./trackResearchAgent";
 import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
 import { buildBottleneckDiagnosis } from "./trackResearchBottlenecks";
 import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";
+import { buildTargetProfile } from "./trackResearchTargetProfile";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -122,6 +123,15 @@ function buildBriefFromIntelligence(track: any, intelligence: Record<string, any
   };
 }
 
+function deriveTargetProfile(track: any, intelligence: Record<string, any> | null) {
+  if (!hasStoredResearch(intelligence)) return null;
+  if (intelligence.targetProfile?.mode === "target_profile" && intelligence.targetProfile?.roleFamilies?.length) {
+    return intelligence.targetProfile;
+  }
+  const brief = buildBriefFromIntelligence(track, intelligence);
+  return buildTargetProfile(track, brief);
+}
+
 function deriveCareerArchitecture(track: any, intelligence: Record<string, any> | null) {
   if (!hasStoredResearch(intelligence)) return null;
   if (intelligence.careerArchitecture?.mode === "chosen_target_development" && intelligence.careerArchitecture?.stages?.length) {
@@ -144,18 +154,19 @@ async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
-  // Research creates the career intelligence model first: evidence, path
-  // hypotheses, career capital, bottleneck diagnosis, and development plans.
-  // Execution objects remain opt-in and are filtered after diagnosis.
+  // Research creates the career intelligence model first. Target Profile is the
+  // destination definition; later layers assess position, gaps, and execution.
   const result = await runStructuredTrackResearch(domain, { materialize: false });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
+  const targetProfile = buildTargetProfile(result.track, result.brief);
   const architecture = buildCareerArchitecture(result.track, result.brief, result.organizedWorkspace);
   const bottleneckDiagnosis = buildBottleneckDiagnosis(result.track, result.brief, architecture);
   const organizedWorkspace = architectureWorkspaceView(result.organizedWorkspace, architecture, bottleneckDiagnosis);
   const currentIntelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
   const nextIntelligence = {
     ...currentIntelligence,
+    targetProfile,
     organizedWorkspace,
     careerArchitecture: architecture,
     bottleneckDiagnosis,
@@ -181,6 +192,7 @@ async function handleTrackResearch(req: any, res: any) {
     developmentPlans: result.brief.developmentPlans,
     evidenceLoops: result.brief.evidenceLoops,
     fitGapMatrix: result.brief.fitGapMatrix,
+    targetProfile,
     organizedWorkspace,
     careerArchitecture: architecture,
     bottleneckDiagnosis,
@@ -202,6 +214,7 @@ export function registerTrackResearchRoutes(app: Express) {
     const track = await storage.getCareerTrack(id);
     if (!track) return res.status(404).json({ error: "Track not found" });
     const intelligence = parseJsonObject(track.trackIntelligence || "");
+    const targetProfile = deriveTargetProfile(track, intelligence);
     const careerArchitecture = deriveCareerArchitecture(track, intelligence);
     const bottleneckDiagnosis = deriveBottleneckDiagnosis(track, intelligence, careerArchitecture);
     const organizedWorkspace = architectureWorkspaceView(intelligence?.organizedWorkspace || null, careerArchitecture, bottleneckDiagnosis);
@@ -225,6 +238,7 @@ export function registerTrackResearchRoutes(app: Express) {
       sectorMap: intelligence?.sectorMap || [],
       roleShapes: intelligence?.roleShapes || [],
       gapAnalysis: intelligence?.gapAnalysis || null,
+      targetProfile,
       organizedWorkspace,
       careerArchitecture,
       bottleneckDiagnosis,
@@ -243,6 +257,7 @@ export function registerTrackResearchRoutes(app: Express) {
       return res.status(400).json({ error: "No career intelligence model is stored for this track" });
     }
     const brief = buildBriefFromIntelligence(track, intelligence);
+    const targetProfile = deriveTargetProfile(track, intelligence) || buildTargetProfile(track, brief);
     const careerArchitecture = deriveCareerArchitecture(track, intelligence) || buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
     const bottleneckDiagnosis = deriveBottleneckDiagnosis(track, intelligence, careerArchitecture) || buildBottleneckDiagnosis(track, brief, careerArchitecture);
     const organizedWorkspace = architectureWorkspaceView(intelligence.organizedWorkspace || null, careerArchitecture, bottleneckDiagnosis);
@@ -250,6 +265,7 @@ export function registerTrackResearchRoutes(app: Express) {
     const materialized = await materializeTrackResearch(track, activationBrief as any);
     const nextIntelligence = {
       ...intelligence,
+      targetProfile,
       organizedWorkspace,
       careerArchitecture,
       bottleneckDiagnosis,
@@ -259,6 +275,6 @@ export function registerTrackResearchRoutes(app: Express) {
       lastUpdated: Date.now(),
     };
     const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
-    res.json({ track: updatedTrack || track, materialized, organizedWorkspace, careerArchitecture, bottleneckDiagnosis });
+    res.json({ track: updatedTrack || track, materialized, targetProfile, organizedWorkspace, careerArchitecture, bottleneckDiagnosis });
   });
 }

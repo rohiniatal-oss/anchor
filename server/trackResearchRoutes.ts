@@ -123,7 +123,9 @@ function buildBriefFromIntelligence(track: any, intelligence: Record<string, any
 
 function deriveCareerArchitecture(track: any, intelligence: Record<string, any> | null) {
   if (!hasStoredResearch(intelligence)) return null;
-  if (intelligence.careerArchitecture?.stages?.length) return intelligence.careerArchitecture;
+  if (intelligence.careerArchitecture?.mode === "chosen_target_development" && intelligence.careerArchitecture?.stages?.length) {
+    return intelligence.careerArchitecture;
+  }
   const brief = buildBriefFromIntelligence(track, intelligence);
   return buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
 }

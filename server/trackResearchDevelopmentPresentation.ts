@@ -29,7 +29,7 @@ const METHOD_COPY: Record<DevelopmentMethod, RegExp> = {
   learn: /\b(learn|course|study|training|syllabus)\b/i,
   practice: /\b(practi[cs]e|exercise|rehearsal)\b/i,
   gain_experience: /\b(experience|project|assignment|responsibility)\b/i,
-  create_proof: /\b(proof|portfolio|artifact|output|publish)\b/i,
+  create_proof: /\b(proof|portfolio|artifact|publish|publication)\b/i,
   position: /\b(position|positioning|narrative|story|cv|profile)\b/i,
   build_relationships: /\b(relationship|network|practitioner|conversation)\b/i,
   build_access: /\b(access|referral|introduction|hiring route|entry route)\b/i,

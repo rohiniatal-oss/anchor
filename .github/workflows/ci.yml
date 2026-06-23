@@ -33,13 +33,25 @@ jobs:
         if: always()
         run: npx tsx --test server/trackResearchDevelopmentGuardrails.test.ts
 
+      - name: Development plan fingerprint tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentFingerprint.test.ts
+
+      - name: Development plan presentation tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentPresentation.test.ts
+
+      - name: Development plan synthesis boundary tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentSynthesis.test.ts
+
       - name: Full unit test suite
         if: always()
         run: |
           set +e
           npm test > /tmp/anchor-tests.log 2>&1
           status=$?
-          tail -n 80 /tmp/anchor-tests.log
+          tail -n 120 /tmp/anchor-tests.log
           exit $status
 
       - name: CSS source audit

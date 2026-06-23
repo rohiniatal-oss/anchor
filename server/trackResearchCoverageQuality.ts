@@ -3,11 +3,40 @@ import type { RequirementModel, TargetRequirement } from "./trackResearchRequire
 import type { UserEvidenceCorpus, UserEvidenceItem } from "./trackResearchCoverageEvidence";
 import type { CoverageModel, CoverageStatus, RequirementCoverage } from "./trackResearchCoverageModel";
 
-export const COVERAGE_QUALITY_POLICY_VERSION = 1;
+export const COVERAGE_QUALITY_POLICY_VERSION = 2;
 
 export type QualityCoverageModel = CoverageModel & {
   qualityPolicyVersion: number;
 };
+
+const GENERIC_TOKENS = new Set([
+  "ability",
+  "access",
+  "and",
+  "apply",
+  "can",
+  "capability",
+  "current",
+  "demonstrate",
+  "evidence",
+  "experience",
+  "for",
+  "from",
+  "has",
+  "knowledge",
+  "output",
+  "professional",
+  "relevant",
+  "requirement",
+  "role",
+  "skill",
+  "target",
+  "that",
+  "the",
+  "this",
+  "with",
+  "work",
+]);
 
 function compact(value: unknown): string {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -88,6 +117,61 @@ function claimsFor(item: RequirementCoverage, model: CoverageModel): UserEvidenc
   return model.evidenceItems.filter((evidence) => ids.has(evidence.id));
 }
 
+function tokenSet(value: unknown): Set<string> {
+  return new Set(
+    normalize(value)
+      .split(" ")
+      .filter((token) => token.length >= 3 && !GENERIC_TOKENS.has(token)),
+  );
+}
+
+function overlapScore(left: unknown, right: unknown): number {
+  const leftTokens = tokenSet(left);
+  const rightTokens = tokenSet(right);
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  let overlap = 0;
+  for (const token of leftTokens) if (rightTokens.has(token)) overlap += 1;
+  return overlap / Math.min(leftTokens.size, rightTokens.size);
+}
+
+function requirementSearchText(requirement: TargetRequirement, model: RequirementModel): string {
+  const roleTitles = requirement.roleFamilyIds
+    .map((id) => model.roleFamilies.find((role) => role.id === id)?.title)
+    .filter(Boolean);
+  return [
+    requirement.label,
+    ...requirement.aliases,
+    requirement.definition,
+    requirement.successBar,
+    model.target.label,
+    ...roleTitles,
+    ...requirement.context.employerTypes,
+    ...requirement.context.geographies,
+  ].join(" ");
+}
+
+function evidenceTopicallyRelevant(
+  requirement: TargetRequirement,
+  item: UserEvidenceItem,
+  requirementModel: RequirementModel,
+  corpus: UserEvidenceCorpus,
+): boolean {
+  const requirementText = requirementSearchText(requirement, requirementModel);
+  const evidenceText = `${item.label} ${item.detail}`;
+  const overlap = overlapScore(requirementText, evidenceText);
+  if (overlap <= 0) return false;
+
+  // Track linkage improves confidence that an item belongs in this target area,
+  // but never substitutes for topical relevance to the specific requirement.
+  const sameTrack = item.trackIds.includes(corpus.targetTrackId);
+  const threshold = requirement.category === "network" || requirement.category === "access"
+    ? 0.09
+    : requirement.category === "credential" || requirement.category === "eligibility"
+      ? 0.12
+      : 0.1;
+  return overlap + (sameTrack ? 0.04 : 0) >= threshold;
+}
+
 function distinctEntities(items: UserEvidenceItem[]): number {
   return new Set(items.map((item) => `${item.sourceEntityType}:${item.sourceEntityId ?? item.id}`)).size;
 }
@@ -105,6 +189,9 @@ function appliedSignals(items: UserEvidenceItem[]): UserEvidenceItem[] {
 }
 
 function evidenceCanProve(requirement: TargetRequirement, items: UserEvidenceItem[]): boolean {
+  if (requirement.category === "evidence") {
+    return verifiedAppliedOutput(items);
+  }
   if (requirement.category === "skill") {
     const applied = appliedSignals(items);
     return verifiedAppliedOutput(items)
@@ -162,7 +249,14 @@ function qualityState(
       confidence: evidence.length ? "medium" : "low",
       reason: evidence.length
         ? "Anchor found relevant evidence, but not a sufficiently applied or independently supported demonstration of the success bar."
-        : "Anchor does not yet have enough evidence to assess this requirement.",
+        : "Anchor does not yet have enough topically relevant evidence to assess this requirement.",
+    };
+  }
+  if (coverage.status === "partially_proven" && !evidence.length) {
+    return {
+      status: "unknown",
+      confidence: "low",
+      reason: "The cited evidence was not topically relevant enough to this specific requirement, so Anchor cannot assess it yet.",
     };
   }
   if (coverage.status === "unproven" && !corpusCanSupportAbsence(requirement, corpus)) {
@@ -185,6 +279,7 @@ function recomputeModel(
   model: CoverageModel,
   coverage: RequirementCoverage[],
   downgradeCount: number,
+  removedEvidenceCount: number,
 ): QualityCoverageModel {
   const groups = requirementModel.groups.map((group) => {
     const groupCoverage = coverage.filter((item) => group.requirementIds.includes(item.requirementId));
@@ -201,6 +296,9 @@ function recomputeModel(
   const caveats = [...model.quality.caveats];
   if (downgradeCount > 0) {
     caveats.push(`Anchor conservatively revised ${downgradeCount} coverage judgement${downgradeCount === 1 ? "" : "s"} because the evidence did not meet the category-specific proof or corpus standard.`);
+  }
+  if (removedEvidenceCount > 0) {
+    caveats.push(`Anchor removed ${removedEvidenceCount} cited evidence item${removedEvidenceCount === 1 ? "" : "s"} that matched the broad track but not the specific requirement.`);
   }
   const status: CoverageModel["quality"]["status"] = assessmentCoverage >= 75 && directEvidenceCount >= 3
     ? "strong"
@@ -234,17 +332,22 @@ export function applyCoverageQualityPolicy(
 ): QualityCoverageModel {
   const requirementById = new Map(requirementModel.requirements.map((requirement) => [requirement.id, requirement]));
   let downgradeCount = 0;
+  let removedEvidenceCount = 0;
   const coverage = model.coverage.map((item) => {
     const requirement = requirementById.get(item.requirementId);
     if (!requirement) return item;
-    const evidence = claimsFor(item, model);
+    const allEvidence = claimsFor(item, model);
+    const evidence = allEvidence.filter((candidate) => evidenceTopicallyRelevant(requirement, candidate, requirementModel, corpus));
+    removedEvidenceCount += allEvidence.length - evidence.length;
     const decision = qualityState(requirement, item, evidence, corpus);
-    if (decision.status === item.status) return item;
-    downgradeCount += 1;
+    const evidenceChanged = evidence.length !== allEvidence.length;
+    if (decision.status === item.status && !evidenceChanged) return item;
+    if (decision.status !== item.status) downgradeCount += 1;
     return {
       ...item,
       status: decision.status,
       confidence: decision.confidence || item.confidence,
+      evidenceItemIds: evidence.map((candidate) => candidate.id),
       reason: decision.reason || item.reason,
       successBarAssessment: decision.status === "unknown"
         ? `Coverage cannot yet be assessed reliably against: ${requirement.successBar}`
@@ -256,5 +359,10 @@ export function applyCoverageQualityPolicy(
           : [`Evidence that directly demonstrates: ${requirement.successBar}`],
     };
   });
-  return recomputeModel(requirementModel, corpus, model, coverage, downgradeCount);
+  return recomputeModel(requirementModel, corpus, model, coverage, downgradeCount, removedEvidenceCount);
 }
+
+export const coverageQualityInternals = {
+  evidenceTopicallyRelevant,
+  overlapScore,
+};

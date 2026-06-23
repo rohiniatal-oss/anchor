@@ -1,6 +1,5 @@
 import type {
   RequirementCategory,
-  RequirementImportance,
   RequirementModel,
   TargetRequirement,
 } from "./trackResearchRequirementModel";
@@ -156,8 +155,6 @@ export type DevelopmentPlanModel = {
   generatedAt: number;
 };
 
-const ACTION_VALUES: DevelopmentAction[] = ["build", "strengthen", "demonstrate", "verify", "maintain"];
-const SCOPE_VALUES: DevelopmentScope[] = ["core", "enhancement", "conditional", "maintenance"];
 const METHOD_VALUES: DevelopmentMethod[] = [
   "learn",
   "practice",
@@ -214,10 +211,11 @@ function stableId(prefix: string, ...parts: unknown[]): string {
   return `${prefix}-${stableHash(value)}`;
 }
 
-function uniqueStrings(values: unknown[]): string[] {
+function uniqueStrings(values: unknown): string[] {
+  const items = Array.isArray(values) ? values : [];
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const value of values.map(compact).filter(Boolean)) {
+  for (const value of items.map(compact).filter(Boolean)) {
     const key = normalize(value);
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -247,16 +245,22 @@ function parseScope(value: unknown, fallback: Exclude<DevelopmentScope, "mainten
   return fallback;
 }
 
+function validUrl(value: unknown): string {
+  const raw = compact(value);
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 function parseProvenance(value: unknown, url: string, type: DevelopmentResourceType): DevelopmentResource["provenance"] {
   const provenance = normalize(value).replace(/\s+/g, "_") as DevelopmentResource["provenance"];
   if (PROVENANCE_VALUES.includes(provenance)) return provenance;
   if (type === "search_query") return "search_query";
   return url ? "web_research" : "fallback";
-}
-
-function validUrl(value: unknown): string {
-  const url = compact(value);
-  return /^https?:\/\//i.test(url) ? url : "";
 }
 
 function actionFor(requirement: TargetRequirement, coverage: RequirementCoverage): DevelopmentAction {
@@ -278,7 +282,7 @@ function scopeFor(requirement: TargetRequirement, action: DevelopmentAction, rol
 
 function decisionReason(requirement: TargetRequirement, coverage: RequirementCoverage, action: DevelopmentAction): string {
   if (action === "maintain") return `Existing evidence currently meets the success bar for this ${requirement.importance} requirement.`;
-  if (action === "verify") return `Anchor lacks enough relevant evidence to assess this requirement, so the plan must verify the current position before prescribing development.`;
+  if (action === "verify") return "Anchor lacks enough relevant evidence to assess this requirement, so the plan must verify the current position before prescribing development.";
   if (action === "demonstrate") return coverage.status === "partially_proven"
     ? "Related capability is visible, but the target requires clearer proof or positioning."
     : "The requirement is not yet evidenced and is best addressed by producing or packaging credible proof.";
@@ -288,19 +292,23 @@ function decisionReason(requirement: TargetRequirement, coverage: RequirementCov
   return "The requirement is materially relevant to the target and is not yet supported by adequate evidence.";
 }
 
+function fallbackCoverage(requirement: TargetRequirement): RequirementCoverage {
+  return {
+    requirementId: requirement.id,
+    status: "unknown",
+    confidence: "low",
+    evidenceItemIds: [],
+    reason: "No coverage assessment was available.",
+    successBarAssessment: "Not assessed.",
+    evidenceStillNeeded: [`Evidence that demonstrates: ${requirement.successBar}`],
+    sourceBasis: "deterministic",
+  };
+}
+
 function deriveDecisions(requirementModel: RequirementModel, coverageModel: CoverageModel): RequirementDevelopmentDecision[] {
   const coverageByRequirement = new Map(coverageModel.coverage.map((coverage) => [coverage.requirementId, coverage]));
   return requirementModel.requirements.map((requirement) => {
-    const coverage = coverageByRequirement.get(requirement.id) || {
-      requirementId: requirement.id,
-      status: "unknown" as CoverageStatus,
-      confidence: "low" as const,
-      evidenceItemIds: [],
-      reason: "No coverage assessment was available.",
-      successBarAssessment: "Not assessed.",
-      evidenceStillNeeded: [`Evidence that demonstrates: ${requirement.successBar}`],
-      sourceBasis: "deterministic" as const,
-    };
+    const coverage = coverageByRequirement.get(requirement.id) || fallbackCoverage(requirement);
     const action = actionFor(requirement, coverage);
     return {
       requirementId: requirement.id,
@@ -404,8 +412,8 @@ function moduleOutput(type: DevelopmentModuleType, requirements: TargetRequireme
   if (type === "narrative") return `A consistent positioning narrative covering ${labels}.`;
   if (type === "relationships") return `Relevant active relationships that support ${labels}.`;
   if (type === "access") return `A documented hiring route, introduction, or entry path supporting ${labels}.`;
-  if (type === "credential") return `Verified evidence of the required credential or an evidence-backed accepted alternative.`;
-  if (type === "eligibility") return `Verified resolution of the formal eligibility condition.`;
+  if (type === "credential") return "Verified evidence of the required credential or an evidence-backed accepted alternative.";
+  if (type === "eligibility") return "Verified resolution of the formal eligibility condition.";
   return `Evidence sufficient to assess current coverage of ${labels}.`;
 }
 
@@ -436,35 +444,35 @@ function fallbackResources(type: DevelopmentModuleType, requirements: TargetRequ
   }];
 }
 
-function fallbackModules(
-  bucketRequirements: TargetRequirement[],
-  decisionsByRequirement: Map<string, RequirementDevelopmentDecision>,
-): DevelopmentModule[] {
+function moduleScope(decisions: RequirementDevelopmentDecision[]): Exclude<DevelopmentScope, "maintenance"> {
+  if (decisions.some((decision) => decision.scope === "core")) return "core";
+  if (decisions.some((decision) => decision.scope === "enhancement")) return "enhancement";
+  return "conditional";
+}
+
+function fallbackModules(requirements: TargetRequirement[], decisionsByRequirement: Map<string, RequirementDevelopmentDecision>): DevelopmentModule[] {
   const groups = new Map<DevelopmentModuleType, TargetRequirement[]>();
-  for (const requirement of bucketRequirements) {
+  for (const requirement of requirements) {
     const decision = decisionsByRequirement.get(requirement.id);
     if (!decision || decision.action === "maintain") continue;
     const type = moduleTypeFor(requirement, decision);
     groups.set(type, [...(groups.get(type) || []), requirement]);
   }
-  return [...groups.entries()].map(([type, requirements]) => {
-    const decisions = requirements.map((requirement) => decisionsByRequirement.get(requirement.id)).filter(Boolean) as RequirementDevelopmentDecision[];
-    const scope: Exclude<DevelopmentScope, "maintenance"> = decisions.some((decision) => decision.scope === "core")
-      ? "core"
-      : decisions.some((decision) => decision.scope === "enhancement")
-        ? "enhancement"
-        : "conditional";
+  return [...groups.entries()].map(([type, groupedRequirements]) => {
+    const decisions = groupedRequirements.map((requirement) => decisionsByRequirement.get(requirement.id)).filter(Boolean) as RequirementDevelopmentDecision[];
     return {
-      id: stableId("development-module", type, ...requirements.map((requirement) => requirement.id)),
+      id: stableId("development-module", type, ...groupedRequirements.map((requirement) => requirement.id)),
       title: moduleTitle(type),
       type,
-      scope,
-      objective: `Improve coverage of ${requirements.map((requirement) => requirement.label).join(", ")}.`,
-      requirementIds: requirements.map((requirement) => requirement.id),
-      resources: fallbackResources(type, requirements),
+      scope: moduleScope(decisions),
+      objective: type === "verification"
+        ? `Establish the current position before prescribing development for ${groupedRequirements.map((requirement) => requirement.label).join(", ")}.`
+        : `Improve coverage of ${groupedRequirements.map((requirement) => requirement.label).join(", ")}.`,
+      requirementIds: groupedRequirements.map((requirement) => requirement.id),
+      resources: fallbackResources(type, groupedRequirements),
       activities: defaultActivities(type, decisions),
-      output: moduleOutput(type, requirements),
-      assessmentCriteria: requirements.map((requirement) => requirement.successBar),
+      output: moduleOutput(type, groupedRequirements),
+      assessmentCriteria: groupedRequirements.map((requirement) => requirement.successBar),
     };
   });
 }
@@ -491,12 +499,12 @@ function fallbackMilestones(bucket: WorkstreamBucket, modules: DevelopmentModule
     access: [
       { label: "Relationship and access map defined", doneWhen: "The relevant relationship types and hiring routes are mapped to the target role families.", evidence: "A relationship and route map." },
       { label: "Relevant interactions established", doneWhen: "Substantive interactions or entry routes exist for the linked requirements.", evidence: "Relationship and access evidence." },
-      { label: "Market learning captured", doneWhen: "Insights from relationships and routes are recorded and linked back to the target model.", evidence: "Structured interaction notes and route updates." },
+      { label: "Market learning captured", doneWhen: "Insights from relationships and routes are recorded against the target requirements.", evidence: "Updated market and access evidence." },
     ],
     formal_gates: [
-      { label: "Formal gate verified", doneWhen: "The exact credential or eligibility requirement, scope, and accepted alternatives are confirmed.", evidence: "An evidence-backed gate assessment." },
-      { label: "Resolution route selected", doneWhen: "A proportionate route to resolve the confirmed condition is defined.", evidence: "A documented resolution route." },
-      { label: "Formal condition resolved", doneWhen: "The required evidence exists or the remaining constraint is explicitly documented.", evidence: "Credential or eligibility evidence." },
+      { label: "Formal conditions verified", doneWhen: "The exact credential or eligibility conditions and applicable contexts are confirmed.", evidence: "A verified formal-requirement decision." },
+      { label: "Resolution route selected", doneWhen: "The proportionate route or accepted alternative is documented.", evidence: "A selected credential or eligibility route." },
+      { label: "Formal gate resolved", doneWhen: "The condition is evidenced, completed, or explicitly documented as non-applicable.", evidence: "Reusable formal evidence." },
     ],
   };
   return labels[bucket].map((item, index) => ({
@@ -538,15 +546,9 @@ function buildFallbackWorkstreams(requirementModel: RequirementModel, decisions:
       modules,
       milestones: fallbackMilestones(bucket, modules),
       dependencyNotes: [],
-      completionStandard: `Every linked requirement is either evidenced at its success bar or has a documented reason it remains conditional or unresolved.`,
+      completionStandard: "Every linked requirement is evidenced at its success bar or has a documented reason it remains conditional or unresolved.",
     };
   });
-}
-
-function fallbackModuleType(requirements: TargetRequirement[], decisionsByRequirement: Map<string, RequirementDevelopmentDecision>): DevelopmentModuleType {
-  const requirement = requirements[0];
-  const decision = requirement ? decisionsByRequirement.get(requirement.id) : undefined;
-  return requirement && decision ? moduleTypeFor(requirement, decision) : "verification";
 }
 
 function sanitizeResource(raw: any): DevelopmentResource | null {
@@ -569,41 +571,42 @@ function sanitizeModule(
   requirementById: Map<string, TargetRequirement>,
   decisionsByRequirement: Map<string, RequirementDevelopmentDecision>,
 ): DevelopmentModule | null {
-  const requirementIds = uniqueStrings(raw?.requirementIds || []).filter((id) => workstreamRequirementIds.includes(id) && decisionsByRequirement.get(id)?.action !== "maintain");
+  const requirementIds = uniqueStrings(raw?.requirementIds)
+    .filter((id) => workstreamRequirementIds.includes(id) && decisionsByRequirement.get(id)?.action !== "maintain");
   if (!requirementIds.length) return null;
   const requirements = requirementIds.map((id) => requirementById.get(id)).filter(Boolean) as TargetRequirement[];
   const decisions = requirementIds.map((id) => decisionsByRequirement.get(id)).filter(Boolean) as RequirementDevelopmentDecision[];
-  const fallbackType = fallbackModuleType(requirements, decisionsByRequirement);
+  const fallbackType = requirements[0] && decisions[0] ? moduleTypeFor(requirements[0], decisions[0]) : "verification";
   const type = parseModuleType(raw?.type, fallbackType);
-  const fallbackScope: Exclude<DevelopmentScope, "maintenance"> = decisions.some((decision) => decision.scope === "core")
-    ? "core"
-    : decisions.some((decision) => decision.scope === "enhancement")
-      ? "enhancement"
-      : "conditional";
   const resources = (Array.isArray(raw?.resources) ? raw.resources : []).map(sanitizeResource).filter(Boolean) as DevelopmentResource[];
+  const criteria = uniqueStrings([
+    ...uniqueStrings(raw?.assessmentCriteria),
+    ...requirements.map((requirement) => requirement.successBar),
+  ]).slice(0, 10);
   return {
     id: stableId("development-module", raw?.title || type, ...requirementIds),
     title: compact(raw?.title) || moduleTitle(type),
     type,
-    scope: parseScope(raw?.scope, fallbackScope),
+    scope: parseScope(raw?.scope, moduleScope(decisions)),
     objective: compact(raw?.objective) || `Improve coverage of ${requirements.map((requirement) => requirement.label).join(", ")}.`,
     requirementIds,
     resources: resources.slice(0, 8),
-    activities: uniqueStrings(raw?.activities || []).slice(0, 8),
+    activities: uniqueStrings(raw?.activities).slice(0, 8),
     output: compact(raw?.output) || moduleOutput(type, requirements),
-    assessmentCriteria: uniqueStrings(raw?.assessmentCriteria || requirements.map((requirement) => requirement.successBar)).slice(0, 8),
+    assessmentCriteria: criteria,
   };
 }
 
 function sanitizeMilestone(raw: any, workstreamRequirementIds: string[], index: number): DevelopmentMilestone | null {
   const label = compact(raw?.label);
   if (!label) return null;
-  const requirementIds = uniqueStrings(raw?.requirementIds || []).filter((id) => workstreamRequirementIds.includes(id));
+  const suppliedIds = uniqueStrings(raw?.requirementIds).filter((id) => workstreamRequirementIds.includes(id));
+  const requirementIds = suppliedIds.length ? suppliedIds : workstreamRequirementIds;
   return {
     id: stableId("development-milestone", label, index, ...requirementIds),
     label,
     sequence: Number.isFinite(Number(raw?.sequence)) ? Math.max(1, Math.round(Number(raw.sequence))) : index + 1,
-    requirementIds: requirementIds.length ? requirementIds : workstreamRequirementIds,
+    requirementIds,
     doneWhen: compact(raw?.doneWhen) || "The milestone's linked requirements have observable evidence against their success bars.",
     evidenceCreated: compact(raw?.evidenceCreated) || "Reusable evidence linked to the target requirements.",
   };
@@ -614,7 +617,7 @@ function sanitizeWorkstream(
   requirementById: Map<string, TargetRequirement>,
   decisionsByRequirement: Map<string, RequirementDevelopmentDecision>,
 ): DevelopmentWorkstream | null {
-  const requirementIds = uniqueStrings(raw?.requirementIds || [])
+  const requirementIds = uniqueStrings(raw?.requirementIds)
     .filter((id) => requirementById.has(id) && decisionsByRequirement.get(id)?.action !== "maintain");
   if (!requirementIds.length) return null;
   const requirements = requirementIds.map((id) => requirementById.get(id)).filter(Boolean) as TargetRequirement[];
@@ -623,14 +626,32 @@ function sanitizeWorkstream(
     .filter(Boolean) as DevelopmentModule[];
   const coveredByModule = new Set(modules.flatMap((module) => module.requirementIds));
   const missingModuleRequirements = requirements.filter((requirement) => !coveredByModule.has(requirement.id));
-  if (missingModuleRequirements.length) {
-    modules.push(...fallbackModules(missingModuleRequirements, decisionsByRequirement));
-  }
+  if (missingModuleRequirements.length) modules.push(...fallbackModules(missingModuleRequirements, decisionsByRequirement));
+
   const milestones = (Array.isArray(raw?.milestones) ? raw.milestones : [])
     .map((milestone: any, index: number) => sanitizeMilestone(milestone, requirementIds, index))
     .filter(Boolean) as DevelopmentMilestone[];
+  const coveredByMilestone = new Set(milestones.flatMap((milestone) => milestone.requirementIds));
+  const missingMilestoneIds = requirementIds.filter((id) => !coveredByMilestone.has(id));
+  if (missingMilestoneIds.length) {
+    milestones.push({
+      id: stableId("development-milestone", raw?.title || "workstream", "coverage", ...missingMilestoneIds),
+      label: "Remaining requirement evidence created",
+      sequence: Math.max(0, ...milestones.map((milestone) => milestone.sequence)) + 1,
+      requirementIds: missingMilestoneIds,
+      doneWhen: "The remaining linked requirements have observable evidence against their success bars.",
+      evidenceCreated: "Reusable evidence linked to the previously uncovered requirements.",
+    });
+  }
+
   const bucket = bucketFor(requirements[0]?.category || "skill");
   const fallback = BUCKET_META[bucket];
+  const methods = uniqueStrings(raw?.methods)
+    .map(parseMethod)
+    .filter((method): method is DevelopmentMethod => Boolean(method));
+  const fallbackMethods = uniqueStrings(requirementIds.map((id) => methodFor(requirementById.get(id)!, decisionsByRequirement.get(id)!)))
+    .map(parseMethod)
+    .filter((method): method is DevelopmentMethod => Boolean(method));
   return {
     id: stableId("development-workstream", raw?.title || fallback.title, ...requirementIds),
     title: compact(raw?.title) || fallback.title,
@@ -639,13 +660,26 @@ function sanitizeWorkstream(
     scopeMix: uniqueStrings(requirementIds.map((id) => decisionsByRequirement.get(id)?.scope || "core"))
       .filter((scope): scope is Exclude<DevelopmentScope, "maintenance"> => scope === "core" || scope === "enhancement" || scope === "conditional"),
     requirementIds,
-    methods: uniqueStrings(raw?.methods || requirementIds.map((id) => methodFor(requirementById.get(id)!, decisionsByRequirement.get(id)!)))
-      .map(parseMethod)
-      .filter((method): method is DevelopmentMethod => Boolean(method)),
+    methods: methods.length ? methods : fallbackMethods,
     modules,
-    milestones: (milestones.length ? milestones : fallbackMilestones(bucket, modules)).sort((left, right) => left.sequence - right.sequence).slice(0, 6),
-    dependencyNotes: uniqueStrings(raw?.dependencyNotes || []).slice(0, 6),
-    completionStandard: compact(raw?.completionStandard) || `Every linked requirement is evidenced at its success bar or explicitly documented as conditional or unresolved.`,
+    milestones: (milestones.length ? milestones : fallbackMilestones(bucket, modules)).sort((left, right) => left.sequence - right.sequence).slice(0, 8),
+    dependencyNotes: uniqueStrings(raw?.dependencyNotes).slice(0, 6),
+    completionStandard: compact(raw?.completionStandard) || "Every linked requirement is evidenced at its success bar or explicitly documented as conditional or unresolved.",
+  };
+}
+
+function filterFallbackWorkstream(workstream: DevelopmentWorkstream, requirementIds: string[]): DevelopmentWorkstream {
+  const allowed = new Set(requirementIds);
+  return {
+    ...workstream,
+    id: stableId("development-workstream", workstream.title, ...requirementIds),
+    requirementIds,
+    modules: workstream.modules
+      .map((module) => ({ ...module, requirementIds: module.requirementIds.filter((id) => allowed.has(id)) }))
+      .filter((module) => module.requirementIds.length > 0),
+    milestones: workstream.milestones
+      .map((milestone) => ({ ...milestone, requirementIds: milestone.requirementIds.filter((id) => allowed.has(id)) }))
+      .filter((milestone) => milestone.requirementIds.length > 0),
   };
 }
 
@@ -664,20 +698,17 @@ function mergeMissingRequirements(
     if (!requirementIds.length) continue;
     const existing = result.find((workstream) => normalize(workstream.title) === normalize(fallbackWorkstream.title));
     if (existing) {
-      const moduleIds = new Set(existing.modules.flatMap((module) => module.requirementIds));
+      const addition = filterFallbackWorkstream(fallbackWorkstream, requirementIds);
       existing.requirementIds = uniqueStrings([...existing.requirementIds, ...requirementIds]);
-      existing.modules.push(...fallbackWorkstream.modules.filter((module) => module.requirementIds.some((id) => requirementIds.includes(id) && !moduleIds.has(id))));
-      existing.milestones = existing.milestones.length ? existing.milestones : fallbackWorkstream.milestones;
-      existing.methods = uniqueStrings([...existing.methods, ...fallbackWorkstream.methods]).map(parseMethod).filter((method): method is DevelopmentMethod => Boolean(method));
-      existing.scopeMix = uniqueStrings([...existing.scopeMix, ...fallbackWorkstream.scopeMix])
+      existing.modules.push(...addition.modules);
+      existing.milestones = existing.milestones.length ? existing.milestones : addition.milestones;
+      existing.methods = uniqueStrings([...existing.methods, ...addition.methods])
+        .map(parseMethod)
+        .filter((method): method is DevelopmentMethod => Boolean(method));
+      existing.scopeMix = uniqueStrings([...existing.scopeMix, ...addition.scopeMix])
         .filter((scope): scope is Exclude<DevelopmentScope, "maintenance"> => scope === "core" || scope === "enhancement" || scope === "conditional");
     } else {
-      result.push({
-        ...fallbackWorkstream,
-        requirementIds,
-        modules: fallbackWorkstream.modules.map((module) => ({ ...module, requirementIds: module.requirementIds.filter((id) => requirementIds.includes(id)) })).filter((module) => module.requirementIds.length > 0),
-        milestones: fallbackWorkstream.milestones.map((milestone) => ({ ...milestone, requirementIds: milestone.requirementIds.filter((id) => requirementIds.includes(id)) })),
-      });
+      result.push(filterFallbackWorkstream(fallbackWorkstream, requirementIds));
     }
     requirementIds.forEach((id) => missing.delete(id));
   }
@@ -685,11 +716,37 @@ function mergeMissingRequirements(
 }
 
 function coverageFingerprint(coverageModel: CoverageModel): string {
-  const value = coverageModel.coverage
-    .map((coverage) => `${coverage.requirementId}:${coverage.status}:${coverage.confidence}:${coverage.evidenceItemIds.slice().sort().join(",")}`)
-    .sort()
-    .join("|");
-  return stableHash(`${coverageModel.requirementModelFingerprint}|${coverageModel.userEvidenceFingerprint}|${value}`);
+  const policyVersion = Number((coverageModel as CoverageModel & { qualityPolicyVersion?: number }).qualityPolicyVersion || 0);
+  const coverage = coverageModel.coverage
+    .map((item) => ({
+      requirementId: item.requirementId,
+      status: item.status,
+      confidence: item.confidence,
+      evidenceItemIds: [...item.evidenceItemIds].sort(),
+      evidenceStillNeeded: [...item.evidenceStillNeeded].sort(),
+      successBarAssessment: item.successBarAssessment,
+      reason: item.reason,
+      sourceBasis: item.sourceBasis,
+    }))
+    .sort((left, right) => left.requirementId.localeCompare(right.requirementId));
+  const quality = {
+    status: coverageModel.quality.status,
+    assessedRequirementCount: coverageModel.quality.assessedRequirementCount,
+    unknownRequirementCount: coverageModel.quality.unknownRequirementCount,
+    citedEvidenceCount: coverageModel.quality.citedEvidenceCount,
+    directEvidenceCount: coverageModel.quality.directEvidenceCount,
+    assessmentCoverage: coverageModel.quality.assessmentCoverage,
+    caveats: [...coverageModel.quality.caveats].sort(),
+  };
+  return stableHash(JSON.stringify({
+    version: coverageModel.version,
+    requirementModelVersion: coverageModel.requirementModelVersion,
+    requirementModelFingerprint: coverageModel.requirementModelFingerprint,
+    userEvidenceFingerprint: coverageModel.userEvidenceFingerprint,
+    qualityPolicyVersion: policyVersion,
+    coverage,
+    quality,
+  }));
 }
 
 function buildQuality(
@@ -697,7 +754,7 @@ function buildQuality(
   coverageModel: CoverageModel,
   decisions: RequirementDevelopmentDecision[],
   workstreams: DevelopmentWorkstream[],
-  qualityNotes: string[],
+  qualityNotes: unknown,
 ): DevelopmentPlanModel["quality"] {
   const activeDecisions = decisions.filter((decision) => decision.action !== "maintain");
   const assigned = new Set(workstreams.flatMap((workstream) => workstream.requirementIds));
@@ -723,7 +780,7 @@ function buildQuality(
     conditionalRequirementCount: decisions.filter((decision) => decision.scope === "conditional").length,
     enhancementRequirementCount: decisions.filter((decision) => decision.scope === "enhancement").length,
     unassignedRequirementIds,
-    caveats,
+    caveats: uniqueStrings(caveats),
   };
 }
 
@@ -737,7 +794,7 @@ export function buildDevelopmentPlanModel(
   const fallback = buildFallbackWorkstreams(requirementModel, decisions);
   const requirementById = new Map(requirementModel.requirements.map((requirement) => [requirement.id, requirement]));
   const decisionsByRequirement = new Map(decisions.map((decision) => [decision.requirementId, decision]));
-  const rawWorkstreams = Array.isArray(synthesis?.workstreams) ? synthesis!.workstreams! : [];
+  const rawWorkstreams = Array.isArray(synthesis?.workstreams) ? synthesis.workstreams : [];
   const synthesized = rawWorkstreams
     .map((workstream) => sanitizeWorkstream(workstream, requirementById, decisionsByRequirement))
     .filter(Boolean) as DevelopmentWorkstream[];
@@ -747,19 +804,19 @@ export function buildDevelopmentPlanModel(
   const maintenanceRequirementIds = decisions.filter((decision) => decision.action === "maintain").map((decision) => decision.requirementId);
   const planSummary = compact(synthesis?.planSummary) || (workstreams.length
     ? `A ${workstreams.length}-workstream plan to build, strengthen, demonstrate, or verify the requirements not yet fully evidenced for ${requirementModel.target.label}.`
-    : `The available evidence currently meets the target requirements; the development plan is focused on maintaining and reusing existing evidence.`);
+    : "The available evidence currently meets the target requirements; the development plan is focused on maintaining and reusing existing evidence.");
   return {
     mode: "development_plan_model",
     version: DEVELOPMENT_PLAN_MODEL_VERSION,
     targetLabel: requirementModel.target.label,
-    requirementModelFingerprint: requirementModel.sourceFingerprint,
+    requirementModelFingerprint: coverageModel.requirementModelFingerprint || requirementModel.sourceFingerprint,
     coverageFingerprint: coverageFingerprint(coverageModel),
     sourceContextFingerprint,
     planSummary,
     decisions,
     workstreams,
     maintenanceRequirementIds,
-    quality: buildQuality(requirementModel, coverageModel, decisions, workstreams, synthesis?.qualityNotes || []),
+    quality: buildQuality(requirementModel, coverageModel, decisions, workstreams, synthesis?.qualityNotes),
     generatedAt: Date.now(),
   };
 }

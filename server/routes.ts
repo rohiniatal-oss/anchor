@@ -781,7 +781,8 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   });
 
   app.post("/api/career-tracks/:id/intelligence/refresh", async (req, res) => {
-    const intel = await refreshTrackIntelligence(Number(req.params.id));
+    const deepResearch = req.body?.deepResearch === true;
+    const intel = await refreshTrackIntelligence(Number(req.params.id), deepResearch);
     if (!intel) return res.status(404).json({ error: "Not found" });
     res.json(intel);
   });

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aggregateTrackIntelligence } from "./trackIntelligence";
+import { aggregateTrackIntelligence, type RequirementBrief } from "./trackIntelligence";
 
 const makeTrack = (overrides: any = {}) => ({
   id: 1,
@@ -104,4 +104,48 @@ test("aggregateTrackIntelligence with no role models uses track defaults", () =>
   assert.ok(intel.roleFamilies.includes("advisory"));
   assert.equal(intel.roleModelsAnalyzed, 0);
   assert.equal(intel.recurringCapabilities.length, 0);
+  assert.deepEqual(intel.requirementBriefs, []);
+});
+
+test("aggregateTrackIntelligence preserves existing requirementBriefs from cache", () => {
+  const existingBrief: RequirementBrief = {
+    requirement: "Stakeholder translation",
+    dimension: "capability",
+    frequency: 2,
+    sourceRoles: ["AI Governance Advisor at DeepMind"],
+    whatThisMeansHere: "Translating between technical AI teams and policy stakeholders",
+    resources: [{ title: "Test resource", url: "https://example.com", whatItCovers: "basics", depth: "foundational" }],
+    coverageAreas: ["stakeholder management basics"],
+    uncoveredAreas: ["cross-jurisdiction context"],
+    existingEvidence: [],
+    gapAssessment: "No evidence of stakeholder translation in regulatory context",
+    actions: [{ action: "Draft a stakeholder map", producesEvidence: "Stakeholder map document", dependsOn: [], timeEstimate: "2 hours" }],
+    proofArtifact: "Stakeholder translation brief for AI governance context",
+    researchedAt: Date.now(),
+  };
+
+  const track = makeTrack({
+    trackIntelligence: JSON.stringify({
+      thesis: "test",
+      roleFamilies: ["advisory"],
+      targetOrganizations: [],
+      recurringCapabilities: [],
+      recurringKnowledgeNeeds: [],
+      recurringEvidenceBar: [],
+      recurringNarrativeChallenges: [],
+      requirementBriefs: [existingBrief],
+      learningPriorities: [],
+      proofAssetsToBuild: [],
+      networkingTargets: [],
+      activeOpportunityCount: 0,
+      roleModelsAnalyzed: 0,
+      lastUpdated: Date.now(),
+    }),
+  });
+
+  const intel = aggregateTrackIntelligence(track, [], [], [], [], []);
+  assert.equal(intel.requirementBriefs.length, 1);
+  assert.equal(intel.requirementBriefs[0].requirement, "Stakeholder translation");
+  assert.equal(intel.requirementBriefs[0].resources.length, 1);
+  assert.equal(intel.requirementBriefs[0].actions.length, 1);
 });

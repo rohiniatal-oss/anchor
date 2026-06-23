@@ -71,7 +71,7 @@ function stableId(prefix: string, ...parts: unknown[]): string {
 }
 
 function uniqueNumbers(values: Array<number | null | undefined>): number[] {
-  return [...new Set(values.filter((value): value is number => Number.isFinite(value)))];
+  return [...new Set(values.filter((value): value is number => typeof value === "number" && Number.isFinite(value)))];
 }
 
 function cvChunks(value: string, maxChars = 1050, maxChunks = 12): string[] {
@@ -261,7 +261,10 @@ export async function buildUserEvidenceCorpus(targetTrackId: number): Promise<Us
   })));
 
   for (const { contact, interactions } of contactInteractionGroups) {
-    const relationshipActive = ["warm", "strong"].includes(normalize(contact.relationshipStrength)) || normalize(contact.status) === "replied";
+    const relationshipStrength = normalize(contact.relationshipStrength);
+    const relationshipWarm = ["warm", "strong"].includes(relationshipStrength);
+    const hasReply = normalize(contact.status) === "replied";
+    const relationshipActive = relationshipWarm || hasReply;
     if (relationshipActive) {
       const label = compact(contact.name || contact.who || contact.targetRole || contact.targetOrg) || "Relevant professional relationship";
       items.push({
@@ -276,7 +279,7 @@ export async function buildUserEvidenceCorpus(targetTrackId: number): Promise<Us
           contact.why,
         ].filter(Boolean).join(". ")),
         sourceUrl: compact(contact.linkedinUrl),
-        strength: "direct",
+        strength: relationshipWarm ? "direct" : "supporting",
         state: "active",
         usableForCoverage: true,
         sourceEntityType: "contact",
@@ -328,8 +331,8 @@ export async function buildUserEvidenceCorpus(targetTrackId: number): Promise<Us
   if (!usable.some((item) => item.sourceType === "relationship" || item.sourceType === "interaction")) caveats.push("No active relationship or interaction evidence was found for network and access requirements.");
   if (selectedItems.some((item) => !item.usableForCoverage)) caveats.push("In-progress and planned items are visible to the assessor but are not treated as proven capability.");
 
-  const fingerprintInput = selectedItems
-    .map((item) => `${item.id}|${item.strength}|${item.state}|${item.usableForCoverage}|${item.detail}|${item.sourceUrl}`)
+  const fingerprintInput = usable
+    .map((item) => `${item.id}|${item.strength}|${item.state}|${item.detail}|${item.sourceUrl}`)
     .sort()
     .join("||");
 

@@ -17,12 +17,50 @@ function readDomain(body: any): string {
   return String(body?.domain || body?.focus || body?.area || body?.query || "").trim();
 }
 
+function buildBriefFromIntelligence(track: any, intelligence: Record<string, any>) {
+  return {
+    domain: intelligence.sourceDomain || track.name,
+    trackName: track.name,
+    trackThesis: intelligence.thesis || track.whyItFits || "",
+    targetRoleArchetype: track.targetRoleArchetype || track.name,
+    summary: intelligence.researchSummary || track.description || "",
+    careerHypothesis: intelligence.careerHypothesis || null,
+    searchPlan: intelligence.searchPlan || null,
+    evidencePack: intelligence.evidencePack || [],
+    researchEvidence: intelligence.researchEvidence || [],
+    pathHypotheses: intelligence.pathHypotheses || [],
+    trackHypotheses: intelligence.trackHypotheses || [],
+    sectorMap: intelligence.sectorMap || [],
+    roleShapes: intelligence.roleShapes || [],
+    requirementMap: intelligence.requirementMap || { capabilities: [], knowledge: [], evidence: [], narrative: [] },
+    requirementGraph: intelligence.requirementGraph || [],
+    careerCapitalPortfolio: intelligence.careerCapitalPortfolio || [],
+    gapPortfolio: intelligence.gapPortfolio || [],
+    interventionRecommendations: intelligence.interventionRecommendations || [],
+    developmentPlans: intelligence.developmentPlans || [],
+    evidenceLoops: intelligence.evidenceLoops || [],
+    fitGapMatrix: intelligence.fitGapMatrix || null,
+    gapAnalysis: intelligence.gapAnalysis || { strengths: [], gaps: [], biggestGap: "" },
+    learningPaths: (intelligence.learningPaths || intelligence.learningPriorities || []).map((item: any) => typeof item === "string"
+      ? { topic: item, why: "Priority from the research plan", resourceType: "resource", suggestedResource: "", output: `A reusable note or artifact on ${item}` }
+      : item),
+    networkArchetypes: (intelligence.networkArchetypes || intelligence.networkingTargets || []).map((item: any) => typeof item === "string"
+      ? { who: item, why: "Target from the research plan", searchTip: item }
+      : item),
+    proofAssetIdeas: (intelligence.proofAssetIdeas || intelligence.proofAssetsToBuild || []).map((item: any) => typeof item === "string"
+      ? { title: item, why: "Proof asset from the research plan", format: "analysis", firstStep: "Draft the outline" }
+      : item),
+    plan: intelligence.trackPlan || { horizon: "", logic: "", lanes: [] },
+  };
+}
+
 async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
-  // Research creates a dossier first: explicit search plan, evidence pack,
-  // synthesis, organization workspace, and track plan. Object creation remains opt-in.
+  // Research creates the career intelligence model first: evidence, path
+  // hypotheses, career capital, gaps, interventions, and development plans.
+  // Execution objects remain opt-in.
   const result = await runStructuredTrackResearch(domain, { materialize: req.body?.materialize === true });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
@@ -33,7 +71,15 @@ async function handleTrackResearch(req: any, res: any) {
     searchPlan: result.brief.searchPlan,
     evidencePack: result.brief.evidencePack,
     researchEvidence: result.brief.researchEvidence,
+    careerHypothesis: result.brief.careerHypothesis,
+    pathHypotheses: result.brief.pathHypotheses,
     trackHypotheses: result.brief.trackHypotheses,
+    requirementGraph: result.brief.requirementGraph,
+    careerCapitalPortfolio: result.brief.careerCapitalPortfolio,
+    gapPortfolio: result.brief.gapPortfolio,
+    interventionRecommendations: result.brief.interventionRecommendations,
+    developmentPlans: result.brief.developmentPlans,
+    evidenceLoops: result.brief.evidenceLoops,
     fitGapMatrix: result.brief.fitGapMatrix,
     organizedWorkspace: result.organizedWorkspace,
     materialized: result.materialized,
@@ -60,7 +106,15 @@ export function registerTrackResearchRoutes(app: Express) {
       searchPlan: intelligence?.searchPlan || null,
       evidencePack: intelligence?.evidencePack || [],
       researchEvidence: intelligence?.researchEvidence || [],
+      careerHypothesis: intelligence?.careerHypothesis || null,
+      pathHypotheses: intelligence?.pathHypotheses || [],
       trackHypotheses: intelligence?.trackHypotheses || [],
+      requirementGraph: intelligence?.requirementGraph || [],
+      careerCapitalPortfolio: intelligence?.careerCapitalPortfolio || [],
+      gapPortfolio: intelligence?.gapPortfolio || [],
+      interventionRecommendations: intelligence?.interventionRecommendations || [],
+      developmentPlans: intelligence?.developmentPlans || [],
+      evidenceLoops: intelligence?.evidenceLoops || [],
       fitGapMatrix: intelligence?.fitGapMatrix || null,
       sectorMap: intelligence?.sectorMap || [],
       roleShapes: intelligence?.roleShapes || [],
@@ -79,32 +133,7 @@ export function registerTrackResearchRoutes(app: Express) {
     if (!intelligence?.roleShapes || !intelligence?.learningPriorities) {
       return res.status(400).json({ error: "No research plan is stored for this track" });
     }
-    const brief = {
-      domain: intelligence.sourceDomain || track.name,
-      trackName: track.name,
-      trackThesis: intelligence.thesis || track.whyItFits || "",
-      targetRoleArchetype: track.targetRoleArchetype || track.name,
-      summary: intelligence.researchSummary || track.description || "",
-      searchPlan: intelligence.searchPlan || null,
-      evidencePack: intelligence.evidencePack || [],
-      researchEvidence: intelligence.researchEvidence || [],
-      trackHypotheses: intelligence.trackHypotheses || [],
-      sectorMap: intelligence.sectorMap || [],
-      roleShapes: intelligence.roleShapes || [],
-      requirementMap: intelligence.requirementMap || { capabilities: [], knowledge: [], evidence: [], narrative: [] },
-      fitGapMatrix: intelligence.fitGapMatrix || null,
-      gapAnalysis: intelligence.gapAnalysis || { strengths: [], gaps: [], biggestGap: "" },
-      learningPaths: (intelligence.learningPaths || intelligence.learningPriorities || []).map((item: any) => typeof item === "string"
-        ? { topic: item, why: "Priority from the research plan", resourceType: "resource", suggestedResource: "", output: `A reusable note or artifact on ${item}` }
-        : item),
-      networkArchetypes: (intelligence.networkArchetypes || intelligence.networkingTargets || []).map((item: any) => typeof item === "string"
-        ? { who: item, why: "Target from the research plan", searchTip: item }
-        : item),
-      proofAssetIdeas: (intelligence.proofAssetIdeas || intelligence.proofAssetsToBuild || []).map((item: any) => typeof item === "string"
-        ? { title: item, why: "Proof asset from the research plan", format: "analysis", firstStep: "Draft the outline" }
-        : item),
-      plan: intelligence.trackPlan || { horizon: "", logic: "", lanes: [] },
-    };
+    const brief = buildBriefFromIntelligence(track, intelligence);
     const materialized = await materializeTrackResearch(track, brief as any);
     const nextIntelligence = {
       ...intelligence,

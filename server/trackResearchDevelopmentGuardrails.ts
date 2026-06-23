@@ -38,10 +38,11 @@ function stableId(prefix: string, ...parts: unknown[]): string {
   return `${prefix}-${stableHash(parts.map(normalize).filter(Boolean).join("|") || prefix)}`;
 }
 
-function uniqueStrings(values: unknown[]): string[] {
+function uniqueStrings(values: unknown): string[] {
+  const items = Array.isArray(values) ? values : [];
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const value of values.map(compact).filter(Boolean)) {
+  for (const value of items.map(compact).filter(Boolean)) {
     const key = normalize(value);
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -251,8 +252,31 @@ function bucketTitle(category: RequirementCategory): string {
   return "Resolve credentials and eligibility";
 }
 
+function rebuiltWorkstreamCopy(requirements: TargetRequirement[], decisions: RequirementDevelopmentDecision[]) {
+  const labels = requirements.map((requirement) => requirement.label).join(", ");
+  const verificationOnly = decisions.every((decision) => decision.action === "verify");
+  const categoryTitles = uniqueStrings(requirements.map((requirement) => bucketTitle(requirement.category)));
+  return {
+    title: verificationOnly
+      ? "Verify current evidence before development"
+      : categoryTitles.length === 1
+        ? categoryTitles[0]
+        : "Develop and evidence target readiness",
+    objective: verificationOnly
+      ? `Verify current evidence before prescribing development for ${labels}.`
+      : `Create sufficient coverage across ${labels}.`,
+    rationale: verificationOnly
+      ? "Coverage certainty is insufficient, so verification must precede development recommendations."
+      : "The deterministic requirement decisions override the synthesized intervention framing for this workstream.",
+    completionStandard: verificationOnly
+      ? "Every linked requirement has enough relevant evidence for a defensible coverage decision."
+      : "Every linked requirement is verified or evidenced against its success bar.",
+  };
+}
+
 function fallbackWorkstream(requirementIds: string[], requirementById: Map<string, TargetRequirement>, decisionById: Map<string, RequirementDevelopmentDecision>): DevelopmentWorkstream {
   const requirements = requirementIds.map((id) => requirementById.get(id)).filter(Boolean) as TargetRequirement[];
+  const decisions = requirementIds.map((id) => decisionById.get(id)).filter(Boolean) as RequirementDevelopmentDecision[];
   const typeGroups = new Map<DevelopmentModuleType, string[]>();
   for (const requirement of requirements) {
     const decision = decisionById.get(requirement.id)!;
@@ -260,27 +284,28 @@ function fallbackWorkstream(requirementIds: string[], requirementById: Map<strin
     typeGroups.set(type, [...(typeGroups.get(type) || []), requirement.id]);
   }
   const modules = [...typeGroups.entries()].map(([type, ids]) => fallbackModule(type, ids, requirementById, decisionById));
-  const title = bucketTitle(requirements[0]?.category || "skill");
+  const copy = rebuiltWorkstreamCopy(requirements, decisions);
   const methods = uniqueStrings(requirements.map((requirement) => expectedMethod(requirement, decisionById.get(requirement.id)!.action))) as DevelopmentMethod[];
   return {
-    id: stableId("development-workstream", title, ...requirementIds),
-    title,
-    objective: `Create sufficient coverage across ${requirements.map((requirement) => requirement.label).join(", ")}.`,
-    rationale: "These requirements share a development method or output and can be addressed coherently rather than through duplicate plans.",
+    id: stableId("development-workstream", copy.title, ...requirementIds),
+    ...copy,
     scopeMix: uniqueStrings(requirementIds.map((id) => decisionById.get(id)?.scope || "core")) as Array<Exclude<DevelopmentScope, "maintenance">>,
     requirementIds,
     methods,
     modules,
     milestones: [{
-      id: stableId("development-milestone", title, ...requirementIds),
-      label: "Requirement coverage created",
+      id: stableId("development-milestone", copy.title, ...requirementIds),
+      label: decisions.every((decision) => decision.action === "verify") ? "Coverage evidence verified" : "Requirement coverage created",
       sequence: 1,
       requirementIds,
-      doneWhen: "The linked requirements have observable evidence against their success bars.",
-      evidenceCreated: "Reusable evidence linked to the target requirements.",
+      doneWhen: decisions.every((decision) => decision.action === "verify")
+        ? "The linked requirements have enough relevant evidence for a defensible coverage decision."
+        : "The linked requirements have observable evidence against their success bars.",
+      evidenceCreated: decisions.every((decision) => decision.action === "verify")
+        ? "A defensible coverage decision for each linked requirement."
+        : "Reusable evidence linked to the target requirements.",
     }],
     dependencyNotes: [],
-    completionStandard: "Every linked requirement is evidenced at its success bar or explicitly documented as conditional or unresolved.",
   };
 }
 
@@ -325,11 +350,23 @@ export function hardenDevelopmentPlan(model: DevelopmentPlanModel, requirementMo
     }
 
     const requirements = requirementIds.map((id) => requirementById.get(id)).filter(Boolean) as TargetRequirement[];
+    const requirementDecisions = requirementIds.map((id) => decisionById.get(id)).filter(Boolean) as RequirementDevelopmentDecision[];
+    const hardenedMethods = uniqueStrings(requirements.map((requirement) => expectedMethod(requirement, decisionById.get(requirement.id)!.action))) as DevelopmentMethod[];
+    const originalMethods = uniqueStrings(workstream.methods);
+    const originalModuleTypes = uniqueStrings(workstream.modules.map((module) => module.type));
+    const hardenedModuleTypes = uniqueStrings(modules.map((module) => module.type));
+    const interventionChanged = originalMethods.length !== hardenedMethods.length
+      || hardenedMethods.some((method) => !originalMethods.includes(method))
+      || originalModuleTypes.length !== hardenedModuleTypes.length
+      || hardenedModuleTypes.some((type) => !originalModuleTypes.includes(type));
+    const copy = interventionChanged ? rebuiltWorkstreamCopy(requirements, requirementDecisions) : null;
+
     return {
       ...workstream,
+      ...(copy || {}),
       requirementIds,
       scopeMix: uniqueStrings(requirementIds.map((id) => decisionById.get(id)?.scope || "core")) as Array<Exclude<DevelopmentScope, "maintenance">>,
-      methods: uniqueStrings(requirements.map((requirement) => expectedMethod(requirement, decisionById.get(requirement.id)!.action))) as DevelopmentMethod[],
+      methods: hardenedMethods,
       modules,
       milestones: milestones.sort((left, right) => left.sequence - right.sequence),
     };
@@ -350,7 +387,7 @@ export function hardenDevelopmentPlan(model: DevelopmentPlanModel, requirementMo
   const maintenanceRequirementIds = decisions.filter((decision) => decision.action === "maintain").map((decision) => decision.requirementId);
   const coreRequirementIds = decisions.filter((decision) => decision.scope === "core").map((decision) => decision.requirementId);
   const coveredCoreRequirementCount = coreRequirementIds.filter((id) => maintenanceRequirementIds.includes(id) || finalAssigned.has(id)).length;
-  const caveats = uniqueStrings(model.quality.caveats.filter((caveat) => !/unassigned|uncovered|more than six workstreams/i.test(caveat)));
+  const caveats = uniqueStrings(model.quality.caveats).filter((caveat) => !/unassigned|uncovered|more than six workstreams/i.test(caveat));
   if (coverageModel.quality.status === "provisional") caveats.push("The coverage assessment is provisional, so verification must precede expensive development decisions.");
   if (workstreams.length > 6) caveats.push("The plan contains more than six workstreams and should be consolidated before task decomposition.");
   if (finalUnassigned.length) caveats.push(`${finalUnassigned.length} requirement${finalUnassigned.length === 1 ? " remains" : "s remain"} unassigned.`);
@@ -375,7 +412,7 @@ export function hardenDevelopmentPlan(model: DevelopmentPlanModel, requirementMo
       conditionalRequirementCount: decisions.filter((decision) => decision.scope === "conditional").length,
       enhancementRequirementCount: decisions.filter((decision) => decision.scope === "enhancement").length,
       unassignedRequirementIds: finalUnassigned,
-      caveats,
+      caveats: uniqueStrings(caveats),
     },
   };
 }

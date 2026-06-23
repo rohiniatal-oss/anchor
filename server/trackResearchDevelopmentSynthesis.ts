@@ -24,6 +24,96 @@ function asArray<T = any>(value: T[] | undefined | null): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+function safeArray(value: unknown): any[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function record(value: unknown): Record<string, any> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, any>
+    : null;
+}
+
+/**
+ * JSON can be syntactically valid while violating the requested array shapes.
+ * Coerce every LLM-owned collection at the trust boundary so downstream
+ * deterministic fallback logic never receives strings or objects where arrays
+ * are expected.
+ */
+export function sanitizeDevelopmentPlanSynthesis(value: unknown): DevelopmentPlanSynthesis | null {
+  const raw = record(value);
+  if (!raw) return null;
+  const workstreams = safeArray(raw.workstreams).map((entry) => {
+    const workstream = record(entry);
+    if (!workstream) return null;
+    const modules = safeArray(workstream.modules).map((moduleValue) => {
+      const module = record(moduleValue);
+      if (!module) return null;
+      const resources = safeArray(module.resources).map((resourceValue) => {
+        const resource = record(resourceValue);
+        if (!resource) return null;
+        return {
+          title: compact(resource.title),
+          type: compact(resource.type),
+          url: compact(resource.url),
+          why: compact(resource.why),
+          provenance: compact(resource.provenance),
+        };
+      }).filter(Boolean);
+      return {
+        title: compact(module.title),
+        type: compact(module.type),
+        scope: compact(module.scope),
+        objective: compact(module.objective),
+        requirementIds: safeArray(module.requirementIds),
+        resources,
+        activities: safeArray(module.activities),
+        output: compact(module.output),
+        assessmentCriteria: safeArray(module.assessmentCriteria),
+      };
+    }).filter(Boolean);
+    const milestones = safeArray(workstream.milestones).map((milestoneValue) => {
+      const milestone = record(milestoneValue);
+      if (!milestone) return null;
+      return {
+        label: compact(milestone.label),
+        sequence: milestone.sequence,
+        requirementIds: safeArray(milestone.requirementIds),
+        doneWhen: compact(milestone.doneWhen),
+        evidenceCreated: compact(milestone.evidenceCreated),
+      };
+    }).filter(Boolean);
+    return {
+      title: compact(workstream.title),
+      objective: compact(workstream.objective),
+      rationale: compact(workstream.rationale),
+      requirementIds: safeArray(workstream.requirementIds),
+      methods: safeArray(workstream.methods),
+      modules,
+      milestones,
+      dependencyNotes: safeArray(workstream.dependencyNotes),
+      completionStandard: compact(workstream.completionStandard),
+    };
+  }).filter(Boolean) as NonNullable<DevelopmentPlanSynthesis["workstreams"]>;
+
+  return {
+    planSummary: compact(raw.planSummary),
+    workstreams,
+    qualityNotes: safeArray(raw.qualityNotes).map(compact).filter(Boolean),
+  };
+}
+
+function fallbackWithCaveat(draft: DevelopmentPlanModel, caveat: string): DevelopmentPlanModel {
+  return {
+    ...draft,
+    quality: {
+      ...draft.quality,
+      status: draft.quality.status === "strong" ? "usable" : draft.quality.status,
+      caveats: [...new Set([...draft.quality.caveats, caveat])],
+    },
+  };
+}
+
 function candidateContext(context: DevelopmentPlanContext) {
   return {
     candidateLearning: context.candidateLearning.slice(0, 18),
@@ -166,13 +256,20 @@ Planning rules:
 - Sequence milestones within a workstream by logical dependency. Do not prioritize workstreams against each other.
 - Do not introduce any requirement, organization, credential, or factual claim unsupported by the supplied model or verified web research.`;
 
-  const synthesis = await llmJSON<DevelopmentPlanSynthesis>(prompt, {
-    model: MODEL_PRIMARY,
-    tools: [{ type: "web_search_preview" }],
-    retries: 1,
-  });
-  if (!synthesis) return draft;
-  return buildDevelopmentPlanModel(requirementModel, coverageModel, context.sourceContextFingerprint, synthesis);
+  try {
+    const raw = await llmJSON<unknown>(prompt, {
+      model: MODEL_PRIMARY,
+      tools: [{ type: "web_search_preview" }],
+      retries: 1,
+    });
+    const synthesis = sanitizeDevelopmentPlanSynthesis(raw);
+    if (!synthesis?.workstreams?.length) {
+      return fallbackWithCaveat(draft, "Anchor used the deterministic development plan because the synthesized structure was malformed or empty.");
+    }
+    return buildDevelopmentPlanModel(requirementModel, coverageModel, context.sourceContextFingerprint, synthesis);
+  } catch {
+    return fallbackWithCaveat(draft, "Anchor used the deterministic development plan because synthesis was unavailable.");
+  }
 }
 
 export function developmentPlanContextFromIntelligence(
@@ -233,3 +330,7 @@ export function developmentPlanContextFromIntelligence(
     existingAssets,
   };
 }
+
+export const developmentSynthesisInternals = {
+  sanitizeDevelopmentPlanSynthesis,
+};

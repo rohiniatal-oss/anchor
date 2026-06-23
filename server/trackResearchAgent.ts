@@ -4,11 +4,12 @@ import { storage } from "./storage";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 
 export type TrackPlanLaneName =
-  | "landscape"
-  | "roles"
-  | "capability"
-  | "network"
-  | "proof"
+  | "market_map"
+  | "role_map"
+  | "fit_map"
+  | "capability_build"
+  | "proof_build"
+  | "network_map"
   | "experiments"
   | "positioning";
 
@@ -27,12 +28,36 @@ export interface TrackPlanLane {
   workstreams: TrackPlanWorkstream[];
 }
 
+export interface TrackResearchEvidence {
+  claim: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  usedFor: "market_map" | "role_map" | "requirements" | "learning" | "network" | "proof";
+  confidence: "high" | "medium" | "low";
+}
+
+export interface TrackHypothesis {
+  hypothesis: string;
+  whyItMightBeTrue: string;
+  howToTest: string;
+  disconfirmingSignal: string;
+  priority: number;
+}
+
+export interface FitGapDimension {
+  strengths: string[];
+  gaps: string[];
+  evidenceNeeded: string[];
+}
+
 export interface TrackResearchBrief {
   domain: string;
   trackName: string;
   trackThesis: string;
   targetRoleArchetype: string;
   summary: string;
+  researchEvidence: TrackResearchEvidence[];
+  trackHypotheses: TrackHypothesis[];
   sectorMap: Array<{
     sector: string;
     description: string;
@@ -49,6 +74,13 @@ export interface TrackResearchBrief {
     knowledge: string[];
     evidence: string[];
     narrative: string[];
+  };
+  fitGapMatrix: {
+    technicalOrDomainKnowledge: FitGapDimension;
+    roleSpecificSkills: FitGapDimension;
+    sectorCredibility: FitGapDimension;
+    networkAccess: FitGapDimension;
+    narrativeFit: FitGapDimension;
   };
   gapAnalysis: {
     strengths: string[];
@@ -142,6 +174,14 @@ function item(text: string, frequency = 1) {
   };
 }
 
+function fitGap(raw: FitGapDimension | undefined | null): FitGapDimension {
+  return {
+    strengths: uniqueStrings(asArray(raw?.strengths)),
+    gaps: uniqueStrings(asArray(raw?.gaps)),
+    evidenceNeeded: uniqueStrings(asArray(raw?.evidenceNeeded)),
+  };
+}
+
 function validateBrief(domain: string, raw: TrackResearchBrief | null): TrackResearchBrief | null {
   if (!raw || !compact(raw.summary)) return null;
   const trackName = compact(raw.trackName) || compact(raw.domain) || domain;
@@ -151,6 +191,20 @@ function validateBrief(domain: string, raw: TrackResearchBrief | null): TrackRes
     trackThesis: compact(raw.trackThesis) || compact(raw.summary),
     targetRoleArchetype: compact(raw.targetRoleArchetype) || trackName,
     summary: compact(raw.summary),
+    researchEvidence: asArray(raw.researchEvidence).map((e) => ({
+      claim: compact(e.claim),
+      sourceTitle: compact(e.sourceTitle),
+      sourceUrl: compact(e.sourceUrl),
+      usedFor: e.usedFor,
+      confidence: e.confidence || "medium",
+    })).filter((e) => e.claim && e.sourceTitle),
+    trackHypotheses: asArray(raw.trackHypotheses).map((h) => ({
+      hypothesis: compact(h.hypothesis),
+      whyItMightBeTrue: compact(h.whyItMightBeTrue),
+      howToTest: compact(h.howToTest),
+      disconfirmingSignal: compact(h.disconfirmingSignal),
+      priority: Number.isFinite(Number(h.priority)) ? Number(h.priority) : 3,
+    })).filter((h) => h.hypothesis && h.howToTest),
     sectorMap: asArray(raw.sectorMap).map((s) => ({
       sector: compact(s.sector),
       description: compact(s.description),
@@ -167,6 +221,13 @@ function validateBrief(domain: string, raw: TrackResearchBrief | null): TrackRes
       knowledge: uniqueStrings(asArray(raw.requirementMap?.knowledge)),
       evidence: uniqueStrings(asArray(raw.requirementMap?.evidence)),
       narrative: uniqueStrings(asArray(raw.requirementMap?.narrative)),
+    },
+    fitGapMatrix: {
+      technicalOrDomainKnowledge: fitGap(raw.fitGapMatrix?.technicalOrDomainKnowledge),
+      roleSpecificSkills: fitGap(raw.fitGapMatrix?.roleSpecificSkills),
+      sectorCredibility: fitGap(raw.fitGapMatrix?.sectorCredibility),
+      networkAccess: fitGap(raw.fitGapMatrix?.networkAccess),
+      narrativeFit: fitGap(raw.fitGapMatrix?.narrativeFit),
     },
     gapAnalysis: {
       strengths: uniqueStrings(asArray(raw.gapAnalysis?.strengths)),
@@ -221,7 +282,7 @@ async function researchFocusArea(domain: string): Promise<TrackResearchBrief | n
   const contacts = await storage.getContacts();
   const networks = uniqueStrings(contacts.map((c) => c.sourceNetwork).filter(Boolean)).slice(0, 12);
 
-  const prompt = `You are the research and strategy layer for Anchor, a career operating system. The user has entered an area of focus. Your job is not to pick one next move. Your job is to research the space and create a cohesive, structured, multi-lane plan that Anchor can execute over time.
+  const prompt = `You are the research and strategy layer for Anchor, a career operating system. The user has entered an area of focus. Your job is to research the space, understand fit, form hypotheses, and create a cohesive track plan. Do not reduce the answer to one next move.
 
 ${contextText}
 
@@ -231,13 +292,26 @@ ${existingCompanies.length ? `COMPANIES ALREADY SAVED: ${existingCompanies.join(
 ${networks.length ? `KNOWN NETWORKS: ${networks.join(", ")}` : ""}
 ${cv ? `CV EXCERPT:\n${cv.slice(0, 2600)}` : "NO CV PROVIDED - be explicit where fit/gap confidence is lower."}
 
-Search the web for current, real organisations, role titles, resources, and market language. Then return ONLY valid JSON with this exact shape:
+Research process to follow:
+1. Gather market evidence: sectors, organisations, role titles, requirements, resources, and current market language.
+2. Synthesize the market map and role map.
+3. Compare the user's background against the market requirement map.
+4. Form testable hypotheses about the most promising sub-paths.
+5. Build a MECE multi-lane plan. The plan should preserve the larger strategy; Today will later choose the executable slice.
+
+Return ONLY valid JSON with this exact shape:
 {
   "domain": "${domain}",
   "trackName": "short track name",
   "trackThesis": "why this track could make sense for this person, with caveats",
   "targetRoleArchetype": "the broad role family this track points toward",
   "summary": "2-3 sentences on what this area means across the market now",
+  "researchEvidence": [
+    { "claim": "specific claim used in the analysis", "sourceTitle": "source title", "sourceUrl": "source URL if available", "usedFor": "market_map|role_map|requirements|learning|network|proof", "confidence": "high|medium|low" }
+  ],
+  "trackHypotheses": [
+    { "hypothesis": "testable belief about the best sub-path", "whyItMightBeTrue": "why it fits the user or market", "howToTest": "specific experiment or evidence to collect", "disconfirmingSignal": "what would make Anchor deprioritize this path", "priority": 1 }
+  ],
   "sectorMap": [{ "sector": "sector name", "description": "what work looks like here", "exampleOrgs": ["real org 1", "real org 2", "real org 3"] }],
   "roleShapes": [{ "title": "realistic job title", "what": "what this person actually does", "typicalOrgs": ["real org 1", "real org 2"], "seniority": "junior|mid|senior|mixed" }],
   "requirementMap": {
@@ -245,6 +319,13 @@ Search the web for current, real organisations, role titles, resources, and mark
     "knowledge": ["domain knowledge repeatedly required"],
     "evidence": ["proof hiring managers expect"],
     "narrative": ["fit or positioning questions the user must answer"]
+  },
+  "fitGapMatrix": {
+    "technicalOrDomainKnowledge": { "strengths": [], "gaps": [], "evidenceNeeded": [] },
+    "roleSpecificSkills": { "strengths": [], "gaps": [], "evidenceNeeded": [] },
+    "sectorCredibility": { "strengths": [], "gaps": [], "evidenceNeeded": [] },
+    "networkAccess": { "strengths": [], "gaps": [], "evidenceNeeded": [] },
+    "narrativeFit": { "strengths": [], "gaps": [], "evidenceNeeded": [] }
   },
   "gapAnalysis": {
     "strengths": ["specific transferable strengths from the user's background"],
@@ -259,22 +340,23 @@ Search the web for current, real organisations, role titles, resources, and mark
     "logic": "how the lanes work together as a coherent strategy",
     "lanes": [
       {
-        "lane": "landscape|roles|capability|network|proof|experiments|positioning",
+        "lane": "market_map|role_map|fit_map|capability_build|proof_build|network_map|experiments|positioning",
         "objective": "what this lane must accomplish",
         "whyNow": "why this lane belongs in the first plan",
-        "workstreams": [{ "title": "workstream name", "action": "concrete action Anchor can seed", "doneWhen": "observable completion bar", "evidence": "what this creates or reveals", "priority": 1 }]
+        "workstreams": [{ "title": "workstream name", "action": "concrete action Anchor can seed later", "doneWhen": "observable completion bar", "evidence": "what this creates or reveals", "priority": 1 }]
       }
     ]
   }
 }
 
 Rules:
-- The plan must be multifaceted, not a single next move.
-- Include 5-7 lanes, covering at minimum roles, capability, network, proof, and positioning.
-- Each lane should have 1-3 workstreams. Workstreams must be specific enough to become tasks later.
-- The plan should explain how to understand the role market, close gaps, build proof, meet people, and test whether the track is worth pursuing.
+- The plan must be multifaceted and MECE, not a single next move.
+- Include 6-8 lanes. It must cover market_map, role_map, fit_map, capability_build, proof_build, network_map, and positioning.
+- Each lane should have 1-3 workstreams. Workstreams must be specific enough to become tasks later, but this research step should remain the strategic plan layer.
+- Include at least 3 track hypotheses. They should be testable, not conclusions pretending to be facts.
+- Include at least 5 researchEvidence items. Use real sources where possible.
 - Do not give generic advice like "research AI strategy". Anchor is doing the research.
-- Do not invent organisations, resources, or role titles. Use real market examples.`;
+- Do not invent organisations, resources, role titles, or source URLs.`;
 
   const brief = await llmJSON<TrackResearchBrief>(prompt, {
     model: MODEL_PRIMARY,
@@ -342,9 +424,12 @@ async function persistTrackPlan(track: CareerTrack, brief: TrackResearchBrief): 
     roleModelsAnalyzed: Number(previous.roleModelsAnalyzed || 0),
     sourceDomain: brief.domain,
     researchSummary: brief.summary,
+    researchEvidence: brief.researchEvidence,
+    trackHypotheses: brief.trackHypotheses,
     sectorMap: brief.sectorMap,
     roleShapes: brief.roleShapes,
     requirementMap: brief.requirementMap,
+    fitGapMatrix: brief.fitGapMatrix,
     gapAnalysis: brief.gapAnalysis,
     trackPlan: brief.plan,
     researchedAt: Date.now(),
@@ -451,6 +536,6 @@ export async function runTrackResearch(domain: string, options: { materialize?: 
   if (!brief) return null;
   const initialTrack = await ensureTrackForBrief(brief);
   const track = await persistTrackPlan(initialTrack, brief);
-  const materialized = options.materialize === false ? null : await materializeTrackResearch(track, brief);
+  const materialized = options.materialize === true ? await materializeTrackResearch(track, brief) : null;
   return { track, brief, materialized };
 }

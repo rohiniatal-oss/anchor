@@ -195,6 +195,13 @@ function chipTone(value?: string) {
   return "bg-slate-100 text-slate-700";
 }
 
+function scoreTone(value?: number) {
+  if (typeof value !== "number") return "text-muted-foreground";
+  if (value >= 70) return "text-emerald-700";
+  if (value <= 40) return "text-amber-700";
+  return "text-primary";
+}
+
 function CountChip({ label, count }: { label: string; count: number }) {
   return <span className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">{count} {label}</span>;
 }
@@ -202,6 +209,18 @@ function CountChip({ label, count }: { label: string; count: number }) {
 function ScoreChip({ label, value }: { label: string; value?: number }) {
   if (typeof value !== "number") return null;
   return <span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{label} {value}</span>;
+}
+
+function PriorityCard({ label, title, detail, meta }: { label: string; title?: string; detail?: string; meta?: string }) {
+  if (!title && !detail) return null;
+  return (
+    <div className="rounded-lg border border-card-border bg-card p-2">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      {title && <p className="mt-1 text-xs font-semibold leading-snug text-foreground">{title}</p>}
+      {detail && <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{detail}</p>}
+      {meta && <p className="mt-1 text-[11px] leading-snug text-primary">{meta}</p>}
+    </div>
+  );
 }
 
 export function TrackResearchReview({ trackId }: { trackId?: number }) {
@@ -235,6 +254,17 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
   const fitGap = data.fitGapMatrix || {};
   const workspace = data.organizedWorkspace || null;
   const assessmentQueue = workspace?.assessmentQueue || workspace?.priorityQueue || [];
+  const topPath = [...paths].sort((a, b) => (b.confidence || 0) - (a.confidence || 0))[0];
+  const highestGap = [...gaps].sort((a, b) => {
+    const rank = { high: 3, medium: 2, low: 1 } as Record<string, number>;
+    return (rank[b.severity || "medium"] || 2) - (rank[a.severity || "medium"] || 2);
+  })[0];
+  const topIntervention = [...interventions].sort((a, b) => (a.priority || 99) - (b.priority || 99))[0];
+  const reviewChecks = [
+    ...list(data.careerHypothesis?.coreUncertainties).map((item) => ({ title: item, detail: "Anchor cannot infer this confidently yet." })),
+    ...paths.filter((path) => (path.preferenceFit || 0) <= 50 || (path.lifestyleFit || 0) <= 50).map((path) => ({ title: path.title, detail: "Preference or lifestyle fit is uncertain, so treat this as a hypothesis rather than a decision." })),
+    ...evidenceLoops.map((loop) => ({ title: loop.evidenceToCollect, detail: "This is evidence Anchor should collect before confidence changes." })),
+  ].slice(0, 3);
 
   async function activatePlan() {
     if (!trackId || activating) return;
@@ -250,9 +280,9 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
         ...GOAL_SPINE_QUERY_KEYS,
       ]);
       const m = result?.materialized || {};
-      setActivationSummary(`Created ${m.jobIds?.length || 0} role examples, ${m.learnIds?.length || 0} knowledge resources, ${m.contactIds?.length || 0} network targets, and ${m.hustleIds?.length || 0} proof assets. Anchor saved the activation inventory back to this track.`);
+      setActivationSummary(`Drafted ${m.jobIds?.length || 0} role examples, ${m.learnIds?.length || 0} knowledge resources, ${m.contactIds?.length || 0} network targets, and ${m.hustleIds?.length || 0} proof assets. Selection comes next, so these are not today's tasks.`);
     } catch (e: any) {
-      setActivationSummary(e?.message || "Could not activate the plan yet.");
+      setActivationSummary(e?.message || "Could not draft objects yet.");
     } finally {
       setActivating(false);
     }
@@ -262,13 +292,50 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
     <div className="mt-3 rounded-xl border border-card-border bg-background/60 p-3" data-testid="track-research-review">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-semibold text-foreground">Review the career intelligence model</p>
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Anchor has organized this as hypotheses, path fit, career capital, gaps, interventions, and living development plans.</p>
+          <p className="text-xs font-semibold text-foreground">Review Anchor's inferred career model</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Anchor has done the first pass. Only check the few assumptions that would materially change the direction.</p>
         </div>
-        <Button size="sm" onClick={activatePlan} disabled={activating} data-testid="button-activate-track-plan">
+        <Button size="sm" variant="outline" onClick={activatePlan} disabled={activating} data-testid="button-activate-track-plan">
           {activating ? <Sparkles className="mr-1 h-4 w-4 animate-pulse" /> : <CheckCircle2 className="mr-1 h-4 w-4" />}
-          {activating ? "Creating" : "Create objects"}
+          {activating ? "Drafting" : "Draft for selection"}
         </Button>
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <PriorityCard
+          label="Anchor's best current path"
+          title={topPath?.title || data.careerHypothesis?.normalizedTitle || data.track.name}
+          detail={topPath?.whyPromising || data.careerHypothesis?.whyAttractive}
+          meta={typeof topPath?.confidence === "number" ? `Confidence ${topPath.confidence}` : undefined}
+        />
+        <PriorityCard
+          label="Highest leverage gap"
+          title={highestGap?.gap || data.gapAnalysis?.biggestGap}
+          detail={highestGap?.whyItMatters}
+          meta={highestGap?.capitalType ? `${highestGap.capitalType} gap` : undefined}
+        />
+        <PriorityCard
+          label="Likely best intervention"
+          title={topIntervention?.recommendation}
+          detail={topIntervention?.whyThis}
+          meta={topIntervention?.interventionType}
+        />
+      </div>
+
+      <div className="mt-3 rounded-lg border border-primary/15 bg-primary/5 p-2">
+        <p className="text-xs font-medium text-primary">Minimal review needed</p>
+        {reviewChecks.length > 0 ? (
+          <div className="mt-1.5 space-y-1.5">
+            {reviewChecks.map((check, index) => (
+              <div key={`${check.title}-${index}`} className="rounded-md bg-background/70 px-2 py-1.5">
+                <p className="text-[11px] font-medium leading-snug text-foreground">{check.title}</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{check.detail}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">No user input is needed right now unless something looks obviously wrong.</p>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -364,7 +431,7 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
                 <div key={path.title} className="rounded-lg bg-muted/25 p-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <p className="text-xs font-medium">{path.title}</p>
-                    <ScoreChip label="confidence" value={path.confidence} />
+                    <span className={`rounded-full bg-background px-1.5 py-0.5 text-[10px] ${scoreTone(path.confidence)}`}>confidence {path.confidence ?? "unknown"}</span>
                     <ScoreChip label="capability" value={path.capabilityFit} />
                     <ScoreChip label="access" value={path.accessFit} />
                     <ScoreChip label="preference" value={path.preferenceFit} />

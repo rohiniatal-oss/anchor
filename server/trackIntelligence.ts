@@ -404,12 +404,17 @@ export function aggregateTrackIntelligence(
   const trackHustles = hustles.filter((h) => h.proofAssetForTrack === track.id);
   const trackWins = wins.filter((w) => w.trackId === track.id);
 
-  let intel = { ...existing };
+  let intel: TrackIntelligence = {
+    ...emptyTrackIntelligence(track),
+    thesis: existing.thesis,
+    requirementBriefs: existing.requirementBriefs || [],
+  };
   intel.activeOpportunityCount = trackJobs.length;
   intel.lastUpdated = Date.now();
 
-  const organizations = new Set(intel.targetOrganizations);
-  const roleFamilies = new Set(intel.roleFamilies);
+  const organizations = new Set<string>();
+  const roleFamilies = new Set<string>();
+  if (track.targetRoleArchetype) roleFamilies.add(track.targetRoleArchetype);
   let roleModelsAnalyzed = 0;
 
   for (const job of trackJobs) {

@@ -83,6 +83,28 @@ test("aggregateTrackIntelligence builds intelligence from role models", () => {
   assert.equal(euAiAct!.frequency, 2);
 });
 
+test("frequency does not inflate on re-aggregation from cached state", () => {
+  const jobs = [
+    makeJob(1, { title: "AI Governance Advisor", company: "DeepMind", roleModel: makeRoleModel() }),
+    makeJob(2, { title: "AI Policy Lead", company: "Google", roleModel: makeRoleModel({
+      capabilityRequirements: [
+        { text: "Stakeholder translation", explicit: true },
+        { text: "Policy analysis and drafting", explicit: true },
+      ],
+    }) }),
+  ] as any[];
+
+  const firstPass = aggregateTrackIntelligence(makeTrack(), jobs, [], [], [], []);
+  const stakeholder1 = firstPass.recurringCapabilities.find((c) => /stakeholder/i.test(c.text));
+  assert.equal(stakeholder1!.frequency, 2);
+
+  const cachedTrack = makeTrack({ trackIntelligence: JSON.stringify(firstPass) });
+  const secondPass = aggregateTrackIntelligence(cachedTrack, jobs, [], [], [], []);
+  const stakeholder2 = secondPass.recurringCapabilities.find((c) => /stakeholder/i.test(c.text));
+  assert.equal(stakeholder2!.frequency, 2, "frequency must not inflate on re-aggregation");
+  assert.equal(stakeholder2!.sourceRoles.length, 2);
+});
+
 test("aggregateTrackIntelligence includes learning and proof assets", () => {
   const track = makeTrack();
   const learn = [

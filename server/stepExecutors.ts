@@ -52,17 +52,17 @@ function buildUserActionFallback(step: { text: string; outputSpec?: string }, ct
   const t = spec.toLowerCase();
   let action = step.text;
   if (/role|job|posting|position/.test(t)) {
-    action = `Search for "${ctx.taskTitle.slice(0, 50)}" on LinkedIn or a job board and note what you find`;
+    action = `Search for "${ctx.taskTitle.slice(0, 50)}" on LinkedIn or a job board and save one real posting with the link and JD text`;
   } else if (/company|org/.test(t)) {
-    action = `Look up the company online and note what they do and why it matters`;
+    action = `Open the company site or saved posting and copy the one public fact this task needs`;
   } else if (/contact|person|network|reach out/.test(t)) {
-    action = `Think of one person who could help with "${ctx.taskTitle.slice(0, 40)}" and add them`;
+    action = `Save one real person connected to "${ctx.taskTitle.slice(0, 40)}" with their role, organisation, and why they might help`;
   } else if (/require|skill|gap|qualification/.test(t)) {
-    action = `Open a real posting for this role type and list the top 3 requirements`;
+    action = `Save the role posting or JD text so Anchor can extract the strongest requirements`;
   } else if (/write|draft|memo|brief/.test(t)) {
     action = `Open a blank doc and write the first paragraph — even rough is fine`;
   } else if (/read|review|article|paper/.test(t)) {
-    action = `Find the source and read just the first section — write one takeaway`;
+    action = `Open the source and save the one claim, example, or phrase this task can reuse`;
   } else if (/schedule|book|calendar/.test(t)) {
     action = `Open your calendar and block time for this now`;
   }

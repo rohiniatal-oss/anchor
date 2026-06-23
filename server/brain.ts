@@ -1924,10 +1924,10 @@ export function planDay(
       } else if (!hasContacts) {
         const companyHint = topCompanies.length > 0
           ? `someone at ${topCompanies.join(" or ")}` : "someone in this space";
-        title = `Think of one person — ${companyHint} — you could reach out to`;
+        title = `Save one real person ${companyHint} you could ask for a 15-minute steer`;
         firstStep = topCompanies.length > 0
           ? `Check LinkedIn for anyone you know at ${topCompanies.join(" or ")}. A second-degree connection, a former colleague who moved there, an alumni contact — anyone real.`
-          : `Think about who you already know in ${archetype}. A former colleague, someone from a past project, a classmate who went this direction. Add one real person.`;
+          : `Check your contacts, alumni network, or LinkedIn for one real ${archetype} person. Add their role, organisation, and why they are relevant.`;
         why = `You have ${trackJobs.length} ${archetype} role${trackJobs.length > 1 ? "s" : ""} saved${topCompanies[0] ? ` (${topCompanies.join(", ")})` : ""} but nobody to talk to about them. One real conversation changes how you prep and apply.`;
         summary = `You've got roles saved for ${track.name} — now add one person you could actually message.`;
         doneWhen = "One contact added who you'd realistically message";

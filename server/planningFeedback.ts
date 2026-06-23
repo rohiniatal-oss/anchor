@@ -282,7 +282,7 @@ export function deterministicUnstickStep(task: Task) {
   if (/review|research|explore|investigate/.test(t)) return "Open the first source and copy the one fact this task needs";
   if (/find|search|identify/.test(t)) return "Search for the first real example and save it";
   if (/compare|evaluate/.test(t)) return "Open two options side by side and let Anchor suggest the comparison criteria";
-  if (/list|map|audit/.test(t)) return "Write the first three items that come to mind";
+  if (/list|map|audit/.test(t)) return "Save the object to inspect, then let Anchor turn it into a starter checklist";
   if (/plan|outline|design/.test(t)) return "Name the output Anchor should help produce: draft, list, decision, message, or plan";
   return `Open "${(task.title || "this task").slice(0, 40).trim()}" and save the first concrete object Anchor can use`;
 }

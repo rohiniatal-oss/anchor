@@ -553,7 +553,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
                 </ul>
               )}
               {steps.length > 1 && !current.output && (
-                <p className="text-[11px] text-muted-foreground mt-1.5">Finish this step - the next step will appear</p>
+                <p className="text-[11px] text-muted-foreground mt-1.5">Mark done once the named object is saved or changed; Anchor will move you to the next step.</p>
               )}
             </div>
           </div>

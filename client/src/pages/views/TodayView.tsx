@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { mutateAndInvalidate } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import { todayKey } from "@/lib/utils";
 import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { useCareerTracks } from "@/hooks/useCareerTracks";
@@ -264,6 +265,12 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
     if (!ctx) return;
     await breakdown(ctx);
   }
+  function updatePinnedStepsInCache(nextSteps: Step[]) {
+    const stepsJson = JSON.stringify(nextSteps);
+    queryClient.setQueryData<Task[]>(["/api/tasks"], (current = []) =>
+      current.map((task) => task.id === pinned.id ? { ...task, steps: stepsJson } : task),
+    );
+  }
   async function checkStep() {
     if (currentIdx < 0) return;
     if (current?.executor === "system" && current?.output && !dispositionPending) {
@@ -273,11 +280,17 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
     const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true, completedAt: new Date().toISOString() } : s));
     setDispositionPending(false);
     setLocalSteps(next);
+    updatePinnedStepsInCache(next);
     try {
       const updated = await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
-      if (typeof updated?.steps === "string") setLocalSteps(parseSteps(updated.steps));
+      if (typeof updated?.steps === "string") {
+        const savedSteps = parseSteps(updated.steps);
+        setLocalSteps(savedSteps);
+        updatePinnedStepsInCache(savedSteps);
+      }
     } catch {
       setLocalSteps(steps);
+      updatePinnedStepsInCache(steps);
       toast({ title: "Couldn't save that step", description: "Try again in a moment." });
       return;
     }
@@ -292,7 +305,11 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
     setDispositionPending(false);
     try {
       const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/step-disposition`, { stepIndex: currentIdx, disposition }, ["/api/tasks"]);
-      if (typeof res?.steps === "string") setLocalSteps(parseSteps(res.steps));
+      if (typeof res?.steps === "string") {
+        const savedSteps = parseSteps(res.steps);
+        setLocalSteps(savedSteps);
+        updatePinnedStepsInCache(savedSteps);
+      }
       if (res?.allStepsDone) {
         await finishTask();
       } else {

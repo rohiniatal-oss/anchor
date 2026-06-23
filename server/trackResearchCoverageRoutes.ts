@@ -82,7 +82,7 @@ export type RequirementCoverageResult = {
   refreshed: boolean;
 };
 
-export async function ensureRequirementCoverage(trackId: number, force = false) {
+async function computeRequirementCoverage(trackId: number, force: boolean) {
   const track = await storage.getCareerTrack(trackId);
   if (!track) return null;
   const intelligence = parseJsonObject(track.trackIntelligence);
@@ -126,6 +126,24 @@ export async function ensureRequirementCoverage(trackId: number, force = false) 
     coverageModel,
     refreshed: true,
   } as const;
+}
+
+type CoverageResult = Awaited<ReturnType<typeof computeRequirementCoverage>>;
+const coverageInFlight = new Map<number, Promise<CoverageResult>>();
+
+export async function ensureRequirementCoverage(trackId: number, force = false): Promise<CoverageResult> {
+  if (!force) {
+    const active = coverageInFlight.get(trackId);
+    if (active) return active;
+  }
+
+  const promise = computeRequirementCoverage(trackId, force);
+  coverageInFlight.set(trackId, promise);
+  try {
+    return await promise;
+  } finally {
+    if (coverageInFlight.get(trackId) === promise) coverageInFlight.delete(trackId);
+  }
 }
 
 export function registerTrackResearchCoverageRoutes(app: Express) {

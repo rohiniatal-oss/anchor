@@ -22,5 +22,42 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify
-        run: npm run verify
+      - name: TypeScript check
+        run: npm run check
+
+      - name: Development plan model tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentPlan.test.ts
+
+      - name: Development plan guardrail tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentGuardrails.test.ts
+
+      - name: Development plan fingerprint tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentFingerprint.test.ts
+
+      - name: Development plan presentation tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentPresentation.test.ts
+
+      - name: Development plan synthesis boundary tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentSynthesis.test.ts
+
+      - name: Full unit test suite
+        if: always()
+        run: |
+          set +e
+          npm test > /tmp/anchor-tests.log 2>&1
+          status=$?
+          tail -n 120 /tmp/anchor-tests.log
+          exit $status
+
+      - name: CSS source audit
+        if: always()
+        run: npm run audit:css-sources
+
+      - name: Production build
+        if: always()
+        run: npm run build

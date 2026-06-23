@@ -17,9 +17,9 @@ function requirement(
   return {
     id,
     key: `${category}:${id}`,
-    label: id,
+    label: id.replace(/-/g, " "),
     aliases: [],
-    definition: `${id} for the target role.`,
+    definition: `${id.replace(/-/g, " ")} for the target role.`,
     group: category === "knowledge" || category === "skill"
       ? "perform_work"
       : category === "network" || category === "access" || category === "eligibility"
@@ -75,8 +75,8 @@ function evidence(
   return {
     id,
     sourceType,
-    label: id,
-    detail: `${id} relevant evidence detail`,
+    label: "Geopolitical strategy evidence",
+    detail: "Applied geopolitical strategy in a relevant professional context.",
     sourceUrl: "",
     strength: "supporting",
     state: "observed",
@@ -174,11 +174,20 @@ test("the exact requirement fingerprint changes when context changes", () => {
 });
 
 test("multiple CV declarations cannot by themselves prove job-ready skill", () => {
-  const req = requirement("client-writing", "skill");
+  const req = requirement("client-writing", "skill", "Produces a client-ready geopolitical brief.");
   const requirements = requirementModel([req]);
   const items = [
-    evidence("cv-1", "cv", { strength: "declared" }),
-    evidence("cv-2", "cv", { strength: "declared", sourceEntityId: 2 }),
+    evidence("cv-1", "cv", {
+      label: "Client writing experience",
+      detail: "Produced geopolitical client writing for senior decision-makers.",
+      strength: "declared",
+    }),
+    evidence("cv-2", "cv", {
+      label: "Geopolitical brief experience",
+      detail: "Drafted client-ready geopolitical briefs in a strategy role.",
+      strength: "declared",
+      sourceEntityId: 2,
+    }),
   ];
   const initial = coverageModel(requirements, items, [{ requirementId: req.id, status: "proven", evidenceItemIds: items.map((item) => item.id) }]);
   const result = applyCoverageQualityPolicy(requirements, corpus(items), initial);
@@ -189,9 +198,11 @@ test("multiple CV declarations cannot by themselves prove job-ready skill", () =
 });
 
 test("a verified applied output can preserve proven skill coverage", () => {
-  const req = requirement("client-writing", "skill");
+  const req = requirement("client-writing", "skill", "Produces a client-ready geopolitical brief.");
   const requirements = requirementModel([req]);
   const item = evidence("output-1", "learning_output", {
+    label: "Client-ready geopolitical brief",
+    detail: "Published a concise geopolitical brief for senior decision-makers.",
     strength: "verified",
     state: "published",
     sourceUrl: "https://example.com/brief",
@@ -202,10 +213,50 @@ test("a verified applied output can preserve proven skill coverage", () => {
   assert.equal(result.coverage[0].status, "proven");
 });
 
+test("same-track evidence still requires relevance to the specific requirement", () => {
+  const req = requirement("published-country-risk-analysis", "evidence", "Has an inspectable country-risk analysis.");
+  const requirements = requirementModel([req]);
+  const unrelated = evidence("output-2", "learning_output", {
+    label: "Stakeholder workshop facilitation guide",
+    detail: "Published a workshop guide on facilitation and meeting design.",
+    strength: "verified",
+    state: "published",
+    sourceUrl: "https://example.com/workshop",
+    trackIds: [1],
+  });
+  const initial = coverageModel(requirements, [unrelated], [{ requirementId: req.id, status: "proven", evidenceItemIds: [unrelated.id] }]);
+  const result = applyCoverageQualityPolicy(requirements, corpus([unrelated]), initial);
+
+  assert.equal(result.coverage[0].status, "unknown");
+  assert.deepEqual(result.coverage[0].evidenceItemIds, []);
+});
+
+test("topically relevant same-track evidence remains usable", () => {
+  const req = requirement("published-country-risk-analysis", "evidence", "Has an inspectable country-risk analysis.");
+  const requirements = requirementModel([req]);
+  const related = evidence("output-3", "learning_output", {
+    label: "Published country risk analysis",
+    detail: "Published an inspectable geopolitical country-risk analysis and scenario brief.",
+    strength: "verified",
+    state: "published",
+    sourceUrl: "https://example.com/country-risk",
+    trackIds: [1],
+  });
+  const initial = coverageModel(requirements, [related], [{ requirementId: req.id, status: "proven", evidenceItemIds: [related.id] }]);
+  const result = applyCoverageQualityPolicy(requirements, corpus([related]), initial);
+
+  assert.equal(result.coverage[0].status, "proven");
+  assert.deepEqual(result.coverage[0].evidenceItemIds, [related.id]);
+});
+
 test("one relationship record is too thin to call a network requirement unproven", () => {
   const req = requirement("practitioner-network", "network");
   const requirements = requirementModel([req]);
-  const item = evidence("relationship-1", "relationship", { strength: "direct" });
+  const item = evidence("relationship-1", "relationship", {
+    label: "Political risk practitioner relationship",
+    detail: "Active relationship with a political risk practitioner in geopolitical strategy.",
+    strength: "direct",
+  });
   const initial = coverageModel(requirements, [], [{ requirementId: req.id, status: "unproven" }]);
   const result = applyCoverageQualityPolicy(requirements, corpus([item]), initial);
 
@@ -216,7 +267,11 @@ test("one relationship record is too thin to call a network requirement unproven
 test("a broad relationship corpus can support an unproven network judgement", () => {
   const req = requirement("practitioner-network", "network");
   const requirements = requirementModel([req]);
-  const items = [1, 2, 3].map((id) => evidence(`relationship-${id}`, "relationship", { sourceEntityId: id }));
+  const items = [1, 2, 3].map((id) => evidence(`relationship-${id}`, "relationship", {
+    label: `Political risk practitioner ${id}`,
+    detail: `Relevant geopolitical strategy practitioner relationship ${id}.`,
+    sourceEntityId: id,
+  }));
   const initial = coverageModel(requirements, [], [{ requirementId: req.id, status: "unproven" }]);
   const result = applyCoverageQualityPolicy(requirements, corpus(items), initial);
 

@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "./storage";
 import { runStructuredTrackResearch } from "./trackResearchMethod";
 import { materializeTrackResearch } from "./trackResearchAgent";
+import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -119,18 +120,35 @@ function buildBriefFromIntelligence(track: any, intelligence: Record<string, any
   };
 }
 
+function deriveCareerArchitecture(track: any, intelligence: Record<string, any> | null) {
+  if (!hasStoredResearch(intelligence)) return null;
+  if (intelligence.careerArchitecture?.stages?.length) return intelligence.careerArchitecture;
+  const brief = buildBriefFromIntelligence(track, intelligence);
+  return buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
+}
+
 async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
   // Research creates the career intelligence model first: evidence, path
   // hypotheses, career capital, gaps, interventions, and development plans.
-  // Execution objects remain opt-in.
-  const result = await runStructuredTrackResearch(domain, { materialize: req.body?.materialize === true });
+  // Execution objects remain opt-in and are now filtered by automatic architecture.
+  const result = await runStructuredTrackResearch(domain, { materialize: false });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
+  const architecture = buildCareerArchitecture(result.track, result.brief, result.organizedWorkspace);
+  const currentIntelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
+  const nextIntelligence = {
+    ...currentIntelligence,
+    careerArchitecture: architecture,
+    automaticSelection: architecture.automaticSelection,
+    lastUpdated: Date.now(),
+  };
+  const updatedTrack = await storage.updateCareerTrack(result.track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
+
   res.json({
-    track: result.track,
+    track: updatedTrack || result.track,
     brief: result.brief,
     plan: result.brief.plan,
     searchPlan: result.brief.searchPlan,
@@ -147,7 +165,9 @@ async function handleTrackResearch(req: any, res: any) {
     evidenceLoops: result.brief.evidenceLoops,
     fitGapMatrix: result.brief.fitGapMatrix,
     organizedWorkspace: result.organizedWorkspace,
-    materialized: result.materialized,
+    careerArchitecture: architecture,
+    automaticSelection: architecture.automaticSelection,
+    materialized: null,
   });
 }
 
@@ -164,6 +184,7 @@ export function registerTrackResearchRoutes(app: Express) {
     const track = await storage.getCareerTrack(id);
     if (!track) return res.status(404).json({ error: "Track not found" });
     const intelligence = parseJsonObject(track.trackIntelligence || "");
+    const careerArchitecture = deriveCareerArchitecture(track, intelligence);
     res.json({
       track,
       intelligence,
@@ -185,6 +206,8 @@ export function registerTrackResearchRoutes(app: Express) {
       roleShapes: intelligence?.roleShapes || [],
       gapAnalysis: intelligence?.gapAnalysis || null,
       organizedWorkspace: intelligence?.organizedWorkspace || null,
+      careerArchitecture,
+      automaticSelection: careerArchitecture?.automaticSelection || intelligence?.automaticSelection || null,
       activationInventory: intelligence?.activationInventory || null,
     });
   });
@@ -199,14 +222,18 @@ export function registerTrackResearchRoutes(app: Express) {
       return res.status(400).json({ error: "No career intelligence model is stored for this track" });
     }
     const brief = buildBriefFromIntelligence(track, intelligence);
-    const materialized = await materializeTrackResearch(track, brief as any);
+    const careerArchitecture = deriveCareerArchitecture(track, intelligence) || buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
+    const activationBrief = applyAutomaticActivationFilter(brief, careerArchitecture);
+    const materialized = await materializeTrackResearch(track, activationBrief as any);
     const nextIntelligence = {
       ...intelligence,
+      careerArchitecture,
+      automaticSelection: careerArchitecture.automaticSelection,
       activationInventory: materialized,
       activatedAt: Date.now(),
       lastUpdated: Date.now(),
     };
     const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
-    res.json({ track: updatedTrack || track, materialized, organizedWorkspace: intelligence.organizedWorkspace || null });
+    res.json({ track: updatedTrack || track, materialized, organizedWorkspace: intelligence.organizedWorkspace || null, careerArchitecture });
   });
 }

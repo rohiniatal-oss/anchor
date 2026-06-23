@@ -25,13 +25,21 @@ jobs:
       - name: TypeScript check
         run: npm run check
 
-      - name: Unit tests
+      - name: Development plan model tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentPlan.test.ts
+
+      - name: Development plan guardrail tests
+        if: always()
+        run: npx tsx --test server/trackResearchDevelopmentGuardrails.test.ts
+
+      - name: Full unit test suite
         if: always()
         run: |
           set +e
           npm test > /tmp/anchor-tests.log 2>&1
           status=$?
-          tail -n 260 /tmp/anchor-tests.log
+          tail -n 80 /tmp/anchor-tests.log
           exit $status
 
       - name: CSS source audit

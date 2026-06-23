@@ -105,7 +105,8 @@ function severityFromScore(score: number): BottleneckHypothesis["severity"] {
 function inferCapitalType(value: unknown) {
   const text = normalize(value);
   if (text.includes("credential") || text.includes("degree") || text.includes("certification") || text.includes("clearance")) return "credential";
-  if (text.includes("network") || text.includes("relationship") || text.includes("conversation") || text.includes("access")) return "network";
+  if (text.includes("access") || text.includes("referral") || text.includes("introduction") || text.includes("entry point")) return "access";
+  if (text.includes("network") || text.includes("relationship") || text.includes("conversation")) return "network";
   if (text.includes("evidence") || text.includes("proof") || text.includes("publication") || text.includes("portfolio") || text.includes("memo")) return "evidence";
   if (text.includes("narrative") || text.includes("positioning") || text.includes("story")) return "narrative";
   if (text.includes("knowledge") || text.includes("domain") || text.includes("sector") || text.includes("economy")) return "knowledge";
@@ -252,11 +253,11 @@ function coverageForRequirement(requirement: RequirementClaim, brief: any): Cove
   const bestGap = matchingGaps[0]?.score || 0;
   let status: CoverageStatus = "unproven";
 
-  if (requirement.confidence === "low" && requirement.likelyRequiredLevel === "unknown") status = "unknown_requirement";
-  else if (bestGap >= 7 && bestGap >= bestAsset) status = "insufficient";
+  if (bestGap >= 7 && bestGap >= bestAsset) status = "insufficient";
   else if (bestAsset >= 10 && bestGap < 7) status = "likely_covered";
   else if (bestAsset >= 5) status = "partial";
   else if (bestGap >= 4) status = "insufficient";
+  else if (requirement.confidence === "low" && requirement.likelyRequiredLevel === "unknown") status = "unknown_requirement";
 
   const confidence = confidenceFromScore(bestAsset + bestGap + (requirement.confidence === "high" ? 3 : requirement.confidence === "medium" ? 1 : 0));
   const evidenceFound = matchingAssets.map((asset) => `${asset.label}${asset.evidence ? ` - ${asset.evidence}` : ""}`);
@@ -280,6 +281,7 @@ function coverageForRequirement(requirement: RequirementClaim, brief: any): Cove
 
 function kindForCoverage(claim: CoverageClaim): BottleneckKind {
   if (claim.status === "unknown_requirement") return "information";
+  if (claim.capitalType === "access") return "access";
   if (claim.capitalType === "network") return "network";
   if (claim.capitalType === "credential") return "credential";
   if (claim.capitalType === "narrative") return "narrative";
@@ -291,6 +293,7 @@ function kindForCoverage(claim: CoverageClaim): BottleneckKind {
 
 function recommendedBet(kind: BottleneckKind, claim: CoverageClaim) {
   if (kind === "information") return `Clarify the real bar for ${claim.requirement} by reviewing target roles or speaking to practitioners.`;
+  if (kind === "access") return `Map the warm-introduction, referral, or entry route needed to get access for ${claim.requirement}.`;
   if (kind === "network") return `Find practitioners who can explain how ${claim.requirement} is assessed in practice.`;
   if (kind === "credential") return `Check whether ${claim.requirement} is genuinely required or only a preference before pursuing a credential.`;
   if (kind === "narrative") return `Build positioning that connects existing experience to ${claim.requirement}.`;

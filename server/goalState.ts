@@ -320,20 +320,34 @@ function locationTier(location: string) {
 }
 
 function buildLocationPreference(jobs: Job[]): LocationPreference {
-  let preferred = 0;
-  let acceptable = 0;
+  const tierCounts = new Map<string, number>();
+  for (const tier of LOCATION_PRIORITY) tierCounts.set(tier, 0);
   let other = 0;
   for (const j of jobs) {
     const tier = locationTier(j.location || "");
-    if (tier === "Other") other += 1;
-    else {
-      acceptable += 1;
-      if (tier === "UAE" || tier === "Remote" || tier === "London") preferred += 1;
+    if (tier === "Other") {
+      other += 1;
+    } else {
+      tierCounts.set(tier, (tierCounts.get(tier) ?? 0) + 1);
     }
   }
+  // Rank named tiers by job count desc; use LOCATION_PRIORITY index as tiebreaker.
+  const namedTiers = [...LOCATION_PRIORITY].sort((a, b) => {
+    const diff = (tierCounts.get(b) ?? 0) - (tierCounts.get(a) ?? 0);
+    if (diff !== 0) return diff;
+    return LOCATION_PRIORITY.indexOf(a) - LOCATION_PRIORITY.indexOf(b);
+  });
+  const named = namedTiers.filter((t) => (tierCounts.get(t) ?? 0) > 0);
+  const ordered = named.length > 0 ? named : [...LOCATION_PRIORITY];
+  // flexible: true when jobs span more than one distinct location tier (named or other),
+  // or when there are no jobs yet (leave options open).
+  const activeTierCount = named.length + (other > 0 ? 1 : 0);
+  const flexible = activeTierCount > 1 || jobs.length === 0;
+  const preferred = namedTiers.reduce((sum, t) => sum + (tierCounts.get(t) ?? 0), 0);
+  const acceptable = preferred;
   return {
-    flexible: true,
-    ordered: [...LOCATION_PRIORITY],
+    flexible,
+    ordered,
     counts: { preferred, acceptable, other },
   };
 }
@@ -1173,4 +1187,251 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
       return {
         mustDo: broadPursuitNextMissingRoleTodayMustDo(coverage.missing),
         next: broadPursuitNextMissingRolePlanNote(coverage.missing),
-        optional: "If a live rol
+        optional: "If a live role needs attention, handle it first before finding new ones.",
+        stopRule: broadPursuitNextMissingRoleStopRule(),
+      };
+    }
+    if (coverage.missingNetworkSupport.length > 0) {
+      return {
+        mustDo: broadPursuitNextMissingContactTodayMustDo(coverage.missingNetworkSupport),
+        next: "If a contact replies, reply same day.",
+        optional: "Add a second contact for another unsupported lane.",
+        stopRule: broadPursuitNextMissingContactStopRule(),
+      };
+    }
+    if (coverage.missingPrepSupport.length > 0) {
+      return {
+        mustDo: broadPursuitNextMissingPrepTodayMustDo(coverage.missingPrepSupport),
+        next: "Link the prep item to the lanes it supports.",
+        optional: "Draft a second prep outline if the first comes together quickly.",
+        stopRule: broadPursuitNextMissingPrepStopRule(),
+      };
+    }
+  }
+
+  if (phase === "fit-discovery") {
+    return {
+      mustDo: fitDiscoveryTodayMustDo(candidateUniverse),
+      next: fitDiscoveryTodayNext(),
+      optional: fitDiscoveryTodayOptional(),
+      stopRule: fitDiscoveryTodayStopRule(),
+    };
+  }
+
+  if (phase === "lane-narrowing") {
+    if (snapshot.topicHypotheses.length >= 2 && snapshot.roleShapeHypotheses.length >= 2) {
+      return {
+        mustDo: laneNarrowingTwoAxisTodayMustDo(snapshot.topicHypotheses, snapshot.roleShapeHypotheses),
+        next: laneNarrowingTwoAxisTodayNext(),
+        optional: laneNarrowingTwoAxisTodayOptional(),
+        stopRule: laneNarrowingTwoAxisTodayStopRule(),
+      };
+    }
+    return {
+      mustDo: laneNarrowingSingleAxisTodayMustDo(snapshot.roleHypotheses.slice(0, 4)),
+      next: laneNarrowingSingleAxisTodayNext(),
+      optional: laneNarrowingSingleAxisTodayOptional(),
+      stopRule: laneNarrowingSingleAxisTodayStopRule(),
+    };
+  }
+
+  if (phase === "interview-prep") {
+    return {
+      mustDo: interviewPrepTodayMustDo(),
+      next: interviewPrepTodayNext(),
+      optional: interviewPrepTodayOptional(),
+      stopRule: interviewPrepTodayStopRule(),
+    };
+  }
+
+  return {
+    mustDo: focus.nextMoves[0] || "Move the most important task forward by one step.",
+    next: "If the first task completes early, pick the next most important one.",
+    optional: "Review and tidy your task list if you have spare time.",
+    stopRule: "Stop after completing one concrete action — do not overload the day.",
+  };
+}
+
+function buildParallelExperiments(snapshot: GoalSnapshot): CombinationTest[] {
+  const experiments: CombinationTest[] = [];
+  for (const topic of snapshot.topicHypotheses.slice(0, 2)) {
+    for (const shape of snapshot.roleShapeHypotheses.slice(0, 2)) {
+      experiments.push({
+        combination: `${topic} × ${shape}`,
+        whyPlausible: `Both signals appeared in your saved roles and feedback — testing the combination is the next logical step.`,
+        nextTest: `Find one real job posting that matches both ${topic} and ${shape} and assess fit.`,
+      });
+    }
+  }
+  return experiments.slice(0, 4);
+}
+
+function buildBroadPursuitCoverage(snapshot: GoalSnapshot): BroadPursuitCoverage {
+  const combinations: string[] = [];
+  for (const topic of snapshot.topicHypotheses) {
+    for (const shape of snapshot.roleShapeHypotheses) {
+      combinations.push(`${topic} × ${shape}`);
+    }
+  }
+
+  const covered = combinations.filter((combo) =>
+    snapshot.savedJobs.some((j) => {
+      const text = `${j.title} ${j.roleArchetype || ""} ${j.narrativeAngle || ""} ${j.note || ""}`.toLowerCase();
+      const [topicPart, shapePart] = combo.split(" × ");
+      return text.includes(topicPart.toLowerCase().split(" ")[0]) && text.includes(shapePart.toLowerCase().split(" ")[0]);
+    }),
+  );
+
+  const missing = combinations.filter((c) => !covered.includes(c));
+
+  const networkSupported = covered.filter((combo) =>
+    snapshot.openContacts.some((c) => {
+      const text = `${c.targetOrg || ""} ${c.targetRole || ""} ${c.note || ""}`.toLowerCase();
+      const [topicPart] = combo.split(" × ");
+      return text.includes(topicPart.toLowerCase().split(" ")[0]);
+    }),
+  );
+
+  const prepSupported = covered.filter((combo) =>
+    snapshot.activeLearnItems.some((l) => {
+      const text = `${l.title || ""} ${l.note || ""}`.toLowerCase();
+      const [topicPart, shapePart] = combo.split(" × ");
+      return text.includes(topicPart.toLowerCase().split(" ")[0]) || text.includes(shapePart.toLowerCase().split(" ")[0]);
+    }),
+  );
+
+  const learningSupported = covered.filter((combo) =>
+    snapshot.activeLearnItems.some((l) => {
+      const text = `${l.title || ""} ${l.note || ""}`.toLowerCase();
+      const [topicPart] = combo.split(" × ");
+      return text.includes(topicPart.toLowerCase().split(" ")[0]);
+    }),
+  );
+
+  const exampleProjectSupported = covered.filter((combo) =>
+    snapshot.activeHustleItems.some((h) => {
+      const text = `${h.title || ""} ${h.coreClaim || ""} ${h.note || ""}`.toLowerCase();
+      const [topicPart, shapePart] = combo.split(" × ");
+      return text.includes(topicPart.toLowerCase().split(" ")[0]) || text.includes(shapePart.toLowerCase().split(" ")[0]);
+    }),
+  );
+
+  const missingNetworkSupport = covered.filter((c) => !networkSupported.includes(c));
+  const missingPrepSupport = covered.filter((c) => !prepSupported.includes(c));
+  const missingLearningSupport = covered.filter((c) => !learningSupported.includes(c));
+  const fullySupported = covered.filter((c) => networkSupported.includes(c) && prepSupported.includes(c));
+
+  const laneStates = combinations.map((combo) => {
+    const [topicPart, shapePart] = combo.split(" × ");
+    const topicKey = topicPart.toLowerCase().split(" ")[0];
+    const shapeKey = shapePart.toLowerCase().split(" ")[0];
+
+    const roleCount = snapshot.savedJobs.filter((j) => {
+      const text = `${j.title} ${j.roleArchetype || ""} ${j.narrativeAngle || ""}`.toLowerCase();
+      return text.includes(topicKey) && text.includes(shapeKey);
+    }).length;
+
+    const contactCount = snapshot.openContacts.filter((c) => {
+      const text = `${c.targetOrg || ""} ${c.targetRole || ""} ${c.note || ""}`.toLowerCase();
+      return text.includes(topicKey);
+    }).length;
+
+    const prepSupportCount = snapshot.activeLearnItems.filter((l) => {
+      const text = `${l.title || ""} ${l.note || ""}`.toLowerCase();
+      return text.includes(topicKey) || text.includes(shapeKey);
+    }).length;
+
+    const learningItemCount = snapshot.activeLearnItems.filter((l) => {
+      const text = `${l.title || ""} ${l.note || ""}`.toLowerCase();
+      return text.includes(topicKey);
+    }).length;
+
+    const exampleProjectItemCount = snapshot.activeHustleItems.filter((h) => {
+      const text = `${h.title || ""} ${h.coreClaim || ""} ${h.note || ""}`.toLowerCase();
+      return text.includes(topicKey) || text.includes(shapeKey);
+    }).length;
+
+    return {
+      combination: combo,
+      roleCount,
+      contactCount,
+      prepSupportCount,
+      learningItemCount,
+      exampleProjectItemCount,
+      hasRole: roleCount > 0,
+      hasNetworkSupport: contactCount > 0,
+      hasPrepSupport: prepSupportCount > 0,
+      hasLearningSupport: learningItemCount > 0,
+      hasExampleProjectSupport: exampleProjectItemCount > 0,
+    };
+  });
+
+  return {
+    combinations,
+    covered,
+    missing,
+    networkSupported,
+    prepSupported,
+    learningSupported,
+    exampleProjectSupported,
+    missingNetworkSupport,
+    missingPrepSupport,
+    missingLearningSupport,
+    fullySupported,
+    laneStates,
+  };
+}
+
+export async function buildEntityLinkIndex(goalId: number): Promise<Map<number, EntityLink[]>> {
+  const links = await storage.getEntityLinks(goalId);
+  const index = new Map<number, EntityLink[]>();
+  for (const link of links) {
+    const key = link.sourceEntityId;
+    const existing = index.get(key) ?? [];
+    existing.push(link);
+    index.set(key, existing);
+  }
+  return index;
+}
+
+export async function getGoalState(goalId: number, req?: Express["request"]) {
+  const [tasks, jobs, log, learn, contacts, hustles, tracks] = await Promise.all([
+    storage.getTasks(goalId),
+    storage.getJobs(goalId),
+    storage.getActivityLog(goalId),
+    storage.getLearnItems(goalId),
+    storage.getContacts(goalId),
+    storage.getHustles(goalId),
+    storage.getCareerTracks(goalId),
+  ]);
+
+  const snapshot = buildGoalSnapshot(tasks, jobs, log, learn, contacts, hustles, tracks);
+  const workstreams = workstreamStates(snapshot);
+  const frame = buildCareerGoalFrame(snapshot, workstreams);
+  const phase = frame.phase;
+  const opportunityState = buildOpportunityStateSummary(snapshot);
+  const locationPreference = buildLocationPreference(snapshot.savedJobs);
+  const candidateUniverse = generateCandidateUniverse(snapshot.assets, snapshot.feedback);
+  const todayPlan = buildTodayPlan(phase, frame.focus, snapshot, candidateUniverse);
+  const focusReasonCode = focusReasonCodeFor(frame.focus, phase, snapshot);
+  const broadPursuitCoverage = frame.broadParallelPursuit || frame.decisionMode === "parallel-exploration"
+    ? buildBroadPursuitCoverage(snapshot)
+    : null;
+
+  return {
+    phase,
+    phaseObjective: phaseObjective(phase),
+    phaseReason: phaseReason(phase, frame.focus, snapshot),
+    phaseDecisionQuestion: phaseDecisionQuestion(phase, snapshot),
+    trajectory: trajectoryFor(phase),
+    frame,
+    workstreams,
+    snapshot,
+    opportunityState,
+    locationPreference,
+    todayPlan,
+    focusReasonCode,
+    broadPursuitCoverage,
+    candidateUniverse,
+  };
+}

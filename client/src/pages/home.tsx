@@ -8,14 +8,8 @@ import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
 import { useSyncRecommendationsOnMount } from "@/hooks/useRecommendations";
 import { type Tab, tabFromPath, pathForTab } from "@/lib/homeTypes";
-import { TodayView } from "@/pages/views/TodayView";
-import { StrategyView } from "@/pages/views/StrategyView";
-import BrainDumpView from "@/pages/views/BrainDumpView";
-import { JobsView } from "@/pages/views/JobsView";
-import { NetworkView } from "@/pages/views/NetworkView";
-import { LearnView } from "@/pages/views/LearnView";
-import WinsView from "@/pages/views/WinsView";
-import { ProfileView } from "@/pages/views/ProfileView";
+import Home from "@/pages/home";
+import NotFound from "@/pages/not-found";
 
 const HEADER_TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
   { id: "jobs", label: "Jobs", icon: Briefcase },

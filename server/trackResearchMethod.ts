@@ -6,6 +6,8 @@ import { materializeTrackResearch } from "./trackResearchAgent";
 
 type ResearchUse = "market_map" | "role_map" | "requirements" | "learning" | "network" | "proof";
 type SourceType = "job_posting" | "employer" | "institution" | "course" | "article" | "report" | "profile" | "other";
+type CapitalType = "knowledge" | "skill" | "evidence" | "network" | "access" | "credential" | "narrative" | "reputation" | "information";
+type InterventionType = "learning" | "practice" | "proof_asset" | "networking" | "positioning" | "research" | "application" | "credential";
 
 type TrackResearchSearchPlan = {
   marketQueries: string[];
@@ -34,12 +36,91 @@ type FitGapDimension = {
   evidenceNeeded: string[];
 };
 
+type CareerHypothesis = {
+  input: string;
+  normalizedTitle: string;
+  confidence: number;
+  whyAttractive: string;
+  coreUncertainties: string[];
+};
+
+type PathHypothesis = {
+  title: string;
+  description: string;
+  confidence: number;
+  capabilityFit: number;
+  preferenceFit: number;
+  accessFit: number;
+  valuesFit: number;
+  lifestyleFit: number;
+  whyPromising: string;
+  risks: string[];
+  testSignals: string[];
+};
+
+type RequirementNode = {
+  path: string;
+  capitalType: CapitalType;
+  requirement: string;
+  evidence: string;
+  priority: number;
+};
+
+type CareerCapitalItem = {
+  capitalType: CapitalType;
+  asset: string;
+  currentLevel: "strong" | "partial" | "weak" | "unknown";
+  evidence: string;
+  linkedPaths: string[];
+};
+
+type GapItem = {
+  gap: string;
+  capitalType: CapitalType;
+  severity: "high" | "medium" | "low";
+  evidence: string;
+  linkedPaths: string[];
+  whyItMatters: string;
+};
+
+type InterventionRecommendation = {
+  gap: string;
+  gapType: CapitalType;
+  interventionType: InterventionType;
+  recommendation: string;
+  whyThis: string;
+  output: string;
+  assessmentCriteria: string;
+  priority: number;
+};
+
+type DevelopmentPlan = {
+  title: string;
+  capitalType: CapitalType;
+  objective: string;
+  supportsPaths: string[];
+  resources: Array<{ title: string; type: string; why: string; url?: string }>;
+  practice: string[];
+  proofOutputs: string[];
+  networkInputs: string[];
+  milestones: Array<{ label: string; doneWhen: string }>;
+  assessmentCriteria: string[];
+  updateTriggers: string[];
+};
+
+type EvidenceLoop = {
+  evidenceToCollect: string;
+  wouldIncreaseConfidence: string;
+  wouldDecreaseConfidence: string;
+};
+
 type StructuredTrackBrief = {
   domain: string;
   trackName: string;
   trackThesis: string;
   targetRoleArchetype: string;
   summary: string;
+  careerHypothesis: CareerHypothesis;
   searchPlan: TrackResearchSearchPlan;
   evidencePack: EvidencePackItem[];
   researchEvidence: Array<{
@@ -49,6 +130,7 @@ type StructuredTrackBrief = {
     usedFor: ResearchUse;
     confidence: "high" | "medium" | "low";
   }>;
+  pathHypotheses: PathHypothesis[];
   trackHypotheses: Array<{
     hypothesis: string;
     whyItMightBeTrue: string;
@@ -64,6 +146,12 @@ type StructuredTrackBrief = {
     evidence: string[];
     narrative: string[];
   };
+  requirementGraph: RequirementNode[];
+  careerCapitalPortfolio: CareerCapitalItem[];
+  gapPortfolio: GapItem[];
+  interventionRecommendations: InterventionRecommendation[];
+  developmentPlans: DevelopmentPlan[];
+  evidenceLoops: EvidenceLoop[];
   fitGapMatrix: {
     technicalOrDomainKnowledge: FitGapDimension;
     roleSpecificSkills: FitGapDimension;
@@ -99,7 +187,7 @@ type StructuredTrackBrief = {
   };
 };
 
-type ResearchWorkspaceLane = "Direction" | "Applications" | "Network" | "Proof assets" | "Learning and development" | "Stability";
+type ResearchWorkspaceLane = "Hypotheses" | "Paths" | "Requirements" | "Career capital" | "Gaps" | "Interventions" | "Development plans" | "Evidence loops";
 
 type TrackWorkspaceItem = {
   id: string;
@@ -110,9 +198,9 @@ type TrackWorkspaceItem = {
   why: string;
   evidence: string;
   priority: number;
-  sourceType: "sector" | "role_shape" | "hypothesis" | "plan_workstream" | "learning_path" | "network_archetype" | "proof_asset";
+  sourceType: "career_hypothesis" | "path_hypothesis" | "requirement" | "capital" | "gap" | "intervention" | "development_plan" | "evidence_loop";
   savedIn: string;
-  activationTarget: "track_intelligence" | "job" | "learn" | "contact" | "hustle" | "task";
+  activationTarget: string;
 };
 
 export type TrackResearchWorkspace = {
@@ -130,6 +218,7 @@ export type TrackResearchWorkspace = {
     activationTarget: string;
     items: TrackWorkspaceItem[];
   }>;
+  assessmentQueue: Array<TrackWorkspaceItem & { rank: number }>;
   priorityQueue: Array<TrackWorkspaceItem & { rank: number }>;
   organizedAt: number;
 };
@@ -189,6 +278,43 @@ function evidenceItem(text: string) {
   };
 }
 
+function boundedScore(value: unknown, fallback = 50) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function normalizeCapitalType(value: unknown): CapitalType {
+  const normalized = normalize(value);
+  if (normalized === "knowledge") return "knowledge";
+  if (normalized === "skill" || normalized === "skills") return "skill";
+  if (normalized === "evidence" || normalized === "proof") return "evidence";
+  if (normalized === "network" || normalized === "relationships") return "network";
+  if (normalized === "access" || normalized === "referral") return "access";
+  if (normalized === "credential" || normalized === "credentials") return "credential";
+  if (normalized === "narrative" || normalized === "positioning") return "narrative";
+  if (normalized === "reputation") return "reputation";
+  return "information";
+}
+
+function normalizeInterventionType(value: unknown): InterventionType {
+  const normalized = normalize(value);
+  if (normalized.includes("practice")) return "practice";
+  if (normalized.includes("proof") || normalized.includes("project") || normalized.includes("publication")) return "proof_asset";
+  if (normalized.includes("network") || normalized.includes("conversation") || normalized.includes("outreach")) return "networking";
+  if (normalized.includes("position") || normalized.includes("narrative")) return "positioning";
+  if (normalized.includes("research")) return "research";
+  if (normalized.includes("application")) return "application";
+  if (normalized.includes("credential") || normalized.includes("certificate")) return "credential";
+  return "learning";
+}
+
+function severityScore(severity: string) {
+  if (severity === "high") return 95;
+  if (severity === "medium") return 75;
+  return 55;
+}
+
 function fitGap(raw: FitGapDimension | undefined | null): FitGapDimension {
   return {
     strengths: uniqueStrings(asArray(raw?.strengths)),
@@ -197,7 +323,7 @@ function fitGap(raw: FitGapDimension | undefined | null): FitGapDimension {
   };
 }
 
-function normalizeSearchPlan(raw: TrackResearchSearchPlan | null | undefined, domain: string): TrackResearchSearchPlan {
+function normalizeSearchPlan(raw: TrackResearchSearchPlan | null | undefined): TrackResearchSearchPlan {
   return {
     marketQueries: uniqueStrings(asArray(raw?.marketQueries)).slice(0, 5),
     roleQueries: uniqueStrings(asArray(raw?.roleQueries)).slice(0, 5),
@@ -225,6 +351,19 @@ function normalizeEvidence(raw: EvidencePackItem[] | null | undefined): Evidence
 function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, searchPlan: TrackResearchSearchPlan, evidencePack: EvidencePackItem[]): StructuredTrackBrief | null {
   if (!raw || !compact(raw.summary)) return null;
   const trackName = compact(raw.trackName) || compact(raw.domain) || domain;
+  const pathHypotheses = asArray(raw.pathHypotheses).map((path) => ({
+    title: compact(path.title),
+    description: compact(path.description),
+    confidence: boundedScore(path.confidence, 50),
+    capabilityFit: boundedScore(path.capabilityFit, 50),
+    preferenceFit: boundedScore(path.preferenceFit, 50),
+    accessFit: boundedScore(path.accessFit, 50),
+    valuesFit: boundedScore(path.valuesFit, 50),
+    lifestyleFit: boundedScore(path.lifestyleFit, 50),
+    whyPromising: compact(path.whyPromising),
+    risks: uniqueStrings(asArray(path.risks)),
+    testSignals: uniqueStrings(asArray(path.testSignals)),
+  })).filter((path) => path.title);
   const researchEvidence = asArray(raw.researchEvidence).map((e) => ({
     claim: compact(e.claim),
     sourceTitle: compact(e.sourceTitle),
@@ -233,12 +372,94 @@ function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, search
     confidence: e.confidence || "medium",
   })).filter((e) => e.claim && e.sourceTitle);
 
+  const requirementGraph = asArray(raw.requirementGraph).map((node) => ({
+    path: compact(node.path),
+    capitalType: normalizeCapitalType(node.capitalType),
+    requirement: compact(node.requirement),
+    evidence: compact(node.evidence),
+    priority: Number.isFinite(Number(node.priority)) ? Number(node.priority) : 3,
+  })).filter((node) => node.requirement);
+
+  const careerCapitalPortfolio = asArray(raw.careerCapitalPortfolio).map((item) => ({
+    capitalType: normalizeCapitalType(item.capitalType),
+    asset: compact(item.asset),
+    currentLevel: ["strong", "partial", "weak", "unknown"].includes(item.currentLevel) ? item.currentLevel : "unknown",
+    evidence: compact(item.evidence),
+    linkedPaths: uniqueStrings(asArray(item.linkedPaths)),
+  })).filter((item) => item.asset);
+
+  const gapPortfolio = asArray(raw.gapPortfolio).map((gap) => ({
+    gap: compact(gap.gap),
+    capitalType: normalizeCapitalType(gap.capitalType),
+    severity: gap.severity === "high" || gap.severity === "low" ? gap.severity : "medium",
+    evidence: compact(gap.evidence),
+    linkedPaths: uniqueStrings(asArray(gap.linkedPaths)),
+    whyItMatters: compact(gap.whyItMatters),
+  })).filter((gap) => gap.gap);
+
+  const interventionRecommendations = asArray(raw.interventionRecommendations).map((intervention) => ({
+    gap: compact(intervention.gap),
+    gapType: normalizeCapitalType(intervention.gapType),
+    interventionType: normalizeInterventionType(intervention.interventionType),
+    recommendation: compact(intervention.recommendation),
+    whyThis: compact(intervention.whyThis),
+    output: compact(intervention.output),
+    assessmentCriteria: compact(intervention.assessmentCriteria),
+    priority: Number.isFinite(Number(intervention.priority)) ? Number(intervention.priority) : 3,
+  })).filter((intervention) => intervention.recommendation);
+
+  const developmentPlans = asArray(raw.developmentPlans).map((plan) => ({
+    title: compact(plan.title),
+    capitalType: normalizeCapitalType(plan.capitalType),
+    objective: compact(plan.objective),
+    supportsPaths: uniqueStrings(asArray(plan.supportsPaths)),
+    resources: asArray(plan.resources).map((resource) => ({
+      title: compact(resource.title),
+      type: compact(resource.type) || "resource",
+      why: compact(resource.why),
+      url: compact(resource.url),
+    })).filter((resource) => resource.title),
+    practice: uniqueStrings(asArray(plan.practice)),
+    proofOutputs: uniqueStrings(asArray(plan.proofOutputs)),
+    networkInputs: uniqueStrings(asArray(plan.networkInputs)),
+    milestones: asArray(plan.milestones).map((milestone) => ({
+      label: compact(milestone.label),
+      doneWhen: compact(milestone.doneWhen),
+    })).filter((milestone) => milestone.label),
+    assessmentCriteria: uniqueStrings(asArray(plan.assessmentCriteria)),
+    updateTriggers: uniqueStrings(asArray(plan.updateTriggers)),
+  })).filter((plan) => plan.title);
+
+  const learningPaths = asArray(raw.learningPaths).map((p) => ({
+    topic: compact(p.topic),
+    why: compact(p.why),
+    resourceType: compact(p.resourceType) || "resource",
+    suggestedResource: compact(p.suggestedResource),
+    output: compact(p.output),
+  })).filter((p) => p.topic);
+  const derivedLearningPaths = learningPaths.length ? learningPaths : developmentPlans
+    .filter((plan) => plan.capitalType === "knowledge" || plan.resources.length)
+    .map((plan) => ({
+      topic: plan.title,
+      why: plan.objective,
+      resourceType: plan.resources[0]?.type || "resource",
+      suggestedResource: plan.resources[0]?.title || "",
+      output: plan.proofOutputs[0] || plan.milestones[0]?.doneWhen || `Reusable evidence for ${plan.title}`,
+    }));
+
   return {
     domain: compact(raw.domain) || domain,
     trackName,
     trackThesis: compact(raw.trackThesis) || compact(raw.summary),
     targetRoleArchetype: compact(raw.targetRoleArchetype) || trackName,
     summary: compact(raw.summary),
+    careerHypothesis: {
+      input: compact(raw.careerHypothesis?.input) || domain,
+      normalizedTitle: compact(raw.careerHypothesis?.normalizedTitle) || trackName,
+      confidence: boundedScore(raw.careerHypothesis?.confidence, 50),
+      whyAttractive: compact(raw.careerHypothesis?.whyAttractive) || compact(raw.trackThesis),
+      coreUncertainties: uniqueStrings(asArray(raw.careerHypothesis?.coreUncertainties)),
+    },
     searchPlan,
     evidencePack,
     researchEvidence: researchEvidence.length ? researchEvidence : evidencePack.map((e) => ({
@@ -248,6 +469,7 @@ function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, search
       usedFor: e.usedFor,
       confidence: e.confidence,
     })),
+    pathHypotheses,
     trackHypotheses: asArray(raw.trackHypotheses).map((h) => ({
       hypothesis: compact(h.hypothesis),
       whyItMightBeTrue: compact(h.whyItMightBeTrue),
@@ -272,6 +494,16 @@ function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, search
       evidence: uniqueStrings(asArray(raw.requirementMap?.evidence)),
       narrative: uniqueStrings(asArray(raw.requirementMap?.narrative)),
     },
+    requirementGraph,
+    careerCapitalPortfolio,
+    gapPortfolio,
+    interventionRecommendations,
+    developmentPlans,
+    evidenceLoops: asArray(raw.evidenceLoops).map((loop) => ({
+      evidenceToCollect: compact(loop.evidenceToCollect),
+      wouldIncreaseConfidence: compact(loop.wouldIncreaseConfidence),
+      wouldDecreaseConfidence: compact(loop.wouldDecreaseConfidence),
+    })).filter((loop) => loop.evidenceToCollect),
     fitGapMatrix: {
       technicalOrDomainKnowledge: fitGap(raw.fitGapMatrix?.technicalOrDomainKnowledge),
       roleSpecificSkills: fitGap(raw.fitGapMatrix?.roleSpecificSkills),
@@ -284,13 +516,7 @@ function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, search
       gaps: uniqueStrings(asArray(raw.gapAnalysis?.gaps)),
       biggestGap: compact(raw.gapAnalysis?.biggestGap),
     },
-    learningPaths: asArray(raw.learningPaths).map((p) => ({
-      topic: compact(p.topic),
-      why: compact(p.why),
-      resourceType: compact(p.resourceType) || "resource",
-      suggestedResource: compact(p.suggestedResource),
-      output: compact(p.output),
-    })).filter((p) => p.topic),
+    learningPaths: derivedLearningPaths,
     networkArchetypes: asArray(raw.networkArchetypes).map((n) => ({
       who: compact(n.who),
       why: compact(n.why),
@@ -304,7 +530,7 @@ function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, search
     })).filter((p) => p.title),
     plan: {
       horizon: compact(raw.plan?.horizon) || "2-4 weeks",
-      logic: compact(raw.plan?.logic) || "Build enough evidence to decide whether this track deserves more investment.",
+      logic: compact(raw.plan?.logic) || "Build a career intelligence model before deciding which interventions to activate.",
       lanes: asArray(raw.plan?.lanes).map((lane) => ({
         lane: lane.lane,
         objective: compact(lane.objective),
@@ -321,32 +547,18 @@ function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, search
   };
 }
 
-const workspaceLaneOrder: ResearchWorkspaceLane[] = ["Direction", "Applications", "Network", "Proof assets", "Learning and development", "Stability"];
+const workspaceLaneOrder: ResearchWorkspaceLane[] = ["Hypotheses", "Paths", "Requirements", "Career capital", "Gaps", "Interventions", "Development plans", "Evidence loops"];
 
 const lanePurpose: Record<ResearchWorkspaceLane, string> = {
-  Direction: "Store the market map, role map, hypotheses, fit logic, and decision questions that define the track.",
-  Applications: "Hold role shapes and opportunity patterns before they become saved jobs or applications.",
-  Network: "Hold person archetypes and search paths that can become contact targets.",
-  "Proof assets": "Hold artifacts that would make the track more credible and reusable.",
-  "Learning and development": "Hold capability gaps and learning outputs that should produce evidence, not passive consumption.",
-  Stability: "Hold cleanup and focus rules when the track has too many live objects.",
+  Hypotheses: "Store the uncertain career direction and the beliefs Anchor needs to test.",
+  Paths: "Compare possible futures inside the broad direction by capability, preference, access, values, and lifestyle fit.",
+  Requirements: "Translate path evidence into what success requires across career capital types.",
+  "Career capital": "Inventory what the user already has across knowledge, skill, evidence, network, access, credentials, narrative, and reputation.",
+  Gaps: "Show the missing capital that limits attractive options.",
+  Interventions: "Choose the best way to close each gap instead of assuming every gap needs learning.",
+  "Development plans": "Create living plans that combine resources, practice, proof, network inputs, milestones, and assessment.",
+  "Evidence loops": "Define what new evidence would update path confidence and plan priority.",
 };
-
-function workspaceLaneForResearchLane(lane: StructuredTrackBrief["plan"]["lanes"][number]["lane"]): ResearchWorkspaceLane {
-  if (lane === "capability_build") return "Learning and development";
-  if (lane === "proof_build") return "Proof assets";
-  if (lane === "network_map") return "Network";
-  if (lane === "role_map") return "Applications";
-  return "Direction";
-}
-
-function activationTargetForLane(lane: ResearchWorkspaceLane): TrackWorkspaceItem["activationTarget"] {
-  if (lane === "Applications") return "job";
-  if (lane === "Learning and development") return "learn";
-  if (lane === "Network") return "contact";
-  if (lane === "Proof assets") return "hustle";
-  return "track_intelligence";
-}
 
 function priorityBoost(rawPriority: number | undefined) {
   const priority = Number.isFinite(Number(rawPriority)) ? Number(rawPriority) : 3;
@@ -363,12 +575,14 @@ function sortWorkspaceItems(items: TrackWorkspaceItem[]) {
 
 function buildOrganizedTrackWorkspace(brief: StructuredTrackBrief): TrackResearchWorkspace {
   const laneBuckets: Record<ResearchWorkspaceLane, TrackWorkspaceItem[]> = {
-    Direction: [],
-    Applications: [],
-    Network: [],
-    "Proof assets": [],
-    "Learning and development": [],
-    Stability: [],
+    Hypotheses: [],
+    Paths: [],
+    Requirements: [],
+    "Career capital": [],
+    Gaps: [],
+    Interventions: [],
+    "Development plans": [],
+    "Evidence loops": [],
   };
 
   const addItem = (item: Omit<TrackWorkspaceItem, "id">) => {
@@ -376,158 +590,174 @@ function buildOrganizedTrackWorkspace(brief: StructuredTrackBrief): TrackResearc
     laneBuckets[item.lane].push({ id, ...item });
   };
 
-  brief.sectorMap.slice(0, 8).forEach((sector) => addItem({
-    lane: "Direction",
-    title: sector.sector,
-    action: `Use this sector as a possible ${brief.trackName} context to compare against role evidence.`,
-    doneWhen: "The sector is either kept as a live sub-path or deprioritized with a reason.",
-    why: sector.description,
-    evidence: uniqueStrings(sector.exampleOrgs).join(", "),
+  addItem({
+    lane: "Hypotheses",
+    title: brief.careerHypothesis.normalizedTitle,
+    action: "Treat this as a career hypothesis to test, not a settled track or immediate execution plan.",
+    doneWhen: "The hypothesis has enough market, fit, access, and preference evidence to be continued, narrowed, or deprioritized.",
+    why: brief.careerHypothesis.whyAttractive,
+    evidence: brief.careerHypothesis.coreUncertainties.join("; "),
     priority: 96,
-    sourceType: "sector",
-    savedIn: "career_tracks.trackIntelligence.sectorMap",
-    activationTarget: "track_intelligence",
-  }));
-
-  brief.trackHypotheses.slice(0, 8).forEach((hypothesis) => addItem({
-    lane: "Direction",
-    title: hypothesis.hypothesis,
-    action: hypothesis.howToTest,
-    doneWhen: `Keep testing until this signal is clear: ${hypothesis.disconfirmingSignal || "evidence confirms or weakens the hypothesis"}`,
-    why: hypothesis.whyItMightBeTrue,
-    evidence: "Hypothesis generated from the research evidence and profile fit.",
-    priority: 92 + priorityBoost(hypothesis.priority),
-    sourceType: "hypothesis",
-    savedIn: "career_tracks.trackIntelligence.trackHypotheses",
-    activationTarget: "track_intelligence",
-  }));
-
-  brief.roleShapes.slice(0, 8).forEach((role) => addItem({
-    lane: "Applications",
-    title: role.title,
-    action: `Find or save one real posting for this role shape and compare it to the fit/gap map.`,
-    doneWhen: "One real posting is saved or this role shape is deprioritized.",
-    why: role.what,
-    evidence: uniqueStrings(role.typicalOrgs).join(", "),
-    priority: 88,
-    sourceType: "role_shape",
-    savedIn: "career_tracks.trackIntelligence.roleShapes now; jobs on activation",
-    activationTarget: "job",
-  }));
-
-  brief.plan.lanes.forEach((lane) => {
-    const workspaceLane = workspaceLaneForResearchLane(lane.lane);
-    const basePriority = workspaceLane === "Direction" ? 84 : workspaceLane === "Applications" ? 82 : workspaceLane === "Network" ? 76 : workspaceLane === "Learning and development" ? 74 : 66;
-    lane.workstreams.forEach((workstream) => addItem({
-      lane: workspaceLane,
-      title: workstream.title,
-      action: workstream.action,
-      doneWhen: workstream.doneWhen,
-      why: lane.whyNow || lane.objective,
-      evidence: workstream.evidence,
-      priority: basePriority + priorityBoost(workstream.priority),
-      sourceType: "plan_workstream",
-      savedIn: "career_tracks.trackIntelligence.trackPlan",
-      activationTarget: activationTargetForLane(workspaceLane),
-    }));
+    sourceType: "career_hypothesis",
+    savedIn: "career_tracks.trackIntelligence.careerHypothesis",
+    activationTarget: "track intelligence",
   });
 
-  brief.learningPaths.slice(0, 8).forEach((path) => addItem({
-    lane: "Learning and development",
-    title: path.topic,
-    action: path.suggestedResource ? `Use ${path.suggestedResource} to build the required output.` : "Choose one credible resource and build the required output.",
-    doneWhen: path.output || "A reusable note, brief, or practice output exists.",
-    why: path.why,
-    evidence: path.resourceType,
-    priority: 76,
-    sourceType: "learning_path",
-    savedIn: "career_tracks.trackIntelligence.learningPaths now; learn on activation",
-    activationTarget: "learn",
+  brief.pathHypotheses.slice(0, 8).forEach((path) => addItem({
+    lane: "Paths",
+    title: path.title,
+    action: `Assess this path across capability, preference, access, values, and lifestyle fit before committing to interventions.`,
+    doneWhen: "The path has been kept, narrowed, or deprioritized with explicit evidence.",
+    why: path.whyPromising || path.description,
+    evidence: [...path.testSignals, ...path.risks].join("; "),
+    priority: 84 + Math.round(path.confidence / 10),
+    sourceType: "path_hypothesis",
+    savedIn: "career_tracks.trackIntelligence.pathHypotheses",
+    activationTarget: "path assessment",
   }));
 
-  brief.networkArchetypes.slice(0, 8).forEach((network) => addItem({
-    lane: "Network",
-    title: network.who,
-    action: network.searchTip || `Find one person matching ${network.who}.`,
-    doneWhen: "One person type or named person is saved with a clear ask.",
-    why: network.why,
-    evidence: "Network archetype from research synthesis.",
-    priority: 74,
-    sourceType: "network_archetype",
-    savedIn: "career_tracks.trackIntelligence.networkArchetypes now; contacts on activation",
-    activationTarget: "contact",
+  brief.requirementGraph.slice(0, 12).forEach((node) => addItem({
+    lane: "Requirements",
+    title: node.requirement,
+    action: `Map this ${node.capitalType} requirement to current capital and gaps.`,
+    doneWhen: "The requirement is matched to an existing asset, gap, or unknown.",
+    why: node.path ? `Required for ${node.path}` : "Repeated requirement in researched paths.",
+    evidence: node.evidence,
+    priority: 76 + priorityBoost(node.priority),
+    sourceType: "requirement",
+    savedIn: "career_tracks.trackIntelligence.requirementGraph",
+    activationTarget: "requirement graph",
   }));
 
-  brief.proofAssetIdeas.slice(0, 8).forEach((proof) => addItem({
-    lane: "Proof assets",
-    title: proof.title,
-    action: proof.firstStep || "Draft the smallest useful version of this proof asset.",
-    doneWhen: "One outline, draft, or reusable artifact exists.",
-    why: proof.why,
-    evidence: proof.format,
-    priority: 66,
-    sourceType: "proof_asset",
-    savedIn: "career_tracks.trackIntelligence.proofAssetIdeas now; hustles on activation",
-    activationTarget: "hustle",
+  brief.careerCapitalPortfolio.slice(0, 12).forEach((capital) => addItem({
+    lane: "Career capital",
+    title: capital.asset,
+    action: `Use this as ${capital.capitalType} capital when assessing path fit and option value.`,
+    doneWhen: "The asset has evidence and is linked to the paths it strengthens.",
+    why: `Current level: ${capital.currentLevel}`,
+    evidence: capital.evidence,
+    priority: capital.currentLevel === "strong" ? 74 : capital.currentLevel === "partial" ? 70 : 60,
+    sourceType: "capital",
+    savedIn: "career_tracks.trackIntelligence.careerCapitalPortfolio",
+    activationTarget: "career capital portfolio",
+  }));
+
+  brief.gapPortfolio.slice(0, 12).forEach((gap) => addItem({
+    lane: "Gaps",
+    title: gap.gap,
+    action: `Classify this as a ${gap.capitalType} gap and select the best intervention.`,
+    doneWhen: "The gap has an intervention, output, and assessment standard.",
+    why: gap.whyItMatters,
+    evidence: gap.evidence,
+    priority: severityScore(gap.severity),
+    sourceType: "gap",
+    savedIn: "career_tracks.trackIntelligence.gapPortfolio",
+    activationTarget: "intervention selection",
+  }));
+
+  brief.interventionRecommendations.slice(0, 12).forEach((intervention) => addItem({
+    lane: "Interventions",
+    title: intervention.recommendation,
+    action: `Use ${intervention.interventionType} to address: ${intervention.gap}.`,
+    doneWhen: intervention.assessmentCriteria,
+    why: intervention.whyThis,
+    evidence: intervention.output,
+    priority: 80 + priorityBoost(intervention.priority),
+    sourceType: "intervention",
+    savedIn: "career_tracks.trackIntelligence.interventionRecommendations",
+    activationTarget: intervention.interventionType,
+  }));
+
+  brief.developmentPlans.slice(0, 8).forEach((plan) => addItem({
+    lane: "Development plans",
+    title: plan.title,
+    action: "Use this living development plan to combine resources, practice, proof, network inputs, and assessment.",
+    doneWhen: plan.assessmentCriteria.join("; ") || "The capital has improved and reusable evidence exists.",
+    why: plan.objective,
+    evidence: [...plan.supportsPaths, ...plan.proofOutputs].join("; "),
+    priority: 78,
+    sourceType: "development_plan",
+    savedIn: "career_tracks.trackIntelligence.developmentPlans",
+    activationTarget: "development plan",
+  }));
+
+  brief.evidenceLoops.slice(0, 8).forEach((loop) => addItem({
+    lane: "Evidence loops",
+    title: loop.evidenceToCollect,
+    action: "Collect this evidence before updating confidence or committing more resources.",
+    doneWhen: "The evidence has updated at least one path, gap, intervention, or development plan.",
+    why: loop.wouldIncreaseConfidence,
+    evidence: loop.wouldDecreaseConfidence,
+    priority: 72,
+    sourceType: "evidence_loop",
+    savedIn: "career_tracks.trackIntelligence.evidenceLoops",
+    activationTarget: "evidence update",
   }));
 
   const lanes = workspaceLaneOrder.map((lane) => ({
     lane,
     purpose: lanePurpose[lane],
-    savedIn: lane === "Direction" ? "career_tracks.trackIntelligence" : `career_tracks.trackIntelligence.organizedWorkspace.lanes.${lane}`,
-    activationTarget: lane === "Direction" ? "Track dossier" : lane === "Applications" ? "Jobs" : lane === "Network" ? "Contacts" : lane === "Proof assets" ? "Proof assets" : lane === "Learning and development" ? "Learn" : "Tasks",
+    savedIn: `career_tracks.trackIntelligence.${lane.replace(/\s+/g, "_").toLowerCase()}`,
+    activationTarget: lane === "Interventions" ? "Selected execution objects later" : "Assessment layer",
     items: sortWorkspaceItems(laneBuckets[lane]),
   })).filter((lane) => lane.items.length > 0);
 
-  const priorityQueue = sortWorkspaceItems(lanes.flatMap((lane) => lane.items)).slice(0, 12).map((item, index) => ({ ...item, rank: index + 1 }));
+  const assessmentQueue = sortWorkspaceItems([
+    ...laneBuckets.Paths,
+    ...laneBuckets.Gaps,
+    ...laneBuckets.Interventions,
+    ...laneBuckets["Development plans"],
+    ...laneBuckets["Evidence loops"],
+  ]).slice(0, 12).map((item, index) => ({ ...item, rank: index + 1 }));
 
   return {
     savedTo: [
       {
-        label: "Track dossier",
+        label: "Career hypothesis dossier",
         storage: "career_tracks.trackIntelligence",
         status: "stored_now",
-        contains: ["research summary", "search plan", "evidence pack", "sector map", "role shapes", "fit/gap matrix", "hypotheses", "multi-lane plan"],
+        contains: ["market evidence", "path hypotheses", "requirements", "fit and gaps", "career capital", "interventions", "development plans"],
       },
       {
-        label: "Organized workspace",
-        storage: "career_tracks.trackIntelligence.organizedWorkspace",
+        label: "Career capital portfolio",
+        storage: "career_tracks.trackIntelligence.careerCapitalPortfolio",
         status: "stored_now",
-        contains: ["lane buckets", "priority queue", "sorting logic", "activation targets"],
+        contains: ["knowledge", "skills", "evidence", "network", "access", "credentials", "narrative", "reputation"],
       },
       {
-        label: "Application candidates",
-        storage: "jobs.relatedTrackId",
-        status: "created_on_activation",
-        contains: ["role shapes", "target organizations", "application-facing evidence"],
+        label: "Gap portfolio",
+        storage: "career_tracks.trackIntelligence.gapPortfolio",
+        status: "stored_now",
+        contains: ["gap type", "severity", "evidence", "linked paths", "why it matters"],
       },
       {
-        label: "Learning items",
-        storage: "learn.relatedTrackId",
-        status: "created_on_activation",
-        contains: ["capability gaps", "required outputs", "suggested resources"],
+        label: "Intervention recommendations",
+        storage: "career_tracks.trackIntelligence.interventionRecommendations",
+        status: "stored_now",
+        contains: ["learning", "practice", "proof", "network", "positioning", "research", "credential", "application"],
       },
       {
-        label: "Network targets",
-        storage: "contacts.relatedTrackId",
-        status: "created_on_activation",
-        contains: ["person archetypes", "why they matter", "search tips"],
+        label: "Development plans",
+        storage: "career_tracks.trackIntelligence.developmentPlans",
+        status: "stored_now",
+        contains: ["resources", "practice", "proof outputs", "network inputs", "milestones", "assessment", "update triggers"],
       },
       {
-        label: "Proof assets",
-        storage: "hustles.proofAssetForTrack",
+        label: "Execution objects",
+        storage: "jobs/learn/contacts/hustles only after activation",
         status: "created_on_activation",
-        contains: ["artifact ideas", "first steps", "credibility rationale"],
+        contains: ["selected roles", "knowledge resources", "network targets", "proof assets"],
       },
     ],
     sortingLogic: [
-      { rule: "Keep the dossier on the track first", reason: "The track is the strategic container; jobs, learning, contacts, and proof assets are execution objects underneath it." },
-      { rule: "Rank direction and hypotheses before conversion when evidence is thin", reason: "A broad focus area should become a tested track before the app creates application pressure." },
-      { rule: "Separate applications, learning, network, and proof", reason: "These lanes answer different questions and should not collapse into one generic task list." },
-      { rule: "Only tasks represent immediate execution", reason: "Research outputs and candidate objects remain organized until the user chooses what to activate or Today selects the smallest next move." },
+      { rule: "Research organizes the system", reason: "This stage creates the career intelligence model; it does not decide today's action." },
+      { rule: "Paths stay hypotheses", reason: "Each path can rise or fall as evidence arrives." },
+      { rule: "Gaps map to best interventions", reason: "Knowledge gaps may need learning, but evidence, network, access, and narrative gaps need different responses." },
+      { rule: "Development plans are living career-capital plans", reason: "A plan can include resources, practice, proof outputs, network inputs, and assessment across multiple paths." },
     ],
     lanes,
-    priorityQueue,
+    assessmentQueue,
+    priorityQueue: assessmentQueue,
     organizedAt: Date.now(),
   };
 }
@@ -546,7 +776,7 @@ async function buildResearchInputs() {
 }
 
 async function generateSearchPlan(domain: string, inputs: Awaited<ReturnType<typeof buildResearchInputs>>): Promise<TrackResearchSearchPlan> {
-  const prompt = `You are designing a search plan for Anchor's career research agent.
+  const prompt = `You are designing a search plan for Anchor's career intelligence agent.
 
 AREA OF FOCUS: ${domain}
 ${inputs.activeTrackNames.length ? `EXISTING TRACKS: ${inputs.activeTrackNames.join(", ")}` : ""}
@@ -555,11 +785,11 @@ ${inputs.networks.length ? `KNOWN NETWORKS: ${inputs.networks.join(", ")}` : ""}
 
 Create a MECE search plan. Do not answer the research question yet. Return ONLY JSON:
 {
-  "marketQueries": ["queries that define the market and sub-sectors"],
+  "marketQueries": ["queries that define the market, sub-sectors, and adjacent paths"],
   "roleQueries": ["queries that find real role titles and role families"],
   "organizationQueries": ["queries that find employers and institutions"],
   "requirementQueries": ["queries that find job requirements from postings or careers pages"],
-  "learningQueries": ["queries that find resources, courses, frameworks, or proof-building references"],
+  "learningQueries": ["queries that find canonical resources, books, courses, reports, frameworks, or proof-building references"],
   "networkQueries": ["queries for finding people archetypes on LinkedIn or alumni networks"],
   "sourcePriorities": ["types of sources to prefer, in priority order"],
   "ambiguityNotes": ["different meanings this focus area could have and how the search should disambiguate"]
@@ -567,11 +797,11 @@ Create a MECE search plan. Do not answer the research question yet. Return ONLY 
 
 Rules:
 - Include 3-5 queries per major bucket.
-- Prefer queries likely to surface job postings, employer pages, credible institutions, and current market language.
+- Prefer queries likely to surface job postings, employer pages, credible institutions, current market language, and canonical learning sources.
 - For broad terms, include adjacent terms and synonyms.`;
 
   const raw = await llmJSON<TrackResearchSearchPlan>(prompt, { model: MODEL_PRIMARY });
-  return normalizeSearchPlan(raw, domain);
+  return normalizeSearchPlan(raw);
 }
 
 async function gatherEvidencePack(domain: string, inputs: Awaited<ReturnType<typeof buildResearchInputs>>, searchPlan: TrackResearchSearchPlan): Promise<EvidencePackItem[]> {
@@ -603,8 +833,8 @@ Evidence requirements:
 - 10-15 total evidence items.
 - At least 3 job posting or employer/careers-page items if available.
 - At least 2 role/requirement evidence items.
-- At least 2 market/sector evidence items.
-- At least 1 learning/proof-building evidence item.
+- At least 2 market/sector/path evidence items.
+- At least 1 canonical learning/proof-building evidence item.
 - Prioritize current, primary, and employer/institutional sources over generic blogs.
 - Do not invent URLs. If a URL is unavailable, leave sourceUrl empty and set confidence lower.`;
 
@@ -616,7 +846,7 @@ Evidence requirements:
 }
 
 async function synthesizeBrief(domain: string, inputs: Awaited<ReturnType<typeof buildResearchInputs>>, searchPlan: TrackResearchSearchPlan, evidencePack: EvidencePackItem[]): Promise<StructuredTrackBrief | null> {
-  const prompt = `You are Anchor's career strategy synthesis agent. Build the final track plan using ONLY the evidence pack, the search plan, and the user context below. If evidence is thin, say so in hypotheses and confidence rather than filling gaps with generic advice.
+  const prompt = `You are Anchor's career intelligence synthesis agent. Build a career-capital model using ONLY the evidence pack, the search plan, and the user context below. Do not collapse this into a learning plan or a task list.
 
 ${inputs.contextText}
 
@@ -635,43 +865,37 @@ ${JSON.stringify(evidencePack, null, 2)}
 Return ONLY valid JSON with this exact shape:
 {
   "domain": "${domain}",
-  "trackName": "short track name",
-  "trackThesis": "why this track could make sense for this person, with caveats",
-  "targetRoleArchetype": "the broad role family this track points toward",
+  "trackName": "short label for this career hypothesis",
+  "trackThesis": "why this direction could be attractive, with caveats",
+  "targetRoleArchetype": "broad role family",
   "summary": "2-3 sentences on what this area means across the market now",
+  "careerHypothesis": { "input": "${domain}", "normalizedTitle": "clean hypothesis title", "confidence": 45, "whyAttractive": "why it may increase attractive options", "coreUncertainties": ["unknowns to resolve"] },
   "researchEvidence": [{ "claim": "claim from evidence pack", "sourceTitle": "source title", "sourceUrl": "source URL", "usedFor": "market_map|role_map|requirements|learning|network|proof", "confidence": "high|medium|low" }],
-  "trackHypotheses": [{ "hypothesis": "testable belief about the best sub-path", "whyItMightBeTrue": "why it fits the user or market", "howToTest": "specific experiment or evidence to collect", "disconfirmingSignal": "what would make Anchor deprioritize this path", "priority": 1 }],
-  "sectorMap": [{ "sector": "sector name", "description": "what work looks like here", "exampleOrgs": ["real org 1", "real org 2", "real org 3"] }],
-  "roleShapes": [{ "title": "realistic job title", "what": "what this person actually does", "typicalOrgs": ["real org 1", "real org 2"], "seniority": "junior|mid|senior|mixed" }],
-  "requirementMap": {
-    "capabilities": ["skills and methods repeatedly required"],
-    "knowledge": ["domain knowledge repeatedly required"],
-    "evidence": ["proof hiring managers expect"],
-    "narrative": ["fit or positioning questions the user must answer"]
-  },
-  "fitGapMatrix": {
-    "technicalOrDomainKnowledge": { "strengths": [], "gaps": [], "evidenceNeeded": [] },
-    "roleSpecificSkills": { "strengths": [], "gaps": [], "evidenceNeeded": [] },
-    "sectorCredibility": { "strengths": [], "gaps": [], "evidenceNeeded": [] },
-    "networkAccess": { "strengths": [], "gaps": [], "evidenceNeeded": [] },
-    "narrativeFit": { "strengths": [], "gaps": [], "evidenceNeeded": [] }
-  },
+  "pathHypotheses": [{ "title": "path name", "description": "what this path is", "confidence": 55, "capabilityFit": 60, "preferenceFit": 50, "accessFit": 45, "valuesFit": 60, "lifestyleFit": 50, "whyPromising": "why this path may fit", "risks": ["risks"], "testSignals": ["signals to collect"] }],
+  "trackHypotheses": [{ "hypothesis": "testable belief", "whyItMightBeTrue": "why it may fit", "howToTest": "evidence to collect", "disconfirmingSignal": "what would deprioritize it", "priority": 1 }],
+  "sectorMap": [{ "sector": "sector name", "description": "what work looks like here", "exampleOrgs": ["real org 1", "real org 2"] }],
+  "roleShapes": [{ "title": "realistic job title", "what": "what this person does", "typicalOrgs": ["real org 1", "real org 2"], "seniority": "junior|mid|senior|mixed" }],
+  "requirementMap": { "capabilities": [], "knowledge": [], "evidence": [], "narrative": [] },
+  "requirementGraph": [{ "path": "path name", "capitalType": "knowledge|skill|evidence|network|access|credential|narrative|reputation|information", "requirement": "what success requires", "evidence": "source-backed reason", "priority": 1 }],
+  "careerCapitalPortfolio": [{ "capitalType": "knowledge|skill|evidence|network|access|credential|narrative|reputation|information", "asset": "asset the user has or may have", "currentLevel": "strong|partial|weak|unknown", "evidence": "CV or context evidence", "linkedPaths": ["paths this supports"] }],
+  "gapPortfolio": [{ "gap": "specific gap", "capitalType": "knowledge|skill|evidence|network|access|credential|narrative|reputation|information", "severity": "high|medium|low", "evidence": "why this is a gap", "linkedPaths": ["paths this limits"], "whyItMatters": "effect on option value" }],
+  "interventionRecommendations": [{ "gap": "gap being addressed", "gapType": "knowledge|skill|evidence|network|access|credential|narrative|reputation|information", "interventionType": "learning|practice|proof_asset|networking|positioning|research|application|credential", "recommendation": "recommended intervention", "whyThis": "why this is the best intervention", "output": "what should exist afterward", "assessmentCriteria": "how to assess if it worked", "priority": 1 }],
+  "developmentPlans": [{ "title": "living development plan title", "capitalType": "knowledge|skill|evidence|network|access|credential|narrative|reputation|information", "objective": "what capital this builds", "supportsPaths": ["paths supported"], "resources": [{ "title": "book/course/report/framework/search query", "type": "book|course|report|framework|article|search", "why": "why this source belongs", "url": "URL if known" }], "practice": ["drills or exercises"], "proofOutputs": ["memos, briefs, projects, publications, artifacts"], "networkInputs": ["people or conversations needed"], "milestones": [{ "label": "milestone", "doneWhen": "completion standard" }], "assessmentCriteria": ["how Anchor knows capital improved"], "updateTriggers": ["events that should update this plan"] }],
+  "evidenceLoops": [{ "evidenceToCollect": "specific evidence", "wouldIncreaseConfidence": "what positive signal means", "wouldDecreaseConfidence": "what negative signal means" }],
+  "fitGapMatrix": { "technicalOrDomainKnowledge": { "strengths": [], "gaps": [], "evidenceNeeded": [] }, "roleSpecificSkills": { "strengths": [], "gaps": [], "evidenceNeeded": [] }, "sectorCredibility": { "strengths": [], "gaps": [], "evidenceNeeded": [] }, "networkAccess": { "strengths": [], "gaps": [], "evidenceNeeded": [] }, "narrativeFit": { "strengths": [], "gaps": [], "evidenceNeeded": [] } },
   "gapAnalysis": { "strengths": [], "gaps": [], "biggestGap": "" },
-  "learningPaths": [{ "topic": "specific learning target", "why": "why it matters", "resourceType": "course|book|article|practice|certification", "suggestedResource": "real resource or precise search query", "output": "artifact or note this learning should produce" }],
-  "networkArchetypes": [{ "who": "specific person type", "why": "what they uniquely provide", "searchTip": "exact LinkedIn or network search" }],
-  "proofAssetIdeas": [{ "title": "specific artifact to write or build", "why": "why it proves credibility", "format": "memo|deck|analysis|blog post|portfolio", "firstStep": "first concrete creation step" }],
-  "plan": {
-    "horizon": "2-4 weeks or 4-6 weeks",
-    "logic": "how the lanes work together as a coherent strategy",
-    "lanes": [{ "lane": "market_map|role_map|fit_map|capability_build|proof_build|network_map|experiments|positioning", "objective": "what this lane must accomplish", "whyNow": "why this lane belongs in the first plan", "workstreams": [{ "title": "workstream name", "action": "concrete action Anchor can seed later", "doneWhen": "observable completion bar", "evidence": "what this creates or reveals", "priority": 1 }] }]
-  }
+  "learningPaths": [{ "topic": "only where learning is the right intervention", "why": "why it matters", "resourceType": "course|book|article|practice|certification", "suggestedResource": "real resource or precise search query", "output": "artifact or note this learning should produce" }],
+  "networkArchetypes": [{ "who": "specific person type", "why": "what they uniquely provide", "searchTip": "exact search" }],
+  "proofAssetIdeas": [{ "title": "specific artifact", "why": "why it proves credibility", "format": "memo|deck|analysis|blog post|portfolio", "firstStep": "first concrete creation step" }],
+  "plan": { "horizon": "2-4 weeks or 4-6 weeks", "logic": "how to assess and develop this option", "lanes": [{ "lane": "market_map|role_map|fit_map|capability_build|proof_build|network_map|experiments|positioning", "objective": "what this lane must assess or build", "whyNow": "why this belongs in the review", "workstreams": [{ "title": "workstream", "action": "assessment or development action", "doneWhen": "completion bar", "evidence": "what it creates or reveals", "priority": 1 }] }] }
 }
 
 Rules:
-- The plan must be multifaceted and MECE, not a single next move.
-- Include 6-8 lanes, covering market_map, role_map, fit_map, capability_build, proof_build, network_map, and positioning.
-- Include at least 3 testable hypotheses.
-- Every claim in researchEvidence must map to an evidencePack item.
+- Do not create a daily task plan.
+- Do not assume every gap requires learning.
+- Learning is only one intervention inside broader career capital development.
+- Development plans must include resources, practice, proof, network inputs, milestones, assessment, and update triggers where relevant.
+- Path hypotheses are uncertain and should include disconfirming evidence.
 - Do not invent organisations, resources, role titles, or source URLs beyond the evidence pack.`;
 
   const raw = await llmJSON<StructuredTrackBrief>(prompt, { model: MODEL_PRIMARY });
@@ -736,13 +960,21 @@ async function persistStructuredTrackPlan(track: CareerTrack, brief: StructuredT
     roleModelsAnalyzed: Number(previous.roleModelsAnalyzed || 0),
     sourceDomain: brief.domain,
     researchSummary: brief.summary,
+    careerHypothesis: brief.careerHypothesis,
     searchPlan: brief.searchPlan,
     evidencePack: brief.evidencePack,
     researchEvidence: brief.researchEvidence,
+    pathHypotheses: brief.pathHypotheses,
     trackHypotheses: brief.trackHypotheses,
     sectorMap: brief.sectorMap,
     roleShapes: brief.roleShapes,
     requirementMap: brief.requirementMap,
+    requirementGraph: brief.requirementGraph,
+    careerCapitalPortfolio: brief.careerCapitalPortfolio,
+    gapPortfolio: brief.gapPortfolio,
+    interventionRecommendations: brief.interventionRecommendations,
+    developmentPlans: brief.developmentPlans,
+    evidenceLoops: brief.evidenceLoops,
     fitGapMatrix: brief.fitGapMatrix,
     gapAnalysis: brief.gapAnalysis,
     learningPaths: brief.learningPaths,

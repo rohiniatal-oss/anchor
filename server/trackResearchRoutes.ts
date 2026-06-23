@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "./storage";
-import { runTrackResearch } from "./trackResearchAgent";
+import { runStructuredTrackResearch } from "./trackResearchMethod";
+import { materializeTrackResearch } from "./trackResearchAgent";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -20,15 +21,17 @@ async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
-  // Research should first create the strategic track plan. Object creation is
-  // opt-in so a broad focus area does not flood Jobs/Learn/Contacts too early.
-  const result = await runTrackResearch(domain, { materialize: req.body?.materialize === true });
+  // Research creates a dossier first: explicit search plan, evidence pack,
+  // synthesis, and track plan. Object creation remains opt-in.
+  const result = await runStructuredTrackResearch(domain, { materialize: req.body?.materialize === true });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
   res.json({
     track: result.track,
     brief: result.brief,
     plan: result.brief.plan,
+    searchPlan: result.brief.searchPlan,
+    evidencePack: result.brief.evidencePack,
     researchEvidence: result.brief.researchEvidence,
     trackHypotheses: result.brief.trackHypotheses,
     fitGapMatrix: result.brief.fitGapMatrix,
@@ -53,6 +56,8 @@ export function registerTrackResearchRoutes(app: Express) {
       track,
       intelligence,
       plan: intelligence?.trackPlan || null,
+      searchPlan: intelligence?.searchPlan || null,
+      evidencePack: intelligence?.evidencePack || [],
       researchEvidence: intelligence?.researchEvidence || [],
       trackHypotheses: intelligence?.trackHypotheses || [],
       fitGapMatrix: intelligence?.fitGapMatrix || null,
@@ -60,5 +65,39 @@ export function registerTrackResearchRoutes(app: Express) {
       roleShapes: intelligence?.roleShapes || [],
       gapAnalysis: intelligence?.gapAnalysis || null,
     });
+  });
+
+  app.post("/api/career-tracks/:id/research-plan/materialize", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const track = await storage.getCareerTrack(id);
+    if (!track) return res.status(404).json({ error: "Track not found" });
+    const intelligence = parseJsonObject(track.trackIntelligence || "");
+    if (!intelligence?.roleShapes || !intelligence?.learningPriorities) {
+      return res.status(400).json({ error: "No research plan is stored for this track" });
+    }
+    const brief = {
+      domain: intelligence.sourceDomain || track.name,
+      trackName: track.name,
+      trackThesis: intelligence.thesis || track.whyItFits || "",
+      targetRoleArchetype: track.targetRoleArchetype || track.name,
+      summary: intelligence.researchSummary || track.description || "",
+      sectorMap: intelligence.sectorMap || [],
+      roleShapes: intelligence.roleShapes || [],
+      requirementMap: intelligence.requirementMap || { capabilities: [], knowledge: [], evidence: [], narrative: [] },
+      gapAnalysis: intelligence.gapAnalysis || { strengths: [], gaps: [], biggestGap: "" },
+      learningPaths: (intelligence.learningPaths || intelligence.learningPriorities || []).map((item: any) => typeof item === "string"
+        ? { topic: item, why: "Priority from the research plan", resourceType: "resource", suggestedResource: "", output: `A reusable note or artifact on ${item}` }
+        : item),
+      networkArchetypes: (intelligence.networkArchetypes || intelligence.networkingTargets || []).map((item: any) => typeof item === "string"
+        ? { who: item, why: "Target from the research plan", searchTip: item }
+        : item),
+      proofAssetIdeas: (intelligence.proofAssetIdeas || intelligence.proofAssetsToBuild || []).map((item: any) => typeof item === "string"
+        ? { title: item, why: "Proof asset from the research plan", format: "analysis", firstStep: "Draft the outline" }
+        : item),
+      plan: intelligence.trackPlan || { horizon: "", logic: "", lanes: [] },
+    };
+    const materialized = await materializeTrackResearch(track, brief as any);
+    res.json({ track, materialized });
   });
 }

@@ -6,7 +6,7 @@ import {
   type RequirementModel,
 } from "./trackResearchRequirementModel";
 import { enhanceRequirementModelWithLlm } from "./trackResearchRequirementSynthesis";
-import { buildUserEvidenceCorpus } from "./trackResearchCoverageEvidence";
+import { buildCanonicalUserEvidenceCorpus } from "./trackResearchCoverageCorpus";
 import { COVERAGE_MODEL_VERSION, type CoverageModel } from "./trackResearchCoverageModel";
 import { assessRequirementCoverageWithLlm } from "./trackResearchCoverageSynthesis";
 import {
@@ -100,7 +100,7 @@ export async function ensureRequirementCoverage(trackId: number, force = false) 
     requirementModel = await enhanceRequirementModelWithLlm(track, brief, draft);
   }
 
-  const corpus = await buildUserEvidenceCorpus(track.id);
+  const corpus = await buildCanonicalUserEvidenceCorpus(track.id);
   if (!force && validCoverageModel(intelligence.coverageModel, requirementModel, corpus.fingerprint)) {
     return {
       track,

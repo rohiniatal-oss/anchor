@@ -20,13 +20,18 @@ async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
-  const result = await runTrackResearch(domain, { materialize: req.body?.materialize !== false });
+  // Research should first create the strategic track plan. Object creation is
+  // opt-in so a broad focus area does not flood Jobs/Learn/Contacts too early.
+  const result = await runTrackResearch(domain, { materialize: req.body?.materialize === true });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
   res.json({
     track: result.track,
     brief: result.brief,
     plan: result.brief.plan,
+    researchEvidence: result.brief.researchEvidence,
+    trackHypotheses: result.brief.trackHypotheses,
+    fitGapMatrix: result.brief.fitGapMatrix,
     materialized: result.materialized,
   });
 }
@@ -48,6 +53,9 @@ export function registerTrackResearchRoutes(app: Express) {
       track,
       intelligence,
       plan: intelligence?.trackPlan || null,
+      researchEvidence: intelligence?.researchEvidence || [],
+      trackHypotheses: intelligence?.trackHypotheses || [],
+      fitGapMatrix: intelligence?.fitGapMatrix || null,
       sectorMap: intelligence?.sectorMap || [],
       roleShapes: intelligence?.roleShapes || [],
       gapAnalysis: intelligence?.gapAnalysis || null,

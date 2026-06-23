@@ -1,5 +1,7 @@
 type RequirementCategory = "knowledge" | "skill" | "evidence" | "network" | "credential" | "narrative" | "access" | "other";
 
+const requirementCategories: RequirementCategory[] = ["knowledge", "skill", "evidence", "network", "credential", "narrative", "access", "other"];
+
 type TargetProfileRequirement = {
   id: string;
   category: RequirementCategory;
@@ -83,6 +85,11 @@ function uniqueStrings(values: unknown[]) {
   return result;
 }
 
+function parseCategory(value: unknown, fallbackText: unknown): RequirementCategory {
+  const category = normalize(value) as RequirementCategory;
+  return requirementCategories.includes(category) ? category : inferCategory(fallbackText);
+}
+
 function inferCategory(value: unknown): RequirementCategory {
   const text = normalize(value);
   if (text.includes("knowledge") || text.includes("domain") || text.includes("sector") || text.includes("economy")) return "knowledge";
@@ -103,22 +110,54 @@ function targetDefinition(track: any, brief: any) {
   return compact(brief.summary) || compact(track?.description) || compact(brief.trackThesis) || `A target profile for ${targetLabel(track, brief)}.`;
 }
 
+function roleFamilyFromRoleShape(role: any, index: number): TargetProfileRoleFamily | null {
+  const title = compact(role.title);
+  if (!title) return null;
+  return {
+    id: idFor("role-family", title, index),
+    title,
+    description: compact(role.what),
+    typicalOrganizations: uniqueStrings(asArray(role.typicalOrgs)),
+    seniority: compact(role.seniority) || "mixed",
+    successSignals: uniqueStrings([
+      ...asArray(role.successSignals),
+      ...asArray(role.requirements),
+      compact(role.what),
+    ]).slice(0, 6),
+  };
+}
+
+function roleFamilyFromPath(path: any, index: number): TargetProfileRoleFamily | null {
+  const title = compact(path.title || path.path || path.name);
+  if (!title) return null;
+  return {
+    id: idFor("role-family", title, index),
+    title,
+    description: compact(path.description || path.hypothesis || path.whyPromising),
+    typicalOrganizations: uniqueStrings([...asArray(path.exampleOrgs), ...asArray(path.typicalOrganizations)]),
+    seniority: compact(path.seniority) || "mixed",
+    successSignals: uniqueStrings([
+      ...asArray(path.requiredSignals),
+      ...asArray(path.testSignals),
+      compact(path.whyPromising),
+    ]).slice(0, 6),
+  };
+}
+
 function buildRoleFamilies(brief: any): TargetProfileRoleFamily[] {
-  return asArray(brief.roleShapes).map((role: any, index) => {
-    const title = compact(role.title);
-    return {
-      id: idFor("role-family", title, index),
-      title,
-      description: compact(role.what),
-      typicalOrganizations: uniqueStrings(asArray(role.typicalOrgs)),
-      seniority: compact(role.seniority) || "mixed",
-      successSignals: uniqueStrings([
-        ...asArray(role.successSignals),
-        ...asArray(role.requirements),
-        compact(role.what),
-      ]).slice(0, 6),
-    };
-  }).filter((role) => role.title).slice(0, 12);
+  const fromRoles = asArray(brief.roleShapes).map(roleFamilyFromRoleShape).filter(Boolean) as TargetProfileRoleFamily[];
+  const fromPaths = asArray(brief.pathHypotheses).map(roleFamilyFromPath).filter(Boolean) as TargetProfileRoleFamily[];
+  const seen = new Set<string>();
+  const result: TargetProfileRoleFamily[] = [];
+
+  for (const role of [...fromRoles, ...fromPaths]) {
+    const key = normalize(role.title);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(role);
+  }
+
+  return result.slice(0, 12);
 }
 
 function requirementsFromGraph(brief: any): TargetProfileRequirement[] {
@@ -126,7 +165,7 @@ function requirementsFromGraph(brief: any): TargetProfileRequirement[] {
     const label = compact(node.requirement || node.capability || node.knowledge || node.signal);
     return {
       id: idFor("target-requirement", label, index),
-      category: compact(node.capitalType) as RequirementCategory || inferCategory(label),
+      category: parseCategory(node.capitalType || node.category || node.type, label),
       label,
       roleFamilies: uniqueStrings([node.path, node.route, node.roleFamily].filter(Boolean)),
       whyItMatters: compact(node.whyItMatters || node.importance || node.reason) || "Requirement from the target research model.",
@@ -160,12 +199,13 @@ function buildRequirements(brief: any) {
   const seen = new Set<string>();
   const result: TargetProfileRequirement[] = [];
   for (const requirement of base) {
-    const key = `${requirement.category}:${normalize(requirement.label)}`;
+    const category = parseCategory(requirement.category, requirement.label);
+    const key = `${category}:${normalize(requirement.label)}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push({
       ...requirement,
-      category: requirement.category || inferCategory(requirement.label),
+      category,
       roleFamilies: uniqueStrings(requirement.roleFamilies),
     });
   }
@@ -195,13 +235,12 @@ function buildCareerRoutes(brief: any, roleFamilies: TargetProfileRoleFamily[]):
 }
 
 function buildSuccessProfile(roleFamilies: TargetProfileRoleFamily[], requirements: TargetProfileRequirement[]) {
-  const commonSignals = uniqueStrings([
-    ...requirements.filter((requirement) => !requirement.roleFamilies.length || requirement.roleFamilies.length > 1).map((requirement) => requirement.label),
-    ...roleFamilies.flatMap((role) => role.successSignals),
-  ]).slice(0, 12);
+  const sharedRequirements = requirements.filter((requirement) => !requirement.roleFamilies.length || requirement.roleFamilies.length > 1);
+  const commonSignals = uniqueStrings(sharedRequirements.map((requirement) => requirement.label));
+  const fallbackSignals = uniqueStrings(roleFamilies.flatMap((role) => role.successSignals));
 
   return {
-    commonSignals,
+    commonSignals: (commonSignals.length ? commonSignals : fallbackSignals).slice(0, 12),
     roleSpecificSignals: roleFamilies.map((role) => ({
       roleFamily: role.title,
       signals: uniqueStrings([

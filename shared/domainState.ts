@@ -150,9 +150,10 @@ export function getContactStatus(c: Pick<Contact, "status">): ContactStatus {
 export function getRelationshipStrength(c: Pick<Contact, "relationshipStrength">): ContactStrength {
   return (CONTACT_STRENGTHS as readonly string[]).includes(c.relationshipStrength) ? (c.relationshipStrength as ContactStrength) : "cold";
 }
-export function isContactWarm(c: Pick<Contact, "status">): boolean {
+export function isContactWarm(c: Pick<Contact, "status" | "relationshipStrength">): boolean {
   const s = getContactStatus(c);
-  return s === "messaged" || s === "replied";
+  if (s === "messaged" || s === "replied") return true;
+  return getRelationshipStrength(c) === "warm";
 }
 
 // ── HUSTLES (proof assets) ──────────────────────────────────────────────────

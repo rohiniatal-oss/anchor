@@ -1074,7 +1074,7 @@ function warmContactNameFromContext(crossEngineContext?: string): string {
 function activeLearningFromContext(crossEngineContext?: string): string {
   if (!crossEngineContext) return "";
   const match = crossEngineContext.match(/Learning already in progress:\s*([^;.]+)/);
-  return match?.[1]?.trim() || "";
+  return match?.[1]?.replace(/\s*\([^)]*\)\s*$/g, "").trim() || "";
 }
 
 function globalBreakdownQualityGuidance(): string {

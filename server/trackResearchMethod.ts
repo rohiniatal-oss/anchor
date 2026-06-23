@@ -99,9 +99,45 @@ type StructuredTrackBrief = {
   };
 };
 
+type ResearchWorkspaceLane = "Direction" | "Applications" | "Network" | "Proof assets" | "Learning and development" | "Stability";
+
+type TrackWorkspaceItem = {
+  id: string;
+  lane: ResearchWorkspaceLane;
+  title: string;
+  action: string;
+  doneWhen: string;
+  why: string;
+  evidence: string;
+  priority: number;
+  sourceType: "sector" | "role_shape" | "hypothesis" | "plan_workstream" | "learning_path" | "network_archetype" | "proof_asset";
+  savedIn: string;
+  activationTarget: "track_intelligence" | "job" | "learn" | "contact" | "hustle" | "task";
+};
+
+export type TrackResearchWorkspace = {
+  savedTo: Array<{
+    label: string;
+    storage: string;
+    status: "stored_now" | "created_on_activation" | "derived_view";
+    contains: string[];
+  }>;
+  sortingLogic: Array<{ rule: string; reason: string }>;
+  lanes: Array<{
+    lane: ResearchWorkspaceLane;
+    purpose: string;
+    savedIn: string;
+    activationTarget: string;
+    items: TrackWorkspaceItem[];
+  }>;
+  priorityQueue: Array<TrackWorkspaceItem & { rank: number }>;
+  organizedAt: number;
+};
+
 export type StructuredTrackResearchResult = {
   track: CareerTrack;
   brief: StructuredTrackBrief;
+  organizedWorkspace: TrackResearchWorkspace;
   materialized: { trackId: number; jobIds: number[]; learnIds: number[]; contactIds: number[]; hustleIds: number[] } | null;
 };
 
@@ -285,6 +321,217 @@ function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, search
   };
 }
 
+const workspaceLaneOrder: ResearchWorkspaceLane[] = ["Direction", "Applications", "Network", "Proof assets", "Learning and development", "Stability"];
+
+const lanePurpose: Record<ResearchWorkspaceLane, string> = {
+  Direction: "Store the market map, role map, hypotheses, fit logic, and decision questions that define the track.",
+  Applications: "Hold role shapes and opportunity patterns before they become saved jobs or applications.",
+  Network: "Hold person archetypes and search paths that can become contact targets.",
+  "Proof assets": "Hold artifacts that would make the track more credible and reusable.",
+  "Learning and development": "Hold capability gaps and learning outputs that should produce evidence, not passive consumption.",
+  Stability: "Hold cleanup and focus rules when the track has too many live objects.",
+};
+
+function workspaceLaneForResearchLane(lane: StructuredTrackBrief["plan"]["lanes"][number]["lane"]): ResearchWorkspaceLane {
+  if (lane === "capability_build") return "Learning and development";
+  if (lane === "proof_build") return "Proof assets";
+  if (lane === "network_map") return "Network";
+  if (lane === "role_map") return "Applications";
+  return "Direction";
+}
+
+function activationTargetForLane(lane: ResearchWorkspaceLane): TrackWorkspaceItem["activationTarget"] {
+  if (lane === "Applications") return "job";
+  if (lane === "Learning and development") return "learn";
+  if (lane === "Network") return "contact";
+  if (lane === "Proof assets") return "hustle";
+  return "track_intelligence";
+}
+
+function priorityBoost(rawPriority: number | undefined) {
+  const priority = Number.isFinite(Number(rawPriority)) ? Number(rawPriority) : 3;
+  return Math.max(0, 6 - Math.max(1, Math.min(5, priority)));
+}
+
+function sortWorkspaceItems(items: TrackWorkspaceItem[]) {
+  return [...items].sort((a, b) => {
+    const priorityDiff = b.priority - a.priority;
+    if (priorityDiff !== 0) return priorityDiff;
+    return workspaceLaneOrder.indexOf(a.lane) - workspaceLaneOrder.indexOf(b.lane);
+  });
+}
+
+function buildOrganizedTrackWorkspace(brief: StructuredTrackBrief): TrackResearchWorkspace {
+  const laneBuckets: Record<ResearchWorkspaceLane, TrackWorkspaceItem[]> = {
+    Direction: [],
+    Applications: [],
+    Network: [],
+    "Proof assets": [],
+    "Learning and development": [],
+    Stability: [],
+  };
+
+  const addItem = (item: Omit<TrackWorkspaceItem, "id">) => {
+    const id = `${normalize(item.sourceType)}-${normalize(item.lane)}-${normalize(item.title)}`.replace(/\s+/g, "-").slice(0, 120);
+    laneBuckets[item.lane].push({ id, ...item });
+  };
+
+  brief.sectorMap.slice(0, 8).forEach((sector) => addItem({
+    lane: "Direction",
+    title: sector.sector,
+    action: `Use this sector as a possible ${brief.trackName} context to compare against role evidence.`,
+    doneWhen: "The sector is either kept as a live sub-path or deprioritized with a reason.",
+    why: sector.description,
+    evidence: uniqueStrings(sector.exampleOrgs).join(", "),
+    priority: 96,
+    sourceType: "sector",
+    savedIn: "career_tracks.trackIntelligence.sectorMap",
+    activationTarget: "track_intelligence",
+  }));
+
+  brief.trackHypotheses.slice(0, 8).forEach((hypothesis) => addItem({
+    lane: "Direction",
+    title: hypothesis.hypothesis,
+    action: hypothesis.howToTest,
+    doneWhen: `Keep testing until this signal is clear: ${hypothesis.disconfirmingSignal || "evidence confirms or weakens the hypothesis"}`,
+    why: hypothesis.whyItMightBeTrue,
+    evidence: "Hypothesis generated from the research evidence and profile fit.",
+    priority: 92 + priorityBoost(hypothesis.priority),
+    sourceType: "hypothesis",
+    savedIn: "career_tracks.trackIntelligence.trackHypotheses",
+    activationTarget: "track_intelligence",
+  }));
+
+  brief.roleShapes.slice(0, 8).forEach((role) => addItem({
+    lane: "Applications",
+    title: role.title,
+    action: `Find or save one real posting for this role shape and compare it to the fit/gap map.`,
+    doneWhen: "One real posting is saved or this role shape is deprioritized.",
+    why: role.what,
+    evidence: uniqueStrings(role.typicalOrgs).join(", "),
+    priority: 88,
+    sourceType: "role_shape",
+    savedIn: "career_tracks.trackIntelligence.roleShapes now; jobs on activation",
+    activationTarget: "job",
+  }));
+
+  brief.plan.lanes.forEach((lane) => {
+    const workspaceLane = workspaceLaneForResearchLane(lane.lane);
+    const basePriority = workspaceLane === "Direction" ? 84 : workspaceLane === "Applications" ? 82 : workspaceLane === "Network" ? 76 : workspaceLane === "Learning and development" ? 74 : 66;
+    lane.workstreams.forEach((workstream) => addItem({
+      lane: workspaceLane,
+      title: workstream.title,
+      action: workstream.action,
+      doneWhen: workstream.doneWhen,
+      why: lane.whyNow || lane.objective,
+      evidence: workstream.evidence,
+      priority: basePriority + priorityBoost(workstream.priority),
+      sourceType: "plan_workstream",
+      savedIn: "career_tracks.trackIntelligence.trackPlan",
+      activationTarget: activationTargetForLane(workspaceLane),
+    }));
+  });
+
+  brief.learningPaths.slice(0, 8).forEach((path) => addItem({
+    lane: "Learning and development",
+    title: path.topic,
+    action: path.suggestedResource ? `Use ${path.suggestedResource} to build the required output.` : "Choose one credible resource and build the required output.",
+    doneWhen: path.output || "A reusable note, brief, or practice output exists.",
+    why: path.why,
+    evidence: path.resourceType,
+    priority: 76,
+    sourceType: "learning_path",
+    savedIn: "career_tracks.trackIntelligence.learningPaths now; learn on activation",
+    activationTarget: "learn",
+  }));
+
+  brief.networkArchetypes.slice(0, 8).forEach((network) => addItem({
+    lane: "Network",
+    title: network.who,
+    action: network.searchTip || `Find one person matching ${network.who}.`,
+    doneWhen: "One person type or named person is saved with a clear ask.",
+    why: network.why,
+    evidence: "Network archetype from research synthesis.",
+    priority: 74,
+    sourceType: "network_archetype",
+    savedIn: "career_tracks.trackIntelligence.networkArchetypes now; contacts on activation",
+    activationTarget: "contact",
+  }));
+
+  brief.proofAssetIdeas.slice(0, 8).forEach((proof) => addItem({
+    lane: "Proof assets",
+    title: proof.title,
+    action: proof.firstStep || "Draft the smallest useful version of this proof asset.",
+    doneWhen: "One outline, draft, or reusable artifact exists.",
+    why: proof.why,
+    evidence: proof.format,
+    priority: 66,
+    sourceType: "proof_asset",
+    savedIn: "career_tracks.trackIntelligence.proofAssetIdeas now; hustles on activation",
+    activationTarget: "hustle",
+  }));
+
+  const lanes = workspaceLaneOrder.map((lane) => ({
+    lane,
+    purpose: lanePurpose[lane],
+    savedIn: lane === "Direction" ? "career_tracks.trackIntelligence" : `career_tracks.trackIntelligence.organizedWorkspace.lanes.${lane}`,
+    activationTarget: lane === "Direction" ? "Track dossier" : lane === "Applications" ? "Jobs" : lane === "Network" ? "Contacts" : lane === "Proof assets" ? "Proof assets" : lane === "Learning and development" ? "Learn" : "Tasks",
+    items: sortWorkspaceItems(laneBuckets[lane]),
+  })).filter((lane) => lane.items.length > 0);
+
+  const priorityQueue = sortWorkspaceItems(lanes.flatMap((lane) => lane.items)).slice(0, 12).map((item, index) => ({ ...item, rank: index + 1 }));
+
+  return {
+    savedTo: [
+      {
+        label: "Track dossier",
+        storage: "career_tracks.trackIntelligence",
+        status: "stored_now",
+        contains: ["research summary", "search plan", "evidence pack", "sector map", "role shapes", "fit/gap matrix", "hypotheses", "multi-lane plan"],
+      },
+      {
+        label: "Organized workspace",
+        storage: "career_tracks.trackIntelligence.organizedWorkspace",
+        status: "stored_now",
+        contains: ["lane buckets", "priority queue", "sorting logic", "activation targets"],
+      },
+      {
+        label: "Application candidates",
+        storage: "jobs.relatedTrackId",
+        status: "created_on_activation",
+        contains: ["role shapes", "target organizations", "application-facing evidence"],
+      },
+      {
+        label: "Learning items",
+        storage: "learn.relatedTrackId",
+        status: "created_on_activation",
+        contains: ["capability gaps", "required outputs", "suggested resources"],
+      },
+      {
+        label: "Network targets",
+        storage: "contacts.relatedTrackId",
+        status: "created_on_activation",
+        contains: ["person archetypes", "why they matter", "search tips"],
+      },
+      {
+        label: "Proof assets",
+        storage: "hustles.proofAssetForTrack",
+        status: "created_on_activation",
+        contains: ["artifact ideas", "first steps", "credibility rationale"],
+      },
+    ],
+    sortingLogic: [
+      { rule: "Keep the dossier on the track first", reason: "The track is the strategic container; jobs, learning, contacts, and proof assets are execution objects underneath it." },
+      { rule: "Rank direction and hypotheses before conversion when evidence is thin", reason: "A broad focus area should become a tested track before the app creates application pressure." },
+      { rule: "Separate applications, learning, network, and proof", reason: "These lanes answer different questions and should not collapse into one generic task list." },
+      { rule: "Only tasks represent immediate execution", reason: "Research outputs and candidate objects remain organized until the user chooses what to activate or Today selects the smallest next move." },
+    ],
+    lanes,
+    priorityQueue,
+    organizedAt: Date.now(),
+  };
+}
+
 async function buildResearchInputs() {
   const userContext = await buildUserContext();
   const contextText = formatContextForPrompt(userContext);
@@ -465,7 +712,7 @@ async function ensureTrackForBrief(brief: StructuredTrackBrief): Promise<CareerT
   } as any);
 }
 
-async function persistStructuredTrackPlan(track: CareerTrack, brief: StructuredTrackBrief): Promise<CareerTrack> {
+async function persistStructuredTrackPlan(track: CareerTrack, brief: StructuredTrackBrief, organizedWorkspace: TrackResearchWorkspace): Promise<CareerTrack> {
   const previous = jsonObject(track.trackIntelligence || "");
   const targetOrganizations = uniqueStrings([
     ...brief.sectorMap.flatMap((s) => s.exampleOrgs || []),
@@ -498,7 +745,11 @@ async function persistStructuredTrackPlan(track: CareerTrack, brief: StructuredT
     requirementMap: brief.requirementMap,
     fitGapMatrix: brief.fitGapMatrix,
     gapAnalysis: brief.gapAnalysis,
+    learningPaths: brief.learningPaths,
+    networkArchetypes: brief.networkArchetypes,
+    proofAssetIdeas: brief.proofAssetIdeas,
     trackPlan: brief.plan,
+    organizedWorkspace,
     researchedAt: Date.now(),
     lastUpdated: Date.now(),
   };
@@ -515,8 +766,9 @@ export async function runStructuredTrackResearch(domain: string, options: { mate
   const evidencePack = await gatherEvidencePack(cleaned, inputs, searchPlan);
   const brief = await synthesizeBrief(cleaned, inputs, searchPlan, evidencePack);
   if (!brief) return null;
+  const organizedWorkspace = buildOrganizedTrackWorkspace(brief);
   const initialTrack = await ensureTrackForBrief(brief);
-  const track = await persistStructuredTrackPlan(initialTrack, brief);
+  const track = await persistStructuredTrackPlan(initialTrack, brief, organizedWorkspace);
   const materialized = options.materialize === true ? await materializeTrackResearch(track, brief as any) : null;
-  return { track, brief, materialized };
+  return { track, brief, organizedWorkspace, materialized };
 }

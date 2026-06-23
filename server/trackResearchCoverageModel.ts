@@ -137,13 +137,21 @@ function categoryAllowsEvidence(category: RequirementCategory, item: UserEvidenc
   return ["cv", "profile_summary", "win", "learning_output", "completed_learning", "proof_asset"].includes(item.sourceType);
 }
 
+function requirementSearchText(requirement: TargetRequirement): string {
+  return [requirement.label, ...requirement.aliases, requirement.definition, requirement.successBar].join(" ");
+}
+
+function evidenceRelevant(requirement: TargetRequirement, item: UserEvidenceItem, corpus: UserEvidenceCorpus): boolean {
+  if (!categoryAllowsEvidence(requirement.category, item)) return false;
+  if (item.trackIds.includes(corpus.targetTrackId)) return true;
+  const overlap = overlapScore(requirementSearchText(requirement), `${item.label} ${item.detail}`);
+  if (requirement.category === "network" || requirement.category === "access") return overlap >= 0.12;
+  if (requirement.category === "evidence") return overlap >= 0.1;
+  return overlap >= 0.08;
+}
+
 function categorySourceAvailable(category: RequirementCategory, corpus: UserEvidenceCorpus): boolean {
-  const count = corpus.sourceCounts;
-  if (category === "network" || category === "access") return count.relationship + count.interaction > 0;
-  if (category === "evidence") return count.learning_output + count.proof_asset > 0;
-  if (category === "credential" || category === "eligibility") return count.cv + count.profile_summary > 0;
-  if (category === "experience") return count.cv + count.profile_summary + count.win > 0;
-  return count.cv + count.profile_summary + count.win + count.learning_output + count.completed_learning + count.proof_asset > 0;
+  return corpus.items.some((item) => categoryAllowsEvidence(category, item));
 }
 
 function accessEvidenceIsStrong(item: UserEvidenceItem): boolean {
@@ -178,29 +186,26 @@ function hasExplicitNegativeEvidence(items: UserEvidenceItem[]): boolean {
   return items.some((item) => negativeTerms.some((term) => normalize(item.detail).includes(term)));
 }
 
-function requirementSearchText(requirement: TargetRequirement): string {
-  return [requirement.label, ...requirement.aliases, requirement.definition, requirement.successBar].join(" ");
-}
-
-function evidenceScore(requirement: TargetRequirement, item: UserEvidenceItem): number {
-  if (!categoryAllowsEvidence(requirement.category, item)) return 0;
+function evidenceScore(requirement: TargetRequirement, item: UserEvidenceItem, corpus: UserEvidenceCorpus): number {
+  if (!evidenceRelevant(requirement, item, corpus)) return 0;
   const overlap = overlapScore(requirementSearchText(requirement), `${item.label} ${item.detail}`);
+  const sameTrackBonus = item.trackIds.includes(corpus.targetTrackId) ? 0.16 : 0;
   const sameCategoryBonus = requirement.category === "network" && ["relationship", "interaction"].includes(item.sourceType)
-    ? 0.25
+    ? 0.12
     : requirement.category === "access" && ["relationship", "interaction"].includes(item.sourceType)
-      ? 0.22
+      ? 0.12
       : requirement.category === "evidence" && ["learning_output", "proof_asset"].includes(item.sourceType)
-        ? 0.22
+        ? 0.12
         : requirement.category === "experience" && ["cv", "win"].includes(item.sourceType)
-          ? 0.12
+          ? 0.08
           : 0;
-  return overlap + sameCategoryBonus + strengthRank(item) * 0.025;
+  return overlap + sameTrackBonus + sameCategoryBonus + strengthRank(item) * 0.025;
 }
 
 function deterministicAssessment(requirement: TargetRequirement, corpus: UserEvidenceCorpus): RequirementCoverage {
   const candidates = corpus.items
-    .map((item) => ({ item, score: evidenceScore(requirement, item) }))
-    .filter((entry) => entry.score >= 0.3)
+    .map((item) => ({ item, score: evidenceScore(requirement, item, corpus) }))
+    .filter((entry) => entry.score >= 0.25)
     .sort((left, right) => right.score - left.score || strengthRank(right.item) - strengthRank(left.item))
     .slice(0, 5)
     .map((entry) => entry.item);
@@ -240,17 +245,20 @@ function applyPatch(
   const validItems = new Map(corpus.items.map((item) => [item.id, item]));
   const evidence = uniqueStrings(patch.evidenceItemIds || [])
     .map((id) => validItems.get(id))
-    .filter((item): item is UserEvidenceItem => Boolean(item) && categoryAllowsEvidence(requirement.category, item));
+    .filter((item): item is UserEvidenceItem => item != null && evidenceRelevant(requirement, item, corpus));
   const sourceAvailable = categorySourceAvailable(requirement.category, corpus);
-  let status = parseStatus(patch.status, fallback.status);
+  const requestedStatus = parseStatus(patch.status, fallback.status);
+  let status = requestedStatus;
   if (status === "proven" && !canProve(requirement, evidence)) status = evidence.length ? "partially_proven" : sourceAvailable ? "unproven" : "unknown";
   if (status === "partially_proven" && !evidence.length) status = sourceAvailable ? "unproven" : "unknown";
+  if (status === "unproven" && evidence.length) status = "partially_proven";
   if (status === "unproven" && !sourceAvailable) status = "unknown";
   if (status === "below_bar" && !hasExplicitNegativeEvidence(evidence)) status = evidence.length ? "partially_proven" : sourceAvailable ? "unproven" : "unknown";
 
   let confidence = parseConfidence(patch.confidence, fallback.confidence);
   if (status === "unknown") confidence = "low";
   if (status === "proven" && !evidence.some((item) => item.strength === "verified" || item.strength === "direct")) confidence = "medium";
+  if (status !== requestedStatus && confidence === "high") confidence = "medium";
 
   return {
     requirementId: requirement.id,

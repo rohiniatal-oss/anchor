@@ -92,9 +92,20 @@ function hasRealSource(job: Job) {
   return !!(job.url || job.sourceUrl || job.note);
 }
 
+function hasRoleText(job: Job) {
+  return !!((job.jdText || "").trim() || (job.note || "").trim());
+}
+
 function hasBasicRoleFacts(job: Job) {
   const company = (job.company || "").trim().toLowerCase();
   return hasRealSource(job) || !!(company && company !== "unknown");
+}
+
+function hasScoreAnalysis(job: Job) {
+  return job.fitScore != null
+    || job.strategicValue != null
+    || job.frictionScore != null
+    || !!(job.narrativeAngle || "").trim();
 }
 
 function proofLevel(job: Job): TruthLevel {
@@ -135,12 +146,13 @@ export function computeJobTruthStrip(job: Job): JobTruthStrip {
   if (job.deadline) reasons.push(window.label);
 
   if (!hasRealSource(job)) risks.push("Source details are thin");
+  if (!hasRoleText(job)) risks.push("Needs posting or JD text before Anchor can compare");
   if (!job.relatedTrackId) risks.push("Not linked to a strategy track");
   if (!job.narrativeAngle) risks.push("No narrative angle yet");
   if (job.eligibilityRisk) risks.push(`Eligibility risk: ${job.eligibilityRisk}`);
 
   let action: JobTruthAction = "clarify";
-  let nextMove = "Open the posting and note exactly what it asks for";
+  let nextMove = "Save the posting link or JD text so Anchor can compare it to your profile";
   let headline = "Check the basics before investing more time";
 
   const closed = job.status === "closed" || job.applicationWindowStatus === "closed";
@@ -156,27 +168,33 @@ export function computeJobTruthStrip(job: Job): JobTruthStrip {
   } else if (job.status === "interviewing") {
     action = "prepare";
     headline = "You are in the room, so preparation is the value driver";
-    nextMove = "Draft three story-bank bullets for this role";
+    nextMove = "Let Anchor turn the JD and your background into three story-bank bullets to practise";
   } else if (job.status === "applied" || readiness.value === "submitted" || readiness.value === "follow_up") {
     action = "follow_up";
     headline = "This has moved from applying to follow-up";
-    nextMove = "Send one polite follow-up or identify one person who could nudge it along";
+    nextMove = "Draft one polite follow-up or save one real person who could nudge it along";
   } else if (job.eligibilityRisk || !hasBasicRoleFacts(job) || !job.deadlineConfidence) {
     action = "clarify";
     headline = "Check the facts before spending more effort";
-    nextMove = job.eligibilityRisk ? "Check the eligibility requirement first" : "Open the source and confirm deadline, materials, and fit";
+    nextMove = job.eligibilityRisk
+      ? "Save the exact eligibility line so Anchor can decide whether to block, reframe, or continue"
+      : hasRoleText(job)
+        ? "Let Anchor extract the deadline, required materials, and likely fit from the saved role text"
+        : "Save the posting link or JD text so Anchor can compare it to your profile";
   } else if ((warmPath.score ?? 0) >= 60 && readiness.value !== "referral") {
     action = "warm";
     headline = "Reach out to someone useful before applying cold";
-    nextMove = "Send one message to someone useful or ask for a referral";
+    nextMove = "Let Anchor draft the warm message or referral ask from the linked person, role, and why-now angle";
   } else if (proof.level !== "strong" && ((fit.score ?? 0) >= 70 || (job.strategicValue ?? 0) >= 70)) {
     action = "prove";
     headline = "Worth pursuing, but you still need one clearer example or a bit of practice first";
-    nextMove = "Pick one requirement for this role that feels weak today, then make it easier to explain or back up";
+    nextMove = "Let Anchor name the weakest requirement from the JD, then create one proof or prep move for it";
   } else if (readiness.level === "weak") {
     action = "clarify";
     headline = "Turn this from a saved role into a real application plan";
-    nextMove = "List the exact materials needed to apply";
+    nextMove = hasRoleText(job)
+      ? "Let Anchor extract the required materials from the saved posting"
+      : "Save the posting link or JD text so Anchor can extract the required materials";
   } else {
     action = "apply";
     headline = "Ready enough to start the application";
@@ -184,10 +202,12 @@ export function computeJobTruthStrip(job: Job): JobTruthStrip {
       : readiness.value === "cover" ? "Draft the cover letter skeleton"
       : readiness.value === "questions" ? "Draft answers to the application questions"
       : readiness.value === "sample" ? "Choose or draft the writing sample"
-      : "Create the next concrete application task";
+      : "Create the next concrete application task from the saved role facts";
   }
 
-  if (reasons.length === 0) reasons.push("Insufficient scoring data");
+  if (reasons.length === 0) {
+    reasons.push(hasRoleText(job) && !hasScoreAnalysis(job) ? "Role text saved for analysis" : "Insufficient role evidence");
+  }
 
   return {
     jobId: job.id,

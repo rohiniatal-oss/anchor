@@ -382,7 +382,7 @@ test("job recommendations use recruiting truth for contact-route roles", () => {
   const result = recommend([], jobs, [], [], "medium");
   assert.equal(result.pick?.source, "job");
   assert.equal(result.pick?.jobTruthAction, "warm");
-  assert.match(result.pick?.title || "", /message to someone useful|helpful contact|referral ask/i);
+  assert.match(result.pick?.title || "", /warm message|helpful contact|referral ask/i);
   assert.match(result.explanation.summary, /reach out to someone useful/i);
   assert.match(result.explanation.firstStep, /message to someone who could help|refer you/i);
 });
@@ -407,7 +407,7 @@ test("job recommendations use recruiting truth for prove-fit roles", () => {
   const result = recommend([], jobs, [], [], "medium");
   assert.equal(result.pick?.source, "job");
   assert.equal(result.pick?.jobTruthAction, "prove");
-  assert.match(result.pick?.title || "", /requirement.*feels weak today/i);
+  assert.match(result.pick?.title || "", /Anchor name the weakest requirement|proof or prep move/i);
   assert.match(result.explanation.summary, /clearer example|reusable example/i);
   assert.match(result.explanation.firstStep, /learning item|reusable example|back up/i);
 });

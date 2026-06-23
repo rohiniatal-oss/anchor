@@ -65,7 +65,8 @@ test("job truth strip recommends prove when role is strong but narrative is miss
   assert.equal(r.status, 200);
   assert.equal(r.json.action, "prove");
   assert.match(r.json.headline, /clearer example|practice first/i);
-  assert.match(r.json.nextMove, /requirement.*feels weak today/i);
+  assert.match(r.json.nextMove, /Anchor name the weakest requirement/i);
+  assert.doesNotMatch(r.json.nextMove, /pick one requirement.*feels weak/i);
 });
 
 test("job truth strip recommends apply when fit and readiness are sufficient", async () => {
@@ -104,6 +105,8 @@ test("job truth strip recommends clarify when source and facts are thin", async 
   assert.equal(r.status, 200);
   assert.equal(r.json.action, "clarify");
   assert.ok(r.json.risks.includes("Source details are thin"));
+  assert.ok(r.json.risks.includes("Needs posting or JD text before Anchor can compare"));
+  assert.match(r.json.nextMove, /Save the posting link or JD text/i);
 });
 
 test("job truth strips collection returns one strip per job", async () => {
@@ -114,4 +117,25 @@ test("job truth strips collection returns one strip per job", async () => {
   assert.equal(r.status, 200);
   assert.equal(r.json.length, 2);
   assert.ok(r.json.every((x: any) => x.action && x.headline && x.nextMove));
+});
+
+test("job truth strip uses saved role text as analysis material instead of asking the user to list materials", async () => {
+  const job = await h.storage.createJob({
+    title: "AI Policy Advisor",
+    company: "Regulator",
+    status: "wishlist",
+    applicationWindowStatus: "open",
+    applicationReadiness: "none",
+    deadlineConfidence: "high",
+    jdText: "Application requires CV, cover letter, and answers on technical risk translation.",
+    note: "Saved JD text",
+    relatedTrackId: 1,
+  } as any);
+
+  const r = await api(h.base, "GET", `/api/jobs/${job.id}/truth-strip`);
+  assert.equal(r.status, 200);
+  assert.equal(r.json.action, "clarify");
+  assert.match(r.json.reasons.join(" "), /Role text saved for analysis/i);
+  assert.match(r.json.nextMove, /Anchor extract the required materials/i);
+  assert.doesNotMatch(r.json.nextMove, /List the exact materials|note exactly what it asks|pick one requirement/i);
 });

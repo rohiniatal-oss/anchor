@@ -8,7 +8,7 @@ const track = {
   description: "Strategic analysis of geopolitical risk for decision-makers.",
 };
 
-function brief() {
+function brief(): any {
   return {
     domain: "geopolitical strategy",
     trackName: "Geopolitical strategy",
@@ -124,9 +124,76 @@ test("unsupported requirements are not promoted to essential", () => {
     },
   ];
   const model = buildRequirementModel(track, input, 1234);
-  const requirement = model.requirements[0];
+  const requirement = model.requirements.find((item) => item.label === "Niche certification");
 
   assert.ok(requirement);
-  assert.notEqual(requirement.importance, "essential");
-  assert.equal(requirement.confidence, "medium");
+  assert.notEqual(requirement?.importance, "essential");
+  assert.equal(requirement?.confidence, "medium");
+});
+
+test("partial requirement graphs are supplemented by the shared fallback map", () => {
+  const input = brief();
+  input.requirementGraph = [input.requirementGraph[0]];
+  input.requirementMap = {
+    capabilities: ["Scenario analysis"],
+    knowledge: ["Regional political economy"],
+    evidence: [],
+    narrative: [],
+  };
+
+  const model = buildRequirementModel(track, input, 1234);
+  const labels = new Set(model.requirements.map((requirement) => requirement.label));
+
+  assert.ok(labels.has("Political economy analysis"));
+  assert.ok(labels.has("Scenario analysis"));
+  assert.ok(labels.has("Regional political economy"));
+});
+
+test("short role labels do not match unrelated words", () => {
+  const input = brief();
+  input.roleShapes = [
+    { title: "Paid Media Strategist", what: "Plans paid media campaigns.", typicalOrgs: ["Media Co"], seniority: "mid" },
+    { title: "AI Policy Advisor", what: "Advises on AI policy and governance.", typicalOrgs: ["Policy Lab"], seniority: "mid" },
+  ];
+  input.requirementGraph = [
+    {
+      path: "AI",
+      capitalType: "knowledge",
+      requirement: "AI governance knowledge",
+      evidence: "AI policy roles require governance knowledge.",
+      priority: 2,
+    },
+  ];
+  input.evidencePack.push({
+    sourceTitle: "AI Policy Advisor posting",
+    sourceUrl: "https://example.com/ai-policy",
+    sourceType: "job_posting",
+    claimSupported: "AI policy roles require knowledge of AI governance.",
+    usedFor: "requirements",
+    confidence: "high",
+    whyReliable: "Direct role evidence.",
+  });
+
+  const model = buildRequirementModel(track, input, 1234);
+  const requirement = model.requirements.find((item) => item.label === "AI governance knowledge");
+  const linkedRoles = requirement?.roleFamilyIds.map((id) => model.roleFamilies.find((role) => role.id === id)?.title);
+
+  assert.deepEqual(linkedRoles, ["AI Policy Advisor"]);
+});
+
+test("non-Latin role families retain distinct stable identities", () => {
+  const input = brief();
+  input.roleShapes = [
+    { title: "سياسة الذكاء الاصطناعي", what: "أدوار سياسات الذكاء الاصطناعي", typicalOrgs: [], seniority: "mixed" },
+    { title: "الاستراتيجية الجيوسياسية", what: "أدوار الاستراتيجية الجيوسياسية", typicalOrgs: [], seniority: "mixed" },
+  ];
+  input.requirementGraph = [];
+  input.requirementMap = { capabilities: ["التحليل الاستراتيجي"], knowledge: [], evidence: [], narrative: [] };
+
+  const first = buildRequirementModel(track, input, 1234);
+  const second = buildRequirementModel(track, input, 1234);
+  const ids = first.roleFamilies.map((role) => role.id);
+
+  assert.equal(new Set(ids).size, 2);
+  assert.deepEqual(ids, second.roleFamilies.map((role) => role.id));
 });

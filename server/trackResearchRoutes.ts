@@ -17,6 +17,77 @@ function readDomain(body: any): string {
   return String(body?.domain || body?.focus || body?.area || body?.query || "").trim();
 }
 
+function compact(value: unknown): string {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function asArray<T = any>(value: T[] | undefined | null): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function hasStoredResearch(intelligence: Record<string, any> | null): intelligence is Record<string, any> {
+  if (!intelligence) return false;
+  return [
+    intelligence.roleShapes,
+    intelligence.pathHypotheses,
+    intelligence.requirementGraph,
+    intelligence.interventionRecommendations,
+    intelligence.developmentPlans,
+  ].some((value) => Array.isArray(value) && value.length > 0);
+}
+
+function legacyLearningPaths(intelligence: Record<string, any>) {
+  const explicit = asArray(intelligence.learningPaths || intelligence.learningPriorities).map((item: any) => typeof item === "string"
+    ? { topic: item, why: "Priority from the research plan", resourceType: "resource", suggestedResource: "", output: `A reusable note or artifact on ${item}` }
+    : item);
+  if (explicit.length) return explicit;
+
+  return asArray(intelligence.developmentPlans)
+    .filter((plan: any) => asArray(plan.resources).length > 0 || plan.capitalType === "knowledge" || plan.capitalType === "skill")
+    .map((plan: any) => {
+      const firstResource = asArray(plan.resources)[0] || {};
+      return {
+        topic: compact(plan.title),
+        why: compact(plan.objective) || "Build reusable career capital from the research model",
+        resourceType: compact(firstResource.type) || (plan.capitalType === "skill" ? "practice" : "resource"),
+        suggestedResource: compact(firstResource.title),
+        output: compact(asArray(plan.proofOutputs)[0] || asArray(plan.milestones)[0]?.doneWhen) || `Reusable evidence for ${compact(plan.title)}`,
+      };
+    })
+    .filter((item: any) => item.topic);
+}
+
+function legacyNetworkArchetypes(intelligence: Record<string, any>) {
+  const explicit = asArray(intelligence.networkArchetypes || intelligence.networkingTargets).map((item: any) => typeof item === "string"
+    ? { who: item, why: "Target from the research plan", searchTip: item }
+    : item);
+  if (explicit.length) return explicit;
+
+  return asArray(intelligence.developmentPlans)
+    .flatMap((plan: any) => asArray(plan.networkInputs).map((input: any) => ({
+      who: compact(input),
+      why: compact(plan.objective) || "Conversation needed to validate this career hypothesis",
+      searchTip: compact(input),
+    })))
+    .filter((item: any) => item.who);
+}
+
+function legacyProofAssets(intelligence: Record<string, any>) {
+  const explicit = asArray(intelligence.proofAssetIdeas || intelligence.proofAssetsToBuild).map((item: any) => typeof item === "string"
+    ? { title: item, why: "Proof asset from the research plan", format: "analysis", firstStep: "Draft the outline" }
+    : item);
+  if (explicit.length) return explicit;
+
+  return asArray(intelligence.developmentPlans)
+    .flatMap((plan: any) => asArray(plan.proofOutputs).map((output: any) => ({
+      title: compact(output),
+      why: compact(plan.objective) || "Create evidence capital for this direction",
+      format: "analysis",
+      firstStep: "Draft the smallest useful version of the artifact",
+    })))
+    .filter((item: any) => item.title);
+}
+
 function buildBriefFromIntelligence(track: any, intelligence: Record<string, any>) {
   return {
     domain: intelligence.sourceDomain || track.name,
@@ -41,15 +112,9 @@ function buildBriefFromIntelligence(track: any, intelligence: Record<string, any
     evidenceLoops: intelligence.evidenceLoops || [],
     fitGapMatrix: intelligence.fitGapMatrix || null,
     gapAnalysis: intelligence.gapAnalysis || { strengths: [], gaps: [], biggestGap: "" },
-    learningPaths: (intelligence.learningPaths || intelligence.learningPriorities || []).map((item: any) => typeof item === "string"
-      ? { topic: item, why: "Priority from the research plan", resourceType: "resource", suggestedResource: "", output: `A reusable note or artifact on ${item}` }
-      : item),
-    networkArchetypes: (intelligence.networkArchetypes || intelligence.networkingTargets || []).map((item: any) => typeof item === "string"
-      ? { who: item, why: "Target from the research plan", searchTip: item }
-      : item),
-    proofAssetIdeas: (intelligence.proofAssetIdeas || intelligence.proofAssetsToBuild || []).map((item: any) => typeof item === "string"
-      ? { title: item, why: "Proof asset from the research plan", format: "analysis", firstStep: "Draft the outline" }
-      : item),
+    learningPaths: legacyLearningPaths(intelligence),
+    networkArchetypes: legacyNetworkArchetypes(intelligence),
+    proofAssetIdeas: legacyProofAssets(intelligence),
     plan: intelligence.trackPlan || { horizon: "", logic: "", lanes: [] },
   };
 }
@@ -130,8 +195,8 @@ export function registerTrackResearchRoutes(app: Express) {
     const track = await storage.getCareerTrack(id);
     if (!track) return res.status(404).json({ error: "Track not found" });
     const intelligence = parseJsonObject(track.trackIntelligence || "");
-    if (!intelligence?.roleShapes || !intelligence?.learningPriorities) {
-      return res.status(400).json({ error: "No research plan is stored for this track" });
+    if (!hasStoredResearch(intelligence)) {
+      return res.status(400).json({ error: "No career intelligence model is stored for this track" });
     }
     const brief = buildBriefFromIntelligence(track, intelligence);
     const materialized = await materializeTrackResearch(track, brief as any);

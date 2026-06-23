@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { runStructuredTrackResearch } from "./trackResearchMethod";
 import { materializeTrackResearch } from "./trackResearchAgent";
 import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
+import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -138,9 +139,11 @@ async function handleTrackResearch(req: any, res: any) {
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
   const architecture = buildCareerArchitecture(result.track, result.brief, result.organizedWorkspace);
+  const organizedWorkspace = architectureWorkspaceView(result.organizedWorkspace, architecture);
   const currentIntelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
   const nextIntelligence = {
     ...currentIntelligence,
+    organizedWorkspace,
     careerArchitecture: architecture,
     automaticSelection: architecture.automaticSelection,
     lastUpdated: Date.now(),
@@ -164,7 +167,7 @@ async function handleTrackResearch(req: any, res: any) {
     developmentPlans: result.brief.developmentPlans,
     evidenceLoops: result.brief.evidenceLoops,
     fitGapMatrix: result.brief.fitGapMatrix,
-    organizedWorkspace: result.organizedWorkspace,
+    organizedWorkspace,
     careerArchitecture: architecture,
     automaticSelection: architecture.automaticSelection,
     materialized: null,
@@ -185,6 +188,7 @@ export function registerTrackResearchRoutes(app: Express) {
     if (!track) return res.status(404).json({ error: "Track not found" });
     const intelligence = parseJsonObject(track.trackIntelligence || "");
     const careerArchitecture = deriveCareerArchitecture(track, intelligence);
+    const organizedWorkspace = architectureWorkspaceView(intelligence?.organizedWorkspace || null, careerArchitecture);
     res.json({
       track,
       intelligence,
@@ -205,7 +209,7 @@ export function registerTrackResearchRoutes(app: Express) {
       sectorMap: intelligence?.sectorMap || [],
       roleShapes: intelligence?.roleShapes || [],
       gapAnalysis: intelligence?.gapAnalysis || null,
-      organizedWorkspace: intelligence?.organizedWorkspace || null,
+      organizedWorkspace,
       careerArchitecture,
       automaticSelection: careerArchitecture?.automaticSelection || intelligence?.automaticSelection || null,
       activationInventory: intelligence?.activationInventory || null,
@@ -223,10 +227,12 @@ export function registerTrackResearchRoutes(app: Express) {
     }
     const brief = buildBriefFromIntelligence(track, intelligence);
     const careerArchitecture = deriveCareerArchitecture(track, intelligence) || buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
+    const organizedWorkspace = architectureWorkspaceView(intelligence.organizedWorkspace || null, careerArchitecture);
     const activationBrief = applyAutomaticActivationFilter(brief, careerArchitecture);
     const materialized = await materializeTrackResearch(track, activationBrief as any);
     const nextIntelligence = {
       ...intelligence,
+      organizedWorkspace,
       careerArchitecture,
       automaticSelection: careerArchitecture.automaticSelection,
       activationInventory: materialized,
@@ -234,6 +240,6 @@ export function registerTrackResearchRoutes(app: Express) {
       lastUpdated: Date.now(),
     };
     const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
-    res.json({ track: updatedTrack || track, materialized, organizedWorkspace: intelligence.organizedWorkspace || null, careerArchitecture });
+    res.json({ track: updatedTrack || track, materialized, organizedWorkspace, careerArchitecture });
   });
 }

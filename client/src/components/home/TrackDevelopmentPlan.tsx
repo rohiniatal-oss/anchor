@@ -209,7 +209,7 @@ function ModuleCard({ module, requirementById }: { module: DevelopmentModule; re
         <div className="mt-3">
           <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">What this module contains</p>
           <div className="mt-1.5 space-y-1">
-            {list(module.activities).slice(0, 5).map((activity) => <p key={activity} className="text-[11px] leading-snug text-foreground">• {activity}</p>)}
+            {list(module.activities).slice(0, 5).map((activity, index) => <p key={`${activity}-${index}`} className="text-[11px] leading-snug text-foreground">• {activity}</p>)}
           </div>
         </div>
       )}
@@ -239,7 +239,7 @@ function ModuleCard({ module, requirementById }: { module: DevelopmentModule; re
         </div>
         <div className="rounded-lg bg-primary/[0.04] p-2">
           <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">How it will be assessed</p>
-          {list(module.assessmentCriteria).slice(0, 4).map((criterion) => <p key={criterion} className="mt-1 text-[11px] leading-snug text-foreground">• {criterion}</p>)}
+          {list(module.assessmentCriteria).slice(0, 4).map((criterion, index) => <p key={`${criterion}-${index}`} className="mt-1 text-[11px] leading-snug text-foreground">• {criterion}</p>)}
         </div>
       </div>
     </div>
@@ -318,7 +318,7 @@ function WorkstreamPanel({ workstream, requirementById, decisionByRequirement }:
           {list(workstream.dependencyNotes).length > 0 && (
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Logical dependencies</p>
-              {list(workstream.dependencyNotes).map((note) => <p key={note} className="mt-1 text-[11px] leading-snug text-muted-foreground">• {note}</p>)}
+              {list(workstream.dependencyNotes).map((note, index) => <p key={`${note}-${index}`} className="mt-1 text-[11px] leading-snug text-muted-foreground">• {note}</p>)}
             </div>
           )}
 
@@ -407,7 +407,7 @@ export function TrackDevelopmentPlan({ trackId }: { trackId?: number }) {
         <details className="mt-3 rounded-xl border border-card-border bg-muted/20 p-3">
           <summary className="cursor-pointer text-xs font-medium text-foreground">Plan caveats</summary>
           <div className="mt-2 space-y-1">
-            {list(model.quality.caveats).map((caveat) => <p key={caveat} className="text-[11px] leading-snug text-muted-foreground">• {caveat}</p>)}
+            {list(model.quality.caveats).map((caveat, index) => <p key={`${caveat}-${index}`} className="text-[11px] leading-snug text-muted-foreground">• {caveat}</p>)}
           </div>
         </details>
       )}

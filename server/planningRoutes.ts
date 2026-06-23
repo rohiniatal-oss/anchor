@@ -103,7 +103,12 @@ export function buildCantStartMicroStepPrompt(shrinkContext: string) {
     "This task keeps slipping because the first step isn't clear enough. Break it into 3-4 micro-steps.",
     "The first step must be under 2 minutes, immediately startable, and physical: open something, write one line, send one thing, save one item, or mark one choice.",
     "Use this usefulness test for every step: name the concrete object, the action to take on it, and the output or checkpoint that proves the step is done.",
+    "Use real names from the context below (company, role, contact, learning item) — never 'review materials' or 'do some research'.",
     "Prefer reducing the user's decision load over asking them to think, review, or research from scratch.",
+    "",
+    "GOOD: ['Open the McKinsey Strategy Associate posting and read the first 3 requirements', 'Write one sentence about how your policy experience covers requirement #1']",
+    "BAD: ['Review the job requirements', 'Prepare relevant materials'] (too vague — what requirements? what materials?)",
+    "",
     "Return ONLY a JSON array of strings.",
     "",
     shrinkContext,
@@ -491,8 +496,11 @@ export function registerPlanningRoutes(app: Express) {
           try {
             const shrinkContext = await buildShrinkContext(task);
             const result = await llmJSON<{ replacement: string; steps: string[] }>(
-              "This task is too big to start. Find the SMALLEST useful slice — something that takes 15 minutes max and produces one visible result. " +
-              "The slice should be a meaningful first piece of the full task, not just planning or thinking. " +
+              "This task is too big to start. Find the SMALLEST useful slice — 15 minutes max, one visible result.\n\n" +
+              "RULES:\n" +
+              "- The replacement title must name what's produced: 'Draft first paragraph of [X]', 'List top 3 requirements from [role]', not 'Start working on [task]'\n" +
+              "- Steps must start with verbs and name specific things from the context (company, role, document, person)\n" +
+              "- The slice must produce something (a draft, a list, a note, a sent message) — not just planning or thinking\n\n" +
               'Return JSON: {"replacement":"<15-min slice title>","steps":["<2-3 micro-steps>"]}\n\n' + shrinkContext,
               { model: MODEL_LIGHT },
             );

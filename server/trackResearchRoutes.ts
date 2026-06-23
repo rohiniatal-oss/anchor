@@ -22,7 +22,7 @@ async function handleTrackResearch(req: any, res: any) {
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
   // Research creates a dossier first: explicit search plan, evidence pack,
-  // synthesis, and track plan. Object creation remains opt-in.
+  // synthesis, organization workspace, and track plan. Object creation remains opt-in.
   const result = await runStructuredTrackResearch(domain, { materialize: req.body?.materialize === true });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
@@ -35,6 +35,7 @@ async function handleTrackResearch(req: any, res: any) {
     researchEvidence: result.brief.researchEvidence,
     trackHypotheses: result.brief.trackHypotheses,
     fitGapMatrix: result.brief.fitGapMatrix,
+    organizedWorkspace: result.organizedWorkspace,
     materialized: result.materialized,
   });
 }
@@ -64,6 +65,8 @@ export function registerTrackResearchRoutes(app: Express) {
       sectorMap: intelligence?.sectorMap || [],
       roleShapes: intelligence?.roleShapes || [],
       gapAnalysis: intelligence?.gapAnalysis || null,
+      organizedWorkspace: intelligence?.organizedWorkspace || null,
+      activationInventory: intelligence?.activationInventory || null,
     });
   });
 
@@ -82,9 +85,14 @@ export function registerTrackResearchRoutes(app: Express) {
       trackThesis: intelligence.thesis || track.whyItFits || "",
       targetRoleArchetype: track.targetRoleArchetype || track.name,
       summary: intelligence.researchSummary || track.description || "",
+      searchPlan: intelligence.searchPlan || null,
+      evidencePack: intelligence.evidencePack || [],
+      researchEvidence: intelligence.researchEvidence || [],
+      trackHypotheses: intelligence.trackHypotheses || [],
       sectorMap: intelligence.sectorMap || [],
       roleShapes: intelligence.roleShapes || [],
       requirementMap: intelligence.requirementMap || { capabilities: [], knowledge: [], evidence: [], narrative: [] },
+      fitGapMatrix: intelligence.fitGapMatrix || null,
       gapAnalysis: intelligence.gapAnalysis || { strengths: [], gaps: [], biggestGap: "" },
       learningPaths: (intelligence.learningPaths || intelligence.learningPriorities || []).map((item: any) => typeof item === "string"
         ? { topic: item, why: "Priority from the research plan", resourceType: "resource", suggestedResource: "", output: `A reusable note or artifact on ${item}` }
@@ -98,6 +106,13 @@ export function registerTrackResearchRoutes(app: Express) {
       plan: intelligence.trackPlan || { horizon: "", logic: "", lanes: [] },
     };
     const materialized = await materializeTrackResearch(track, brief as any);
-    res.json({ track, materialized });
+    const nextIntelligence = {
+      ...intelligence,
+      activationInventory: materialized,
+      activatedAt: Date.now(),
+      lastUpdated: Date.now(),
+    };
+    const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
+    res.json({ track: updatedTrack || track, materialized, organizedWorkspace: intelligence.organizedWorkspace || null });
   });
 }

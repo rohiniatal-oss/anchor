@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, BookOpen, Briefcase, CheckCircle2, FlaskConical, Network, Search, Sparkles, Target } from "lucide-react";
+import { ArrowUpRight, BookOpen, Briefcase, CheckCircle2, Database, FlaskConical, ListOrdered, Network, Search, Sparkles, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { mutateAndInvalidate } from "@/lib/api";
@@ -37,6 +37,28 @@ type TrackPlanLane = {
   workstreams?: Array<{ title: string; action: string; doneWhen: string; evidence: string; priority?: number }>;
 };
 
+type WorkspaceItem = {
+  id: string;
+  rank?: number;
+  lane: string;
+  title: string;
+  action: string;
+  doneWhen: string;
+  why: string;
+  evidence: string;
+  priority: number;
+  sourceType: string;
+  savedIn: string;
+  activationTarget: string;
+};
+
+type OrganizedWorkspace = {
+  savedTo?: Array<{ label: string; storage: string; status: string; contains?: string[] }>;
+  sortingLogic?: Array<{ rule: string; reason: string }>;
+  lanes?: Array<{ lane: string; purpose: string; savedIn: string; activationTarget: string; items?: WorkspaceItem[] }>;
+  priorityQueue?: WorkspaceItem[];
+};
+
 type ResearchPlanResponse = {
   track: { id: number; name: string; description?: string; whyItFits?: string };
   plan?: { horizon?: string; logic?: string; lanes?: TrackPlanLane[] } | null;
@@ -47,6 +69,8 @@ type ResearchPlanResponse = {
   sectorMap?: Array<{ sector: string; description: string; exampleOrgs?: string[] }>;
   roleShapes?: Array<{ title: string; what: string; typicalOrgs?: string[]; seniority?: string }>;
   gapAnalysis?: { strengths?: string[]; gaps?: string[]; biggestGap?: string } | null;
+  organizedWorkspace?: OrganizedWorkspace | null;
+  activationInventory?: { jobIds?: number[]; learnIds?: number[]; contactIds?: number[]; hustleIds?: number[] } | null;
 };
 
 const LANE_LABEL: Record<string, string> = {
@@ -66,6 +90,12 @@ const DIMENSION_LABEL: Record<string, string> = {
   sectorCredibility: "Sector credibility",
   networkAccess: "Network access",
   narrativeFit: "Narrative fit",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  stored_now: "Saved now",
+  created_on_activation: "Created on activation",
+  derived_view: "Derived view",
 };
 
 function list(items?: string[]) {
@@ -104,6 +134,8 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
   const roles = data.roleShapes || [];
   const lanes = data.plan?.lanes || [];
   const fitGap = data.fitGapMatrix || {};
+  const workspace = data.organizedWorkspace || null;
+  const workspaceItems = workspace?.priorityQueue || [];
 
   async function activatePlan() {
     if (!trackId || activating) return;
@@ -119,7 +151,7 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
         ...GOAL_SPINE_QUERY_KEYS,
       ]);
       const m = result?.materialized || {};
-      setActivationSummary(`Created ${m.jobIds?.length || 0} roles, ${m.learnIds?.length || 0} learning items, ${m.contactIds?.length || 0} contact targets, and ${m.hustleIds?.length || 0} proof assets.`);
+      setActivationSummary(`Created ${m.jobIds?.length || 0} roles, ${m.learnIds?.length || 0} learning items, ${m.contactIds?.length || 0} contact targets, and ${m.hustleIds?.length || 0} proof assets. Anchor saved the activation inventory back to this track.`);
     } catch (e: any) {
       setActivationSummary(e?.message || "Could not activate the plan yet.");
     } finally {
@@ -132,7 +164,7 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-xs font-semibold text-foreground">Review the research before activating it</p>
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Anchor has built the dossier. Check the logic, then choose whether to create execution objects.</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Anchor has built the dossier, organized it by lane, and kept execution objects opt-in.</p>
         </div>
         <Button size="sm" onClick={activatePlan} disabled={activating} data-testid="button-activate-track-plan">
           {activating ? <Sparkles className="mr-1 h-4 w-4 animate-pulse" /> : <CheckCircle2 className="mr-1 h-4 w-4" />}
@@ -146,6 +178,7 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
         <CountChip label="sectors" count={sectors.length} />
         <CountChip label="role shapes" count={roles.length} />
         <CountChip label="plan lanes" count={lanes.length} />
+        <CountChip label="organized moves" count={workspaceItems.length} />
       </div>
 
       {activationSummary && (
@@ -155,6 +188,61 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
       )}
 
       <Accordion type="multiple" className="mt-3 space-y-2">
+        {workspace && (
+          <AccordionItem value="organized" className="rounded-lg border border-card-border bg-card px-3">
+            <AccordionTrigger className="py-2 text-left text-xs hover:no-underline">
+              <span className="flex items-center gap-2"><Database className="h-4 w-4 text-primary" /> Where this is saved and sorted</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="space-y-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(workspace.savedTo || []).map((bucket) => (
+                    <div key={`${bucket.label}-${bucket.storage}`} className="rounded-lg border border-card-border bg-muted/25 p-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-xs font-medium">{bucket.label}</p>
+                        <span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{STATUS_LABEL[bucket.status] || bucket.status}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-primary">{bucket.storage}</p>
+                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{list(bucket.contains).join(", ")}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {(workspace.priorityQueue || []).length > 0 && (
+                  <div>
+                    <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium"><ListOrdered className="h-4 w-4 text-primary" /> Priority queue</p>
+                    <div className="space-y-1.5">
+                      {(workspace.priorityQueue || []).slice(0, 6).map((item, index) => (
+                        <div key={item.id || `${item.title}-${index}`} className="rounded-lg bg-muted/25 p-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">#{item.rank || index + 1}</span>
+                            <span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{item.lane}</span>
+                            <span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{item.activationTarget}</span>
+                          </div>
+                          <p className="mt-1 text-xs font-medium">{item.title}</p>
+                          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{item.action}</p>
+                          <p className="mt-0.5 text-[11px] text-primary">Saved in: {item.savedIn}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(workspace.sortingLogic || []).length > 0 && (
+                  <div className="space-y-1.5">
+                    {(workspace.sortingLogic || []).map((rule) => (
+                      <div key={rule.rule} className="rounded-lg bg-background/70 px-2 py-1.5">
+                        <p className="text-[11px] font-medium">{rule.rule}</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">{rule.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        )}
+
         <AccordionItem value="search" className="rounded-lg border border-card-border bg-card px-3">
           <AccordionTrigger className="py-2 text-left text-xs hover:no-underline">
             <span className="flex items-center gap-2"><Search className="h-4 w-4 text-primary" /> What Anchor searched</span>

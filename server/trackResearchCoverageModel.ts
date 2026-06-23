@@ -8,7 +8,7 @@ import type {
   TargetRequirement,
 } from "./trackResearchRequirementModel";
 
-export const COVERAGE_MODEL_VERSION = 1;
+export const COVERAGE_MODEL_VERSION = 2;
 
 export type CoverageState = "proven" | "partially_proven" | "unproven" | "unknown" | "below_bar";
 export type UserEvidenceStrength = "direct" | "supporting" | "weak";
@@ -115,6 +115,32 @@ const IGNORED_TOKENS = new Set([
   "can", "has", "have", "relevant", "target", "needed", "need", "required", "requirement", "requirements",
 ]);
 
+const TOKEN_ALIASES: Record<string, string> = {
+  strategic: "strategy",
+  strategies: "strategy",
+  analytical: "analysis",
+  analyse: "analysis",
+  analysed: "analysis",
+  analysing: "analysis",
+  analyze: "analysis",
+  analyzed: "analysis",
+  analyzing: "analysis",
+  writing: "write",
+  written: "write",
+  writes: "write",
+  produced: "produce",
+  producing: "produce",
+  production: "produce",
+  publications: "publication",
+  published: "publication",
+  relationships: "relationship",
+  networks: "network",
+  credentials: "credential",
+  briefings: "briefing",
+  stakeholders: "stakeholder",
+  governments: "government",
+};
+
 function compact(value: unknown): string {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
@@ -127,6 +153,14 @@ function normalize(value: unknown): string {
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function canonicalToken(token: string): string {
+  const mapped = TOKEN_ALIASES[token];
+  if (mapped) return mapped;
+  if (token.length >= 6 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
+  if (token.length >= 6 && token.endsWith("s") && !token.endsWith("ss")) return token.slice(0, -1);
+  return token;
 }
 
 function uniqueStrings(values: unknown[]): string[] {
@@ -187,7 +221,16 @@ function newSourceCounts(): Record<UserEvidenceSourceType, number> {
 
 function sourceFingerprint(items: UserEvidenceItem[]): string {
   return stableHash(items
-    .map((item) => `${item.id}|${item.title}|${item.detail}|${item.sourceUrl}|${item.strength}|${item.observedAt}`)
+    .map((item) => [
+      item.id,
+      item.title,
+      item.detail,
+      item.sourceUrl,
+      item.strength,
+      item.observedAt,
+      item.trackId,
+      item.targetSpecific,
+    ].join("|"))
     .sort()
     .join("||"));
 }
@@ -214,11 +257,11 @@ export async function collectUserEvidence(trackId: number): Promise<UserEvidence
       title: title || detail.slice(0, 90),
       detail,
       targetSpecific,
-      id: stableId("user-evidence", item.sourceType, item.sourceEntityType, item.sourceEntityId, title, detail),
+      id: stableId("user-evidence", item.sourceType, item.sourceEntityType, item.sourceEntityId, item.trackId, title, detail),
     });
   };
 
-  const cv = compact(profile?.cvText);
+  const cv = String(profile?.cvText || "").trim();
   splitCv(cv).forEach((fragment, index) => push({
     sourceType: "cv",
     title: `CV evidence ${index + 1}`,
@@ -251,16 +294,17 @@ export async function collectUserEvidence(trackId: number): Promise<UserEvidence
     sourceEntityId: entityId(win.sourceEntityId || win.id),
     sourceUrl: "",
     trackId: entityId(win.trackId),
-    strength: win.sourceEntityType ? "direct" : "supporting",
+    strength: win.sourceEntityType && win.sourceEntityId ? "direct" : "supporting",
     observedAt: Number(win.createdAt || 0),
   }));
 
   learns.slice(0, 40).forEach((item: any) => {
-    const hasOutput = Boolean(compact(item.outputEvidenceUrl) || compact(item.outputTitle) || normalize(item.outputStatus) === "published");
+    const hasInspectableOutput = Boolean(compact(item.outputEvidenceUrl) || normalize(item.outputStatus) === "published");
+    const hasOutputClaim = Boolean(compact(item.outputTitle) || compact(item.requiredOutput));
     const done = Boolean(item.done || normalize(item.learnStatus) === "done");
-    if (!hasOutput && !done && !item.active) return;
+    if (!hasInspectableOutput && !hasOutputClaim && !done && !item.active) return;
     push({
-      sourceType: hasOutput ? "learning_output" : "learning_activity",
+      sourceType: hasInspectableOutput || hasOutputClaim ? "learning_output" : "learning_activity",
       title: compact(item.outputTitle) || compact(item.title),
       detail: uniqueStrings([
         item.title,
@@ -273,7 +317,7 @@ export async function collectUserEvidence(trackId: number): Promise<UserEvidence
       sourceEntityId: entityId(item.id),
       sourceUrl: compact(item.outputEvidenceUrl || item.url),
       trackId: entityId(item.relatedTrackId),
-      strength: compact(item.outputEvidenceUrl) || normalize(item.outputStatus) === "published" ? "direct" : hasOutput || done ? "supporting" : "weak",
+      strength: hasInspectableOutput ? "direct" : hasOutputClaim || done ? "supporting" : "weak",
       observedAt: Number(item.createdAt || 0),
     });
   });
@@ -411,7 +455,10 @@ export async function collectUserEvidence(trackId: number): Promise<UserEvidence
 }
 
 function tokenSet(value: unknown): Set<string> {
-  return new Set(normalize(value).split(" ").filter((token) => token.length >= 2 && !IGNORED_TOKENS.has(token)));
+  return new Set(normalize(value)
+    .split(" ")
+    .map(canonicalToken)
+    .filter((token) => token.length >= 2 && !IGNORED_TOKENS.has(token)));
 }
 
 function overlapScore(left: unknown, right: unknown): number {
@@ -429,7 +476,7 @@ function compatibleSourceTypes(category: RequirementCategory): UserEvidenceSourc
   if (category === "eligibility" || category === "credential") return ["cv", "profile_summary", "application_signal"];
   if (category === "experience") return ["cv", "win"];
   if (category === "evidence") return ["proof_asset", "learning_output", "win"];
-  if (category === "narrative") return ["cv", "profile_summary", "win", "proof_asset"];
+  if (category === "narrative") return ["cv", "profile_summary", "win", "proof_asset", "application_signal"];
   if (category === "knowledge") return ["cv", "win", "proof_asset", "learning_output", "learning_activity", "task_completion"];
   return ["cv", "win", "proof_asset", "learning_output", "learning_activity", "task_completion"];
 }
@@ -453,23 +500,32 @@ function directForRequirement(requirement: TargetRequirement, item: UserEvidence
   if (requirement.category === "evidence") return item.sourceType === "proof_asset" || item.sourceType === "learning_output";
   if (requirement.category === "network") return item.sourceType === "network_relationship" || item.sourceType === "contact_interaction";
   if (requirement.category === "access") return item.sourceType === "contact_interaction" || item.sourceType === "application_signal";
-  if (requirement.category === "knowledge") return item.sourceType === "proof_asset" || item.sourceType === "learning_output" || item.sourceType === "win";
-  if (requirement.category === "skill") return item.sourceType === "proof_asset" || item.sourceType === "learning_output" || item.sourceType === "win";
-  return item.sourceType === "proof_asset" && item.strength === "direct";
+  if (requirement.category === "knowledge" || requirement.category === "skill") {
+    return item.sourceType === "proof_asset" || item.sourceType === "learning_output" || item.sourceType === "win";
+  }
+  if (requirement.category === "narrative") return item.sourceType === "application_signal" || item.sourceType === "proof_asset";
+  return false;
 }
 
 function matchEvidence(requirement: TargetRequirement, roleTitles: string[], item: UserEvidenceItem): EvidenceMatch | null {
   const compatibility = categoryCompatibility(requirement.category, item.sourceType);
   if (compatibility < 0) return null;
-  const requirementText = `${requirement.label} ${requirement.aliases.join(" ")} ${requirement.definition} ${requirement.successBar} ${roleTitles.join(" ")}`;
+  const requirementText = `${requirement.label} ${requirement.aliases.join(" ")} ${requirement.definition} ${requirement.successBar}`;
   const evidenceText = `${item.title} ${item.detail}`;
   const overlap = overlapScore(requirementText, evidenceText);
+  const roleOverlap = roleTitles.length ? overlapScore(roleTitles.join(" "), evidenceText) : 0;
   const normalizedLabel = normalize(requirement.label);
   const exactBonus = normalizedLabel.length >= 5 && normalize(evidenceText).includes(normalizedLabel) ? 2.5 : 0;
+
+  // Category compatibility alone must never create a match. There must be a
+  // semantic link to the actual requirement or an exact requirement phrase.
+  if (overlap < 0.12 && exactBonus === 0) return null;
+
   const strengthBonus = item.strength === "direct" ? 1.5 : item.strength === "supporting" ? 0.6 : -0.8;
   const targetBonus = item.targetSpecific ? 0.8 : 0;
-  const score = overlap * 7 + exactBonus + compatibility + strengthBonus + targetBonus;
-  if (score < 2.8) return null;
+  const roleBonus = Math.min(0.6, roleOverlap * 1.5);
+  const score = overlap * 8 + exactBonus + compatibility + strengthBonus + targetBonus + roleBonus;
+  if (score < 3.2) return null;
   return {
     item,
     score,
@@ -534,7 +590,9 @@ function assessRequirement(requirement: TargetRequirement, model: RequirementMod
     else if (credibleMatches.length > 0) state = "partially_proven";
     else state = "unknown";
   } else {
-    if (directMatches.some((match) => match.score >= 7.5) && credibleMatches.length >= 2) state = "proven";
+    const exceptionalDirect = directMatches.some((match) => match.score >= 8.5);
+    const corroboratedDirect = directMatches.some((match) => match.score >= 7.5) && credibleMatches.length >= 2;
+    if (exceptionalDirect || corroboratedDirect) state = "proven";
     else if (credibleMatches.length > 0) state = "partially_proven";
     else state = inspected ? "unproven" : "unknown";
   }
@@ -555,10 +613,10 @@ function assessRequirement(requirement: TargetRequirement, model: RequirementMod
     : state === "partially_proven"
       ? `Anchor found relevant evidence${evidenceSummary ? `: ${evidenceSummary}` : ""}, but it does not yet fully demonstrate the stated success bar.`
       : state === "below_bar"
-        ? `Stored feedback or outcomes indicate this requirement may currently fall below the target bar. This is an evidence-based signal, not a permanent judgement.`
+        ? "Stored feedback or outcomes indicate this requirement may currently fall below the target bar. This is an evidence-based signal, not a permanent judgement."
         : state === "unproven"
-          ? `Anchor checked the relevant evidence sources but did not find adequate proof. This means unproven in Anchor, not absent in the user.`
-          : `Anchor does not have enough relevant user evidence to assess this requirement responsibly.`;
+          ? "Anchor checked the relevant evidence sources but did not find adequate proof. This means unproven in Anchor, not absent in the user."
+          : "Anchor does not have enough relevant user evidence to assess this requirement responsibly.";
   const successBarAssessment = state === "proven"
     ? "The available evidence appears to meet the success bar."
     : state === "partially_proven"

@@ -27,7 +27,12 @@ jobs:
 
       - name: Unit tests
         if: always()
-        run: npm test
+        run: |
+          set +e
+          npm test > /tmp/anchor-tests.log 2>&1
+          status=$?
+          tail -n 260 /tmp/anchor-tests.log
+          exit $status
 
       - name: CSS source audit
         if: always()

@@ -61,7 +61,7 @@ function validCoverageModel(value: any, requirementModel: RequirementModel, user
     && asArray(value.coverage).length === requirementModel.requirements.length;
 }
 
-async function ensureCoverage(trackId: number, force = false) {
+export async function ensureRequirementCoverage(trackId: number, force = false) {
   const track = await storage.getCareerTrack(trackId);
   if (!track) return null;
   const intelligence = parseJsonObject(track.trackIntelligence);
@@ -99,7 +99,7 @@ export function registerTrackResearchCoverageRoutes(app: Express) {
   app.get("/api/career-tracks/:id/coverage", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
-    const result = await ensureCoverage(id, false);
+    const result = await ensureRequirementCoverage(id, false);
     if (!result) return res.status(404).json({ error: "Track not found" });
     if ("error" in result) return res.status(409).json({ error: result.error });
     return res.json({
@@ -113,7 +113,7 @@ export function registerTrackResearchCoverageRoutes(app: Express) {
   app.post("/api/career-tracks/:id/coverage/refresh", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
-    const result = await ensureCoverage(id, true);
+    const result = await ensureRequirementCoverage(id, true);
     if (!result) return res.status(404).json({ error: "Track not found" });
     if ("error" in result) return res.status(409).json({ error: result.error });
     return res.json({

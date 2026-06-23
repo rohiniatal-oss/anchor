@@ -3,7 +3,7 @@ import type { RequirementModel, TargetRequirement } from "./trackResearchRequire
 import type { UserEvidenceCorpus, UserEvidenceItem } from "./trackResearchCoverageEvidence";
 import type { CoverageModel, CoverageStatus, RequirementCoverage } from "./trackResearchCoverageModel";
 
-export const COVERAGE_QUALITY_POLICY_VERSION = 2;
+export const COVERAGE_QUALITY_POLICY_VERSION = 3;
 
 export type QualityCoverageModel = CoverageModel & {
   qualityPolicyVersion: number;
@@ -77,7 +77,7 @@ function stableJson(value: unknown): string {
       .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
       .join(",")}}`;
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? "null";
 }
 
 function hash(value: unknown): string {
@@ -93,11 +93,16 @@ function hash(value: unknown): string {
 export function coverageRequirementFingerprint(model: RequirementModel): string {
   return hash({
     version: model.version,
+    target: {
+      label: model.target.label,
+      definition: model.target.definition,
+    },
     requirements: [...model.requirements]
       .map((requirement) => ({
         id: requirement.id,
         key: requirement.key,
         label: requirement.label,
+        aliases: [...requirement.aliases].sort(),
         definition: requirement.definition,
         group: requirement.group,
         category: requirement.category,
@@ -149,9 +154,11 @@ function requirementSearchText(requirement: TargetRequirement, model: Requiremen
     requirement.definition,
     requirement.successBar,
     model.target.label,
+    model.target.definition,
     ...roleTitles,
     ...requirement.context.employerTypes,
     ...requirement.context.geographies,
+    ...requirement.context.notes,
   ].join(" ");
 }
 
@@ -167,7 +174,7 @@ function evidenceTopicallyRelevant(
   if (overlap <= 0) return false;
 
   // Track linkage improves confidence that an item belongs in this target area,
-  // but never substitutes for topical relevance to the specific requirement.
+  // but never substitutes for relevance to the specific requirement.
   const sameTrack = item.trackIds.includes(corpus.targetTrackId);
   const threshold = requirement.category === "network" || requirement.category === "access"
     ? 0.09
@@ -193,10 +200,16 @@ function appliedSignals(items: UserEvidenceItem[]): UserEvidenceItem[] {
   return items.filter((item) => item.usableForCoverage && ["win", "learning_output", "proof_asset", "completed_learning"].includes(item.sourceType));
 }
 
-function evidenceCanProve(requirement: TargetRequirement, items: UserEvidenceItem[]): boolean {
-  if (requirement.category === "evidence") {
-    return verifiedAppliedOutput(items);
+function accessEvidenceIsStrong(item: UserEvidenceItem): boolean {
+  const text = normalize(`${item.label} ${item.detail}`);
+  if (item.sourceType === "interaction") {
+    return ["intro", "introduction", "referral", "meeting"].some((term) => text.includes(term));
   }
+  return item.sourceType === "relationship" && (item.strength === "direct" || item.strength === "verified");
+}
+
+function evidenceCanProve(requirement: TargetRequirement, items: UserEvidenceItem[]): boolean {
+  if (requirement.category === "evidence") return verifiedAppliedOutput(items);
   if (requirement.category === "skill") {
     const applied = appliedSignals(items);
     return verifiedAppliedOutput(items)
@@ -209,20 +222,44 @@ function evidenceCanProve(requirement: TargetRequirement, items: UserEvidenceIte
         && applied.some((item) => ["win", "learning_output", "proof_asset"].includes(item.sourceType))
         && distinctEntities(applied) >= 2);
   }
+  if (requirement.category === "network") {
+    return items.some((item) => ["relationship", "interaction"].includes(item.sourceType)
+      && (item.strength === "direct" || item.strength === "verified"));
+  }
+  if (requirement.category === "access") return items.some(accessEvidenceIsStrong);
   if (requirement.category === "narrative") {
     return items.some((item) => item.strength === "verified")
       || (distinctEntities(items) >= 2 && distinctTypes(items) >= 2);
   }
-  return true;
+  if (requirement.category === "experience") {
+    return items.some((item) => ["cv", "profile_summary", "win"].includes(item.sourceType));
+  }
+  if (requirement.category === "credential" || requirement.category === "eligibility") {
+    return items.some((item) => ["cv", "profile_summary"].includes(item.sourceType));
+  }
+  return items.some((item) => item.strength === "verified" || item.strength === "direct");
 }
 
-function corpusCanSupportAbsence(requirement: TargetRequirement, corpus: UserEvidenceCorpus): boolean {
-  const usable = corpus.items.filter((item) => item.usableForCoverage && item.strength !== "planned");
-  const byType = (...types: UserEvidenceItem["sourceType"][]) => usable.filter((item) => types.includes(item.sourceType));
+function relevantCorpusItems(
+  requirement: TargetRequirement,
+  requirementModel: RequirementModel,
+  corpus: UserEvidenceCorpus,
+): UserEvidenceItem[] {
+  return corpus.items.filter((item) => item.usableForCoverage
+    && item.strength !== "planned"
+    && evidenceTopicallyRelevant(requirement, item, requirementModel, corpus));
+}
+
+function corpusCanSupportAbsence(
+  requirement: TargetRequirement,
+  requirementModel: RequirementModel,
+  corpus: UserEvidenceCorpus,
+): boolean {
+  const relevant = relevantCorpusItems(requirement, requirementModel, corpus);
+  const byType = (...types: UserEvidenceItem["sourceType"][]) => relevant.filter((item) => types.includes(item.sourceType));
 
   if (requirement.category === "network" || requirement.category === "access") {
-    const relationships = byType("relationship", "interaction");
-    return distinctEntities(relationships) >= 3;
+    return distinctEntities(byType("relationship", "interaction")) >= 3;
   }
   if (requirement.category === "evidence") {
     return distinctEntities(byType("learning_output", "proof_asset")) >= 3;
@@ -239,13 +276,14 @@ function corpusCanSupportAbsence(requirement: TargetRequirement, corpus: UserEvi
   if (["experience", "credential", "eligibility"].includes(requirement.category)) {
     return byType("cv", "profile_summary").length > 0;
   }
-  return usable.length >= 4 && distinctTypes(usable) >= 2;
+  return relevant.length >= 4 && distinctTypes(relevant) >= 2;
 }
 
 function qualityState(
   requirement: TargetRequirement,
   coverage: RequirementCoverage,
   evidence: UserEvidenceItem[],
+  requirementModel: RequirementModel,
   corpus: UserEvidenceCorpus,
 ): { status: CoverageStatus; confidence?: "high" | "medium" | "low"; reason?: string } {
   if (coverage.status === "proven" && !evidenceCanProve(requirement, evidence)) {
@@ -264,11 +302,18 @@ function qualityState(
       reason: "The cited evidence was not topically relevant enough to this specific requirement, so Anchor cannot assess it yet.",
     };
   }
-  if (coverage.status === "unproven" && !corpusCanSupportAbsence(requirement, corpus)) {
+  if (coverage.status === "below_bar" && !evidence.length) {
     return {
       status: "unknown",
       confidence: "low",
-      reason: "Anchor has not reviewed a sufficiently broad and relevant evidence set to call this requirement unproven. It remains unknown rather than a deficit.",
+      reason: "Anchor has no topically relevant negative evidence that would justify a below-bar judgement.",
+    };
+  }
+  if (coverage.status === "unproven" && !corpusCanSupportAbsence(requirement, requirementModel, corpus)) {
+    return {
+      status: "unknown",
+      confidence: "low",
+      reason: "Anchor has not reviewed a sufficiently broad and topically relevant evidence set to call this requirement unproven. It remains unknown rather than a deficit.",
     };
   }
   return { status: coverage.status };
@@ -315,8 +360,10 @@ function recomputeModel(
     ...model,
     qualityPolicyVersion: COVERAGE_QUALITY_POLICY_VERSION,
     requirementModelFingerprint: coverageRequirementFingerprint(requirementModel),
+    userEvidenceFingerprint: corpus.fingerprint,
     coverage,
     evidenceItems,
+    sourceInventory: corpus.sourceCounts,
     groups,
     quality: {
       status,
@@ -344,7 +391,7 @@ export function applyCoverageQualityPolicy(
     const allEvidence = claimsFor(item, model);
     const evidence = allEvidence.filter((candidate) => evidenceTopicallyRelevant(requirement, candidate, requirementModel, corpus));
     removedEvidenceCount += allEvidence.length - evidence.length;
-    const decision = qualityState(requirement, item, evidence, corpus);
+    const decision = qualityState(requirement, item, evidence, requirementModel, corpus);
     const evidenceChanged = evidence.length !== allEvidence.length;
     if (decision.status === item.status && !evidenceChanged) return item;
     if (decision.status !== item.status) downgradeCount += 1;
@@ -368,6 +415,7 @@ export function applyCoverageQualityPolicy(
 }
 
 export const coverageQualityInternals = {
+  corpusCanSupportAbsence,
   evidenceTopicallyRelevant,
   overlapScore,
 };

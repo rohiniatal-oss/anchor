@@ -5,8 +5,15 @@ import { materializeTrackResearch } from "./trackResearchAgent";
 import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
 import { buildBottleneckDiagnosis } from "./trackResearchBottlenecks";
 import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";
-import { buildRequirementModel, REQUIREMENT_MODEL_VERSION } from "./trackResearchRequirementModel";
+import { buildRequirementModel, REQUIREMENT_MODEL_VERSION, type RequirementModel } from "./trackResearchRequirementModel";
 import { enhanceRequirementModelWithLlm } from "./trackResearchRequirementSynthesis";
+import {
+  buildCoverageModel,
+  collectUserEvidence,
+  coverageModelIsCurrent,
+  type CoverageModel,
+} from "./trackResearchCoverageModel";
+import { enhanceCoverageModelWithLlm } from "./trackResearchCoverageSynthesis";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -125,7 +132,7 @@ function buildBriefFromIntelligence(track: any, intelligence: Record<string, any
   };
 }
 
-function deriveRequirementModel(track: any, intelligence: Record<string, any> | null) {
+function deriveRequirementModel(track: any, intelligence: Record<string, any> | null): RequirementModel | null {
   if (!hasStoredResearch(intelligence)) return null;
   const stored = intelligence.requirementModel;
   const sourceResearchAt = Number(intelligence.researchedAt || 0);
@@ -138,6 +145,19 @@ function deriveRequirementModel(track: any, intelligence: Record<string, any> | 
     return stored;
   }
   return buildRequirementModel(track, buildBriefFromIntelligence(track, intelligence), sourceResearchAt);
+}
+
+async function deriveCoverageModel(
+  track: any,
+  intelligence: Record<string, any> | null,
+  requirementModel: RequirementModel | null,
+  enhanceWithLlm = false,
+): Promise<CoverageModel | null> {
+  if (!requirementModel) return null;
+  const bundle = await collectUserEvidence(track.id);
+  if (coverageModelIsCurrent(intelligence?.coverageModel, requirementModel, bundle)) return intelligence?.coverageModel;
+  const draft = buildCoverageModel(requirementModel, bundle);
+  return enhanceWithLlm ? enhanceCoverageModelWithLlm(requirementModel, bundle, draft) : draft;
 }
 
 function deriveCareerArchitecture(track: any, intelligence: Record<string, any> | null) {
@@ -162,8 +182,8 @@ async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
-  // Market and role-family research are supporting inputs. The durable output of
-  // this stage is the evidence-backed requirement model.
+  // Market and role-family research determine what the chosen target requires.
+  // Coverage then audits the user's existing evidence without asking for a questionnaire.
   const result = await runStructuredTrackResearch(domain, { materialize: false });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
@@ -171,12 +191,16 @@ async function handleTrackResearch(req: any, res: any) {
   const sourceResearchAt = Number(currentIntelligence.researchedAt || Date.now());
   const draftRequirementModel = buildRequirementModel(result.track, result.brief, sourceResearchAt);
   const requirementModel = await enhanceRequirementModelWithLlm(result.track, result.brief, draftRequirementModel);
+  const userEvidence = await collectUserEvidence(result.track.id);
+  const draftCoverageModel = buildCoverageModel(requirementModel, userEvidence);
+  const coverageModel = await enhanceCoverageModelWithLlm(requirementModel, userEvidence, draftCoverageModel);
   const architecture = buildCareerArchitecture(result.track, result.brief, result.organizedWorkspace);
   const bottleneckDiagnosis = buildBottleneckDiagnosis(result.track, result.brief, architecture);
   const organizedWorkspace = architectureWorkspaceView(result.organizedWorkspace, architecture, bottleneckDiagnosis);
   const nextIntelligence = {
     ...currentIntelligence,
     requirementModel,
+    coverageModel,
     organizedWorkspace,
     careerArchitecture: architecture,
     bottleneckDiagnosis,
@@ -203,6 +227,7 @@ async function handleTrackResearch(req: any, res: any) {
     evidenceLoops: result.brief.evidenceLoops,
     fitGapMatrix: result.brief.fitGapMatrix,
     requirementModel,
+    coverageModel,
     organizedWorkspace,
     careerArchitecture: architecture,
     bottleneckDiagnosis,
@@ -225,6 +250,7 @@ export function registerTrackResearchRoutes(app: Express) {
     if (!track) return res.status(404).json({ error: "Track not found" });
     const intelligence = parseJsonObject(track.trackIntelligence || "");
     const requirementModel = deriveRequirementModel(track, intelligence);
+    const coverageModel = await deriveCoverageModel(track, intelligence, requirementModel, false);
     const careerArchitecture = deriveCareerArchitecture(track, intelligence);
     const bottleneckDiagnosis = deriveBottleneckDiagnosis(track, intelligence, careerArchitecture);
     const organizedWorkspace = architectureWorkspaceView(intelligence?.organizedWorkspace || null, careerArchitecture, bottleneckDiagnosis);
@@ -249,12 +275,35 @@ export function registerTrackResearchRoutes(app: Express) {
       roleShapes: intelligence?.roleShapes || [],
       gapAnalysis: intelligence?.gapAnalysis || null,
       requirementModel,
+      coverageModel,
       organizedWorkspace,
       careerArchitecture,
       bottleneckDiagnosis,
       automaticSelection: careerArchitecture?.automaticSelection || intelligence?.automaticSelection || null,
       activationInventory: intelligence?.activationInventory || null,
     });
+  });
+
+  app.post("/api/career-tracks/:id/coverage/refresh", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const track = await storage.getCareerTrack(id);
+    if (!track) return res.status(404).json({ error: "Track not found" });
+    const intelligence = parseJsonObject(track.trackIntelligence || "");
+    const requirementModel = deriveRequirementModel(track, intelligence);
+    if (!requirementModel) return res.status(400).json({ error: "No requirement model is stored for this track" });
+    const userEvidence = await collectUserEvidence(track.id);
+    const draftCoverageModel = buildCoverageModel(requirementModel, userEvidence);
+    const coverageModel = await enhanceCoverageModelWithLlm(requirementModel, userEvidence, draftCoverageModel);
+    const nextIntelligence = {
+      ...(intelligence || {}),
+      requirementModel,
+      coverageModel,
+      coverageRefreshedAt: Date.now(),
+      lastUpdated: Date.now(),
+    };
+    const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
+    res.json({ track: updatedTrack || track, requirementModel, coverageModel });
   });
 
   app.post("/api/career-tracks/:id/research-plan/materialize", async (req, res) => {
@@ -268,6 +317,7 @@ export function registerTrackResearchRoutes(app: Express) {
     }
     const brief = buildBriefFromIntelligence(track, intelligence);
     const requirementModel = deriveRequirementModel(track, intelligence) || buildRequirementModel(track, brief, Number(intelligence.researchedAt || 0));
+    const coverageModel = await deriveCoverageModel(track, intelligence, requirementModel, false);
     const careerArchitecture = deriveCareerArchitecture(track, intelligence) || buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
     const bottleneckDiagnosis = deriveBottleneckDiagnosis(track, intelligence, careerArchitecture) || buildBottleneckDiagnosis(track, brief, careerArchitecture);
     const organizedWorkspace = architectureWorkspaceView(intelligence.organizedWorkspace || null, careerArchitecture, bottleneckDiagnosis);
@@ -276,6 +326,7 @@ export function registerTrackResearchRoutes(app: Express) {
     const nextIntelligence = {
       ...intelligence,
       requirementModel,
+      coverageModel,
       organizedWorkspace,
       careerArchitecture,
       bottleneckDiagnosis,
@@ -285,6 +336,6 @@ export function registerTrackResearchRoutes(app: Express) {
       lastUpdated: Date.now(),
     };
     const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
-    res.json({ track: updatedTrack || track, materialized, requirementModel, organizedWorkspace, careerArchitecture, bottleneckDiagnosis });
+    res.json({ track: updatedTrack || track, materialized, requirementModel, coverageModel, organizedWorkspace, careerArchitecture, bottleneckDiagnosis });
   });
 }

@@ -24,6 +24,84 @@ type Hypothesis = {
   priority?: number;
 };
 
+type PathHypothesis = {
+  title: string;
+  description?: string;
+  confidence?: number;
+  capabilityFit?: number;
+  preferenceFit?: number;
+  accessFit?: number;
+  valuesFit?: number;
+  lifestyleFit?: number;
+  whyPromising?: string;
+  risks?: string[];
+  testSignals?: string[];
+};
+
+type CareerHypothesis = {
+  input?: string;
+  normalizedTitle?: string;
+  confidence?: number;
+  whyAttractive?: string;
+  coreUncertainties?: string[];
+};
+
+type RequirementNode = {
+  path?: string;
+  capitalType?: string;
+  requirement: string;
+  evidence?: string;
+  priority?: number;
+};
+
+type CareerCapitalItem = {
+  capitalType?: string;
+  asset: string;
+  currentLevel?: string;
+  evidence?: string;
+  linkedPaths?: string[];
+};
+
+type GapItem = {
+  gap: string;
+  capitalType?: string;
+  severity?: string;
+  evidence?: string;
+  linkedPaths?: string[];
+  whyItMatters?: string;
+};
+
+type InterventionRecommendation = {
+  gap?: string;
+  gapType?: string;
+  interventionType?: string;
+  recommendation: string;
+  whyThis?: string;
+  output?: string;
+  assessmentCriteria?: string;
+  priority?: number;
+};
+
+type DevelopmentPlan = {
+  title: string;
+  capitalType?: string;
+  objective?: string;
+  supportsPaths?: string[];
+  resources?: Array<{ title: string; type?: string; why?: string; url?: string }>;
+  practice?: string[];
+  proofOutputs?: string[];
+  networkInputs?: string[];
+  milestones?: Array<{ label: string; doneWhen?: string }>;
+  assessmentCriteria?: string[];
+  updateTriggers?: string[];
+};
+
+type EvidenceLoop = {
+  evidenceToCollect: string;
+  wouldIncreaseConfidence?: string;
+  wouldDecreaseConfidence?: string;
+};
+
 type FitGapDimension = {
   strengths?: string[];
   gaps?: string[];
@@ -56,6 +134,7 @@ type OrganizedWorkspace = {
   savedTo?: Array<{ label: string; storage: string; status: string; contains?: string[] }>;
   sortingLogic?: Array<{ rule: string; reason: string }>;
   lanes?: Array<{ lane: string; purpose: string; savedIn: string; activationTarget: string; items?: WorkspaceItem[] }>;
+  assessmentQueue?: WorkspaceItem[];
   priorityQueue?: WorkspaceItem[];
 };
 
@@ -64,7 +143,15 @@ type ResearchPlanResponse = {
   plan?: { horizon?: string; logic?: string; lanes?: TrackPlanLane[] } | null;
   searchPlan?: Record<string, string[]> | null;
   evidencePack?: EvidenceItem[];
+  careerHypothesis?: CareerHypothesis | null;
+  pathHypotheses?: PathHypothesis[];
   trackHypotheses?: Hypothesis[];
+  requirementGraph?: RequirementNode[];
+  careerCapitalPortfolio?: CareerCapitalItem[];
+  gapPortfolio?: GapItem[];
+  interventionRecommendations?: InterventionRecommendation[];
+  developmentPlans?: DevelopmentPlan[];
+  evidenceLoops?: EvidenceLoop[];
   fitGapMatrix?: Record<string, FitGapDimension> | null;
   sectorMap?: Array<{ sector: string; description: string; exampleOrgs?: string[] }>;
   roleShapes?: Array<{ title: string; what: string; typicalOrgs?: string[]; seniority?: string }>;
@@ -103,13 +190,18 @@ function list(items?: string[]) {
 }
 
 function chipTone(value?: string) {
-  if (value === "high") return "bg-emerald-50 text-emerald-700";
-  if (value === "low") return "bg-amber-50 text-amber-700";
+  if (value === "high" || value === "strong") return "bg-emerald-50 text-emerald-700";
+  if (value === "low" || value === "weak") return "bg-amber-50 text-amber-700";
   return "bg-slate-100 text-slate-700";
 }
 
 function CountChip({ label, count }: { label: string; count: number }) {
   return <span className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground">{count} {label}</span>;
+}
+
+function ScoreChip({ label, value }: { label: string; value?: number }) {
+  if (typeof value !== "number") return null;
+  return <span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{label} {value}</span>;
 }
 
 export function TrackResearchReview({ trackId }: { trackId?: number }) {
@@ -130,12 +222,19 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
   const searchPlan = data.searchPlan || {};
   const evidence = data.evidencePack || [];
   const hypotheses = data.trackHypotheses || [];
+  const paths = data.pathHypotheses || [];
+  const requirements = data.requirementGraph || [];
+  const capital = data.careerCapitalPortfolio || [];
+  const gaps = data.gapPortfolio || [];
+  const interventions = data.interventionRecommendations || [];
+  const developmentPlans = data.developmentPlans || [];
+  const evidenceLoops = data.evidenceLoops || [];
   const sectors = data.sectorMap || [];
   const roles = data.roleShapes || [];
   const lanes = data.plan?.lanes || [];
   const fitGap = data.fitGapMatrix || {};
   const workspace = data.organizedWorkspace || null;
-  const workspaceItems = workspace?.priorityQueue || [];
+  const assessmentQueue = workspace?.assessmentQueue || workspace?.priorityQueue || [];
 
   async function activatePlan() {
     if (!trackId || activating) return;
@@ -151,7 +250,7 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
         ...GOAL_SPINE_QUERY_KEYS,
       ]);
       const m = result?.materialized || {};
-      setActivationSummary(`Created ${m.jobIds?.length || 0} roles, ${m.learnIds?.length || 0} learning items, ${m.contactIds?.length || 0} contact targets, and ${m.hustleIds?.length || 0} proof assets. Anchor saved the activation inventory back to this track.`);
+      setActivationSummary(`Created ${m.jobIds?.length || 0} role examples, ${m.learnIds?.length || 0} knowledge resources, ${m.contactIds?.length || 0} network targets, and ${m.hustleIds?.length || 0} proof assets. Anchor saved the activation inventory back to this track.`);
     } catch (e: any) {
       setActivationSummary(e?.message || "Could not activate the plan yet.");
     } finally {
@@ -163,22 +262,23 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
     <div className="mt-3 rounded-xl border border-card-border bg-background/60 p-3" data-testid="track-research-review">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-semibold text-foreground">Review the research before activating it</p>
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Anchor has built the dossier, organized it by lane, and kept execution objects opt-in.</p>
+          <p className="text-xs font-semibold text-foreground">Review the career intelligence model</p>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Anchor has organized this as hypotheses, path fit, career capital, gaps, interventions, and living development plans.</p>
         </div>
         <Button size="sm" onClick={activatePlan} disabled={activating} data-testid="button-activate-track-plan">
           {activating ? <Sparkles className="mr-1 h-4 w-4 animate-pulse" /> : <CheckCircle2 className="mr-1 h-4 w-4" />}
-          {activating ? "Activating" : "Activate plan"}
+          {activating ? "Creating" : "Create objects"}
         </Button>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         <CountChip label="sources" count={evidence.length} />
-        <CountChip label="hypotheses" count={hypotheses.length} />
-        <CountChip label="sectors" count={sectors.length} />
-        <CountChip label="role shapes" count={roles.length} />
-        <CountChip label="plan lanes" count={lanes.length} />
-        <CountChip label="organized moves" count={workspaceItems.length} />
+        <CountChip label="paths" count={paths.length} />
+        <CountChip label="requirements" count={requirements.length} />
+        <CountChip label="capital items" count={capital.length} />
+        <CountChip label="gaps" count={gaps.length} />
+        <CountChip label="interventions" count={interventions.length} />
+        <CountChip label="development plans" count={developmentPlans.length} />
       </div>
 
       {activationSummary && (
@@ -191,7 +291,7 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
         {workspace && (
           <AccordionItem value="organized" className="rounded-lg border border-card-border bg-card px-3">
             <AccordionTrigger className="py-2 text-left text-xs hover:no-underline">
-              <span className="flex items-center gap-2"><Database className="h-4 w-4 text-primary" /> Where this is saved and sorted</span>
+              <span className="flex items-center gap-2"><Database className="h-4 w-4 text-primary" /> Where this is saved and assessed</span>
             </AccordionTrigger>
             <AccordionContent>
               <div className="space-y-3">
@@ -208,11 +308,11 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
                   ))}
                 </div>
 
-                {(workspace.priorityQueue || []).length > 0 && (
+                {assessmentQueue.length > 0 && (
                   <div>
-                    <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium"><ListOrdered className="h-4 w-4 text-primary" /> Priority queue</p>
+                    <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium"><ListOrdered className="h-4 w-4 text-primary" /> Assessment queue</p>
                     <div className="space-y-1.5">
-                      {(workspace.priorityQueue || []).slice(0, 6).map((item, index) => (
+                      {assessmentQueue.slice(0, 6).map((item, index) => (
                         <div key={item.id || `${item.title}-${index}`} className="rounded-lg bg-muted/25 p-2">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">#{item.rank || index + 1}</span>
@@ -242,6 +342,114 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
             </AccordionContent>
           </AccordionItem>
         )}
+
+        <AccordionItem value="capital-model" className="rounded-lg border border-card-border bg-card px-3">
+          <AccordionTrigger className="py-2 text-left text-xs hover:no-underline">
+            <span className="flex items-center gap-2"><Target className="h-4 w-4 text-primary" /> Career capital model</span>
+          </AccordionTrigger>
+          <AccordionContent>
+            {data.careerHypothesis && (
+              <div className="mb-2 rounded-lg border border-card-border bg-muted/25 p-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <p className="text-xs font-medium">{data.careerHypothesis.normalizedTitle || data.track.name}</p>
+                  <ScoreChip label="confidence" value={data.careerHypothesis.confidence} />
+                </div>
+                <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{data.careerHypothesis.whyAttractive}</p>
+                {list(data.careerHypothesis.coreUncertainties).length > 0 && <p className="mt-1 text-[11px] text-amber-700">Unknowns: {list(data.careerHypothesis.coreUncertainties).join("; ")}</p>}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {paths.slice(0, 5).map((path) => (
+                <div key={path.title} className="rounded-lg bg-muted/25 p-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-xs font-medium">{path.title}</p>
+                    <ScoreChip label="confidence" value={path.confidence} />
+                    <ScoreChip label="capability" value={path.capabilityFit} />
+                    <ScoreChip label="access" value={path.accessFit} />
+                    <ScoreChip label="preference" value={path.preferenceFit} />
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{path.whyPromising || path.description}</p>
+                  {list(path.testSignals).length > 0 && <p className="mt-1 text-[11px] text-primary">Test: {list(path.testSignals).join("; ")}</p>}
+                </div>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        <AccordionItem value="gaps" className="rounded-lg border border-card-border bg-card px-3">
+          <AccordionTrigger className="py-2 text-left text-xs hover:no-underline">
+            <span className="flex items-center gap-2"><FlaskConical className="h-4 w-4 text-primary" /> Gaps and interventions</span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="space-y-2">
+              {gaps.slice(0, 6).map((gap) => (
+                <div key={gap.gap} className="rounded-lg bg-muted/25 p-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-xs font-medium">{gap.gap}</p>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${chipTone(gap.severity)}`}>{gap.severity || "medium"}</span>
+                    <span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{gap.capitalType}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{gap.whyItMatters}</p>
+                  {gap.evidence && <p className="mt-1 text-[11px] text-muted-foreground">Evidence: {gap.evidence}</p>}
+                </div>
+              ))}
+
+              {interventions.slice(0, 6).map((item) => (
+                <div key={`${item.recommendation}-${item.gap}`} className="rounded-lg border border-primary/15 bg-primary/5 p-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-xs font-medium">{item.recommendation}</p>
+                    <span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-primary">{item.interventionType}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{item.whyThis}</p>
+                  {item.output && <p className="mt-1 text-[11px] text-primary">Output: {item.output}</p>}
+                  {item.assessmentCriteria && <p className="mt-1 text-[11px] text-muted-foreground">Assess by: {item.assessmentCriteria}</p>}
+                </div>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        <AccordionItem value="development" className="rounded-lg border border-card-border bg-card px-3">
+          <AccordionTrigger className="py-2 text-left text-xs hover:no-underline">
+            <span className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-primary" /> Living development plans</span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="space-y-2">
+              {developmentPlans.slice(0, 5).map((plan) => (
+                <div key={plan.title} className="rounded-lg bg-muted/25 p-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-xs font-medium">{plan.title}</p>
+                    <span className="rounded-full bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground">{plan.capitalType}</span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{plan.objective}</p>
+                  {list(plan.supportsPaths).length > 0 && <p className="mt-1 text-[11px] text-primary">Supports: {list(plan.supportsPaths).join(", ")}</p>}
+                  {list(plan.proofOutputs).length > 0 && <p className="mt-1 text-[11px] text-muted-foreground">Proof: {list(plan.proofOutputs).join("; ")}</p>}
+                  {(plan.resources || []).length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {(plan.resources || []).slice(0, 3).map((resource) => (
+                        <div key={resource.title} className="rounded-md bg-background/70 px-2 py-1.5">
+                          <p className="text-[11px] font-medium">{resource.title}</p>
+                          {resource.why && <p className="mt-0.5 text-[11px] text-muted-foreground">{resource.why}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {evidenceLoops.length > 0 && (
+                <div className="rounded-lg border border-card-border bg-background/70 p-2">
+                  <p className="text-xs font-medium">Evidence loops</p>
+                  <div className="mt-1 space-y-1">
+                    {evidenceLoops.slice(0, 4).map((loop) => (
+                      <p key={loop.evidenceToCollect} className="text-[11px] leading-snug text-muted-foreground">{loop.evidenceToCollect}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
 
         <AccordionItem value="search" className="rounded-lg border border-card-border bg-card px-3">
           <AccordionTrigger className="py-2 text-left text-xs hover:no-underline">
@@ -354,7 +562,7 @@ export function TrackResearchReview({ trackId }: { trackId?: number }) {
 
         <AccordionItem value="plan" className="rounded-lg border border-card-border bg-card px-3">
           <AccordionTrigger className="py-2 text-left text-xs hover:no-underline">
-            <span className="flex items-center gap-2"><Network className="h-4 w-4 text-primary" /> Multi-lane plan</span>
+            <span className="flex items-center gap-2"><Network className="h-4 w-4 text-primary" /> Multi-lane assessment plan</span>
           </AccordionTrigger>
           <AccordionContent>
             {data.plan?.logic && <p className="mb-2 text-xs leading-snug text-muted-foreground">{data.plan.logic}</p>}

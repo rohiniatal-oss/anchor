@@ -12,10 +12,10 @@ test("strategy builder separates optional example/project ideas from learning re
   assert.ok(strategy.nextSystemMoves.some((move) => /optional example\/project/i.test(move)));
 });
 
-test("strategy builder fallback experiments use evidence mapping language", () => {
+test("strategy builder fallback experiments capture postings for Anchor analysis", () => {
   const strategy = buildStrategyBuilder([], [], [], [], []);
   const experiments = strategy.roleArchetypes.map((role) => role.nextExperiment).join(" | ");
 
-  assert.match(experiments, /posting, map its strongest asks to your evidence/i);
+  assert.match(experiments, /posting with JD text so Anchor can compare/i);
   assert.doesNotMatch(experiments, /top requirement you'd need to prove|note which of your experiences/i);
 });

@@ -238,13 +238,13 @@ export function registerStrategyBuilderRoutes(app: Express) {
     const archetype = safeText(req.body?.archetype, 140);
     if (!archetype) return res.status(400).json({ error: "Need archetype" });
     const track = await storage.createCareerTrack({ name: archetype, slug: slug(archetype), description: safeText(req.body?.fitLogic, 300), targetRoleArchetype: archetype, priority: req.body?.priority === "convert" ? 80 : req.body?.priority === "explore" ? 60 : 30, status: req.body?.priority === "pause" ? "paused" : "active", whyItFits: safeText(req.body?.fitLogic, 300) } as any);
-    const taskTitle = safeText(req.body?.nextExperiment || `Save one real ${archetype} posting, map its strongest asks to your evidence, and choose the first gap to close`, 180);
+    const taskTitle = safeText(req.body?.nextExperiment || `Save one real ${archetype} posting with JD text so Anchor can compare it to your profile`, 180);
     const credGap = safeText(req.body?.credibilityGap, 200);
     const firstStep = `Open LinkedIn or Indeed and search "${archetype}"`;
     const secondStep = credGap
-      ? `Save one realistic posting, then check whether this is the first gap to close: ${credGap}`
-      : `Save one realistic posting, then mark the strongest asks you can already evidence and the first one you cannot`;
-    const task = await storage.createTask({ title: taskTitle, list: "inbox", block: null, done: false, pinned: false, steps: JSON.stringify([{ text: firstStep, done: false }, { text: secondStep, done: false }]), sort: 0, category: "job", size: "medium", status: "not_started", skipped: 0, doneWhen: `One real ${archetype} posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen`, sourceType: "career_track", sourceId: track.id, sourceNote: credGap ? `Credibility gap: ${credGap}` : "From Strategy Builder", relatedTrackId: track.id } as any);
+      ? `Save one realistic posting with JD text so Anchor can compare it against this possible gap: ${credGap}`
+      : `Save one realistic posting with JD text so Anchor can extract the strongest asks`;
+    const task = await storage.createTask({ title: taskTitle, list: "inbox", block: null, done: false, pinned: false, steps: JSON.stringify([{ text: firstStep, done: false }, { text: secondStep, done: false }]), sort: 0, category: "job", size: "medium", status: "not_started", skipped: 0, doneWhen: `One real ${archetype} posting is saved with enough JD text for Anchor to compare it to your profile`, sourceType: "career_track", sourceId: track.id, sourceNote: credGap ? `Credibility gap: ${credGap}` : "From Strategy Builder", relatedTrackId: track.id } as any);
     res.json({ ok: true, track, task });
   });
 

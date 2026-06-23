@@ -115,10 +115,10 @@ test("plan-item start keeps broad-pursuit prep-support goal items as learning ta
     sourceType: "goal",
     sourceId: 3,
     taskId: null,
-    title: "Use AI Chief of Staff at Model Lab to identify the first missing requirement for AI / technology strategy x Ops / chief of staff",
-    doneWhen: "The first missing requirement and the smallest prep move are saved for AI / technology strategy x Ops / chief of staff.",
+    title: "Use AI Chief of Staff at Model Lab for Anchor's first prep suggestion for AI / technology strategy x Ops / chief of staff",
+    doneWhen: "Anchor's suggested requirement and the smallest prep move are saved for AI / technology strategy x Ops / chief of staff.",
     sourceStatus: "broad_parallel_pursuit_learning_support",
-    sourceNote: "Use AI Chief of Staff at Model Lab as the reference role. Treat Product & Delivery as the likely first skill gap, save one line on why, then choose the matching prep move.",
+    sourceNote: "Anchor's working diagnosis: Product & Delivery may be the weakest skill gap from AI Chief of Staff at Model Lab. Confirm or edit that diagnosis, then use this prep move: do one short drill.",
     slot: "now",
   });
 
@@ -182,7 +182,7 @@ test("broad-pursuit adaptive plan names missing paths when some lanes already ha
   assert.match(current.json.plan.note, /missing path/i);
   assert.match(current.json.plan.note, /Geopolitics/i);
   assert.match(current.json.items[0].title, /missing path|real .*posting/i);
-  assert.match(current.json.items[0].doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
+  assert.match(current.json.items[0].doneWhen, /posting is saved with enough JD text/i);
 });
 
 test("plan recompute preserves goal-source planner metadata on broad-pursuit support items", async () => {
@@ -295,6 +295,6 @@ test("plan recompute preserves goal-source planner metadata on broad-pursuit sup
 
   const learningSupport = current.json.items.find((item: any) => item.sourceStatus === "broad_parallel_pursuit_learning_support");
   assert.ok(learningSupport, "expected a persisted learning-support goal item");
-  assert.match(String(learningSupport.sourceNote || ""), /likely first gap|prep move|real role/i);
+  assert.match(String(learningSupport.sourceNote || ""), /Anchor's working diagnosis|prep move|real role/i);
   assert.equal(learningSupport.sourceType, "goal");
 });

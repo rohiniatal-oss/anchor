@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildMarketabilityPlan } from "./marketabilityEngine";
 
-test("marketability direction moves use a one-role requirements pattern", () => {
+test("marketability direction moves ask for one posting Anchor can analyse", () => {
   const plan = buildMarketabilityPlan({
     tasks: [],
     jobs: [],
@@ -20,7 +20,7 @@ test("marketability direction moves use a one-role requirements pattern", () => 
 
   const directionMove = plan.moves.find((move) => move.lane === "Direction");
   assert.ok(directionMove, "direction move should exist when the track has no roles");
-  assert.match(directionMove!.title, /find one real AI governance strategy role/i);
-  assert.match(directionMove!.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
+  assert.match(directionMove!.title, /save one real AI governance strategy posting with JD text/i);
+  assert.match(directionMove!.doneWhen, /posting is saved with enough JD text/i);
   assert.doesNotMatch(directionMove!.title, /review three|three .*roles/i);
 });

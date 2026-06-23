@@ -578,7 +578,7 @@ export function registerPlanningRoutes(app: Express) {
           return res.json({ action: "learn_first", message: `I added "${result.learnFirst}" to your learning list. The task is ready once you've done that.`, learnTitle: result.learnFirst });
         }
       } catch {}
-      return res.json({ action: "learn_first", message: "I couldn't figure out the gap — try breaking it down yourself." });
+      return res.json({ action: "learn_first", message: "I need one missing input before I can suggest the gap: add the role, source, or example this task depends on." });
     }
 
     if (reason === "dont_want_to") {

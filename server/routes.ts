@@ -623,7 +623,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
         location: trimSentence(draft.location, 140),
         url: trimSentence(draft.url || recommendation.sourceUrl, 500),
         note: acceptedFromRecommendation,
-        nextStep: trimSentence(draft.nextStep || milestones[0]?.suggestedTaskTitle || "Review fit and decide whether to pursue", 180),
+        nextStep: trimSentence(draft.nextStep || milestones[0]?.suggestedTaskTitle || "Save the role facts Anchor needs to compare fit", 180),
         status: "wishlist",
         roleArchetype: trimSentence(draft.roleArchetype, 120),
         relatedTrackId: trackId,

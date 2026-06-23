@@ -484,7 +484,7 @@ test("accepting a job recommendation creates the role without auto-creating a le
     acceptanceDraft: JSON.stringify({
       company: "Acme",
       roleArchetype: "ai-strategy",
-      nextStep: "Review fit and decide whether to pursue",
+      nextStep: "Save the role facts Anchor needs to compare fit",
     }),
   });
   assert.equal(rec.status, 200);

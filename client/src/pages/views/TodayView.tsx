@@ -197,9 +197,13 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
   const [question, setQuestion] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [dispositionPending, setDispositionPending] = useState(false);
+  const [localSteps, setLocalSteps] = useState<Step[]>(() => parseSteps(pinned.steps));
   const [skipDiagOpen, setSkipDiagOpen] = useState(false);
   const [skipResolving, setSkipResolving] = useState(false);
   const skipDiagShownFor = useRef<number | null>(null);
+  useEffect(() => {
+    setLocalSteps(parseSteps(pinned.steps));
+  }, [pinned.id, pinned.steps]);
   useEffect(() => {
     if ((pinned.skipped || 0) >= 2 && skipDiagShownFor.current !== pinned.id) {
       skipDiagShownFor.current = pinned.id;
@@ -218,7 +222,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
       toast({ title: "Couldn't process that right now." });
     } finally { setSkipResolving(false); }
   }
-  const steps = parseSteps(pinned.steps);
+  const steps = localSteps;
   const workflowCtx = steps[0]?.workflowState || null;
   const currentIdx = steps.findIndex((s) => !s.done);
   const current = currentIdx >= 0 ? steps[currentIdx] : null;
@@ -249,6 +253,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
       } else {
         setQuestion(null);
         setAnswer("");
+        if (typeof res?.steps === "string") setLocalSteps(parseSteps(res.steps));
       }
     }
     catch { toast({ title: "Couldn't break it down", description: "Try adding more detail to the title or a note about what's involved." }); }
@@ -267,7 +272,15 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
     }
     const next = steps.map((s, i) => (i === currentIdx ? { ...s, done: true, completedAt: new Date().toISOString() } : s));
     setDispositionPending(false);
-    await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
+    setLocalSteps(next);
+    try {
+      const updated = await mutateAndInvalidate("PATCH", `/api/tasks/${pinned.id}`, { steps: JSON.stringify(next) }, ["/api/tasks"]);
+      if (typeof updated?.steps === "string") setLocalSteps(parseSteps(updated.steps));
+    } catch {
+      setLocalSteps(steps);
+      toast({ title: "Couldn't save that step", description: "Try again in a moment." });
+      return;
+    }
     if (next.every((s) => s.done)) {
       await finishTask();
     } else {
@@ -279,6 +292,7 @@ function RightNow({ pinned, onMilestoneCompleted, onTaskCompleted, onTaskFinishe
     setDispositionPending(false);
     try {
       const res = await mutateAndInvalidate("POST", `/api/tasks/${pinned.id}/step-disposition`, { stepIndex: currentIdx, disposition }, ["/api/tasks"]);
+      if (typeof res?.steps === "string") setLocalSteps(parseSteps(res.steps));
       if (res?.allStepsDone) {
         await finishTask();
       } else {

@@ -145,7 +145,8 @@ test("routing a decision keeps it as an actionable inbox task", async () => {
   assert.equal(task.list, "inbox");
   assert.equal(task.category, "admin");
   assert.match(task.doneWhen, /decision|next action/i);
-  assert.match(task.steps, /exact question you need to decide/i);
+  assert.match(task.steps, /decision question in one line/i);
+  assert.match(task.steps, /Anchor suggest the real options/i);
   assert.equal(task.minimumOutcome, task.doneWhen);
   assert.match(task.sourceStatus, /routed:decision:task/);
 });
@@ -174,8 +175,9 @@ test("routing a blocker makes the capture blocked and gives it an unblock-orient
   const task = (await h.storage.getTasks()).find((t) => t.id === cap.id)!;
   assert.equal(task.readiness, "blocked");
   assert.match(task.blockerReason || "", /farah/i);
-  assert.match(task.steps, /Write what is blocked/i);
-  assert.match(task.steps, /Choose the smallest unblock request or workaround/i);
+  assert.match(task.steps, /Name the blocked object/i);
+  assert.match(task.steps, /Anchor label the blocker type/i);
+  assert.match(task.steps, /smallest unblock request or workaround Anchor suggests/i);
   assert.equal(task.minimumOutcome, task.doneWhen);
   assert.match(task.sourceStatus, /blocker_update/);
 });

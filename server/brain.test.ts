@@ -203,9 +203,9 @@ test("planner repairs task-backed role scans to the stronger gap-plus-learning c
   ];
 
   const result = planDay(tasks as any, [], [], [], "medium", { remainingMinutes: 120 });
-  assert.match(result.plan[0].candidate.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
+  assert.match(result.plan[0].candidate.doneWhen, /posting is saved with enough JD text/i);
   assert.match(result.plan[0].explanation.firstStep, /search "AI governance strategy roles"/i);
-  assert.match(result.plan[0].explanation.stopRule, /choose one small prep move|prep move/i);
+  assert.match(result.plan[0].explanation.stopRule, /JD text for Anchor to compare/i);
 });
 
 test("planner collapses to one item when the remaining day is small", () => {
@@ -568,9 +568,9 @@ test("planner surfaces missing broad-pursuit prep support after contact support 
 
   const result = planDay([], jobs as any, [], [], "medium", { remainingMinutes: 240 }, contacts as any, tracks);
   assert.equal(result.plan[0].candidate.source, "goal");
-  assert.match(result.plan[0].candidate.title, /check whether .* is the first missing requirement/i);
-  assert.match(result.plan[0].candidate.doneWhen, /likely first gap and the matching smallest prep move/i);
-  assert.match(result.plan[0].explanation.firstStep, /Frontier Lab|likely first gap|first missing requirement/i);
+  assert.match(result.plan[0].candidate.title, /Anchor's first prep suggestion/i);
+  assert.match(result.plan[0].candidate.doneWhen, /Anchor's suggested requirement and the matching smallest prep move/i);
+  assert.match(result.plan[0].explanation.firstStep, /Frontier Lab|Anchor's draft diagnosis/i);
   assert.match(result.note, /learning focus|learning support/i);
 });
 

@@ -302,9 +302,10 @@ function plannerLearningGapFromNote(sourceNote?: string | null): { label?: strin
   if (!note) return {};
   const explicit = note.match(/\bTreat\s+(.+?)\s+as\s+the\s+likely\s+first\s+(knowledge|skill|proof)\s+gap\b/i)
     || note.match(/\bTreat\s+(.+?)\s+as\s+the\s+likely\s+first\s+gap\s*\((knowledge|skill|proof)\)/i);
+  const anchorDiagnosis = note.match(/Anchor's working diagnosis:\s*(.+?)\s+may be the weakest\s+(knowledge|skill|proof)\s+gap\b/i);
   const legacy = note.match(/\bStart\s+with\s+(.+?)\s+as\s+the\s+likely\s+first\s+(?:knowledge\s+|skill\s+|proof\s+)?gap\b/i);
-  const label = compactText(explicit?.[1] || legacy?.[1] || "").replace(/[.?!]+$/g, "");
-  const rawGapType = String(explicit?.[2] || "").toLowerCase();
+  const label = compactText(explicit?.[1] || anchorDiagnosis?.[1] || legacy?.[1] || "").replace(/[.?!]+$/g, "");
+  const rawGapType = String(explicit?.[2] || anchorDiagnosis?.[2] || "").toLowerCase();
   const gapType = rawGapType === "knowledge" || rawGapType === "skill" || rawGapType === "proof" ? rawGapType : undefined;
   const fromRole = note.match(/\bfrom\s+(.+?)(?:[.?!]|,\s*save\b|,\s*confirm\b|,\s*then\b|$)/i)?.[1] || "";
   const useRole = note.match(/\bUse\s+(.+?)\s+as\s+the\s+reference\s+role\b/i)?.[1] || "";
@@ -342,8 +343,8 @@ function goalLearningSupportSteps(task: Pick<Task, "title" | "doneWhen" | "minim
     liveRole
       ? `Open ${liveRole} and use it as the reference role for ${label}`
       : `Open one live role, saved role note, or JD for ${label}`,
-    `Treat ${likelyGap.label} as the likely first ${gapTypeLabel} for ${label}; use the role only to confirm or disprove that diagnosis`,
-    `Save one sentence on why ${likelyGap.label} looks like the first ${gapTypeLabel}: what this path asks for and what you cannot yet prove, do, or explain clearly`,
+    `Use Anchor's draft diagnosis: ${likelyGap.label} may be the weakest ${gapTypeLabel} for ${label}`,
+    `Confirm or edit that diagnosis by checking one must-have line in the role and one matching evidence line from your background`,
     likelyGap.learningMoveStep
       .replace(/^Use this matching next learning move if that gap holds:\s*/i, "Use this matching next learning move if that gap holds: ")
       .replace(/, then stop once one real role, one repeated requirements pattern, and one next learning move are captured$/i, ""),
@@ -626,13 +627,10 @@ function isRoleMarketScanTask(task: Task, bundle: SourceBundle): boolean {
 
 function roleMarketScanSteps(task: Task, bundle: SourceBundle): string[] {
   const rolePath = roleMarketScanLabel(task.title || "");
-  const likelyGap = likelyLearningGapFromContext(rolePath, bundle?.crossEngineContext);
   return [
     `Open LinkedIn or the target job board and search "${rolePath}"`,
-    "Save one real posting that looks close enough to the work you might actually want",
-    "Pull out the 3 strongest asks: skills, experience, credentials, or judgement signals",
-    likelyGap.assessmentStep,
-    likelyGap.learningMoveStep,
+    "Save one real posting in Jobs with the link and JD text, not just the title",
+    "Add the role type and mark it as a role to explore, not an application yet",
   ];
 }
 
@@ -676,7 +674,7 @@ function tinyStarterStep(task: Task, bundle: SourceBundle, workflowState?: Workf
   if (bundle.sourceKind === "job") {
     if (workflowState?.currentStage === "Understand the role") return "Open the role posting and highlight the first must-have requirement";
     if (workflowState?.currentStage === "Match your experience") return "Open a blank note and list the top 3 role requirements";
-    if (workflowState?.currentStage === "Address gaps") return "Write down the single biggest gap in one sentence";
+    if (workflowState?.currentStage === "Address gaps") return "Open the requirement map and mark the weakest must-have requirement";
     if (workflowState?.currentStage === "Build materials") {
       return keyword(text, /cv|resume|tailor|rewrite/) ? "Open your CV and the role posting side by side" : "Open the application material and draft the first useful line";
     }
@@ -825,9 +823,9 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
       return steps;
     }
     if (currentStage === "Address gaps") return [
-      "Write down the single biggest gap in one sentence",
-      "Choose whether to explain, reframe, or offset it",
-      "Draft one mitigation line",
+      "Open the requirement map and mark the weakest must-have requirement",
+      "Write one line on whether to explain, reframe, or offset that gap",
+      "Draft one mitigation line using a real adjacent example",
       "Save that line in your role notes",
     ];
     if (currentStage === "Build materials") {
@@ -945,19 +943,19 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
 
   if (object === "Decision") {
     return [
-      "Open a note and write the decision question in one line",
-      "List the real options",
-      "Choose the top 3 criteria",
-      "Mark the current default and why",
+      "Open a note and put the decision question in one line",
+      "Let Anchor suggest the real options from the task context",
+      "Confirm or edit the 3 criteria Anchor suggests",
+      "Mark the current default and the next test",
     ];
   }
 
   if (object === "Problem") {
     return [
-      "Write one sentence describing what is not working",
-      "Write when or where it shows up",
-      "List 2 likely causes",
-      "Choose the first cause to test",
+      "Name the blocked object: task, application, message, or decision",
+      "Let Anchor label the blocker type: missing info, too big, emotional friction, dependency, or wrong timing",
+      "Confirm the smallest unblock move Anchor suggests",
+      "Send, schedule, or park that unblock move",
     ];
   }
 
@@ -966,15 +964,15 @@ function stageActions(task: Task, bundle: SourceBundle, workflowState: WorkflowS
     const gap = task.sourceNote?.replace(/^(From Strategy Builder|Credibility gap:\s*)/i, "").trim();
     return [
       `Open LinkedIn or Indeed and search for "${roleSlice}" roles`,
-      "Save one posting that looks like a real match",
-      gap ? `Check the requirements against your gap: ${gap.slice(0, 80)}` : "List the top 3 requirements and mark which ones you can already back up",
-      "Note the single biggest gap you'd need to close to be credible",
+      "Save one realistic posting in Jobs with the link and JD text",
+      gap ? `Keep this possible gap in the job note so Anchor can compare it later: ${gap.slice(0, 80)}` : "Add the role type and mark it as a role to explore, not an application yet",
+      "Stop once the posting has enough detail for Anchor to compare it to your profile",
     ];
   }
 
   return [
     `Open "${task.title.slice(0, 50).trim()}" and find the first thing to act on`,
-    "Write down what the end result should look like",
+    "Name the missing object Anchor needs: role, contact, note, draft, or source",
     "Do the smallest piece that moves it forward",
     "Save what you produced",
   ];
@@ -1008,8 +1006,7 @@ export function coerceTaskBreakdownSteps(task: Task, bundle: SourceBundle, workf
       ? [starter, ...baseActions]
       : baseActions,
   );
-  const maxSteps = isRoleMarketScanTask(task, bundle)
-    || (bundle.sourceKind === "contact" && workflowState?.currentStage === "Find the right person")
+  const maxSteps = (bundle.sourceKind === "contact" && workflowState?.currentStage === "Find the right person")
     ? 5
     : 4;
   return ordered.slice(0, maxSteps).map((text) => ({ text, done: false as const }));
@@ -1106,14 +1103,14 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
     const plannedGap = plannerLearningGapFromNote(task.sourceNote);
     return (
       `For goal-backed learning support:\n` +
-      `- Do the assessment for the user. Do not ask them to invent the gap from scratch; infer the most likely first gap from the role/path context already provided.\n` +
+      `- Do the assessment for the user. Do not ask them to invent the gap from scratch; infer the suggested weakest requirement from the role/path context already provided.\n` +
       `${plannedGap.label ? `- The goal note already names the likely gap: ${plannedGap.label}${plannedGap.gapType ? ` (${plannedGap.gapType} gap)` : ""}. Preserve that diagnosis unless the provided role context clearly contradicts it.\n` : ""}` +
       `${plannedGap.roleReference ? `- Start from ${plannedGap.roleReference} as the reference role.\n` : liveRole ? `- Start from ${liveRole} as the reference role.\n` : `- Start from one real role, JD, or saved role note for the target path.\n`}` +
       `${gapLabels.length ? `- If the context suggests likely weak spots, name them directly: ${gapLabels.join(", ")}.\n` : ""}` +
-      `- State the likely gap, why it is likely, and the matching learn/practice/proof move. The user should mostly confirm that diagnosis, not discover it from scratch.\n` +
-      `- Name the likely first gap and the matching learning move directly in the steps instead of asking the user to choose both.\n` +
+      `- State the suggested weakest requirement, why it is likely, and the matching learn/practice/proof move. The user should mostly confirm or edit that diagnosis, not discover it from scratch.\n` +
+      `- Name the suggested requirement and the matching learning move directly in the steps instead of asking the user to choose both.\n` +
       `- Tell the user what to learn, practice, or draft next if that likely gap holds.\n` +
-      `- Distinguish between a knowledge gap, a skill gap, and a proof/evidence gap, then choose the matching next move.\n` +
+      `- Distinguish between a knowledge gap, a skill gap, and a proof/evidence gap, then recommend the matching next move.\n` +
       `- Prefer the smallest move that could make the path more credible this week: a targeted resource, a short drill, or one proof example.\n` +
       `- If the move involves learning or review, name the target concept, the source or role evidence to inspect, and the output to save.\n`
     );
@@ -1122,14 +1119,15 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
     const gapLabels = capabilityGapLabelsFromContext(bundle.crossEngineContext);
     return (
       `For role exploration and market-scan work:\n` +
-      `- The point is not just to collect roles. Use the first credible posting to infer what this path is actually asking for.\n` +
-      `- Do the assessment for the user. After extracting the repeated requirements, suggest the likely first requirement they cannot clearly evidence today instead of asking them to invent the gap from scratch.\n` +
+      `- The point is not just to collect roles. The first missing raw object is usually one credible posting with JD text.\n` +
+      `- If the prompt does not contain a real posting/JD, do not ask the user to infer gaps. Make the task about saving one posting with enough detail for Anchor to analyse next.\n` +
+      `- If the prompt does contain a real posting/JD and profile evidence, do the assessment for the user: extract the must-have asks, compare them with evidence, and suggest the first requirement to learn, practise, or prove.\n` +
       `${gapLabels.length ? `- If the connected context already suggests likely weak spots, start with them directly: ${gapLabels.join(", ")}.\n` : ""}` +
       `- Use this usefulness test for every step: name the concrete posting, requirement, evidence source, person, or prep artifact; name the action; name the saved output or decision it produces.\n` +
-      `- State the likely gap, why it is likely, and the matching learn/practice/proof move. The user should mostly confirm that diagnosis, not invent it.\n` +
-      `- Name the likely first gap and the matching learning move directly in the steps instead of asking the user to pick what to learn.\n` +
+      `- When enough evidence exists, state the suggested weakest requirement, why it is likely, and the matching learn/practice/proof move. The user should mostly confirm or edit the diagnosis, not invent it.\n` +
+      `- Name the suggested requirement and matching learning move directly in the steps instead of asking the user to pick what to learn.\n` +
       `- Distinguish whether that likely gap is mainly knowledge, skill, or proof/evidence, then recommend the matching next learning move.\n` +
-      `- Phrase uncertain diagnoses cautiously as a likely first gap or a requirement to verify, not as a certainty.\n` +
+      `- Phrase uncertain diagnoses cautiously as a suggested requirement to verify, not as a certainty.\n` +
       `- If the move involves research or summarising, name the exact evidence to extract and the output it should produce.\n`
     );
   }
@@ -1209,9 +1207,9 @@ function taskSpecificPromptGuidance(task: Task, bundle: SourceBundle): string {
     lines.push(`STRATEGY / ROLE EXPLORATION GUIDANCE:`);
     lines.push(`The user is deciding whether a role type is real and reachable - not just browsing.`);
     lines.push(`Step 1: search a real platform (LinkedIn, Indeed) for the specific role type.`);
-    lines.push(`Step 2: save one real posting.`);
-    lines.push(`Step 3: compare its requirements to the user's background - what can they already prove, what's the gap?`);
-    lines.push(`Step 4: decide the single biggest gap to close or person to contact next.`);
+    lines.push(`Step 2: save one real posting with the link and JD text so Anchor has the raw material.`);
+    lines.push(`Step 3: if JD/profile evidence is present, Anchor should extract the must-have asks and suggest the first requirement to learn, practise, or prove.`);
+    lines.push(`Step 4: if the JD is not present yet, stop after the posting is saved; do not ask the user to analyse the gap manually.`);
     lines.push(`Use this usefulness test for every step: name the concrete posting, requirement, evidence source, person, or prep artifact; name the action; name the saved output or decision it produces.`);
     lines.push(`Every step must move toward a decision: pursue this path, park it, contact a person, or close a specific gap.`);
     if (task.sourceNote && !/^From Strategy Builder$/i.test(task.sourceNote)) {

@@ -257,32 +257,32 @@ export function prependStep(rawSteps: string, text: string) {
 
 export function deterministicUnstickStep(task: Task) {
   if (task.readiness === "blocked" || task.blockerReason) {
-    return `Write down what's missing: ${task.blockerReason || task.blockedBy || "what's blocking this"}`;
+    return `Name the missing input, dependency, or next action: ${task.blockerReason || task.blockedBy || "what Anchor needs to move this"}`;
   }
-  if (task.sourceUrl) return "Check the saved link and note what you need from it";
+  if (task.sourceUrl) return "Open the saved link and copy the one fact, requirement, or quote this task needs";
   if (task.sourceType === "job") {
-    if (/cv|resume|tailor/i.test(task.title)) return "Pick the 2 CV bullets closest to this role and sharpen one";
+    if (/cv|resume|tailor/i.test(task.title)) return "Let Anchor pick the 2 CV bullets closest to this role, then sharpen one";
     if (/cover/i.test(task.title)) return "Write the opening line — why this role, why you, why now";
     if (/apply|submit/i.test(task.title)) return "Fill in the first required field on the application";
-    if (/research|understand/i.test(task.title)) return "Write down the 3 key requirements in your own words";
+    if (/research|understand/i.test(task.title)) return "Save the posting or source text so Anchor can extract the key requirements";
   }
   if (task.sourceType === "contact") {
     if (/draft|outreach|message|email/i.test(task.title)) return "Write the subject line and first sentence";
-    if (/prep|prepare|conversation/i.test(task.title)) return "Write down the one thing you most want to learn from them";
+    if (/prep|prepare|conversation/i.test(task.title)) return "Let Anchor suggest the 3 questions, then keep the one you most want answered";
     if (/follow/i.test(task.title)) return "Send a one-line check-in referencing your last exchange";
   }
   if (task.sourceType === "learn") {
-    if (/read|watch|listen|review/i.test(task.title)) return "Read just the intro or first section and note one takeaway";
+    if (/read|watch|listen|review/i.test(task.title)) return "Read just the intro or first section and save the one idea you can reuse";
     if (/note|write|summarise|summarize/i.test(task.title)) return "Write one sentence about what you've learned so far";
     if (/practice|try|build|create/i.test(task.title)) return "Do one small practice attempt — even 5 minutes counts";
   }
   if (task.size === "deep") return "Write one rough sentence to break the blank page";
   if (/email|message|reach|follow/i.test(task.title)) return "Write the first line";
   const t = (task.title || "").toLowerCase();
-  if (/review|research|explore|investigate/.test(t)) return "Open the first source and note what stands out";
+  if (/review|research|explore|investigate/.test(t)) return "Open the first source and copy the one fact this task needs";
   if (/find|search|identify/.test(t)) return "Search for the first real example and save it";
-  if (/compare|evaluate/.test(t)) return "Open two options side by side and note one difference";
+  if (/compare|evaluate/.test(t)) return "Open two options side by side and let Anchor suggest the comparison criteria";
   if (/list|map|audit/.test(t)) return "Write the first three items that come to mind";
-  if (/plan|outline|design/.test(t)) return "Write one sentence describing the end result you want";
-  return `Open "${(task.title || "this task").slice(0, 40).trim()}" and note the first useful thing you find`;
+  if (/plan|outline|design/.test(t)) return "Name the output Anchor should help produce: draft, list, decision, message, or plan";
+  return `Open "${(task.title || "this task").slice(0, 40).trim()}" and save the first concrete object Anchor can use`;
 }

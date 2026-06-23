@@ -560,7 +560,7 @@ function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
     source: "goal",
     sourceId: 1,
     taskId: null,
-    title: label ? `Save one real ${label} posting and map it to your evidence` : broadPursuitMissingRolesTitle(),
+    title: label ? `Save one real ${label} posting with JD text for Anchor to compare` : broadPursuitMissingRolesTitle(),
     category: "job",
     size: "deep",
     deadline: "",
@@ -572,7 +572,7 @@ function buildBroadPursuitGoalCandidate(context?: StrategicContext): Candidate {
       : broadPursuitMissingRolesSourceNote(context?.broadPursuitMissingCombinations || []),
     sourceStatus: "broad_parallel_pursuit",
     doneWhen: label
-      ? `One real ${label} posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen.`
+      ? `One real ${label} posting is saved with enough JD text for Anchor to compare it to your profile.`
       : broadPursuitMissingRolesDoneWhen(),
     whyNow: label
       ? `${label} has no real opening yet`
@@ -660,8 +660,8 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         sourceId: 300 + index,
         taskId: null,
         title: roleReference
-          ? `Use ${roleReference} to check whether ${likelyGap.label} is the first missing requirement for ${label}`
-          : `Use one live ${label} role to check whether ${likelyGap.label} is the first missing requirement`,
+          ? `Use ${roleReference} for Anchor's first prep suggestion for ${label}`
+          : `Use one live ${label} role for Anchor's first prep suggestion`,
         category: "learning",
         size: "medium",
         deadline: "",
@@ -669,10 +669,10 @@ function buildBroadPursuitSupportGoalCandidates(context?: StrategicContext): Can
         skipped: 0,
         sourceUrl: "",
         sourceNote: roleReference
-          ? `Treat ${likelyGap.label} as the likely first gap (${likelyGap.gapTypeLabel}) from ${roleReference}. Use the role to confirm or disprove that diagnosis, save one line on why, then use this prep move: ${learningMove}.`
-          : `${label} still needs targeted prep. Treat ${likelyGap.label} as the likely first gap (${likelyGap.gapTypeLabel}) from one real role, confirm or disprove it, then use this prep move: ${learningMove}.`,
+          ? `Anchor's working diagnosis: ${likelyGap.label} may be the weakest ${likelyGap.gapTypeLabel} from ${roleReference}. Confirm or edit that diagnosis, then use this prep move: ${learningMove}.`
+          : `Anchor's working diagnosis: ${likelyGap.label} may be the weakest ${likelyGap.gapTypeLabel} from one real ${label} role. Confirm or edit that diagnosis, then use this prep move: ${learningMove}.`,
         sourceStatus: "broad_parallel_pursuit_learning_support",
-        doneWhen: `The likely first gap and the matching smallest prep move are saved for ${label}.`,
+        doneWhen: `Anchor's suggested requirement and the matching smallest prep move are saved for ${label}.`,
         whyNow: `${label} still lacks a clear prep target from a real role`,
         fitScore: null,
         blocked: false,
@@ -1530,14 +1530,15 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
       return broadPursuitMissingContactsFirstStep(context?.broadPursuitMissingNetworkSupport || []);
     }
     if (candidate && candidate.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      const referenceRole = candidate.title.match(/^Use (.+?) to check whether .+? is the first missing requirement for /i)?.[1];
-      const gapFromTitle = candidate.title.match(/^Use .+? to check whether (.+?) is the first missing requirement for /i)?.[1];
+      const referenceRole = candidate.sourceNote?.match(/\bfrom\s+(.+?)\.\s*Confirm or edit/i)?.[1]
+        || candidate.title.match(/^Use (.+?) for Anchor's first prep suggestion/i)?.[1];
+      const gapFromNote = candidate.sourceNote?.match(/Anchor's working diagnosis:\s*(.+?)\s+may be the weakest/i)?.[1];
       if (referenceRole) {
-        return `Open ${referenceRole} and treat ${gapFromTitle} as the likely first gap to confirm or disprove.`;
+        return `Open ${referenceRole}; Anchor's draft diagnosis is ${gapFromNote || "the weakest requirement"} - confirm or edit it.`;
       }
       if (candidate.targetRole) {
-        const likelyGap = gapFromTitle || likelyLearningGapPlan({ rolePath: candidate.targetRole }).label;
-        return `Open one live role or role note for ${candidate.targetRole} and treat ${likelyGap} as the likely first gap to confirm or disprove.`;
+        const likelyGap = gapFromNote || likelyLearningGapPlan({ rolePath: candidate.targetRole }).label;
+        return `Open one live role or role note for ${candidate.targetRole}; Anchor's draft diagnosis is ${likelyGap} - confirm or edit it.`;
         /* const roleKey = String(candidate?.targetRole || "").toLowerCase();
         let suggestion = "";
         if (/ai|governance|safety/.test(roleKey)) suggestion = `Read one recent AI governance briefing or policy paper and note the main debate. Start with Brookings, CSIS, or the AI Now Institute.`;
@@ -1617,14 +1618,14 @@ function firstStepForSource(source: SourceKind, candidate?: Candidate, context?:
 function stopRuleForSource(source: SourceKind, candidate?: Candidate, context?: StrategicContext) {
   if (source === "goal") {
     if (candidate?.sourceStatus === "broad_parallel_pursuit" && candidate?.targetRole) {
-      return `Stop after one real ${displayCombination(candidate.targetRole)} posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen.`;
+      return `Stop after one real ${displayCombination(candidate.targetRole)} posting is saved with enough JD text for Anchor to compare it to your profile.`;
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_network_support") {
       if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one useful person and one concrete hiring question ready.`;
       return broadPursuitMissingContactsStopRule();
     }
     if (candidate?.sourceStatus === "broad_parallel_pursuit_learning_support") {
-      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has one likely first gap and one matching smallest prep move saved.`;
+      if (candidate?.targetRole) return `Stop after ${candidate.targetRole} has Anchor's suggested requirement and one matching smallest prep move saved.`;
       return broadPursuitMissingPrepStopRule();
     }
     if (context?.broadPursuitMissingCombinations?.length) {
@@ -1870,7 +1871,7 @@ export function planDay(
       })[0];
       const unblockStep = /wait|reply|response/i.test(easiest.blockerReason)
         ? `Check if you've gotten a reply — if so, unblock it and go.`
-        : `Clear this blocker: ${easiest.blockerReason || "figure out what's stopping it"}.`;
+        : `Clear this blocker: ${easiest.blockerReason || "name the missing input, dependency, or next action"}.`;
       const plan: PlanItem[] = [{
         slot: "now", candidate: easiest, why: `Everything else is stuck. This blocker looks easiest to clear.`, isMVD: true,
         explanation: { summary: `${blocked.length} thing${blocked.length > 1 ? "s are" : " is"} blocked. Start with the easiest one.`, whyNow: "Nothing else can move until a blocker clears.", whyThis: `This one looks most clearable: "${easiest.blockerReason || "unspecified"}."`, supportingReasons: blocked.length > 1 ? [`${blocked.length - 1} other blocked item${blocked.length > 2 ? "s" : ""} waiting too.`] : [], firstStep: unblockStep, stopRule: "Unblock it or park it — either clears the jam." },

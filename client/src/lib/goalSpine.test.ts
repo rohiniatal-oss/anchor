@@ -6,7 +6,7 @@ import { goalMorningBriefWithExecution } from "./goalSpine";
 test("pinned focus brief avoids repeating the task title", () => {
   const brief = goalMorningBriefWithExecution(null, {
     hasPinnedFocus: true,
-    pinnedTitle: "Save one real AI governance strategy role and write down the top 3 requirements you'd need to prove",
+    pinnedTitle: "Save one real AI governance strategy posting with JD text for Anchor to compare",
   });
 
   assert.equal(brief.eyebrow, "Current focus");

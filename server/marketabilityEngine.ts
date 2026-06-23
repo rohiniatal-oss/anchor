@@ -142,8 +142,8 @@ export function buildMarketabilityPlan(input: { tasks: Task[]; jobs: Job[]; lear
     if (roleCount === 0 && !hasOpenTask(input.tasks, /inspect three|find one real|role examples|requirements pattern|requirements/i, track)) {
       moves.push({
         kind: "asset", lane: "Direction", priority: 82, trackId: track.id, trackName: name,
-        title: `Find one real ${name} role and extract the first requirements pattern`,
-        doneWhen: "One real posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen",
+        title: `Save one real ${name} posting with JD text for Anchor to compare`,
+        doneWhen: "One real posting is saved with enough JD text for Anchor to compare it to your profile",
         reason: "Without role examples, general prep can drift away from the market.",
         outputType: "note",
       });

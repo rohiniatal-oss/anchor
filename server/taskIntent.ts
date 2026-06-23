@@ -140,8 +140,8 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
       label,
       gapType,
       gapTypeLabel: gapLabel,
-      assessmentStep: `Map the posting against your own evidence and decide whether ${label} is the first ${gapLabel} to close`,
-      learningMoveStep: `Choose one small prep move for ${label}: a 10-minute drill, one reusable example, or one targeted source`,
+      assessmentStep: `After the posting is saved, let Anchor compare its must-have asks with your evidence and suggest whether ${label} is the weakest requirement`,
+      learningMoveStep: `Do one 10-minute ${label} drill against the posting and save the answer, example, or checklist it produces`,
     };
   }
   if (gapType === "proof") {
@@ -149,28 +149,25 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
       label,
       gapType,
       gapTypeLabel: gapLabel,
-      assessmentStep: `Map the posting against your own evidence and decide whether ${label} is the first ${gapLabel} to close`,
-      learningMoveStep: `Choose one small prep move for ${label}: draft one proof example, tighten one story, or save the missing evidence you need`,
+      assessmentStep: `After the posting is saved, let Anchor compare its must-have asks with your evidence and suggest whether ${label} is the weakest proof point`,
+      learningMoveStep: `Draft one proof example for ${label}; if the proof is missing, save the exact evidence asset to create`,
     };
   }
   return {
     label,
     gapType,
     gapTypeLabel: gapLabel,
-    assessmentStep: `Map the posting against your own evidence and decide whether ${label} is the first ${gapLabel} to close`,
-    learningMoveStep: `Choose one small prep move for ${label}: read one targeted source, save one useful note, or draft one interview answer`,
+    assessmentStep: `After the posting is saved, let Anchor compare its must-have asks with your evidence and suggest whether ${label} is the weakest knowledge area`,
+    learningMoveStep: `Read one targeted source on ${label} and save the explanation you would use in an interview answer`,
   };
 }
 
 function roleMarketScanSteps(title: string) {
   const rolePath = roleMarketScanLabel(title);
-  const likelyGap = likelyLearningGapPlan({ rolePath });
   return [
     `Open LinkedIn or the target job board and search "${rolePath}"`,
-    "Save one real posting that looks close enough to the work you might actually want",
-    "Pull out the 3 strongest asks: skills, experience, credentials, or judgement signals",
-    likelyGap.assessmentStep,
-    likelyGap.learningMoveStep,
+    "Save one real posting in Jobs with the link and JD text, not just the title",
+    "Add the role type and mark it as a role to explore, not an application yet",
   ];
 }
 
@@ -229,7 +226,7 @@ function networkingMessageSteps(title: string) {
     return [
       `Open LinkedIn and search for ${searchQuery}`,
       `Save one real person who fits ${recipientLabel}`,
-      topic ? `Write why this person is a credible ask for ${topic}` : "Write why this person is a credible ask right now",
+      topic ? `Let Anchor turn the saved person and ${topic} into a why-them line` : "Let Anchor turn the saved person into a why-them line",
       ask,
       "Draft the message only if this person looks worth contacting",
     ];
@@ -254,11 +251,11 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
     return {
       intent,
       category: "job",
-      doneWhen: "One real posting is saved, its strongest asks are mapped to your evidence, and one next prep move is chosen",
+      doneWhen: "One real posting is saved with enough JD text for Anchor to compare it to your profile and suggest the first requirement to learn, practise, or prove",
       firstStep: steps[0],
       steps,
-      stopCondition: steps[4],
-      maxSteps: 5,
+      stopCondition: "Stop once the posting has enough JD text for Anchor to compare it to your profile",
+      maxSteps: 3,
     };
   }
 
@@ -303,7 +300,7 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
   if (intent === "learning_output") {
     const steps = [
       "Open the learning item or source",
-      "Extract one idea that changes how you would act, answer, or decide",
+      "Use the task goal to pick the one idea that changes an answer, action, or decision",
       "Save it as a note, example, or practice result",
       "Stop once one reusable learning output exists",
     ];
@@ -322,9 +319,9 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
 
   if (intent === "comparison") {
     const steps = [
-      "Write the exact options you are comparing",
-      "Choose the 3 criteria that matter for this choice",
-      "Mark which option currently wins each criterion",
+      "Put the exact options you are comparing in one place",
+      "Let Anchor suggest 3 criteria based on your goal, profile, or deadline",
+      "Confirm or edit the criteria, then mark which option currently wins each one",
       "Write the next choice or test",
     ];
     return { intent, category: "thinking", doneWhen: "A short comparison note and next choice are written down", firstStep: steps[0], steps, stopCondition: "Stop once the comparison has a current winner or next test", maxSteps: 4 };
@@ -332,9 +329,9 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
 
   if (intent === "decision") {
     const steps = [
-      "Write the exact question you need to decide",
-      "List the real options",
-      "Choose the top 3 criteria",
+      "Put the decision question in one line, using the task title if it is already clear",
+      "Let Anchor suggest the real options and the 3 criteria that matter",
+      "Confirm or edit the criteria",
       "Mark the current default and next action",
     ];
     return { intent, category: "thinking", doneWhen: "A decision or next action is written down with the real options visible", firstStep: steps[0], steps, stopCondition: "Stop once the current default and next action are visible", maxSteps: 4 };
@@ -342,9 +339,9 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
 
   if (intent === "blocked_unblock") {
     const steps = [
-      "Write what is blocked",
-      "Write the missing input or decision",
-      "Choose the smallest unblock request or workaround",
+      "Name the blocked object: task, application, message, or decision",
+      "Let Anchor label the blocker type: missing info, too big, emotional friction, dependency, or wrong timing",
+      "Confirm the smallest unblock request or workaround Anchor suggests",
       "Send, schedule, or park that unblock move",
     ];
     return { intent, category: input.category || "admin", doneWhen: "The blocker and next unblock action are written down", firstStep: steps[0], steps, stopCondition: "Stop once the task is unblocked or explicitly parked", maxSteps: 4 };
@@ -368,6 +365,6 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
 export function hasRoleMarketScanContract(texts: string[]) {
   const joined = texts.join(" | ").toLowerCase();
   return /\bsave\b.*\b(real|posting|role|job)\b/.test(joined)
-    && /\b(extract|note|list|capture|pull out|map)\b.*\b(requirements?|signals?|asks?|pattern|evidence)\b/.test(joined)
-    && /\b(stop|done|mark|gap|evidence|captured)\b/.test(joined);
+    && /\b(jd text|job description|link)\b/.test(joined)
+    && /\b(anchor|compare|profile|explore)\b/.test(joined);
 }

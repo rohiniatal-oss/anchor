@@ -14,7 +14,8 @@ test("message tasks get a concrete send step", () => {
 test("decision tasks get a question-first starter step", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Figure out if AI governance is right for me" });
   assert.match(inferred.doneWhen, /decision or next action/i);
-  assert.match(inferred.steps, /exact question you need to decide/i);
+  assert.match(inferred.steps, /decision question in one line/i);
+  assert.match(inferred.steps, /Let Anchor suggest the real options/i);
 });
 
 test("comparison tasks get a comparison-specific starter step", () => {
@@ -33,9 +34,9 @@ test("learning tasks get a smallest-start reading step", () => {
 test("role research tasks get a save-real-examples starter step", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Review three AI governance strategy roles and note the requirements that keep coming up." });
   assert.equal(inferred.category, "job");
-  assert.match(inferred.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
+  assert.match(inferred.doneWhen, /posting is saved with enough JD text/i);
   assert.match(inferred.steps, /search .*AI governance strategy roles/i);
-  assert.match(inferred.steps, /Map the posting against your own evidence/i);
+  assert.match(inferred.steps, /Save one real posting in Jobs with the link and JD text/i);
 });
 
 test("legacy role-scan metadata is upgraded to the stronger intent contract", () => {
@@ -54,10 +55,10 @@ test("legacy role-scan metadata is upgraded to the stronger intent contract", ()
   });
 
   assert.equal(inferred.category, "job");
-  assert.match(inferred.doneWhen, /posting is saved, its strongest asks are mapped to your evidence/i);
-  assert.match(inferred.minimumOutcome, /posting is saved, its strongest asks are mapped to your evidence/i);
+  assert.match(inferred.doneWhen, /posting is saved with enough JD text/i);
+  assert.match(inferred.minimumOutcome, /posting is saved with enough JD text/i);
   assert.match(inferred.steps, /search .*AI governance strategy roles/i);
-  assert.match(inferred.steps, /Map the posting against your own evidence/i);
+  assert.match(inferred.steps, /Save one real posting in Jobs with the link and JD text/i);
 });
 
 test("broad application tasks are shrunk to one live role move", () => {
@@ -83,8 +84,8 @@ test("blocker tasks get an unblock-oriented starter step", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Blocked waiting on Farah for the org chart", blockerReason: "Waiting on Farah" });
   assert.equal(inferred.readiness, "blocked");
   assert.match(inferred.doneWhen, /blocker and next unblock action/i);
-  assert.match(inferred.steps, /Write what is blocked/i);
-  assert.match(inferred.steps, /Choose the smallest unblock request or workaround/i);
+  assert.match(inferred.steps, /Name the blocked object/i);
+  assert.match(inferred.steps, /Let Anchor label the blocker type/i);
 });
 
 test("contextualizeTask sets category and doneWhen for job-linked tasks", async () => {
@@ -171,7 +172,8 @@ test("thinking category is inferred for planning tasks", () => {
   const inferred = buildTaskIntakeDefaults({ title: "Think about what direction makes sense" });
   assert.equal(inferred.category, "thinking");
   assert.match(inferred.doneWhen, /decision or next action/i);
-  assert.match(inferred.steps, /exact question you need to decide/i);
+  assert.match(inferred.steps, /decision question in one line/i);
+  assert.match(inferred.steps, /Let Anchor suggest the real options/i);
 });
 
 test("unrecognized tasks get empty steps instead of vague ones", () => {

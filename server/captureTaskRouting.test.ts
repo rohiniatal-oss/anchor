@@ -54,7 +54,8 @@ test("decision capture patch keeps decision-specific outcome while adding a star
     sourceStatus: "routed:decision:task",
   });
   assert.equal(patch.category, "admin");
-  assert.match(String(patch.steps), /exact question/i);
+  assert.match(String(patch.steps), /decision question in one line/i);
+  assert.match(String(patch.steps), /Anchor suggest the real options/i);
   assert.equal(patch.minimumOutcome, "A clear decision or next action is written down");
 });
 
@@ -67,7 +68,8 @@ test("blocker capture patch keeps blocked readiness and adds an unblock-oriented
     sourceStatus: "blocker_update",
   });
   assert.equal(patch.readiness, "blocked");
-  assert.match(String(patch.steps), /Write what is blocked/i);
-  assert.match(String(patch.steps), /Choose the smallest unblock request or workaround/i);
+  assert.match(String(patch.steps), /Name the blocked object/i);
+  assert.match(String(patch.steps), /Anchor label the blocker type/i);
+  assert.match(String(patch.steps), /smallest unblock request or workaround Anchor suggests/i);
   assert.equal(patch.minimumOutcome, "The blocker is attached to the right item or resolved");
 });

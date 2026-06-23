@@ -122,7 +122,7 @@ test("goal-source learning-support breakdown starts from a requirement gap inste
     sourceType: "goal",
     sourceId: 3,
     sourceStatus: "broad_parallel_pursuit_learning_support",
-    sourceNote: "Treat Policy & Regulatory Frameworks as the likely first knowledge gap from Policy Advisor at Ofcom. Use the role to confirm or disprove that diagnosis, save one line on why, then read one targeted source.",
+    sourceNote: "Anchor's working diagnosis: Policy & Regulatory Frameworks may be the weakest knowledge gap from Policy Advisor at Ofcom. Confirm or edit that diagnosis, then read one targeted source.",
     doneWhen: "The first missing requirement and the smallest prep move are saved for AI governance strategy.",
     minimumOutcome: "",
     sourceUrl: "",
@@ -133,9 +133,9 @@ test("goal-source learning-support breakdown starts from a requirement gap inste
 
   assert.equal(workflowState.workObject, "Knowledge");
   assert.match(joined, /Open Policy Advisor at Ofcom and use it as the reference role for AI governance strategy/i);
-  assert.match(joined, /Treat Policy & Regulatory Frameworks as the likely first knowledge gap for AI governance strategy/i);
-  assert.match(joined, /Save one sentence on why Policy & Regulatory Frameworks looks like the first knowledge gap/i);
-  assert.match(joined, /Choose one small prep move for Policy & Regulatory Frameworks/i);
+  assert.match(joined, /Anchor's draft diagnosis: Policy & Regulatory Frameworks may be the weakest knowledge gap/i);
+  assert.match(joined, /Confirm or edit that diagnosis by checking one must-have line/i);
+  assert.match(joined, /Read one targeted source on Policy & Regulatory Frameworks/i);
   assert.doesNotMatch(joined, /open jobs|save the first credible role|start learning about/i);
 });
 
@@ -149,7 +149,7 @@ test("goal-source learning-support breakdown preserves the planner gap over broa
     sourceType: "goal",
     sourceId: 3,
     sourceStatus: "broad_parallel_pursuit_learning_support",
-    sourceNote: "Treat Product & Delivery as the likely first skill gap from AI Chief of Staff at Model Lab. Use the role to confirm or disprove that diagnosis, save one line on why, then do one short drill.",
+    sourceNote: "Anchor's working diagnosis: Product & Delivery may be the weakest skill gap from AI Chief of Staff at Model Lab. Confirm or edit that diagnosis, then do one short drill.",
     doneWhen: "The first missing requirement and the smallest prep move are saved for AI operations.",
     minimumOutcome: "",
     sourceUrl: "",
@@ -167,8 +167,8 @@ test("goal-source learning-support breakdown preserves the planner gap over broa
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
   assert.match(joined, /Open AI Chief of Staff at Model Lab and use it as the reference role/i);
-  assert.match(joined, /Treat Product & Delivery as the likely first skill gap/i);
-  assert.match(joined, /Choose one small prep move for Product & Delivery/i);
+  assert.match(joined, /Anchor's draft diagnosis: Product & Delivery may be the weakest skill gap/i);
+  assert.match(joined, /Do one 10-minute Product & Delivery drill against the posting/i);
   assert.doesNotMatch(joined, /frontier safety framing|stakeholder translation/i);
 });
 
@@ -182,8 +182,8 @@ test("goal-source learning-support breakdown preserves typed planner gap notes",
     sourceType: "goal",
     sourceId: 3,
     sourceStatus: "broad_parallel_pursuit_learning_support",
-    sourceNote: "Treat Product & Delivery as the likely first gap (skill) from AI Chief of Staff at Model Lab. Use the role to confirm or disprove that diagnosis, save one line on why, then use this prep move: do one short drill on Product & Delivery against the posting and save the output.",
-    doneWhen: "The likely first gap and the matching smallest prep move are saved.",
+    sourceNote: "Anchor's working diagnosis: Product & Delivery may be the weakest skill gap from AI Chief of Staff at Model Lab. Confirm or edit that diagnosis, then use this prep move: do one short drill on Product & Delivery against the posting and save the output.",
+    doneWhen: "Anchor's suggested requirement and the matching smallest prep move are saved.",
     minimumOutcome: "",
     sourceUrl: "",
   } as any;
@@ -200,8 +200,8 @@ test("goal-source learning-support breakdown preserves typed planner gap notes",
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
   assert.match(joined, /Open AI Chief of Staff at Model Lab/i);
-  assert.match(joined, /Treat Product & Delivery as the likely first skill gap/i);
-  assert.match(joined, /Choose one small prep move for Product & Delivery/i);
+  assert.match(joined, /Anchor's draft diagnosis: Product & Delivery may be the weakest skill gap/i);
+  assert.match(joined, /Do one 10-minute Product & Delivery drill against the posting/i);
   assert.doesNotMatch(joined, /strongest repeated requirement in the posting/i);
 });
 
@@ -225,11 +225,9 @@ test("strategy role-scan breakdown turns broad exploration into a real posting p
 
   assert.equal(workflowState.workObject, "Pipeline");
   assert.match(joined, /Open LinkedIn or the target job board and search "AI governance strategy roles"/i);
-  assert.match(joined, /Save one real posting that looks close enough to the work you might actually want/i);
-  assert.match(joined, /Pull out the 3 strongest asks/i);
-  assert.match(joined, /Map the posting against your own evidence/i);
-  assert.match(joined, /Choose one small prep move for AI Governance & Safety/i);
-  assert.match(joined, /strongest asks/i);
+  assert.match(joined, /Save one real posting in Jobs with the link and JD text/i);
+  assert.match(joined, /Add the role type and mark it as a role to explore/i);
+  assert.doesNotMatch(joined, /Read one targeted source|weakest requirement|gap/i);
   assert.doesNotMatch(joined, /open a note and list the first thing you need to understand|get the lay of the land|review notes/i);
 });
 
@@ -269,11 +267,10 @@ test("role-scan coercion replaces generic model steps with the concrete scan con
   ] as any);
   const joined = steps.map((step) => String(step.text || "")).join(" | ");
 
-  assert.equal(steps.length, 5);
+  assert.equal(steps.length, 3);
   assert.match(joined, /Save one real posting/i);
-  assert.match(joined, /Pull out the 3 strongest asks/i);
-  assert.match(joined, /Map the posting against your own evidence/i);
-  assert.match(joined, /Choose one small prep move for AI Governance & Safety/i);
+  assert.match(joined, /JD text/i);
+  assert.doesNotMatch(joined, /Read one targeted source|weakest requirement|gap/i);
   assert.doesNotMatch(joined, /lay of the land|Research AI governance roles|Summarize your findings/i);
 });
 
@@ -610,7 +607,7 @@ test("conversation-prep prompt tells the llm to prepare questions rather than dr
   assert.match(prompt, /If a referral path, target role, hiring question, or team context already exists, use it directly/i);
 });
 
-test("goal-backed learning-support prompt tells the llm to infer the likely first gap and matching learning move", async () => {
+test("goal-backed learning-support prompt tells the llm to own the diagnosis and matching learning move", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
   const { buildTaskBreakdownPrompt } = await import("./taskBreakdownRoutes");
 
@@ -642,14 +639,14 @@ test("goal-backed learning-support prompt tells the llm to infer the likely firs
   assert.match(prompt, /goal note already names the likely gap: frontier safety framing \(knowledge gap\)/i);
   assert.match(prompt, /Start from AI Governance Advisor at DeepMind as the reference role/i);
   assert.match(prompt, /frontier safety framing, cross-jurisdiction regulation, stakeholder translation/i);
-  assert.match(prompt, /State the likely gap, why it is likely, and the matching learn\/practice\/proof move/i);
-  assert.match(prompt, /Name the likely first gap and the matching learning move directly in the steps/i);
+  assert.match(prompt, /State the suggested weakest requirement, why it is likely, and the matching learn\/practice\/proof move/i);
+  assert.match(prompt, /Name the suggested requirement and the matching learning move directly in the steps/i);
   assert.match(prompt, /Tell the user what to learn, practice, or draft next if that likely gap holds/i);
   assert.match(prompt, /Distinguish between a knowledge gap, a skill gap, and a proof\/evidence gap/i);
   assert.match(prompt, /name the target concept, the source or role evidence to inspect, and the output to save/i);
 });
 
-test("role-market-scan prompt asks the llm to suggest the likely first gap and what to learn", async () => {
+test("role-market-scan prompt separates missing posting capture from Anchor-owned analysis", async () => {
   process.env.ANCHOR_DB_PATH = process.env.ANCHOR_DB_PATH || path.join(os.tmpdir(), `anchor-breakdown-${process.pid}.db`);
   const { buildTaskBreakdownPrompt } = await import("./taskBreakdownRoutes");
 
@@ -675,13 +672,13 @@ test("role-market-scan prompt asks the llm to suggest the likely first gap and w
   const prompt = buildTaskBreakdownPrompt({ task, bundle, fallbackObject: "Pipeline" });
 
   assert.match(prompt, /For role exploration and market-scan work:/i);
-  assert.match(prompt, /Do the assessment for the user/i);
-  assert.match(prompt, /suggest the likely first requirement they cannot clearly evidence today/i);
+  assert.match(prompt, /If the prompt does not contain a real posting\/JD, do not ask the user to infer gaps/i);
+  assert.match(prompt, /extract the must-have asks, compare them with evidence/i);
   assert.match(prompt, /frontier safety framing, stakeholder translation/i);
   assert.match(prompt, /Use this usefulness test for every step/i);
   assert.match(prompt, /posting, requirement, evidence source, person, or prep artifact/i);
-  assert.match(prompt, /State the likely gap, why it is likely, and the matching learn\/practice\/proof move/i);
-  assert.match(prompt, /Name the likely first gap and the matching learning move directly in the steps/i);
+  assert.match(prompt, /state the suggested weakest requirement, why it is likely, and the matching learn\/practice\/proof move/i);
+  assert.match(prompt, /Name the suggested requirement and matching learning move directly in the steps/i);
   assert.match(prompt, /recommend the matching next learning move/i);
   assert.match(prompt, /name the exact evidence to extract and the output it should produce/i);
 });

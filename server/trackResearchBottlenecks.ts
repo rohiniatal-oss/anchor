@@ -96,6 +96,12 @@ function confidenceFromScore(score: number): Confidence {
   return "low";
 }
 
+function severityFromScore(score: number): BottleneckHypothesis["severity"] {
+  if (score >= 32) return "high";
+  if (score >= 22) return "medium";
+  return "low";
+}
+
 function inferCapitalType(value: unknown) {
   const text = normalize(value);
   if (text.includes("credential") || text.includes("degree") || text.includes("certification") || text.includes("clearance")) return "credential";
@@ -253,7 +259,7 @@ function coverageForRequirement(requirement: RequirementClaim, brief: any): Cove
   else if (bestGap >= 4) status = "insufficient";
 
   const confidence = confidenceFromScore(bestAsset + bestGap + (requirement.confidence === "high" ? 3 : requirement.confidence === "medium" ? 1 : 0));
-  const evidenceFound = matchingAssets.map((asset) => `${asset.label}${asset.evidence ? ` — ${asset.evidence}` : ""}`);
+  const evidenceFound = matchingAssets.map((asset) => `${asset.label}${asset.evidence ? ` - ${asset.evidence}` : ""}`);
 
   return {
     requirementId: requirement.id,
@@ -308,7 +314,7 @@ function bottlenecksForRoute(route: string, coverageClaims: CoverageClaim[]): Bo
         label: `${claim.requirement}: ${claim.status.replace(/_/g, " ")}`,
         whyItMightBeTheBottleneck: claim.reasoning,
         confidence: claim.confidence,
-        severity: score >= 32 ? "high" : score >= 22 ? "medium" : "low",
+        severity: severityFromScore(score),
         evidenceToResolve: claim.missingEvidence,
         recommendedBet: recommendedBet(kind, claim),
         score,
@@ -344,7 +350,7 @@ function crossRouteBottlenecks(routes: RouteDiagnosis[]) {
       label: `${kind.replace(/_/g, " ")} across ${entries.length} route${entries.length === 1 ? "" : "s"}`,
       whyItMightBeTheBottleneck: `This appears repeatedly across route diagnoses, including: ${entries.slice(0, 3).map((entry) => entry.route).join(", ")}.`,
       confidence: entries.length >= 3 ? "high" as Confidence : entries.length === 2 ? "medium" as Confidence : top.confidence,
-      severity: score >= 80 ? "high" as const : score >= 45 ? "medium" as const : "low" as const,
+      severity: severityFromScore(score),
       evidenceToResolve: top.evidenceToResolve,
       recommendedBet: top.recommendedBet,
       score,

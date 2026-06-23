@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { mutateAndInvalidate } from "@/lib/api";
 import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
+import { TrackResearchReview } from "@/components/home/TrackResearchReview";
 
 type FocusAreaResearchCardProps = {
   onResearched?: (trackId?: number) => void;
@@ -114,6 +115,8 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
               )}
             </div>
           )}
+
+          <TrackResearchReview trackId={lastTrack?.id} />
         </div>
       </div>
     </section>

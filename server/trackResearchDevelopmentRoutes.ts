@@ -1,13 +1,16 @@
 import type { Express } from "express";
 import { storage } from "./storage";
 import { buildCanonicalUserEvidenceCorpus } from "./trackResearchCoverageCorpus";
+import type { CoverageModel } from "./trackResearchCoverageModel";
 import { ensureRequirementCoverage } from "./trackResearchCoverageRoutes";
 import {
+  buildDevelopmentPlanModel,
   DEVELOPMENT_PLAN_MODEL_VERSION,
-  developmentPlanCoverageFingerprint,
   type DevelopmentPlanModel,
 } from "./trackResearchDevelopmentPlan";
+import { developmentCoverageFingerprint } from "./trackResearchDevelopmentFingerprint";
 import { hardenDevelopmentPlan } from "./trackResearchDevelopmentGuardrails";
+import { alignDevelopmentPlanPresentation } from "./trackResearchDevelopmentPresentation";
 import {
   developmentPlanContextFromIntelligence,
   enhanceDevelopmentPlanWithLlm,
@@ -61,7 +64,24 @@ function validDevelopmentPlan(
     && Array.isArray(value.maintenanceRequirementIds);
 }
 
-async function computeDevelopmentPlan(trackId: number, force: boolean) {
+function deterministicFallback(
+  requirementModel: Parameters<typeof buildDevelopmentPlanModel>[0],
+  coverageModel: Parameters<typeof buildDevelopmentPlanModel>[1],
+  sourceContextFingerprint: string,
+  caveat: string,
+): DevelopmentPlanModel {
+  const draft = buildDevelopmentPlanModel(requirementModel, coverageModel, sourceContextFingerprint);
+  return {
+    ...draft,
+    quality: {
+      ...draft.quality,
+      status: draft.quality.status === "strong" ? "usable" : draft.quality.status,
+      caveats: [...new Set([...draft.quality.caveats, caveat])],
+    },
+  };
+}
+
+async function computeDevelopmentPlan(trackId: number, force: boolean, retryAfterConcurrentCoverage = true) {
   const coverageResult = await ensureRequirementCoverage(trackId, false);
   if (!coverageResult) return null;
   if ("error" in coverageResult) return coverageResult;
@@ -71,7 +91,7 @@ async function computeDevelopmentPlan(trackId: number, force: boolean) {
   const context = developmentPlanContextFromIntelligence(intelligence, corpus.items);
   context.sourceContextFingerprint = completeContextFingerprint(context);
   const requirementFingerprint = coverageResult.coverageModel.requirementModelFingerprint;
-  const coverageFingerprint = developmentPlanCoverageFingerprint(coverageResult.coverageModel);
+  const coverageFingerprint = developmentCoverageFingerprint(coverageResult.coverageModel);
   const stored = intelligence.developmentPlanModel;
 
   if (!force && validDevelopmentPlan(
@@ -89,22 +109,48 @@ async function computeDevelopmentPlan(trackId: number, force: boolean) {
     } as const;
   }
 
-  const synthesizedPlan = await enhanceDevelopmentPlanWithLlm(
-    coverageResult.requirementModel,
-    coverageResult.coverageModel,
-    context,
-  );
-  const developmentPlanModel = hardenDevelopmentPlan(
+  let synthesizedPlan: DevelopmentPlanModel;
+  try {
+    synthesizedPlan = await enhanceDevelopmentPlanWithLlm(
+      coverageResult.requirementModel,
+      coverageResult.coverageModel,
+      context,
+    );
+  } catch {
+    synthesizedPlan = deterministicFallback(
+      coverageResult.requirementModel,
+      coverageResult.coverageModel,
+      context.sourceContextFingerprint,
+      "Anchor used the deterministic development plan because synthesis failed unexpectedly.",
+    );
+  }
+
+  const hardenedPlan = hardenDevelopmentPlan(
     synthesizedPlan,
     coverageResult.requirementModel,
     coverageResult.coverageModel,
   );
+  const developmentPlanModel = alignDevelopmentPlanPresentation(
+    hardenedPlan,
+    coverageResult.requirementModel,
+  );
   developmentPlanModel.requirementModelFingerprint = requirementFingerprint;
+  developmentPlanModel.coverageFingerprint = coverageFingerprint;
+  developmentPlanModel.sourceContextFingerprint = context.sourceContextFingerprint;
 
   // Merge against the latest track intelligence so a concurrent coverage or
   // profile refresh is not overwritten by this slower planning request.
   const latestTrack = await storage.getCareerTrack(trackId) || coverageResult.track;
   const latestIntelligence = parseJsonObject(latestTrack.trackIntelligence);
+  const latestCoverage = latestIntelligence.coverageModel as CoverageModel | undefined;
+  if (
+    retryAfterConcurrentCoverage
+    && latestCoverage?.mode === "coverage_model"
+    && developmentCoverageFingerprint(latestCoverage) !== coverageFingerprint
+  ) {
+    return computeDevelopmentPlan(trackId, true, false);
+  }
+
   const nextIntelligence = {
     ...latestIntelligence,
     developmentPlanModel,

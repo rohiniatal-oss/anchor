@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage } from "./storage";
-import { runTrackResearch } from "./trackResearchAgent";
+import { runStructuredTrackResearch } from "./trackResearchMethod";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -20,15 +20,17 @@ async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
-  // Research should first create the strategic track plan. Object creation is
-  // opt-in so a broad focus area does not flood Jobs/Learn/Contacts too early.
-  const result = await runTrackResearch(domain, { materialize: req.body?.materialize === true });
+  // Research creates a dossier first: explicit search plan, evidence pack,
+  // synthesis, and track plan. Object creation remains opt-in.
+  const result = await runStructuredTrackResearch(domain, { materialize: req.body?.materialize === true });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
   res.json({
     track: result.track,
     brief: result.brief,
     plan: result.brief.plan,
+    searchPlan: result.brief.searchPlan,
+    evidencePack: result.brief.evidencePack,
     researchEvidence: result.brief.researchEvidence,
     trackHypotheses: result.brief.trackHypotheses,
     fitGapMatrix: result.brief.fitGapMatrix,
@@ -53,6 +55,8 @@ export function registerTrackResearchRoutes(app: Express) {
       track,
       intelligence,
       plan: intelligence?.trackPlan || null,
+      searchPlan: intelligence?.searchPlan || null,
+      evidencePack: intelligence?.evidencePack || [],
       researchEvidence: intelligence?.researchEvidence || [],
       trackHypotheses: intelligence?.trackHypotheses || [],
       fitGapMatrix: intelligence?.fitGapMatrix || null,

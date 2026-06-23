@@ -391,7 +391,9 @@ function normalizeBrief(domain: string, raw: StructuredTrackBrief | null, search
   const gapPortfolio = asArray(raw.gapPortfolio).map((gap) => ({
     gap: compact(gap.gap),
     capitalType: normalizeCapitalType(gap.capitalType),
-    severity: gap.severity === "high" || gap.severity === "low" ? gap.severity : "medium",
+    severity: (gap.severity === "high" || gap.severity === "low"
+      ? gap.severity
+      : "medium") as GapItem["severity"],
     evidence: compact(gap.evidence),
     linkedPaths: uniqueStrings(asArray(gap.linkedPaths)),
     whyItMatters: compact(gap.whyItMatters),

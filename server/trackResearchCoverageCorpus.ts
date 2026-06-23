@@ -65,12 +65,12 @@ function sourceCounts(items: UserEvidenceItem[]): Record<UserEvidenceSourceType,
   return counts;
 }
 
-function canonicalLearnStatus(item: any): "published" | "completed" | "active" | "planned" | null {
+function canonicalLearnStatus(item: any): "published" | "completed" | "active" | null {
   const outputStatus = normalize(item.outputStatus);
   if (safeExternalUrl(item.outputEvidenceUrl) || outputStatus === "published") return "published";
   const status = normalize(item.learnStatus);
   if (["done", "complete", "completed"].includes(status) || Boolean(item.done)) return "completed";
-  if (["active", "in progress", "in_progress", "started"].includes(status) || Boolean(item.active)) return "active";
+  if (["active", "in progress", "started"].includes(status) || Boolean(item.active)) return "active";
   return null;
 }
 
@@ -106,6 +106,24 @@ function canonicalLearnEvidence(item: any): UserEvidenceItem | null {
 function canonicalKey(item: UserEvidenceItem): string {
   if (item.sourceEntityId != null) return `${item.sourceEntityType}:${item.sourceEntityId}`;
   return item.id;
+}
+
+function corpusFingerprint(items: UserEvidenceItem[], targetTrackId: number): string {
+  const usable = items.filter((item) => item.usableForCoverage && item.strength !== "planned");
+  const fingerprintInput = usable
+    .map((item) => [
+      item.id,
+      item.sourceEntityType,
+      item.sourceEntityId ?? "",
+      item.strength,
+      item.state,
+      item.detail,
+      safeExternalUrl(item.sourceUrl),
+      uniqueNumbers(item.trackIds).join(","),
+    ].join("|"))
+    .sort()
+    .join("||");
+  return stableHash(fingerprintInput || `empty:${targetTrackId}`);
 }
 
 /**
@@ -146,21 +164,6 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
     })
     .slice(0, 64);
 
-  const usable = items.filter((item) => item.usableForCoverage && item.strength !== "planned");
-  const fingerprintInput = usable
-    .map((item) => [
-      item.id,
-      item.sourceEntityType,
-      item.sourceEntityId ?? "",
-      item.strength,
-      item.state,
-      item.detail,
-      item.sourceUrl,
-      item.trackIds.join(","),
-    ].join("|"))
-    .sort()
-    .join("||");
-
   const caveats = [...base.caveats];
   if (items.some((item) => !item.usableForCoverage) && !caveats.some((item) => item.includes("In-progress and planned"))) {
     caveats.push("In-progress and planned items are visible to the assessor but are not treated as proven capability.");
@@ -170,7 +173,7 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
     mode: "user_evidence_corpus",
     version: USER_EVIDENCE_CORPUS_VERSION,
     targetTrackId,
-    fingerprint: stableHash(fingerprintInput || `empty:${targetTrackId}`),
+    fingerprint: corpusFingerprint(items, targetTrackId),
     items,
     sourceCounts: sourceCounts(items),
     caveats: [...new Set(caveats)],
@@ -181,5 +184,6 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
 export const coverageCorpusInternals = {
   canonicalLearnStatus,
   canonicalLearnEvidence,
+  corpusFingerprint,
   safeExternalUrl,
 };

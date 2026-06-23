@@ -4,6 +4,7 @@ import type { ActivityLog, CareerTrack, Contact, Hustle, Job, Learn, Task, Win }
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse } from "./candidates";
 import { computeJobTruthStrip, type JobTruthAction, type JobTruthStrip } from "./jobTruth";
+import { parseRoleModel, type RoleModel } from "./roleModel";
 import {
   broadPursuitMissingRolesDecisionQuestion,
   broadPursuitMissingRolesContextReason,
@@ -156,6 +157,7 @@ type GoalSnapshot = {
   evidencedLearnCount: number;
   learningOutputGapCount: number;
   interviewingJobs: number;
+  interviewingJobList: Job[];
   roleHypotheses: string[];
   topicHypotheses: string[];
   roleShapeHypotheses: string[];
@@ -529,7 +531,8 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     || job.applicationReadiness === "submitted"
     || job.applicationReadiness === "follow_up",
   ).length;
-  const interviewingJobs = savedJobs.filter((j) => j.status === "interviewing").length;
+  const interviewingJobList = savedJobs.filter((j) => j.status === "interviewing");
+  const interviewingJobs = interviewingJobList.length;
   const applicationActionCounts: Record<JobTruthAction, number> = {
     apply: 0,
     warm: 0,
@@ -611,6 +614,7 @@ function buildGoalSnapshot(tasks: Task[], jobs: Job[], log: ActivityLog[], learn
     evidencedLearnCount,
     learningOutputGapCount,
     interviewingJobs,
+    interviewingJobList,
     roleHypotheses,
     topicHypotheses,
     roleShapeHypotheses,
@@ -906,15 +910,38 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
       ],
       nextMoves: applicationNextMoves,
     },
-    {
-      name: GOAL_WORKSTREAM.INTERVIEW_READINESS,
-      status: snapshot.interviewingJobs > 0 ? "active" : snapshot.savedJobs.length > 0 ? "underdeveloped" : "premature",
-      progress: snapshot.interviewingJobs > 0 ? "early" : "not_started",
-      bottleneck: snapshot.interviewingJobs > 0 ? "interview stories and role-specific examples need tightening" : snapshot.savedJobs.length > 0 ? "no live interview yet, but interview prep is still thin" : "premature until live roles exist",
-      nextMoveType: snapshot.interviewingJobs > 0 ? "preparation" : "wait",
-      evidence: [snapshot.interviewingJobs ? `${snapshot.interviewingJobs} interviewing role(s)` : "no interviewing roles yet"],
-      nextMoves: snapshot.interviewingJobs > 0 ? ["prepare 3 concrete interview stories", "simulate one interview answer", "review the company and role thesis"] : ["wait until a live interview exists"],
-    },
+    (() => {
+      const interviewJob = snapshot.interviewingJobList[0];
+      if (interviewJob) {
+        const plan = buildRolePrepPlan(interviewJob, snapshot.activeLearnItems, [], snapshot.openContacts);
+        return {
+          name: GOAL_WORKSTREAM.INTERVIEW_READINESS,
+          status: "active" as WorkstreamStatus,
+          progress: "early" as WorkstreamState["progress"],
+          bottleneck: plan.topGap
+            ? `${plan.roleTitle}: "${plan.topGap.theme}" is the biggest gap`
+            : `${plan.roleTitle} needs interview stories and role-specific preparation`,
+          nextMoveType: "preparation" as NextMoveType,
+          evidence: [
+            `${snapshot.interviewingJobs} interviewing role(s)`,
+            plan.summary,
+            `Technical gaps: ${plan.buckets.technical.filter((i) => i.status === "gap").length}`,
+            `Sector gaps: ${plan.buckets.sector.filter((i) => i.status === "gap").length}`,
+            `Behavioral gaps: ${plan.buckets.behavioral.filter((i) => i.status === "gap").length}`,
+          ],
+          nextMoves: rolePrepPlanToNextMoves(plan),
+        };
+      }
+      return {
+        name: GOAL_WORKSTREAM.INTERVIEW_READINESS,
+        status: (snapshot.savedJobs.length > 0 ? "underdeveloped" : "premature") as WorkstreamStatus,
+        progress: "not_started" as WorkstreamState["progress"],
+        bottleneck: snapshot.savedJobs.length > 0 ? "no live interview yet, but interview prep is still thin" : "premature until live roles exist",
+        nextMoveType: "wait" as NextMoveType,
+        evidence: ["no interviewing roles yet"],
+        nextMoves: ["wait until a live interview exists"],
+      };
+    })(),
     {
       name: GOAL_WORKSTREAM.PREP_UPSKILLING,
       status: capabilityStatus,
@@ -1066,6 +1093,10 @@ function phaseReason(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSna
     return laneNarrowingSingleAxisReason(snapshot.roleHypotheses);
   }
   if (phase === "interview-prep") {
+    const interviewJob = snapshot.interviewingJobList[0];
+    if (interviewJob) {
+      return `${interviewJob.title}${interviewJob.company ? ` at ${interviewJob.company}` : ""} is in interview stage — the bottleneck shifts from exploration to role-specific preparation across technical skills, sector knowledge, and interview readiness.`;
+    }
     return interviewPrepReason();
   }
   return `${focus.name} is the current bottleneck: ${focus.bottleneck}.`;
@@ -1096,6 +1127,10 @@ function phaseDecisionQuestion(phase: GoalPhase, snapshot: GoalSnapshot) {
     return "Which promising role path keeps earning more attention from live evidence?";
   }
   if (phase === "role-targeting") return "Which specific role family should you convert first?";
+  const interviewJob = snapshot.interviewingJobList[0];
+  if (interviewJob) {
+    return `What technical skills, sector knowledge, and stories will make you strongest for ${interviewJob.title}${interviewJob.company ? ` at ${interviewJob.company}` : ""}?`;
+  }
   return interviewPrepDecisionQuestion();
 }
 
@@ -1113,6 +1148,254 @@ function trajectoryFor(phase: GoalPhase): GoalTrajectoryStep[] {
     ...titles[key],
     status: index < currentIndex ? "complete" : index === currentIndex ? "current" : "pending",
   }));
+}
+
+// ── Role Preparation Plan ────────────────────────────────────────────────
+// MECE 3-bucket breakdown: technical/role-specific, sector/industry, behavioral/fit.
+// Buckets 1-2 are ongoing learning plans; bucket 3 is interview-specific.
+
+type PrepBucket = "technical" | "sector" | "behavioral";
+type PrepItemSource = "jd" | "gap" | "strength" | "learning" | "inferred";
+type PrepItemStatus = "covered" | "learning" | "gap";
+type PrepItem = {
+  bucket: PrepBucket;
+  theme: string;
+  source: PrepItemSource;
+  status: PrepItemStatus;
+  priority: "high" | "medium" | "low";
+  detail: string;
+};
+type RolePrepPlan = {
+  roleTitle: string;
+  company: string;
+  buckets: Record<PrepBucket, PrepItem[]>;
+  topGap: PrepItem | null;
+  topStrength: PrepItem | null;
+  summary: string;
+};
+
+const SECTOR_TERMS = /\b(ai|artificial intelligence|machine learning|technology|geopolitic\w*|fintech|climate|health|energy|cyber|humanitarian|development|philanthropy|market landscape|industry|sector|competitive|ecosystem|regulation|regulatory landscape|policy landscape|frontier model|safety|governance landscape)\b/i;
+const TECHNICAL_OVERRIDE = /\b(stakeholder\s+translation|stakeholder\s+management|stakeholder\s+engagement|cross.jurisdiction|regulatory\s+policy|policy\s+language|technical\s+risk)\b/i;
+const BEHAVIORAL_TERMS = /\b(leadership|communicat\w+|stakeholder|team\w*|collaborat\w+|interpersonal|negotiat\w+|presentat\w+|relationship|mentor\w*|coach\w*|influenc\w+|adapt\w*|flexible|resilien\w+|creative|problem.solv\w+|decision.mak\w+|judgment|initiative|self.start\w*|manage.*people|cross.functional)\b/i;
+
+function classifyRequirement(text: string): PrepBucket {
+  const lower = text.toLowerCase();
+  if (TECHNICAL_OVERRIDE.test(lower)) return "technical";
+  if (BEHAVIORAL_TERMS.test(lower)) return "behavioral";
+  if (SECTOR_TERMS.test(lower)) return "sector";
+  return "technical";
+}
+
+function extractJdRequirements(jdText: string): Array<{ text: string; bucket: PrepBucket }> {
+  if (!jdText || jdText.trim().length < 20) return [];
+  const lines = jdText
+    .split(/[\n•–—]|(?:^|\n)\s*[-]\s/)
+    .map((l) => l.replace(/^\d+[.)]\s*/, "").trim())
+    .filter((l) => l.length > 5 && l.length < 400);
+  const requirements: Array<{ text: string; bucket: PrepBucket }> = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    const sentences = line.split(/(?<=[.;])\s+/).filter((s) => s.length > 5);
+    for (const sentence of sentences) {
+      if (/^(we are|we're|the company|this is|about the|join our|you'll join)/i.test(sentence.trim())) continue;
+      const cleaned = sentence
+        .replace(/^(you will|you'll|must have|required|the candidate|candidates should|we're looking for|we are looking for|we need|key requirements:\s*)/i, "")
+        .replace(/^an?\s+[A-Z]\w+\s+(Advisor|Analyst|Manager|Consultant|Director|Lead|Specialist)\s+to\s+/i, "")
+        .trim();
+      const commaItems = cleaned.split(/,\s*/).map((s) => s.trim()).filter((s) => s.length > 3);
+      const fragments = commaItems.length >= 2 && commaItems.every((s) => s.split(/\s+/).length <= 8) ? commaItems : [cleaned];
+      for (const fragment of fragments) {
+        const normalized = fragment.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+        if (normalized.length < 5 || seen.has(normalized)) continue;
+        seen.add(normalized);
+        const text = fragment.replace(/^(and|or)\s+/i, "").replace(/[.;,]+$/, "").trim();
+        if (text.length < 5) continue;
+        requirements.push({ text: text.charAt(0).toUpperCase() + text.slice(1), bucket: classifyRequirement(text) });
+      }
+    }
+  }
+  return requirements.slice(0, 20);
+}
+
+function matchesTheme(text: string, theme: string): boolean {
+  const themeWords = theme.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  const textLower = text.toLowerCase();
+  return themeWords.filter((w) => textLower.includes(w)).length >= Math.max(1, Math.ceil(themeWords.length * 0.4));
+}
+
+function buildRolePrepPlan(job: Job, activeLearn: Learn[], wins: Win[], contacts: Contact[]): RolePrepPlan {
+  const roleTitle = `${job.title}${job.company ? ` at ${job.company}` : ""}`;
+  const requirements = extractJdRequirements(job.jdText || "");
+  const narrativeHints = (job.narrativeAngle || "").trim();
+
+  const items: PrepItem[] = [];
+
+  for (const req of requirements) {
+    const isBeingLearned = activeLearn.some((l) =>
+      matchesTheme(`${l.title} ${l.capabilityBuilt}`, req.text),
+    );
+    const isProvenByWin = wins.some((w) =>
+      matchesTheme(`${w.text} ${w.takeaway}`, req.text),
+    );
+    const status: PrepItemStatus = isProvenByWin ? "covered" : isBeingLearned ? "learning" : "gap";
+    const priority = status === "gap" ? "high" : status === "learning" ? "medium" : "low";
+    const detail = isProvenByWin
+      ? `You have evidence for this from recent work`
+      : isBeingLearned
+        ? `Already learning — check if your current item covers this well enough`
+        : `Not yet covered — needs a learning plan`;
+    items.push({ bucket: req.bucket, theme: req.text, source: "jd", status, priority, detail });
+  }
+
+  if (narrativeHints && !items.some((i) => matchesTheme(i.theme, narrativeHints))) {
+    items.push({
+      bucket: "behavioral",
+      theme: `Articulate why you're credible: ${narrativeHints.slice(0, 120)}`,
+      source: "gap",
+      status: "gap",
+      priority: "high",
+      detail: "Your narrative angle needs to be interview-ready",
+    });
+  }
+
+  if (!items.some((i) => i.bucket === "behavioral")) {
+    items.push(
+      { bucket: "behavioral", theme: "Prepare 3 concrete stories for likely interview themes", source: "inferred", status: "gap", priority: "high", detail: "Standard interview prep — stories that demonstrate judgment, impact, and collaboration" },
+      { bucket: "behavioral", theme: `Articulate why this role at ${job.company || "this company"} fits your trajectory`, source: "inferred", status: "gap", priority: "medium", detail: "Connect your background to what the role demands" },
+    );
+  }
+
+  if (items.filter((i) => i.bucket === "sector").length < 2) {
+    const sectorLabel = job.roleArchetype || job.company || "this sector";
+    if (!items.some((i) => i.bucket === "sector")) {
+      items.push(
+        { bucket: "sector", theme: `Map the ${sectorLabel} landscape: key players, recent moves, and open questions`, source: "inferred", status: "gap", priority: "medium", detail: "Shows you understand the field beyond the job description" },
+      );
+    }
+    if (job.company) {
+      items.push(
+        { bucket: "sector", theme: `Understand ${job.company}'s position, strategy, and what they're building toward`, source: "inferred", status: "gap", priority: "medium", detail: "Company-specific knowledge that shows genuine interest" },
+      );
+    }
+  }
+
+  const warmContacts = contacts.filter((c) => {
+    const s = c.status || "";
+    return (s === "messaged" || s === "replied" || c.relationshipStrength === "warm")
+      && (c.relatedTrackId === job.relatedTrackId || matchesTheme(`${c.who} ${c.sector} ${c.targetRole}`, `${job.title} ${job.company} ${job.roleArchetype}`));
+  });
+  if (warmContacts.length > 0) {
+    const contact = warmContacts[0]!;
+    const contactName = contact.name || contact.who;
+    if (!items.some((i) => matchesTheme(i.theme, contactName))) {
+      items.push({
+        bucket: "behavioral",
+        theme: `Get insider perspective from ${contactName} on what actually matters in this role`,
+        source: "strength",
+        status: "learning",
+        priority: "medium",
+        detail: `${contactName} can help you calibrate which requirements to prioritize`,
+      });
+    }
+  }
+
+  const buckets: Record<PrepBucket, PrepItem[]> = { technical: [], sector: [], behavioral: [] };
+  for (const item of items) {
+    buckets[item.bucket].push(item);
+  }
+  for (const bucket of Object.values(buckets)) {
+    bucket.sort((a, b) => {
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      return priorityOrder[a.priority] - priorityOrder[b.priority];
+    });
+  }
+
+  const topGap = items.find((i) => i.status === "gap" && i.priority === "high") || items.find((i) => i.status === "gap") || null;
+  const topStrength = items.find((i) => i.status === "covered") || null;
+
+  const gapCount = items.filter((i) => i.status === "gap").length;
+  const coveredCount = items.filter((i) => i.status === "covered").length;
+  const learningCount = items.filter((i) => i.status === "learning").length;
+  const summary = `${roleTitle}: ${gapCount} gap${gapCount === 1 ? "" : "s"} to close, ${learningCount} in progress, ${coveredCount} already covered`;
+
+  return { roleTitle, company: job.company || "", buckets, topGap, topStrength, summary };
+}
+
+function rolePrepPlanToNextMoves(plan: RolePrepPlan): string[] {
+  const moves: string[] = [];
+  const topTechnical = plan.buckets.technical.find((i) => i.status === "gap") || plan.buckets.technical[0];
+  const topSector = plan.buckets.sector.find((i) => i.status === "gap") || plan.buckets.sector[0];
+  const topBehavioral = plan.buckets.behavioral.find((i) => i.status === "gap") || plan.buckets.behavioral[0];
+
+  if (topTechnical) moves.push(`Technical: ${topTechnical.theme}`);
+  if (topSector) moves.push(`Sector knowledge: ${topSector.theme}`);
+  if (topBehavioral) moves.push(`Interview prep: ${topBehavioral.theme}`);
+  return moves;
+}
+
+function rolePrepPlanToTodayPlan(plan: RolePrepPlan) {
+  const allGaps = [
+    ...plan.buckets.technical.filter((i) => i.status === "gap"),
+    ...plan.buckets.sector.filter((i) => i.status === "gap"),
+    ...plan.buckets.behavioral.filter((i) => i.status === "gap"),
+  ];
+  const allLearning = [
+    ...plan.buckets.technical.filter((i) => i.status === "learning"),
+    ...plan.buckets.sector.filter((i) => i.status === "learning"),
+    ...plan.buckets.behavioral.filter((i) => i.status === "learning"),
+  ];
+
+  const mustDoItem = allGaps[0] || allLearning[0] || plan.buckets.behavioral[0];
+  const nextItem = allGaps[1] || allLearning[0] || plan.buckets.sector[0];
+  const optionalItem = allGaps[2] || allLearning[1] || plan.buckets.technical[0];
+
+  const bucketLabel = (b: PrepBucket) => b === "technical" ? "technical" : b === "sector" ? "sector knowledge" : "interview readiness";
+
+  return {
+    mustDo: mustDoItem
+      ? `${plan.roleTitle} — ${bucketLabel(mustDoItem.bucket)}: ${mustDoItem.theme}`
+      : `Prepare for ${plan.roleTitle} — identify your biggest gap from the JD`,
+    next: nextItem
+      ? `${bucketLabel(nextItem.bucket)}: ${nextItem.theme}`
+      : `Review the role and company thesis for ${plan.company || "this company"} and write one sharp answer for why this role fits`,
+    optional: optionalItem
+      ? `${bucketLabel(optionalItem.bucket)}: ${optionalItem.theme}`
+      : `Convert one learning item into a ${plan.company || "role"}-relevant note or practice answer`,
+    stopRule: `Stop once one gap for ${plan.roleTitle} is meaningfully smaller than it was before.`,
+  };
+}
+
+type RoleModelSummary = {
+  jobId: number;
+  roleTitle: string;
+  company: string;
+  roleModel: RoleModel | null;
+  prepPlan: RolePrepPlan;
+};
+
+function buildRolePrepPlans(snapshot: GoalSnapshot): RoleModelSummary[] {
+  const results: RoleModelSummary[] = [];
+  const seen = new Set<number>();
+  const candidateJobs = [
+    ...snapshot.interviewingJobList,
+    ...(snapshot.leadApplicationTruth ? snapshot.savedJobs.filter((j) => j.id === snapshot.leadApplicationTruth!.jobId) : []),
+    ...snapshot.savedJobs.filter((j) => (j.jdText || "").trim().length > 30 && j.status !== "closed"),
+  ];
+  for (const job of candidateJobs) {
+    if (seen.has(job.id)) continue;
+    seen.add(job.id);
+    const cachedRoleModel = parseRoleModel(job.roleModel || "");
+    const prepPlan = buildRolePrepPlan(job, snapshot.activeLearnItems, [], snapshot.openContacts);
+    results.push({
+      jobId: job.id,
+      roleTitle: prepPlan.roleTitle,
+      company: job.company || "",
+      roleModel: cachedRoleModel,
+      prepPlan,
+    });
+    if (results.length >= 3) break;
+  }
+  return results;
 }
 
 function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: GoalSnapshot, candidateUniverse: ReturnType<typeof generateCandidateUniverse>) {
@@ -1202,6 +1485,11 @@ function buildTodayPlan(phase: GoalPhase, focus: WorkstreamState, snapshot: Goal
     };
   }
   if (phase === "interview-prep") {
+    const interviewJob = snapshot.interviewingJobList[0];
+    if (interviewJob) {
+      const plan = buildRolePrepPlan(interviewJob, snapshot.activeLearnItems, [], snapshot.openContacts);
+      return rolePrepPlanToTodayPlan(plan);
+    }
     return {
       mustDo: interviewPrepTodayMustDo(),
       next: interviewPrepTodayNext(),
@@ -1525,6 +1813,7 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
     trajectory: trajectoryFor(frame.phase),
     workstreams,
     todayPlan: buildTodayPlan(frame.phase, frame.focus, snapshot, candidateUniverse),
+    rolePrepPlans: buildRolePrepPlans(snapshot),
     broadPursuitCoverage,
     trace: [
       "Read career assets, saved jobs, learning items, tasks, role feedback, and activity history.",

@@ -99,6 +99,7 @@ export const jobs = sqliteTable("jobs", {
   jdText: text("jd_text").notNull().default(""), // pasted job description text
   rejectReason: text("reject_reason").notNull().default(""), // why the user passed on this role
   companyBrief: text("company_brief").notNull().default(""), // JSON: structured company intelligence
+  roleModel: text("role_model").notNull().default(""), // JSON: structured role understanding
   createdAt: integer("created_at").notNull(),
 });
 

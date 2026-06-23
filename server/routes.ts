@@ -30,6 +30,7 @@ import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llm, llmUsageStats, LLM_MODELS } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { contextualizeTask } from "./taskIntakeInference";
+import { generateRoleModel, getRoleModel } from "./roleModel";
 
 const acceptRecommendationSchema = z.object({
   entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
@@ -191,6 +192,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if ((job.jdText || "").trim().length > 40) {
       generateJobPrepArc(job).catch(() => {});
       autoGenerateNarrativeAngle(job).catch(() => {});
+      generateRoleModel(job).catch(() => {});
     }
     if (job.company) generateCompanyBrief(job).catch(() => {});
     refreshJobScoresInBackground(job.id, { forceLlm: false });
@@ -205,6 +207,7 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (p.data.jdText && (p.data.jdText || "").trim().length > 40) {
       generateJobPrepArc(updated).catch(() => {});
       autoGenerateNarrativeAngle(updated).catch(() => {});
+      generateRoleModel(updated).catch(() => {});
     }
     if (p.data.company && !(updated.companyBrief || "").trim()) generateCompanyBrief(updated).catch(() => {});
     if (shouldRefreshJobScore(p.data)) {
@@ -234,6 +237,22 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     if (!job.company) return res.json(null);
     const brief = await generateCompanyBrief(job).catch(() => null);
     res.json(brief);
+  });
+
+  app.get("/api/jobs/:id/role-model", async (req, res) => {
+    const job = await storage.getJob(Number(req.params.id));
+    if (!job) return res.status(404).json({ error: "Not found" });
+    const model = await getRoleModel(job).catch(() => null);
+    res.json(model);
+  });
+
+  app.post("/api/jobs/:id/role-model/refresh", async (req, res) => {
+    const job = await storage.getJob(Number(req.params.id));
+    if (!job) return res.status(404).json({ error: "Not found" });
+    await storage.updateJob(job.id, { roleModel: "" });
+    const refreshed = await storage.getJob(job.id);
+    const model = await generateRoleModel(refreshed!).catch(() => null);
+    res.json(model);
   });
 
   app.get("/api/jobs/contact-links", async (_req, res) => {

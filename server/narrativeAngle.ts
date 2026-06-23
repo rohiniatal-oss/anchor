@@ -12,11 +12,18 @@ export async function autoGenerateNarrativeAngle(job: Job): Promise<string | nul
   if (cv.length < 40) return null;
 
   const prompt = [
-    "You are matching a person's background to a specific role.",
-    "Given their CV and the job description, write ONE sentence (under 30 words) explaining why this person is credible for this role.",
-    "Focus on the strongest overlap: relevant experience, transferable skills, or domain knowledge.",
-    "Do NOT be generic. Name the specific experience or skill that bridges the gap.",
-    "If there is no credible bridge, respond with exactly: SKIP",
+    "You are writing a one-sentence narrative angle for a job application.",
+    "",
+    "TASK: Find the single strongest overlap between this person's CV and the job description. Write ONE sentence (under 30 words) that names the specific experience, project, or skill and connects it to the role's core need.",
+    "",
+    "FORMAT: '[Specific thing from CV] makes [person] credible for [specific aspect of role].'",
+    "GOOD: 'Three years leading AI policy research at [org] maps directly to the governance advisory work this role requires.'",
+    "BAD: 'Strong analytical skills and leadership experience make them a great fit.' (too generic — no named experience, no named role need)",
+    "",
+    "RULES:",
+    "- Name a real item from the CV (a role, project, skill, or domain). Never say 'relevant experience' or 'transferable skills' without naming what.",
+    "- Name a real requirement from the JD. Never say 'this role' without saying which part.",
+    "- If no credible connection exists, respond with exactly: SKIP",
     "",
     `Role: ${job.title}${job.company ? ` at ${job.company}` : ""}`,
     "",

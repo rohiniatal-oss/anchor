@@ -322,6 +322,17 @@ function goalNetworkSupportSteps(task: Pick<Task, "title" | "doneWhen" | "minimu
   const companyHint = goalCompanyHint(task) || liveRoleCompanyHintFromContext(bundle?.crossEngineContext);
   const searchTarget = [label, companyHint].filter(Boolean).join(" at ");
   const liveRole = firstLiveRoleLabelFromContext(bundle?.crossEngineContext);
+  const warmContact = warmContactNameFromContext(bundle?.crossEngineContext);
+  if (warmContact) {
+    return [
+      `Open ${warmContact}'s profile and check whether they can reality-check ${label}`,
+      liveRole
+        ? `Write one sentence on why ${warmContact} is relevant to ${liveRole}`
+        : `Write one sentence on why ${warmContact} is relevant to ${focus}`,
+      `Draft a soft ask to ${warmContact} about how teams hire for ${label}`,
+      `If ${warmContact} isn't right, search LinkedIn for someone already doing ${searchTarget || focus}`,
+    ];
+  }
   return [
     `Open LinkedIn and search for someone already doing ${searchTarget || focus}`,
     liveRole
@@ -339,12 +350,15 @@ function goalLearningSupportSteps(task: Pick<Task, "title" | "doneWhen" | "minim
   const rolePathForGap = plannedGap.label ? liveRole || label : label;
   const likelyGap = likelyLearningGapFromContext(rolePathForGap, bundle?.crossEngineContext, plannedGap.label);
   const gapTypeLabel = plannedGap.gapType ? `${plannedGap.gapType} gap` : likelyGap.gapTypeLabel;
+  const activeLearning = activeLearningFromContext(bundle?.crossEngineContext);
   return [
     liveRole
       ? `Open ${liveRole} and use it as the reference role for ${label}`
       : `Open one live role, saved role note, or JD for ${label}`,
     `Use Anchor's draft diagnosis: ${likelyGap.label} may be the weakest ${gapTypeLabel} for ${label}`,
-    `Confirm or edit that diagnosis by checking one must-have line in the role and one matching evidence line from your background`,
+    activeLearning
+      ? `Check whether "${activeLearning}" already covers this gap — if so, continue it instead of starting fresh`
+      : `Confirm or edit that diagnosis by checking one must-have line in the role and one matching evidence line from your background`,
     likelyGap.learningMoveStep
       .replace(/^Use this matching next learning move if that gap holds:\s*/i, "Use this matching next learning move if that gap holds: ")
       .replace(/, then stop once one real role, one repeated requirements pattern, and one next learning move are captured$/i, ""),
@@ -1049,6 +1063,18 @@ function firstLiveRoleLabelFromContext(crossEngineContext?: string): string {
   const match = crossEngineContext.match(/Live roles nearby:\s*([^.]+)/);
   const first = match?.[1]?.split(";")[0]?.replace(/\s*\([^)]*\)\s*$/g, "").trim();
   return first || "";
+}
+
+function warmContactNameFromContext(crossEngineContext?: string): string {
+  if (!crossEngineContext) return "";
+  const match = crossEngineContext.match(/Warm people already in reach:\s*([^(;.]+)/);
+  return match?.[1]?.trim() || "";
+}
+
+function activeLearningFromContext(crossEngineContext?: string): string {
+  if (!crossEngineContext) return "";
+  const match = crossEngineContext.match(/Learning already in progress:\s*([^;.]+)/);
+  return match?.[1]?.trim() || "";
 }
 
 function globalBreakdownQualityGuidance(): string {

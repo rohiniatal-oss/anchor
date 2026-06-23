@@ -290,7 +290,7 @@ async function busyMinutesFor(day: string): Promise<number> {
 }
 
 async function buildPlan(day: string, energy: Energy) {
-  const [tasks, jobs, learn, hustles, contacts, tracks, jobContactLinks, profile] = await Promise.all([
+  const [tasks, jobs, learn, hustles, contacts, tracks, jobContactLinks, profile, wins] = await Promise.all([
     storage.getTasks(),
     storage.getJobs(),
     storage.getLearn(),
@@ -299,9 +299,10 @@ async function buildPlan(day: string, energy: Energy) {
     storage.getCareerTracks(),
     storage.getAllJobContactLinks(),
     storage.getProfile(),
+    storage.getWins(),
   ]);
   const busy = await busyMinutesFor(day);
-  const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks, new Map(), jobContactLinks, profile);
+  const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks, new Map(), jobContactLinks, profile, wins);
   let plan = await storage.getPlanByDate(day);
   const planMode = r.mode === "low" ? "low_energy" : r.mode;
   if (!plan) plan = await storage.createPlan({ date: day, mode: planMode, energy, status: "active", enoughForToday: false, note: r.note } as any);
@@ -378,7 +379,7 @@ export function registerPlanningRoutes(app: Express) {
   app.post("/api/brain/plan", async (req, res) => {
     const energy = ["low", "medium", "high"].includes(req.body?.energy) ? req.body.energy : "medium";
     const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
-    const [tasks, jobs, learn, hustles, contacts, tracks, events, jobContactLinks, profile] = await Promise.all([
+    const [tasks, jobs, learn, hustles, contacts, tracks, events, jobContactLinks, profile, wins] = await Promise.all([
       storage.getTasks(),
       storage.getJobs(),
       storage.getLearn(),
@@ -388,6 +389,7 @@ export function registerPlanningRoutes(app: Express) {
       storage.getEvents(day),
       storage.getAllJobContactLinks(),
       storage.getProfile(),
+      storage.getWins(),
     ]);
     let busy = 0;
     for (const e of events) {
@@ -400,7 +402,7 @@ export function registerPlanningRoutes(app: Express) {
         busy += 45;
       }
     }
-    const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks, new Map(), jobContactLinks, profile);
+    const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks, new Map(), jobContactLinks, profile, wins);
     res.json({ ...r, busyMinutes: busy, events });
   });
 

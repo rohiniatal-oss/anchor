@@ -67,10 +67,10 @@ async function createTrackMoveIfMissing(args: {
 
 export function registerStrategyBuilderRoutes(app: Express) {
   app.get("/api/strategy-builder", async (_req, res) => {
-    const [tasks, jobs, learn, hustles, contacts] = await Promise.all([
-      storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(),
+    const [tasks, jobs, learn, hustles, contacts, wins, tracks] = await Promise.all([
+      storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getWins(), storage.getCareerTracks(),
     ]);
-    res.json(buildStrategyBuilder(tasks, jobs, learn, hustles, contacts));
+    res.json(buildStrategyBuilder(tasks, jobs, learn, hustles, contacts, wins, tracks));
   });
 
   app.get("/api/track-plans", async (_req, res) => {
@@ -85,10 +85,10 @@ export function registerStrategyBuilderRoutes(app: Express) {
   // is strong; proof, learning, and networking remain support/ongoing moves rather
   // than hard prerequisites.
   app.post("/api/strategy-builder/apply", async (_req, res) => {
-    const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
-      storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(),
+    const [tasks, jobs, learn, hustles, contacts, tracks, wins] = await Promise.all([
+      storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(), storage.getWins(),
     ]);
-    const strategy = await buildMarketGroundedStrategyBuilder(tasks, jobs, learn, hustles, contacts);
+    const strategy = await buildMarketGroundedStrategyBuilder(tasks, jobs, learn, hustles, contacts, wins, tracks);
     const created: string[] = [];
 
     const existingTrackKeys = new Set(tracks.map((t) => norm(`${t.name} ${t.targetRoleArchetype}`)));

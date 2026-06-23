@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { GOAL_WORKSTREAM, type GoalWorkstreamName } from "@shared/goalWorkstreams";
-import type { ActivityLog, CareerTrack, Contact, Hustle, Job, Learn, Task } from "@shared/schema";
+import type { ActivityLog, CareerTrack, Contact, Hustle, Job, Learn, Task, Win } from "@shared/schema";
 import { storage } from "./storage";
 import { attributeFeedbackFromActivity, attributeFeedbackSummary, careerAssetsFromActivity, generateCandidateUniverse } from "./candidates";
 import { computeJobTruthStrip, type JobTruthAction, type JobTruthStrip } from "./jobTruth";
@@ -1535,6 +1535,42 @@ export function buildCareerGoalState(tasks: Task[], jobs: Job[], log: ActivityLo
       "Today plan is a small surface of the goal state, not the whole goal.",
     ],
   };
+}
+
+export type TrackMomentum = {
+  completedTaskCount: number;
+  winCount: number;
+  daysSinceLastActivity: number | null;
+};
+
+export function trackMomentumSignals(
+  tasks: Task[],
+  wins: Win[],
+  tracks: CareerTrack[],
+  windowDays = 21,
+): Map<number, TrackMomentum> {
+  const cutoff = Date.now() - windowDays * 86_400_000;
+  const result = new Map<number, TrackMomentum>();
+  for (const track of tracks) {
+    const trackTasks = tasks.filter((t) => t.relatedTrackId === track.id && t.done);
+    const recentTasks = trackTasks.filter((t) => (t.createdAt || 0) >= cutoff);
+    const trackWins = wins.filter((w) => w.trackId === track.id);
+    const recentWins = trackWins.filter((w) => (w.createdAt || 0) >= cutoff);
+    const timestamps = [
+      ...trackTasks.map((t) => t.createdAt || 0),
+      ...trackWins.map((w) => w.createdAt || 0),
+    ].filter((ts) => ts > 0);
+    const lastActivity = timestamps.length ? Math.max(...timestamps) : null;
+    const daysSinceLastActivity = lastActivity
+      ? Math.floor((Date.now() - lastActivity) / 86_400_000)
+      : null;
+    result.set(track.id, {
+      completedTaskCount: recentTasks.length,
+      winCount: recentWins.length,
+      daysSinceLastActivity,
+    });
+  }
+  return result;
 }
 
 export function registerGoalStateRoutes(app: Express) {

@@ -1,4 +1,4 @@
-import type { CareerTrack, Contact, Hustle, Job, Learn, Task, UserProfile } from "@shared/schema";
+import type { CareerTrack, Contact, Hustle, Job, Learn, Task, UserProfile, Win } from "@shared/schema";
 import { getLearnOutputState, isOpportunityActionable } from "@shared/domainState";
 import { GOAL_WORKSTREAM } from "@shared/goalWorkstreams";
 import { isGenericContactPlaceholder, nextContactTaskTitle } from "@shared/taskPreview";
@@ -135,6 +135,7 @@ type StrategicContext = {
   targetRolePreferenceTerms: string[][];
   locationPreferences: string;
   locationPreferenceTerms: string[][];
+  takeawayTerms: string[][];
 };
 
 const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
@@ -164,6 +165,7 @@ const DEFAULT_STRATEGIC_CONTEXT: StrategicContext = {
   targetRolePreferenceTerms: [],
   locationPreferences: "UAE first, remote ok, London ok",
   locationPreferenceTerms: [["uae", "dubai", "abu dhabi", "emirates"], ["remote"], ["london"]],
+  takeawayTerms: [],
 };
 
 type RankedCandidate = { c: Candidate; s: number; trace: string[] };
@@ -253,6 +255,23 @@ function rolePreferenceMomentum(c: Candidate, context: StrategicContext) {
   }
   return best > 0
     ? { score: best, reason: best >= 18 ? "matches your saved target role types" : "partly matches your saved target role types" }
+    : { score: 0, reason: "" };
+}
+
+function takeawayMomentum(c: Candidate, context: StrategicContext) {
+  const takeaways = context.takeawayTerms || [];
+  if (!takeaways.length) return { score: 0, reason: "" };
+  const candidateWords = new Set(significantWords(`${c.title} ${c.sourceNote} ${c.targetRole || ""} ${(c as any).roleArchetype || ""}`));
+  let best = 0;
+  for (const terms of takeaways) {
+    const overlap = terms.filter((term) => candidateWords.has(term)).length;
+    if (overlap === 0) continue;
+    const coverage = overlap / Math.max(1, terms.length);
+    const score = overlap >= 2 || coverage >= 0.67 ? 18 : 8;
+    best = Math.max(best, score);
+  }
+  return best > 0
+    ? { score: best, reason: best >= 18 ? "connects to something you recently learned" : "partly relates to a recent takeaway" }
     : { score: 0, reason: "" };
 }
 
@@ -428,6 +447,7 @@ function buildStrategicContext(
   contacts: Contact[] = [],
   tracks: CareerTrack[] = [],
   profile?: PlanningProfile,
+  wins: Win[] = [],
 ): StrategicContext {
   const spine = buildTrackSpine({ tasks, jobs, learn, hustles, contacts, tracks });
   const lane = spine.globalLanes.find((l) => l.name === spine.bestMove.lane) || spine.globalLanes[0];
@@ -453,6 +473,11 @@ function buildStrategicContext(
   const targetRolePreferences = rolePreferenceTerms(targetRoles);
   const locationPreferences = (profile?.locationPreferences || DEFAULT_STRATEGIC_CONTEXT.locationPreferences).trim();
   const parsedLocationPreferences = locationPreferenceTerms(locationPreferences);
+  const fourteenDaysAgo = Date.now() - 14 * 86_400_000;
+  const takeawayTerms = wins
+    .filter((w) => (w.takeaway || "").trim() && (w.createdAt || 0) >= fourteenDaysAgo)
+    .map((w) => significantWords(w.takeaway!))
+    .filter((terms) => terms.length >= 2);
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
   const broadPursuitSupportOpen = goalFrame.decisionMode === "broad-parallel-pursuit"
     && broadPursuitCoverage.missing.length === 0
@@ -539,6 +564,7 @@ function buildStrategicContext(
     targetRolePreferenceTerms: targetRolePreferences,
     locationPreferences,
     locationPreferenceTerms: parsedLocationPreferences,
+    takeawayTerms,
   };
 }
 
@@ -1425,6 +1451,10 @@ function scoreWithTrace(c: Candidate, energy: Energy, mode: DayMode, context: St
     trace.push("aligns with your current focus area");
   }
 
+  const takeaway = takeawayMomentum(c, context);
+  s += takeaway.score;
+  if (takeaway.reason) trace.push(takeaway.reason);
+
   const actionCategory = candidateActionCategory(c, context);
   const priorityBand = actionCategoryPriorityBand(actionCategory, context);
   if (priorityBand === 1) {
@@ -1840,8 +1870,9 @@ export function planDay(
   learnMilestoneProgress: Map<number, { done: number; total: number }> = new Map(),
   jobContactLinks: Record<number, number[]> = {},
   profile?: PlanningProfile,
+  wins: Win[] = [],
 ): { mode: DayMode; plan: PlanItem[]; note: string; mvdIndex: number; trace: PlanTrace } {
-  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks, profile);
+  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks, profile, wins);
   const priorityCandidates: Candidate[] = [];
   if (needsBroadPursuitGoalCandidate(context)) {
     priorityCandidates.push(buildBroadPursuitGoalCandidate(context));
@@ -2183,8 +2214,9 @@ export function recommend(
   contacts: Contact[] = [], tracks: CareerTrack[] = [],
   jobContactLinks: Record<number, number[]> = {},
   profile?: PlanningProfile,
+  wins: Win[] = [],
 ) {
-  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks, profile);
+  const context = buildStrategicContext(tasks, jobs, learn, hustles, contacts, tracks, profile, wins);
   const priorityCandidates: Candidate[] = [];
   if (needsBroadPursuitGoalCandidate(context)) {
     priorityCandidates.push(buildBroadPursuitGoalCandidate(context));

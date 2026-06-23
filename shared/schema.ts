@@ -99,6 +99,7 @@ export const jobs = sqliteTable("jobs", {
   jdText: text("jd_text").notNull().default(""), // pasted job description text
   rejectReason: text("reject_reason").notNull().default(""), // why the user passed on this role
   companyBrief: text("company_brief").notNull().default(""), // JSON: structured company intelligence
+  roleModel: text("role_model").notNull().default(""), // JSON: structured role understanding
   createdAt: integer("created_at").notNull(),
 });
 
@@ -330,6 +331,7 @@ export const careerTracks = sqliteTable("career_tracks", {
   priority: integer("priority").notNull().default(0), // higher = more focus
   status: text("status").notNull().default("active"), // active|watch|paused
   whyItFits: text("why_it_fits").notNull().default(""),
+  trackIntelligence: text("track_intelligence").notNull().default(""), // JSON: aggregated track model
   createdAt: integer("created_at").notNull(),
 });
 

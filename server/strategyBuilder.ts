@@ -1,8 +1,9 @@
-import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
+import type { CareerTrack, Contact, Hustle, Job, Learn, Task, Win } from "@shared/schema";
 import { buildLaneOperatingModel, type LaneOperatingModel } from "./laneState";
 import { COACH_PREAMBLE } from "./userPromptProfile";
 import { llmJSON } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
+import { trackMomentumSignals, type TrackMomentum } from "./goalState";
 
 export type RoleArchetypeRecommendation = {
   archetype: string;
@@ -161,7 +162,15 @@ async function getMarketGroundedArchetypes(tasks: Task[], jobs: Job[], learn: Le
   }
 }
 
-function scoreArchetype(base: RoleArchetypeRecommendation, allText: string, jobs: Job[], contacts: Contact[], hustles: Hustle[]): RoleArchetypeRecommendation {
+function scoreArchetype(
+  base: RoleArchetypeRecommendation,
+  allText: string,
+  jobs: Job[],
+  contacts: Contact[],
+  hustles: Hustle[],
+  momentum?: Map<number, TrackMomentum>,
+  tracks?: CareerTrack[],
+): RoleArchetypeRecommendation {
   const a = base.archetype.toLowerCase();
   const signal =
     (a.includes("ai") && includesAny(allText, [/ai governance|frontier ai|ai safety|policy|technology governance/]) ? 2 : 0) +
@@ -172,9 +181,21 @@ function scoreArchetype(base: RoleArchetypeRecommendation, allText: string, jobs
   const roleSignal = jobs.filter((j) => `${j.title} ${j.roleArchetype} ${j.note}`.toLowerCase().includes(first)).length;
   const peopleSignal = contacts.filter((c) => `${c.who} ${c.targetRole} ${c.why}`.toLowerCase().includes(first)).length;
   const proofSignal = hustles.filter((h) => `${h.title} ${h.note} ${h.coreClaim}`.toLowerCase().includes(first)).length;
+  let momentumSignal = 0;
+  if (momentum && tracks) {
+    const linkedTrack = tracks.find((t) => t.targetRoleArchetype.toLowerCase().includes(first));
+    if (linkedTrack) {
+      const m = momentum.get(linkedTrack.id);
+      if (m) {
+        if (m.completedTaskCount >= 3) momentumSignal += 2;
+        if (m.daysSinceLastActivity != null && m.daysSinceLastActivity >= 21) momentumSignal -= 1;
+      }
+    }
+  }
   let priority: RoleArchetypeRecommendation["priority"] = base.priority;
-  if (signal + roleSignal + peopleSignal + proofSignal >= 4) priority = proofSignal > 0 || roleSignal >= 2 ? "convert" : "explore";
-  if (roleSignal === 0 && peopleSignal === 0 && proofSignal === 0 && base.priority === "watch") priority = "watch";
+  const totalSignal = signal + roleSignal + peopleSignal + proofSignal + momentumSignal;
+  if (totalSignal >= 4) priority = proofSignal > 0 || roleSignal >= 2 ? "convert" : "explore";
+  if (roleSignal === 0 && peopleSignal === 0 && proofSignal === 0 && momentumSignal <= 0 && base.priority === "watch") priority = "watch";
   return { ...base, priority };
 }
 
@@ -276,19 +297,26 @@ function buildFromArchetypes(roleArchetypes: RoleArchetypeRecommendation[], lane
   };
 }
 
-export function buildStrategyBuilder(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = []): StrategyBuild {
+export function buildStrategyBuilder(
+  tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [],
+  wins: Win[] = [], tracks: CareerTrack[] = [],
+): StrategyBuild {
   const laneModel = buildLaneOperatingModel(tasks, jobs, learn, hustles, contacts);
   const allText = corpus(tasks, jobs, learn, hustles, contacts);
-  const roleArchetypes = BASE_ARCHETYPES.map((r) => scoreArchetype(r, allText, jobs, contacts, hustles)).sort((a, b) => {
+  const momentum = tracks.length ? trackMomentumSignals(tasks, wins, tracks) : undefined;
+  const roleArchetypes = BASE_ARCHETYPES.map((r) => scoreArchetype(r, allText, jobs, contacts, hustles, momentum, tracks)).sort((a, b) => {
     const rank = { convert: 4, explore: 3, watch: 2, pause: 1 } as const;
     return rank[b.priority] - rank[a.priority];
   });
   return buildFromArchetypes(roleArchetypes, laneModel, learn, hustles, contacts, "fallback");
 }
 
-export async function buildMarketGroundedStrategyBuilder(tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = []): Promise<StrategyBuild> {
+export async function buildMarketGroundedStrategyBuilder(
+  tasks: Task[], jobs: Job[], learn: Learn[], hustles: Hustle[], contacts: Contact[] = [],
+  wins: Win[] = [], tracks: CareerTrack[] = [],
+): Promise<StrategyBuild> {
   const laneModel = buildLaneOperatingModel(tasks, jobs, learn, hustles, contacts);
   const market = await getMarketGroundedArchetypes(tasks, jobs, learn, hustles, contacts);
   if (market?.length) return buildFromArchetypes(market, laneModel, learn, hustles, contacts, "fresh");
-  return buildStrategyBuilder(tasks, jobs, learn, hustles, contacts);
+  return buildStrategyBuilder(tasks, jobs, learn, hustles, contacts, wins, tracks);
 }

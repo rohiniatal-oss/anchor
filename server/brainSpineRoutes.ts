@@ -24,7 +24,7 @@ async function busyMinutesFor(day: string): Promise<number> {
 }
 
 async function readBrainInputs(day?: string) {
-  const [tasks, jobs, learn, hustles, contacts, tracks, events, jobContactLinks, profile] = await Promise.all([
+  const [tasks, jobs, learn, hustles, contacts, tracks, events, jobContactLinks, profile, wins] = await Promise.all([
     storage.getTasks(),
     storage.getJobs(),
     storage.getLearn(),
@@ -34,15 +34,16 @@ async function readBrainInputs(day?: string) {
     day ? storage.getEvents(day) : Promise.resolve([]),
     storage.getAllJobContactLinks(),
     storage.getProfile(),
+    storage.getWins(),
   ]);
-  return { tasks, jobs, learn, hustles, contacts, tracks, events, jobContactLinks, profile };
+  return { tasks, jobs, learn, hustles, contacts, tracks, events, jobContactLinks, profile, wins };
 }
 
 async function buildAndPersistPlan(day: string, energy: "low" | "medium" | "high") {
   const inputs = await readBrainInputs(day);
   const busy = await busyMinutesFor(day);
   const learnMilestoneProgress = await buildLearnMilestoneProgress(inputs.learn);
-  const r = planDay(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, busy, inputs.contacts, inputs.tracks, learnMilestoneProgress, inputs.jobContactLinks, inputs.profile);
+  const r = planDay(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, busy, inputs.contacts, inputs.tracks, learnMilestoneProgress, inputs.jobContactLinks, inputs.profile, inputs.wins);
   let plan = await storage.getPlanByDate(day);
   const planMode = r.mode === "low" ? "low_energy" : r.mode;
   if (!plan) plan = await storage.createPlan({ date: day, mode: planMode, energy, status: "active", enoughForToday: false, note: r.note } as any);
@@ -84,7 +85,7 @@ export function registerBrainSpineRoutes(app: Express) {
     try {
       const energy = validEnergy(req.body?.energy);
       const inputs = await readBrainInputs();
-      res.json(recommend(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, inputs.contacts, inputs.tracks, inputs.jobContactLinks, inputs.profile));
+      res.json(recommend(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, inputs.contacts, inputs.tracks, inputs.jobContactLinks, inputs.profile, inputs.wins));
     } catch (err) { next(err); }
   });
 
@@ -95,7 +96,7 @@ export function registerBrainSpineRoutes(app: Express) {
       const inputs = await readBrainInputs(day);
       const busy = await busyMinutesFor(day);
       const learnMilestoneProgress = await buildLearnMilestoneProgress(inputs.learn);
-      const r = planDay(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, busy, inputs.contacts, inputs.tracks, learnMilestoneProgress, inputs.jobContactLinks, inputs.profile);
+      const r = planDay(inputs.tasks, inputs.jobs, inputs.learn, inputs.hustles, energy, busy, inputs.contacts, inputs.tracks, learnMilestoneProgress, inputs.jobContactLinks, inputs.profile, inputs.wins);
       res.json({ ...r, busyMinutes: busy, events: inputs.events });
     } catch (err) { next(err); }
   });

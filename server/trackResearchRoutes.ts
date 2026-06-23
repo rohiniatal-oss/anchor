@@ -5,6 +5,8 @@ import { materializeTrackResearch } from "./trackResearchAgent";
 import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
 import { buildBottleneckDiagnosis } from "./trackResearchBottlenecks";
 import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";
+import { buildRequirementModel, REQUIREMENT_MODEL_VERSION } from "./trackResearchRequirementModel";
+import { enhanceRequirementModelWithLlm } from "./trackResearchRequirementSynthesis";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -30,6 +32,7 @@ function asArray<T = any>(value: T[] | undefined | null): T[] {
 
 function hasStoredResearch(intelligence: Record<string, any> | null): intelligence is Record<string, any> {
   if (!intelligence) return false;
+  if (intelligence.requirementModel?.mode === "requirement_model" && asArray(intelligence.requirementModel.requirements).length > 0) return true;
   return [
     intelligence.roleShapes,
     intelligence.pathHypotheses,
@@ -122,6 +125,21 @@ function buildBriefFromIntelligence(track: any, intelligence: Record<string, any
   };
 }
 
+function deriveRequirementModel(track: any, intelligence: Record<string, any> | null) {
+  if (!hasStoredResearch(intelligence)) return null;
+  const stored = intelligence.requirementModel;
+  const sourceResearchAt = Number(intelligence.researchedAt || 0);
+  if (
+    stored?.mode === "requirement_model"
+    && stored?.version === REQUIREMENT_MODEL_VERSION
+    && asArray(stored.requirements).length > 0
+    && Number(stored.sourceResearchAt || 0) === sourceResearchAt
+  ) {
+    return stored;
+  }
+  return buildRequirementModel(track, buildBriefFromIntelligence(track, intelligence), sourceResearchAt);
+}
+
 function deriveCareerArchitecture(track: any, intelligence: Record<string, any> | null) {
   if (!hasStoredResearch(intelligence)) return null;
   if (intelligence.careerArchitecture?.mode === "chosen_target_development" && intelligence.careerArchitecture?.stages?.length) {
@@ -144,18 +162,21 @@ async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
-  // Research creates the career intelligence model first: evidence, path
-  // hypotheses, career capital, bottleneck diagnosis, and development plans.
-  // Execution objects remain opt-in and are filtered after diagnosis.
+  // Market and role-family research are supporting inputs. The durable output of
+  // this stage is the evidence-backed requirement model.
   const result = await runStructuredTrackResearch(domain, { materialize: false });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
+  const currentIntelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
+  const sourceResearchAt = Number(currentIntelligence.researchedAt || Date.now());
+  const draftRequirementModel = buildRequirementModel(result.track, result.brief, sourceResearchAt);
+  const requirementModel = await enhanceRequirementModelWithLlm(result.track, result.brief, draftRequirementModel);
   const architecture = buildCareerArchitecture(result.track, result.brief, result.organizedWorkspace);
   const bottleneckDiagnosis = buildBottleneckDiagnosis(result.track, result.brief, architecture);
   const organizedWorkspace = architectureWorkspaceView(result.organizedWorkspace, architecture, bottleneckDiagnosis);
-  const currentIntelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
   const nextIntelligence = {
     ...currentIntelligence,
+    requirementModel,
     organizedWorkspace,
     careerArchitecture: architecture,
     bottleneckDiagnosis,
@@ -181,6 +202,7 @@ async function handleTrackResearch(req: any, res: any) {
     developmentPlans: result.brief.developmentPlans,
     evidenceLoops: result.brief.evidenceLoops,
     fitGapMatrix: result.brief.fitGapMatrix,
+    requirementModel,
     organizedWorkspace,
     careerArchitecture: architecture,
     bottleneckDiagnosis,
@@ -193,7 +215,7 @@ export function registerTrackResearchRoutes(app: Express) {
   app.post("/api/track-research", handleTrackResearch);
 
   // Backward-compatible focus-area entry point. This route is registered before
-  // capture.ts, so broad exploration now uses the structured track plan agent.
+  // capture.ts, so broad target research uses the structured research agent.
   app.post("/api/explore", handleTrackResearch);
 
   app.get("/api/career-tracks/:id/research-plan", async (req, res) => {
@@ -202,6 +224,7 @@ export function registerTrackResearchRoutes(app: Express) {
     const track = await storage.getCareerTrack(id);
     if (!track) return res.status(404).json({ error: "Track not found" });
     const intelligence = parseJsonObject(track.trackIntelligence || "");
+    const requirementModel = deriveRequirementModel(track, intelligence);
     const careerArchitecture = deriveCareerArchitecture(track, intelligence);
     const bottleneckDiagnosis = deriveBottleneckDiagnosis(track, intelligence, careerArchitecture);
     const organizedWorkspace = architectureWorkspaceView(intelligence?.organizedWorkspace || null, careerArchitecture, bottleneckDiagnosis);
@@ -225,6 +248,7 @@ export function registerTrackResearchRoutes(app: Express) {
       sectorMap: intelligence?.sectorMap || [],
       roleShapes: intelligence?.roleShapes || [],
       gapAnalysis: intelligence?.gapAnalysis || null,
+      requirementModel,
       organizedWorkspace,
       careerArchitecture,
       bottleneckDiagnosis,
@@ -243,6 +267,7 @@ export function registerTrackResearchRoutes(app: Express) {
       return res.status(400).json({ error: "No career intelligence model is stored for this track" });
     }
     const brief = buildBriefFromIntelligence(track, intelligence);
+    const requirementModel = deriveRequirementModel(track, intelligence) || buildRequirementModel(track, brief, Number(intelligence.researchedAt || 0));
     const careerArchitecture = deriveCareerArchitecture(track, intelligence) || buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
     const bottleneckDiagnosis = deriveBottleneckDiagnosis(track, intelligence, careerArchitecture) || buildBottleneckDiagnosis(track, brief, careerArchitecture);
     const organizedWorkspace = architectureWorkspaceView(intelligence.organizedWorkspace || null, careerArchitecture, bottleneckDiagnosis);
@@ -250,6 +275,7 @@ export function registerTrackResearchRoutes(app: Express) {
     const materialized = await materializeTrackResearch(track, activationBrief as any);
     const nextIntelligence = {
       ...intelligence,
+      requirementModel,
       organizedWorkspace,
       careerArchitecture,
       bottleneckDiagnosis,
@@ -259,6 +285,6 @@ export function registerTrackResearchRoutes(app: Express) {
       lastUpdated: Date.now(),
     };
     const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
-    res.json({ track: updatedTrack || track, materialized, organizedWorkspace, careerArchitecture, bottleneckDiagnosis });
+    res.json({ track: updatedTrack || track, materialized, requirementModel, organizedWorkspace, careerArchitecture, bottleneckDiagnosis });
   });
 }

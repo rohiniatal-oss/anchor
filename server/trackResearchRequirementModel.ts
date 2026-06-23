@@ -1,4 +1,4 @@
-export const REQUIREMENT_MODEL_VERSION = 1;
+export const REQUIREMENT_MODEL_VERSION = 2;
 
 export type RequirementGroupId = "perform_work" | "demonstrate_credibility" | "access_opportunity";
 export type RequirementCategory = "knowledge" | "skill" | "experience" | "evidence" | "credential" | "narrative" | "network" | "access" | "eligibility";
@@ -128,12 +128,20 @@ const GROUP_META: Record<RequirementGroupId, { label: string; description: strin
   },
 };
 
+const IGNORED_TOKENS = new Set(["and", "the", "for", "with", "from", "into", "that", "this", "role", "roles", "work", "ability"]);
+
 function compact(value: unknown): string {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
 
 function normalize(value: unknown): string {
-  return compact(value).toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  return compact(value)
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/[_\p{Pd}]+/gu, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function asArray<T = any>(value: T[] | undefined | null): T[] {
@@ -145,7 +153,7 @@ function uniqueStrings(values: unknown[]): string[] {
   const result: string[] = [];
   for (const value of values.map(compact).filter(Boolean)) {
     const key = normalize(value);
-    if (seen.has(key)) continue;
+    if (!key || seen.has(key)) continue;
     seen.add(key);
     result.push(value);
   }
@@ -179,29 +187,24 @@ function parseConfidence(value: unknown): RequirementConfidence {
 }
 
 function confidenceRank(value: RequirementConfidence): number {
-  if (value === "high") return 3;
-  if (value === "medium") return 2;
-  return 1;
+  return value === "high" ? 3 : value === "medium" ? 2 : 1;
 }
 
 function directnessRank(value: EvidenceDirectness): number {
-  if (value === "direct") return 3;
-  if (value === "supporting") return 2;
-  return 1;
+  return value === "direct" ? 3 : value === "supporting" ? 2 : 1;
 }
 
 function inferDirectness(sourceType: unknown, usedFor: unknown): EvidenceDirectness {
   const source = normalize(sourceType);
   const use = normalize(usedFor);
-  if ((source === "job posting" || source === "job_posting" || source === "employer") && (use.includes("requirement") || use.includes("role"))) {
-    return "direct";
-  }
+  const directSource = source === "job posting" || source === "employer";
+  if (directSource && (use.includes("requirement") || use.includes("role"))) return "direct";
   if (["institution", "report", "profile", "course"].includes(source)) return "supporting";
   return "inferred";
 }
 
 function buildEvidenceClaims(brief: any, checkedAt: number): RequirementEvidenceClaim[] {
-  const rawEvidence = [...asArray(brief.researchEvidence), ...asArray(brief.evidencePack)];
+  const rawEvidence = [...asArray(brief.evidencePack), ...asArray(brief.researchEvidence)];
   const byKey = new Map<string, RequirementEvidenceClaim>();
 
   for (const evidence of rawEvidence) {
@@ -211,23 +214,21 @@ function buildEvidenceClaims(brief: any, checkedAt: number): RequirementEvidence
     const sourceUrl = compact(evidence.sourceUrl || evidence.url);
     const sourceType = compact(evidence.sourceType || evidence.type || "other") || "other";
     const usedFor = compact(evidence.usedFor || "target_requirements") || "target_requirements";
-    const confidence = parseConfidence(evidence.confidence);
-    const directness = inferDirectness(sourceType, usedFor);
-    const key = `${normalize(sourceUrl || sourceTitle)}|${normalize(claim || sourceTitle)}`;
     const item: RequirementEvidenceClaim = {
-      id: stableId("requirement-evidence", key),
+      id: stableId("requirement-evidence", sourceUrl || sourceTitle, claim || sourceTitle),
       claim: claim || sourceTitle,
       sourceTitle: sourceTitle || "Research source",
       sourceUrl,
       sourceType,
       usedFor,
-      confidence,
-      directness,
+      confidence: parseConfidence(evidence.confidence),
+      directness: inferDirectness(sourceType, usedFor),
       whyReliable: compact(evidence.whyReliable),
       checkedAt,
     };
+    const key = `${normalize(sourceUrl || sourceTitle)}|${normalize(claim || sourceTitle)}`;
     const existing = byKey.get(key);
-    if (!existing || (confidenceRank(item.confidence) + directnessRank(item.directness)) > (confidenceRank(existing.confidence) + directnessRank(existing.directness))) {
+    if (!existing || confidenceRank(item.confidence) + directnessRank(item.directness) > confidenceRank(existing.confidence) + directnessRank(existing.directness)) {
       byKey.set(key, item);
     }
   }
@@ -235,14 +236,13 @@ function buildEvidenceClaims(brief: any, checkedAt: number): RequirementEvidence
   return [...byKey.values()].slice(0, 30);
 }
 
-function tokens(value: unknown): Set<string> {
-  const ignored = new Set(["and", "the", "for", "with", "from", "into", "that", "this", "role", "roles", "work", "ability", "experience"]);
-  return new Set(normalize(value).split(" ").filter((token) => token.length > 2 && !ignored.has(token)));
+function tokenSet(value: unknown): Set<string> {
+  return new Set(normalize(value).split(" ").filter((token) => token.length >= 2 && !IGNORED_TOKENS.has(token)));
 }
 
 function overlapScore(left: unknown, right: unknown): number {
-  const a = tokens(left);
-  const b = tokens(right);
+  const a = tokenSet(left);
+  const b = tokenSet(right);
   if (!a.size || !b.size) return 0;
   let overlap = 0;
   for (const token of a) if (b.has(token)) overlap += 1;
@@ -253,12 +253,12 @@ function matchingEvidenceIds(searchText: string, evidenceClaims: RequirementEvid
   return evidenceClaims
     .map((claim) => {
       const similarity = overlapScore(searchText, `${claim.claim} ${claim.sourceTitle}`);
-      const useBonus = normalize(claim.usedFor).includes("requirement") ? 0.18 : normalize(claim.usedFor).includes("role") ? 0.08 : 0;
-      const directBonus = claim.directness === "direct" ? 0.12 : claim.directness === "supporting" ? 0.04 : 0;
+      const useBonus = normalize(claim.usedFor).includes("requirement") ? 0.18 : normalize(claim.usedFor).includes("role") ? 0.06 : 0;
+      const directBonus = claim.directness === "direct" ? 0.1 : claim.directness === "supporting" ? 0.03 : 0;
       return { id: claim.id, similarity, score: similarity + useBonus + directBonus };
     })
-    .filter((item) => item.similarity >= 0.12 && item.score >= 0.24)
-    .sort((a, b) => b.score - a.score)
+    .filter((item) => item.similarity >= 0.16 && item.score >= 0.28)
+    .sort((left, right) => right.score - left.score)
     .slice(0, limit)
     .map((item) => item.id);
 }
@@ -268,14 +268,14 @@ function inferCategory(value: unknown, fallbackText: unknown): RequirementCatego
   const text = normalize(`${value || ""} ${fallbackText || ""}`);
   if (explicit === "knowledge" || text.includes("knowledge") || text.includes("domain expertise") || text.includes("political economy")) return "knowledge";
   if (explicit === "experience" || text.includes("years of experience") || text.includes("track record") || text.includes("client experience") || text.includes("sector experience") || text.includes("delivery experience")) return "experience";
-  if (explicit === "skill" || explicit === "skills" || text.includes("skill") || text.includes("analysis") || text.includes("writing") || text.includes("forecast") || text.includes("judgement") || text.includes("judgment")) return "skill";
   if (explicit === "credential" || text.includes("degree") || text.includes("certification") || text.includes("qualification")) return "credential";
   if (explicit === "narrative" || text.includes("narrative") || text.includes("positioning") || text.includes("career story")) return "narrative";
   if (text.includes("citizenship") || text.includes("visa") || text.includes("clearance") || text.includes("work authorization") || text.includes("language requirement") || text.includes("eligibility")) return "eligibility";
   if (explicit === "network" || text.includes("network") || text.includes("relationship") || text.includes("practitioner contact")) return "network";
   if (explicit === "access" || text.includes("referral") || text.includes("introduction") || text.includes("hiring route") || text.includes("entry point")) return "access";
   if (explicit === "evidence" || explicit === "reputation" || text.includes("publication") || text.includes("portfolio") || text.includes("proof") || text.includes("work sample") || text.includes("reputation")) return "evidence";
-  return explicit === "information" ? "knowledge" : "skill";
+  if (explicit === "information") return "knowledge";
+  return "skill";
 }
 
 function groupForCategory(category: RequirementCategory): RequirementGroupId {
@@ -296,10 +296,6 @@ function defaultSuccessBar(category: RequirementCategory, label: string): string
   return `Meets the formal eligibility condition for the relevant roles.`;
 }
 
-function roleFamilyTitle(value: unknown): string {
-  return compact(value);
-}
-
 function buildMarketSegments(brief: any, evidenceClaims: RequirementEvidenceClaim[]): RequirementMarketSegment[] {
   return asArray(brief.sectorMap).map((sector: any, index) => {
     const title = compact(sector.sector || sector.title || sector.name);
@@ -318,13 +314,13 @@ function buildMarketSegments(brief: any, evidenceClaims: RequirementEvidenceClai
 function buildRoleFamilies(brief: any, marketSegments: RequirementMarketSegment[], evidenceClaims: RequirementEvidenceClaim[]): RequirementRoleFamily[] {
   const candidates = [
     ...asArray(brief.roleShapes).map((role: any) => ({
-      title: roleFamilyTitle(role.title),
+      title: compact(role.title),
       description: compact(role.what || role.description),
       typicalOrganizations: uniqueStrings(asArray(role.typicalOrgs || role.typicalOrganizations)),
       seniority: compact(role.seniority) || "mixed",
     })),
     ...asArray(brief.pathHypotheses).map((path: any) => ({
-      title: roleFamilyTitle(path.title || path.path || path.name),
+      title: compact(path.title || path.path || path.name),
       description: compact(path.description || path.whyPromising || path.hypothesis),
       typicalOrganizations: uniqueStrings([...asArray(path.exampleOrgs), ...asArray(path.typicalOrganizations)]),
       seniority: compact(path.seniority) || "mixed",
@@ -335,9 +331,9 @@ function buildRoleFamilies(brief: any, marketSegments: RequirementMarketSegment[
   for (const candidate of candidates) {
     const key = normalize(candidate.title);
     const marketSegmentIds = marketSegments
-      .filter((segment) => overlapScore(`${candidate.title} ${candidate.description} ${candidate.typicalOrganizations.join(" ")}`, `${segment.title} ${segment.description} ${segment.exampleOrganizations.join(" ")}`) >= 0.18)
+      .filter((segment) => overlapScore(`${candidate.title} ${candidate.description}`, `${segment.title} ${segment.description}`) >= 0.22)
       .map((segment) => segment.id);
-    const evidenceClaimIds = matchingEvidenceIds(`${candidate.title} ${candidate.description} ${candidate.typicalOrganizations.join(" ")}`, evidenceClaims, 5);
+    const evidenceClaimIds = matchingEvidenceIds(`${candidate.title} ${candidate.description}`, evidenceClaims, 5);
     const existing = byTitle.get(key);
     if (existing) {
       existing.typicalOrganizations = uniqueStrings([...existing.typicalOrganizations, ...candidate.typicalOrganizations]);
@@ -356,7 +352,6 @@ function buildRoleFamilies(brief: any, marketSegments: RequirementMarketSegment[
       evidenceClaimIds,
     });
   }
-
   return [...byTitle.values()].slice(0, 12);
 }
 
@@ -431,10 +426,11 @@ function resolveRoleFamilyIds(labels: string[], roleFamilies: RequirementRoleFam
   const ids = new Set<string>();
   for (const label of labels) {
     const normalizedLabel = normalize(label);
-    const match = roleFamilies.find((role) => {
-      const normalizedRole = normalize(role.title);
-      return normalizedRole === normalizedLabel || normalizedRole.includes(normalizedLabel) || normalizedLabel.includes(normalizedRole);
-    });
+    if (!normalizedLabel) continue;
+    const match = roleFamilies
+      .map((role) => ({ role, score: normalize(role.title) === normalizedLabel ? 1 : overlapScore(role.title, label) }))
+      .filter((item) => item.score >= 0.5)
+      .sort((left, right) => right.score - left.score)[0]?.role;
     if (match) ids.add(match.id);
   }
   return [...ids];
@@ -442,42 +438,37 @@ function resolveRoleFamilyIds(labels: string[], roleFamilies: RequirementRoleFam
 
 function explicitGate(text: string): boolean {
   const normalized = normalize(text);
-  return ["mandatory", "must have", "required", "clearance", "citizenship", "work authorization", "licence", "license"].some((term) => normalized.includes(term));
+  return ["mandatory", "must have", "required", "clearance", "citizenship", "work authorization", "licence", "license", "eligibility"].some((term) => normalized.includes(term));
 }
 
 function deriveImportance(candidate: RequirementCandidate, roleFamilyIds: string[], linkedEvidence: RequirementEvidenceClaim[]): { importance: RequirementImportance; reason: string } {
   const directEvidence = linkedEvidence.filter((claim) => claim.directness === "direct");
   const shared = roleFamilyIds.length !== 1;
   const gate = explicitGate(`${candidate.label} ${candidate.definition} ${candidate.evidenceText}`);
-
   if ((candidate.priority === 1 && directEvidence.length > 0) || (gate && directEvidence.length > 0)) {
     return { importance: "essential", reason: "Direct employer or job evidence indicates this is a core requirement or formal gate." };
   }
-  if (candidate.priority <= 2 || directEvidence.length >= 2 || (shared && linkedEvidence.length >= 2)) {
+  if ((candidate.priority <= 2 && linkedEvidence.length > 0) || directEvidence.length >= 2 || (shared && linkedEvidence.length >= 2)) {
     return { importance: "important", reason: shared ? "This requirement recurs across the target or multiple role families." : "Credible sources indicate this materially affects competitiveness." };
   }
-  if (!shared && linkedEvidence.length <= 1) {
-    return { importance: "contextual", reason: "This appears specific to one role family or context rather than the whole target." };
-  }
-  return { importance: "differentiator", reason: "This is not consistently a formal gate, but stronger evidence here can differentiate a candidate." };
+  if (!shared) return { importance: "contextual", reason: "This appears specific to one role family or context rather than the whole target." };
+  return { importance: "differentiator", reason: linkedEvidence.length ? "This is not consistently a formal gate, but stronger evidence here can differentiate a candidate." : "This appears useful, but needs stronger market evidence before being treated as core." };
 }
 
 function deriveRequirementConfidence(linkedEvidence: RequirementEvidenceClaim[], evidenceText: string): RequirementConfidence {
   const direct = linkedEvidence.filter((claim) => claim.directness === "direct");
   const high = linkedEvidence.filter((claim) => claim.confidence === "high");
   if (direct.length >= 2 || (direct.length >= 1 && high.length >= 1)) return "high";
-  if (linkedEvidence.length >= 1 || compact(evidenceText)) return "medium";
+  if (linkedEvidence.length > 0 || compact(evidenceText)) return "medium";
   return "low";
 }
 
 function buildRequirements(brief: any, roleFamilies: RequirementRoleFamily[], evidenceClaims: RequirementEvidenceClaim[]): TargetRequirement[] {
   const fromGraph = asArray(brief.requirementGraph).map(candidateFromGraph).filter(Boolean) as RequirementCandidate[];
-  const candidates = mergeCandidates(fromGraph.length ? fromGraph : fallbackCandidates(brief));
-
+  const candidates = mergeCandidates([...fromGraph, ...fallbackCandidates(brief)]);
   return candidates.map((candidate) => {
     const roleFamilyIds = resolveRoleFamilyIds(candidate.roleFamilyLabels, roleFamilies);
-    const searchText = `${candidate.label} ${candidate.definition} ${candidate.evidenceText} ${candidate.roleFamilyLabels.join(" ")}`;
-    const evidenceClaimIds = matchingEvidenceIds(searchText, evidenceClaims, 6);
+    const evidenceClaimIds = matchingEvidenceIds(`${candidate.label} ${candidate.definition} ${candidate.evidenceText}`, evidenceClaims, 6);
     const linkedEvidence = evidenceClaims.filter((claim) => evidenceClaimIds.includes(claim.id));
     const importance = deriveImportance(candidate, roleFamilyIds, linkedEvidence);
     const key = `${candidate.category}:${normalize(candidate.label)}`;
@@ -512,7 +503,7 @@ function buildRequirements(brief: any, roleFamilies: RequirementRoleFamily[], ev
   }).slice(0, 40);
 }
 
-function buildResearchQuality(requirements: TargetRequirement[], evidenceClaims: RequirementEvidenceClaim[], roleFamilies: RequirementRoleFamily[]) {
+function buildResearchQuality(requirements: TargetRequirement[], evidenceClaims: RequirementEvidenceClaim[], roleFamilies: RequirementRoleFamily[]): RequirementModel["researchQuality"] {
   const directSourceCount = evidenceClaims.filter((claim) => claim.directness === "direct").length;
   const sourceTypeCount = new Set(evidenceClaims.map((claim) => normalize(claim.sourceType)).filter(Boolean)).size;
   const withEvidence = requirements.filter((requirement) => requirement.evidenceClaimIds.length > 0).length;
@@ -520,28 +511,17 @@ function buildResearchQuality(requirements: TargetRequirement[], evidenceClaims:
   const requirementEvidenceCoverage = requirements.length ? Math.round((withEvidence / requirements.length) * 100) : 0;
   const directRequirementCoverage = requirements.length ? Math.round((withDirectEvidence / requirements.length) * 100) : 0;
   const caveats: string[] = [];
-
   if (directSourceCount === 0) caveats.push("No direct job-posting or employer requirement evidence was captured, so this model should be treated as provisional.");
   if (requirementEvidenceCoverage < 60) caveats.push("Several requirements are not yet linked to a specific source claim and need stronger provenance.");
-  if (roleFamilies.length > 6) caveats.push("The target spans several role families; shared requirements are reliable, but contextual requirements may vary materially.");
+  if (roleFamilies.length > 6) caveats.push("The target spans several role families; shared requirements are more reliable than contextual requirements.");
   if (sourceTypeCount < 3) caveats.push("The evidence base lacks source diversity and may over-represent one view of the market.");
-  if (evidenceClaims.some((claim) => !claim.sourceUrl)) caveats.push("Some source URLs were unavailable, so those claims carry lower auditability.");
-
-  const status = evidenceClaims.length >= 8 && directSourceCount >= 3 && requirementEvidenceCoverage >= 70 && directRequirementCoverage >= 35
+  if (evidenceClaims.some((claim) => !claim.sourceUrl)) caveats.push("Some source URLs were unavailable, reducing auditability.");
+  const status: RequirementModel["researchQuality"]["status"] = evidenceClaims.length >= 8 && directSourceCount >= 3 && requirementEvidenceCoverage >= 70 && directRequirementCoverage >= 35
     ? "strong"
     : evidenceClaims.length >= 5 && directSourceCount >= 1 && requirementEvidenceCoverage >= 50
       ? "usable"
       : "provisional";
-
-  return {
-    status,
-    sourceCount: evidenceClaims.length,
-    directSourceCount,
-    sourceTypeCount,
-    requirementEvidenceCoverage,
-    directRequirementCoverage,
-    caveats: uniqueStrings(caveats),
-  } as const;
+  return { status, sourceCount: evidenceClaims.length, directSourceCount, sourceTypeCount, requirementEvidenceCoverage, directRequirementCoverage, caveats: uniqueStrings(caveats) };
 }
 
 function targetLabel(track: any, brief: any): string {
@@ -582,7 +562,6 @@ export function buildRequirementModel(track: any, brief: any, sourceResearchAt =
     ...requirements.map((requirement) => `${requirement.key}:${requirement.importance}:${requirement.roleFamilyIds.join(",")}`),
     ...evidenceClaims.map((claim) => `${claim.sourceUrl || claim.sourceTitle}:${claim.claim}`),
   ].sort().join("|");
-
   return {
     mode: "requirement_model",
     version: REQUIREMENT_MODEL_VERSION,

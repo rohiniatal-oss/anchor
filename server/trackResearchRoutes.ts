@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { runStructuredTrackResearch } from "./trackResearchMethod";
 import { materializeTrackResearch } from "./trackResearchAgent";
 import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
+import { buildBottleneckDiagnosis } from "./trackResearchBottlenecks";
 import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";
 
 function parseJsonObject(value: string): Record<string, any> | null {
@@ -130,23 +131,34 @@ function deriveCareerArchitecture(track: any, intelligence: Record<string, any> 
   return buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
 }
 
+function deriveBottleneckDiagnosis(track: any, intelligence: Record<string, any> | null, careerArchitecture: any) {
+  if (!hasStoredResearch(intelligence)) return null;
+  if (intelligence.bottleneckDiagnosis?.mode === "route_bottleneck_diagnosis" && intelligence.bottleneckDiagnosis?.routes?.length) {
+    return intelligence.bottleneckDiagnosis;
+  }
+  const brief = buildBriefFromIntelligence(track, intelligence);
+  return buildBottleneckDiagnosis(track, brief, careerArchitecture);
+}
+
 async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
   // Research creates the career intelligence model first: evidence, path
-  // hypotheses, career capital, gaps, interventions, and development plans.
-  // Execution objects remain opt-in and are now filtered by automatic architecture.
+  // hypotheses, career capital, bottleneck diagnosis, and development plans.
+  // Execution objects remain opt-in and are filtered after diagnosis.
   const result = await runStructuredTrackResearch(domain, { materialize: false });
   if (!result) return res.status(500).json({ error: "Could not generate track research" });
 
   const architecture = buildCareerArchitecture(result.track, result.brief, result.organizedWorkspace);
-  const organizedWorkspace = architectureWorkspaceView(result.organizedWorkspace, architecture);
+  const bottleneckDiagnosis = buildBottleneckDiagnosis(result.track, result.brief, architecture);
+  const organizedWorkspace = architectureWorkspaceView(result.organizedWorkspace, architecture, bottleneckDiagnosis);
   const currentIntelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
   const nextIntelligence = {
     ...currentIntelligence,
     organizedWorkspace,
     careerArchitecture: architecture,
+    bottleneckDiagnosis,
     automaticSelection: architecture.automaticSelection,
     lastUpdated: Date.now(),
   };
@@ -171,6 +183,7 @@ async function handleTrackResearch(req: any, res: any) {
     fitGapMatrix: result.brief.fitGapMatrix,
     organizedWorkspace,
     careerArchitecture: architecture,
+    bottleneckDiagnosis,
     automaticSelection: architecture.automaticSelection,
     materialized: null,
   });
@@ -190,7 +203,8 @@ export function registerTrackResearchRoutes(app: Express) {
     if (!track) return res.status(404).json({ error: "Track not found" });
     const intelligence = parseJsonObject(track.trackIntelligence || "");
     const careerArchitecture = deriveCareerArchitecture(track, intelligence);
-    const organizedWorkspace = architectureWorkspaceView(intelligence?.organizedWorkspace || null, careerArchitecture);
+    const bottleneckDiagnosis = deriveBottleneckDiagnosis(track, intelligence, careerArchitecture);
+    const organizedWorkspace = architectureWorkspaceView(intelligence?.organizedWorkspace || null, careerArchitecture, bottleneckDiagnosis);
     res.json({
       track,
       intelligence,
@@ -213,6 +227,7 @@ export function registerTrackResearchRoutes(app: Express) {
       gapAnalysis: intelligence?.gapAnalysis || null,
       organizedWorkspace,
       careerArchitecture,
+      bottleneckDiagnosis,
       automaticSelection: careerArchitecture?.automaticSelection || intelligence?.automaticSelection || null,
       activationInventory: intelligence?.activationInventory || null,
     });
@@ -229,19 +244,21 @@ export function registerTrackResearchRoutes(app: Express) {
     }
     const brief = buildBriefFromIntelligence(track, intelligence);
     const careerArchitecture = deriveCareerArchitecture(track, intelligence) || buildCareerArchitecture(track, brief, intelligence.organizedWorkspace);
-    const organizedWorkspace = architectureWorkspaceView(intelligence.organizedWorkspace || null, careerArchitecture);
+    const bottleneckDiagnosis = deriveBottleneckDiagnosis(track, intelligence, careerArchitecture) || buildBottleneckDiagnosis(track, brief, careerArchitecture);
+    const organizedWorkspace = architectureWorkspaceView(intelligence.organizedWorkspace || null, careerArchitecture, bottleneckDiagnosis);
     const activationBrief = applyAutomaticActivationFilter(brief, careerArchitecture);
     const materialized = await materializeTrackResearch(track, activationBrief as any);
     const nextIntelligence = {
       ...intelligence,
       organizedWorkspace,
       careerArchitecture,
+      bottleneckDiagnosis,
       automaticSelection: careerArchitecture.automaticSelection,
       activationInventory: materialized,
       activatedAt: Date.now(),
       lastUpdated: Date.now(),
     };
     const updatedTrack = await storage.updateCareerTrack(track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
-    res.json({ track: updatedTrack || track, materialized, organizedWorkspace, careerArchitecture });
+    res.json({ track: updatedTrack || track, materialized, organizedWorkspace, careerArchitecture, bottleneckDiagnosis });
   });
 }

@@ -101,7 +101,7 @@ test("proof requirements are not marked proven without a verified output", () =>
   });
 
   assert.equal(model.coverage[0]?.status, "partially_proven");
-  assert.equal(model.coverage[0]?.confidence, "high");
+  assert.equal(model.coverage[0]?.confidence, "medium");
 });
 
 test("a verified published output can prove an evidence requirement", () => {

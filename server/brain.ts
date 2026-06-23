@@ -1975,7 +1975,7 @@ export function planDay(
           firstStep = nextJob
             ? `Open "${nextJobHint}" and do the next obvious thing: check for updates, draft a follow-up, or prep one interview answer.`
             : `Open your ${track.name} track and pick the thing that's been sitting longest.`;
-          why = `You have roles and contacts for ${track.name}. The pieces are there — pick one and move it.`;
+          why = `You have roles and contacts for ${track.name}. The pieces are there — the most stale one needs attention.`;
           summary = `${track.name} is set up — move the most actionable piece forward.`;
           doneWhen = "One concrete action taken";
         }

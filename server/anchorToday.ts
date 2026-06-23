@@ -43,7 +43,7 @@ function firstStepFromTask(task: Task) {
   if (/role|job|inspect|career|research/i.test(task.title)) return "Open LinkedIn or the saved role.";
   if (/message|person|network|contact/i.test(task.title)) return "Open the contact or message thread.";
   if (/cv|cover|application/i.test(task.title)) return "Open the role and application material.";
-  return "Spend 5 minutes on the smallest useful version of this";
+  return `Open "${task.title.slice(0, 40).trim()}" and do the first thing that comes to mind — even 2 minutes counts`;
 }
 
 function focusAreaLabel(lane: CanonicalLaneName) {

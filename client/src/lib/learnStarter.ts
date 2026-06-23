@@ -97,7 +97,7 @@ export function buildPrepStarterDraft({
     capabilityBuilt: "",
     requiredOutput: "",
     url: "",
-    note: [noteIntro.trim(), "If something useful comes out of this later, you can save notes here."]
+    note: [noteIntro.trim(), "Save any notes, examples, or takeaways here as you go."]
       .filter(Boolean)
       .join(" "),
     relatedTrackId,

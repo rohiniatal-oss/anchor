@@ -757,7 +757,7 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
     ? ["keep projects and public work as a secondary upskilling layer for now", "start one only when it will compound your learning", "define the smallest publishable or shippable output when you are ready"]
   : snapshot.liveProofAssetCount > 0
       ? ["produce the next concrete output on the live project or public-work item", "capture one existing result in a way you can point to later", "turn it into something publishable or shippable enough to point to later"]
-      : ["turn one project or public-work idea into something real", "pick one output format you can sustain", "connect it to a learning goal, not a single role"];
+      : ["turn one project or public-work idea into something real", "choose the output format that takes the least effort to sustain", "connect it to a learning goal, not a single role"];
   const missingLearningByLane = broadSupportCoverage?.missing.length === 0 ? ((broadSupportCoverage?.missingPrepSupport || broadSupportCoverage?.missingLearningSupport) || []) : [];
   const capabilityStatus: WorkstreamStatus = snapshot.directionReady || snapshot.interviewingJobs > 0
     ? missingLearningByLane.length > 0
@@ -789,13 +789,13 @@ function workstreamStates(snapshot: GoalSnapshot): WorkstreamState[] {
           ? "learning is in motion, but nothing is linked back yet"
       : "turn learning into clearer examples, notes, or practice";
   const capabilityNextMoves = snapshot.activeLearnCount === 0 && snapshot.evidencedLearnCount === 0
-    ? ["pick one requirement that feels weakest today", "start one learning item tied to that requirement", "decide whether notes, a brief, or an example would help later"]
+    ? ["identify the weakest requirement from a real posting", "start one learning item tied to that requirement", "capture notes, a brief, or an example you can reuse later"]
     : missingLearningByLane.length > 0
       ? [`add one learning step for ${missingLearningByLane[0]}`, "decide what notes, brief, or example would actually help across those roles", "turn upskilling into something you can reuse, not one-off work"]
     : snapshot.proofSupportDemandCount > 0 && snapshot.learningOutputGapCount > 0
       ? ["finish one useful note, brief, or example for the current path", "turn that result into something you can use in interviews or applications", "save the notes or link so Anchor can refer back to it later"]
     : snapshot.proofSupportDemandCount > 0
-      ? ["pick one requirement for the current path that still feels weak today", "turn existing learning into a clearer example or talking point", "save one note, brief, or result so it is easy to reuse later"]
+      ? ["find the weakest requirement for the current path from a real posting", "turn existing learning into a clearer example or talking point", "save one note, brief, or result so it is easy to reuse later"]
     : snapshot.learningOutputGapCount > 0
       ? ["finish one useful note, brief, or practice result", "attach the notes or link to the learning item", "turn it into interview or application material"]
     : snapshot.activeLearnCount > 0 && snapshot.evidencedLearnCount === 0

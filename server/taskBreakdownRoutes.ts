@@ -1750,7 +1750,7 @@ export function buildTaskBreakdownPrompt(input: {
     ) : ""}` +
     `${providerContext ? `\n${providerContext}\n\n` : ""}` +
     `Default work object if uncertain: ${fallbackObject}\n` +
-    `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || `something about "${task.title.slice(0, 50)}" is visibly further along`}\n` +
+    `Task: ${task.title}\nCategory: ${task.category}\nDone when: ${task.doneWhen || task.minimumOutcome || `you can point to one concrete thing you did on "${task.title.slice(0, 40).trim()}"`}\n` +
     `${bundle.cvText && bundle.jdText ? (
       `\nCANDIDATE CV (use this to identify specific bullets):\n${bundle.cvText.slice(0, 3000)}\n\n` +
       `JOB DESCRIPTION:\n${bundle.jdText.slice(0, 3000)}\n\n` +

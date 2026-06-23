@@ -404,7 +404,7 @@ export function deriveInsights(tracks: TrackDiagnostic[], activitySignal?: strin
     if (match) {
       const [, producing, planning, idle] = match.map(Number);
       if (producing === 0 && planning > 0)
-        out.push({ kind: "momentum", text: `All ${planning} active track${planning > 1 ? "s are" : " is"} in planning mode — none producing. Pick one and ship something small to build momentum.` });
+        out.push({ kind: "momentum", text: `All ${planning} active track${planning > 1 ? "s are" : " is"} in planning mode — none producing. The one with the most saved roles is closest to action — ship something small there to build momentum.` });
       if (idle > 1)
         out.push({ kind: "focus", text: `${idle} tracks are idle. Consider pausing or archiving them to focus energy on what's moving.` });
     }

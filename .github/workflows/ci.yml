@@ -22,5 +22,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify
-        run: npm run verify
+      - name: TypeScript check
+        run: npm run check
+
+      - name: Unit tests
+        if: always()
+        run: npm test
+
+      - name: CSS source audit
+        if: always()
+        run: npm run audit:css-sources
+
+      - name: Production build
+        if: always()
+        run: npm run build

@@ -31,6 +31,7 @@ import { llm, llmUsageStats, LLM_MODELS } from "./llm";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { contextualizeTask } from "./taskIntakeInference";
 import { generateRoleModel, getRoleModel } from "./roleModel";
+import { refreshTrackIntelligence, getTrackIntelligence } from "./trackIntelligence";
 
 const acceptRecommendationSchema = z.object({
   entityType: z.enum(["task", "learn", "contact", "job", "hustle"]).optional(),
@@ -770,6 +771,19 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
   app.delete("/api/career-tracks/:id", async (req, res) => {
     await storage.deleteCareerTrack(Number(req.params.id));
     res.json({ ok: true });
+  });
+
+  app.get("/api/career-tracks/:id/intelligence", async (req, res) => {
+    const track = await storage.getCareerTrack(Number(req.params.id));
+    if (!track) return res.status(404).json({ error: "Not found" });
+    const intel = await getTrackIntelligence(track);
+    res.json(intel);
+  });
+
+  app.post("/api/career-tracks/:id/intelligence/refresh", async (req, res) => {
+    const intel = await refreshTrackIntelligence(Number(req.params.id));
+    if (!intel) return res.status(404).json({ error: "Not found" });
+    res.json(intel);
   });
 
   // ═══ P3.5: STRATEGY DIAGNOSTICS — per-track bottlenecks + unlinked bucket ═══

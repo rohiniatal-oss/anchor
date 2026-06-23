@@ -109,6 +109,11 @@ Keep each requirement item to 1-2 sentences max. Aim for 3-6 items per category,
   }
 
   await storage.updateJob(job.id, { roleModel: JSON.stringify(model) });
+
+  if (job.relatedTrackId) {
+    import("./trackIntelligence").then((m) => m.refreshTrackIntelligence(job.relatedTrackId!)).catch(() => {});
+  }
+
   return model;
 }
 

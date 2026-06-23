@@ -331,6 +331,7 @@ export const careerTracks = sqliteTable("career_tracks", {
   priority: integer("priority").notNull().default(0), // higher = more focus
   status: text("status").notNull().default("active"), // active|watch|paused
   whyItFits: text("why_it_fits").notNull().default(""),
+  trackIntelligence: text("track_intelligence").notNull().default(""), // JSON: aggregated track model
   createdAt: integer("created_at").notNull(),
 });
 

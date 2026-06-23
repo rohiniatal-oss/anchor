@@ -662,3 +662,63 @@ test("goal state API returns active goal with workstreams and today plan", async
   assert.ok(Array.isArray(goal.trajectory) && goal.trajectory.length >= 4);
   assert.ok(goal.trace.length >= 1);
 });
+
+test("interview-prep phase produces entity-aware today plan", () => {
+  const jobs = [
+    {
+      id: 1,
+      title: "AI Governance Advisor",
+      company: "DeepMind",
+      status: "interviewing",
+      applicationWindowStatus: "open",
+      location: "London",
+      roleArchetype: "advisory",
+      jdText: "Key requirements: stakeholder translation, cross-jurisdiction regulation experience, investment strategy awareness.",
+      roleModel: "",
+    },
+  ] as any;
+  const state = buildCareerGoalState([], jobs, []);
+  assert.equal(state.phase, "interview-prep");
+  assert.match(state.reason, /DeepMind/);
+  assert.match(state.decisionQuestion, /DeepMind/);
+  assert.match(state.todayPlan.mustDo, /AI Governance Advisor/);
+  assert.match(state.todayPlan.stopRule, /AI Governance Advisor/);
+});
+
+test("rolePrepPlans includes interviewing jobs and jobs with JD text", () => {
+  const jobs = [
+    { id: 1, title: "PM", company: "Stripe", status: "interviewing", applicationWindowStatus: "open", jdText: "", roleModel: "" },
+    { id: 2, title: "AI Advisor", company: "DeepMind", status: "wishlist", applicationWindowStatus: "open", jdText: "Key requirements: stakeholder translation, cross-jurisdiction regulation, investment strategy.", roleModel: "" },
+  ] as any;
+  const state = buildCareerGoalState([], jobs, []);
+  assert.ok(state.rolePrepPlans.length >= 2);
+  assert.equal(state.rolePrepPlans[0].roleTitle, "PM at Stripe");
+  assert.equal(state.rolePrepPlans[1].roleTitle, "AI Advisor at DeepMind");
+  const deepmindPlan = state.rolePrepPlans[1].prepPlan;
+  assert.ok(deepmindPlan.buckets.technical.length > 0, "should extract technical requirements from JD");
+  assert.ok(deepmindPlan.buckets.technical.some((i: any) => /stakeholder translation/i.test(i.theme)));
+});
+
+test("rolePrepPlans includes Role Model fields when present", () => {
+  const roleModel = JSON.stringify({
+    mandate: "Shape frontier AI safety policy",
+    coreWork: ["Draft regulatory position papers", "Engage with EU regulators"],
+    capabilityRequirements: [{ text: "Stakeholder translation across technical and policy audiences", explicit: true }],
+    sectorFluency: [{ text: "EU AI Act and cross-jurisdiction governance frameworks", explicit: true }],
+    evidenceBar: [{ text: "Has led a cross-functional policy initiative", explicit: true }],
+    fitSignals: [{ text: "Comfortable in ambiguity between technical and regulatory domains", explicit: true }],
+    hiddenRequirements: [{ text: "Likely needs familiarity with DeepMind's internal safety culture", explicit: false, confidence: "medium" }],
+    ambiguities: ["Unclear whether this is a lobbying role or an internal advisory role"],
+  });
+  const jobs = [
+    { id: 1, title: "AI Governance Advisor", company: "DeepMind", status: "interviewing", applicationWindowStatus: "open", jdText: "Some JD text", roleModel },
+  ] as any;
+  const state = buildCareerGoalState([], jobs, []);
+  assert.equal(state.rolePrepPlans.length, 1);
+  const entry = state.rolePrepPlans[0];
+  assert.ok(entry.roleModel, "should include the parsed Role Model");
+  assert.equal(entry.roleModel!.mandate, "Shape frontier AI safety policy");
+  assert.equal(entry.roleModel!.coreWork.length, 2);
+  assert.equal(entry.roleModel!.capabilityRequirements.length, 1);
+  assert.equal(entry.roleModel!.sectorFluency.length, 1);
+});

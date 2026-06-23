@@ -390,4 +390,5 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE day_plan_items ADD COLUMN source_note TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE day_plan_items ADD COLUMN source_status TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE jobs ADD COLUMN role_model TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE career_tracks ADD COLUMN track_intelligence TEXT NOT NULL DEFAULT ''`,
 ];

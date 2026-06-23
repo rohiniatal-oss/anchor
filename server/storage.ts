@@ -169,6 +169,7 @@ export interface IStorage {
   logActivity(a: InsertActivityLog): Promise<void>;
   getActivityLog(): Promise<ActivityLog[]>;
   getCareerTracks(): Promise<CareerTrack[]>;
+  getCareerTrack(id: number): Promise<CareerTrack | undefined>;
   createCareerTrack(t: InsertCareerTrack): Promise<CareerTrack>;
   updateCareerTrack(id: number, patch: Partial<InsertCareerTrack>): Promise<CareerTrack | undefined>;
   deleteCareerTrack(id: number): Promise<void>;
@@ -384,6 +385,7 @@ export class DatabaseStorage implements IStorage {
   // system-of-record; this is the only reader and never writes.
   async getActivityLog() { return db.select().from(activityLog).orderBy(desc(activityLog.timestamp)).all(); }
   async getCareerTracks() { return db.select().from(careerTracks).orderBy(desc(careerTracks.priority)).all(); }
+  async getCareerTrack(id: number) { return db.select().from(careerTracks).where(eq(careerTracks.id, id)).get(); }
   async createCareerTrack(t: InsertCareerTrack) { return db.insert(careerTracks).values({ ...t, createdAt: Date.now() }).returning().get(); }
   async updateCareerTrack(id: number, patch: Partial<InsertCareerTrack>) { return db.update(careerTracks).set(patch).where(eq(careerTracks.id, id)).returning().get(); }
   async deleteCareerTrack(id: number) {

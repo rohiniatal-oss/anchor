@@ -14,6 +14,7 @@ import {
   COVERAGE_MODEL_VERSION,
   type CoverageModel,
 } from "./trackResearchCoverageModel";
+import { coverageRequirementFingerprint } from "./trackResearchCoverageFingerprint";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -153,15 +154,28 @@ async function ensureRequirementModel(track: any, intelligence: Record<string, a
   return { model, changed: true };
 }
 
-function currentCoverageModel(intelligence: Record<string, any>, requirementModel: RequirementModel, evidenceFingerprint: string): CoverageModel | null {
+function stampCoverageModel(model: CoverageModel, requirementModel: RequirementModel): CoverageModel {
+  return {
+    ...model,
+    requirementFingerprint: coverageRequirementFingerprint(requirementModel),
+  };
+}
+
+function currentCoverageModel(
+  intelligence: Record<string, any>,
+  requirementModel: RequirementModel,
+  evidenceFingerprint: string,
+): CoverageModel | null {
   const stored = intelligence.coverageModel;
+  const exactRequirementFingerprint = coverageRequirementFingerprint(requirementModel);
   if (
     stored?.mode === "coverage_model"
     && stored?.version === COVERAGE_MODEL_VERSION
     && stored?.requirementModelVersion === requirementModel.version
-    && stored?.requirementFingerprint === requirementModel.sourceFingerprint
+    && stored?.requirementFingerprint === exactRequirementFingerprint
     && stored?.evidenceFingerprint === evidenceFingerprint
     && asArray(stored.coverage).length === requirementModel.requirements.length
+    && asArray(stored.coverage).every((item: any) => requirementModel.requirements.some((requirement) => requirement.id === item.requirementId))
   ) return stored as CoverageModel;
   return null;
 }
@@ -171,7 +185,7 @@ async function ensureCoverageModel(track: any, intelligence: Record<string, any>
   const evidenceFingerprint = coverageEvidenceFingerprint(requirementModel, sources);
   const stored = currentCoverageModel(intelligence, requirementModel, evidenceFingerprint);
   if (stored) return { model: stored, changed: false };
-  const model = await buildCoverageModel(track.id, requirementModel, sources);
+  const model = stampCoverageModel(await buildCoverageModel(track.id, requirementModel, sources), requirementModel);
   return { model, changed: true };
 }
 
@@ -197,7 +211,7 @@ async function handleTrackResearch(req: any, res: any) {
   const intelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
   const requirementDraft = buildRequirementModel(result.track, result.brief, Number(intelligence.researchedAt || Date.now()));
   const requirementModel = await enhanceRequirementModelWithLlm(result.track, result.brief, requirementDraft);
-  const coverageModel = await buildCoverageModel(result.track.id, requirementModel);
+  const coverageModel = stampCoverageModel(await buildCoverageModel(result.track.id, requirementModel), requirementModel);
   const updatedTrack = await persistModels(result.track, intelligence, requirementModel, coverageModel);
 
   res.json({

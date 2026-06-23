@@ -16,6 +16,7 @@ import { NetworkView } from "@/pages/views/NetworkView";
 import { LearnView } from "@/pages/views/LearnView";
 import WinsView from "@/pages/views/WinsView";
 import { ProfileView } from "@/pages/views/ProfileView";
+import { FocusAreaResearchCard } from "@/components/home/FocusAreaResearchCard";
 
 const HEADER_TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
   { id: "jobs", label: "Jobs", icon: Briefcase },
@@ -106,7 +107,12 @@ export default function Home() {
           </button>
         )}
         {tab === "today" && <TodayView onOpenTab={go} />}
-        {tab === "strategy" && <StrategyView onOpenTab={go} />}
+        {tab === "strategy" && (
+          <>
+            <FocusAreaResearchCard />
+            <StrategyView onOpenTab={go} />
+          </>
+        )}
         {tab === "braindump" && <BrainDumpView />}
         {tab === "jobs" && <JobsView />}
         {tab === "network" && <NetworkView />}

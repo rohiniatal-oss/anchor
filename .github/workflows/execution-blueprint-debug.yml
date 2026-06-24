@@ -1,0 +1,28 @@
+name: Execution blueprint typecheck diagnostics
+
+on:
+  pull_request:
+    paths:
+      - "server/trackResearchExecution*.ts"
+      - "client/src/components/home/TrackExecutionBlueprint.tsx"
+      - ".github/workflows/execution-blueprint-debug.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck-diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - name: Print TypeScript errors
+        shell: bash
+        run: |
+          npm ci --silent
+          set +e
+          npm run check -- --pretty false > /tmp/typecheck.log 2>&1
+          status=$?
+          cat /tmp/typecheck.log
+          exit $status

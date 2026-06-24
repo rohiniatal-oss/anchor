@@ -9,6 +9,7 @@ import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { TrackResearchReview } from "@/components/home/TrackResearchReview";
 import { TrackDevelopmentPlan } from "@/components/home/TrackDevelopmentPlan";
 import { TrackExecutionPriority } from "@/components/home/TrackExecutionPriority";
+import { TrackExecutionProgress } from "@/components/home/TrackExecutionProgress";
 import { TrackExecutionBlueprint } from "@/components/home/TrackExecutionBlueprint";
 
 type FocusAreaResearchCardProps = {
@@ -82,6 +83,7 @@ async function invalidateTrackResearchModels(trackId?: number) {
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/development-plan`] }),
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-blueprint`] }),
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-priority`] }),
+    queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-outcomes`] }),
   ]);
 }
 
@@ -296,6 +298,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
           <TrackResearchReview trackId={selectedTrackId} />
           <TrackDevelopmentPlan trackId={selectedTrackId} />
           <TrackExecutionPriority trackId={selectedTrackId} />
+          <TrackExecutionProgress trackId={selectedTrackId} />
           <TrackExecutionBlueprint trackId={selectedTrackId} />
         </div>
       </div>

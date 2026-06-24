@@ -17,6 +17,11 @@ import {
   type ExecutionMaterializationResult,
 } from "./trackResearchExecutionMaterialization";
 
+export type ExecutionMaterializationOptions = {
+  expectedSourceFingerprint?: string;
+  maxNewTasks?: number;
+};
+
 function parseJsonObject(value: string | null | undefined): Record<string, any> {
   if (!value) return {};
   try {
@@ -25,6 +30,19 @@ function parseJsonObject(value: string | null | undefined): Record<string, any> 
   } catch {
     return {};
   }
+}
+
+function scopedPriorityContext(
+  trackId: number,
+  context: ExecutionPriorityContext,
+): ExecutionPriorityContext {
+  // Global load remains part of activeLoad and the fingerprint, but blueprint
+  // task identities may repeat across tracks. Live state and materialization
+  // mappings must therefore be scoped to the current track.
+  return {
+    ...context,
+    liveTasks: context.liveTasks.filter((task) => task.relatedTrackId === trackId),
+  };
 }
 
 function validExecutionPriorityModel(
@@ -59,8 +77,9 @@ async function computeExecutionPriority(
   if (!("executionBlueprintModel" in executionResult)) return executionResult;
 
   const blueprint = executionResult.executionBlueprintModel;
-  const context = await collectExecutionPriorityContext(trackId, blueprint);
-  if (!context) return null;
+  const collectedContext = await collectExecutionPriorityContext(trackId, blueprint);
+  if (!collectedContext) return null;
+  const context = scopedPriorityContext(trackId, collectedContext);
   const intelligence = parseJsonObject(executionResult.track.trackIntelligence);
   const stored = intelligence.executionPriorityModel;
 
@@ -153,10 +172,22 @@ async function persistMaterializationRun(
   } as any);
 }
 
-async function materializeTrackSlice(trackId: number) {
+async function materializeTrackSlice(
+  trackId: number,
+  options: ExecutionMaterializationOptions = {},
+) {
   const priorityResult = await ensureExecutionPriority(trackId, false);
   if (!priorityResult) return null;
   if (!("executionPriorityModel" in priorityResult)) return priorityResult;
+  if (
+    options.expectedSourceFingerprint
+    && options.expectedSourceFingerprint !== priorityResult.executionPriorityModel.sourceFingerprint
+  ) {
+    return {
+      error: "The displayed active slice is stale. Refresh the recommendation before activating work.",
+      currentSourceFingerprint: priorityResult.executionPriorityModel.sourceFingerprint,
+    } as const;
+  }
   if (priorityResult.executionBlueprintModel.quality.status === "provisional") {
     return { error: "The execution blueprint must be repaired before live tasks can be created." } as const;
   }
@@ -167,11 +198,21 @@ async function materializeTrackSlice(trackId: number) {
     return { error: "This career track is not active, so Anchor will not create new execution tasks." } as const;
   }
 
+  const requestedLimit = Number.isFinite(Number(options.maxNewTasks))
+    ? Math.max(0, Math.floor(Number(options.maxNewTasks)))
+    : priorityResult.priorityContext.capacity.maxNewTasks;
+  const boundedContext: ExecutionPriorityContext = {
+    ...priorityResult.priorityContext,
+    capacity: {
+      ...priorityResult.priorityContext.capacity,
+      maxNewTasks: Math.min(priorityResult.priorityContext.capacity.maxNewTasks, requestedLimit),
+    },
+  };
   const materialization = await materializeExecutionPrioritySlice({
     trackId,
     blueprint: priorityResult.executionBlueprintModel,
     priorityModel: priorityResult.executionPriorityModel,
-    context: priorityResult.priorityContext,
+    context: boundedContext,
   });
   await persistMaterializationRun(trackId, materialization);
   const refreshed = await ensureExecutionPriority(trackId, true);
@@ -182,19 +223,21 @@ async function materializeTrackSlice(trackId: number) {
 }
 
 export type ExecutionMaterializationRouteResult = Awaited<ReturnType<typeof materializeTrackSlice>>;
-const materializationInFlight = new Map<number, Promise<ExecutionMaterializationRouteResult>>();
+const materializationInFlight = new Map<string, Promise<ExecutionMaterializationRouteResult>>();
 
 export async function materializePrioritizedExecutionSlice(
   trackId: number,
+  options: ExecutionMaterializationOptions = {},
 ): Promise<ExecutionMaterializationRouteResult> {
-  const active = materializationInFlight.get(trackId);
+  const key = `${trackId}:${options.expectedSourceFingerprint || "current"}:${Number.isFinite(Number(options.maxNewTasks)) ? Number(options.maxNewTasks) : "default"}`;
+  const active = materializationInFlight.get(key);
   if (active) return active;
-  const promise = materializeTrackSlice(trackId);
-  materializationInFlight.set(trackId, promise);
+  const promise = materializeTrackSlice(trackId, options);
+  materializationInFlight.set(key, promise);
   try {
     return await promise;
   } finally {
-    if (materializationInFlight.get(trackId) === promise) materializationInFlight.delete(trackId);
+    if (materializationInFlight.get(key) === promise) materializationInFlight.delete(key);
   }
 }
 
@@ -205,3 +248,7 @@ export function executionPriorityResultError(
     ? String(result.error || "Execution prioritization is not available yet")
     : "Execution prioritization is not available yet";
 }
+
+export const executionPriorityServiceInternals = {
+  scopedPriorityContext,
+};

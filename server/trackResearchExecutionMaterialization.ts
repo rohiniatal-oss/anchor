@@ -37,6 +37,11 @@ function activeTask(task: Task): boolean {
   return !task.done && task.status !== "done";
 }
 
+function belongsToTrack(task: Task, trackId: number): boolean {
+  return task.relatedTrackId === trackId
+    || (task.sourceType === "career_track" && task.sourceId === trackId);
+}
+
 function effortMinutes(task: TaskBlueprint): number {
   if (task.effort === "quick") return 15;
   if (task.effort === "medium") return 45;
@@ -56,9 +61,10 @@ function serializedSteps(task: TaskBlueprint): string {
   })));
 }
 
-function liveTaskMap(tasks: Task[]): Map<string, Task> {
+function liveTaskMap(tasks: Task[], trackId?: number): Map<string, Task> {
   const result = new Map<string, Task>();
   for (const task of tasks) {
+    if (trackId && !belongsToTrack(task, trackId)) continue;
     const blueprintTaskId = blueprintTaskIdFromSourceStepType(task.sourceStepType);
     if (!blueprintTaskId) continue;
     const existing = result.get(blueprintTaskId);
@@ -192,7 +198,7 @@ export async function materializeExecutionPrioritySlice(input: {
   context: ExecutionPriorityContext;
 }): Promise<ExecutionMaterializationResult> {
   const initialTasks = await storage.getTasks();
-  const existingByBlueprintId = liveTaskMap(initialTasks);
+  const existingByBlueprintId = liveTaskMap(initialTasks, input.trackId);
   const blueprintById = new Map(input.blueprint.tasks.map((task) => [task.id, task]));
   const priorityById = new Map(input.priorityModel.candidates.map((candidate) => [candidate.taskId, candidate]));
   const workstreamTitles = new Map(input.blueprint.workstreams.map((workstream) => [workstream.workstreamId, workstream.title]));
@@ -241,7 +247,6 @@ export async function materializeExecutionPrioritySlice(input: {
   const reused: ExecutionMaterializationResult["reused"] = [];
   const completed: ExecutionMaterializationResult["completed"] = [];
   const liveIdByBlueprintId = new Map<string, number>();
-  let todayAvailable = initialTasks.filter((task) => activeTask(task) && task.list === "today").length < 3;
   let nextSort = Math.max(0, ...initialTasks.map((task) => task.sort || 0)) + 10;
 
   for (const blueprintTask of orderedResult.ordered) {
@@ -249,44 +254,42 @@ export async function materializeExecutionPrioritySlice(input: {
     if (!priority?.selected) continue;
     const existing = existingByBlueprintId.get(blueprintTask.id);
     if (existing) {
-      let retained = existing;
-      if (
-        activeTask(existing)
-        && priority.slot === "now"
-        && todayAvailable
-        && existing.list !== "today"
-        && existing.readiness !== "blocked"
-        && existing.readiness !== "waiting"
-      ) {
-        retained = await storage.updateTask(existing.id, { list: "today" } as any) || existing;
-        existingByBlueprintId.set(blueprintTask.id, retained);
-        todayAvailable = false;
-      }
-      liveIdByBlueprintId.set(blueprintTask.id, retained.id);
-      if (activeTask(retained)) reused.push({ blueprintTaskId: blueprintTask.id, liveTaskId: retained.id });
-      else completed.push({ blueprintTaskId: blueprintTask.id, liveTaskId: retained.id });
+      liveIdByBlueprintId.set(blueprintTask.id, existing.id);
+      if (activeTask(existing)) reused.push({ blueprintTaskId: blueprintTask.id, liveTaskId: existing.id });
+      else completed.push({ blueprintTaskId: blueprintTask.id, liveTaskId: existing.id });
       continue;
     }
 
-    if (created.length >= input.context.capacity.maxNewTasks) {
+    const latestTasks = await storage.getTasks();
+    const latestTrackOpen = latestTasks.filter((task) => belongsToTrack(task, input.trackId) && activeTask(task)).length;
+    const currentCapacity = Math.max(0, input.context.capacity.maxSelectedTasks - latestTrackOpen);
+    const allowedNewTasks = Math.min(input.context.capacity.maxNewTasks, currentCapacity);
+    if (created.length >= allowedNewTasks) {
       skipped.push({ blueprintTaskId: blueprintTask.id, reason: "Current task load leaves no safe capacity for another new live task." });
       continue;
     }
+    const latestExisting = liveTaskMap(latestTasks, input.trackId).get(blueprintTask.id);
+    if (latestExisting) {
+      existingByBlueprintId.set(blueprintTask.id, latestExisting);
+      liveIdByBlueprintId.set(blueprintTask.id, latestExisting.id);
+      if (activeTask(latestExisting)) reused.push({ blueprintTaskId: blueprintTask.id, liveTaskId: latestExisting.id });
+      else completed.push({ blueprintTaskId: blueprintTask.id, liveTaskId: latestExisting.id });
+      continue;
+    }
+
     const dependencyLiveTaskIds = blueprintTask.dependsOnTaskIds
       .map((id) => liveIdByBlueprintId.get(id) || existingByBlueprintId.get(id)?.id)
       .filter((id): id is number => typeof id === "number");
-    const requestedList: "today" | "inbox" = priority.slot === "now" && todayAvailable ? "today" : "inbox";
     const liveTask = await storage.createTask(buildMaterializedTaskInput({
       trackId: input.trackId,
       blueprintTask,
       priority,
       workstreamTitle: workstreamTitles.get(blueprintTask.workstreamId) || "",
-      list: requestedList,
+      list: "inbox",
       sort: nextSort,
       dependencyLiveTaskIds,
     }));
     nextSort += 10;
-    if (liveTask.list === "today") todayAvailable = false;
     liveIdByBlueprintId.set(blueprintTask.id, liveTask.id);
     existingByBlueprintId.set(blueprintTask.id, liveTask);
     created.push({ blueprintTaskId: blueprintTask.id, liveTaskId: liveTask.id });
@@ -370,6 +373,7 @@ export async function materializeExecutionPrioritySlice(input: {
 
 export const executionMaterializationInternals = {
   activeTask,
+  belongsToTrack,
   dependencyOrder,
   effortMinutes,
   liveTaskMap,

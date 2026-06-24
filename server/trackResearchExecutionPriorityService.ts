@@ -161,14 +161,34 @@ export function executionPriorityMatchesExpectedFingerprint(
   return !expected || model.sourceFingerprint === expected;
 }
 
+export type ExecutionMaterializationOptions = {
+  expectedSourceFingerprint?: string | null;
+  maxNewTasks?: number;
+};
+
+function normalizeMaterializationOptions(
+  value?: string | null | ExecutionMaterializationOptions,
+): ExecutionMaterializationOptions {
+  if (typeof value === "string" || value == null) {
+    return { expectedSourceFingerprint: value || undefined };
+  }
+  return {
+    expectedSourceFingerprint: value.expectedSourceFingerprint,
+    maxNewTasks: Number.isFinite(Number(value.maxNewTasks))
+      ? Math.max(0, Math.floor(Number(value.maxNewTasks)))
+      : undefined,
+  };
+}
+
 async function materializeTrackSlice(
   trackId: number,
-  expectedSourceFingerprint?: string | null,
+  rawOptions?: string | null | ExecutionMaterializationOptions,
 ) {
+  const options = normalizeMaterializationOptions(rawOptions);
   const priorityResult = await ensureExecutionPriority(trackId, false);
   if (!priorityResult) return null;
   if (!("executionPriorityModel" in priorityResult)) return priorityResult;
-  if (!executionPriorityMatchesExpectedFingerprint(priorityResult.executionPriorityModel, expectedSourceFingerprint)) {
+  if (!executionPriorityMatchesExpectedFingerprint(priorityResult.executionPriorityModel, options.expectedSourceFingerprint)) {
     return {
       error: "The active slice changed after it was displayed. Refresh the recommendation before activating it.",
       code: "stale_displayed_slice",
@@ -190,6 +210,7 @@ async function materializeTrackSlice(
     blueprint: priorityResult.executionBlueprintModel,
     priorityModel: priorityResult.executionPriorityModel,
     context: priorityResult.priorityContext,
+    maxNewTasks: options.maxNewTasks,
   });
   await persistMaterializationRun(trackId, materialization);
   const refreshed = await ensureExecutionPriority(trackId, true);
@@ -204,12 +225,13 @@ const materializationInFlight = new Map<string, Promise<ExecutionMaterialization
 
 export async function materializePrioritizedExecutionSlice(
   trackId: number,
-  expectedSourceFingerprint?: string | null,
+  options?: string | null | ExecutionMaterializationOptions,
 ): Promise<ExecutionMaterializationRouteResult> {
-  const key = `${trackId}:${String(expectedSourceFingerprint || "current").trim()}`;
+  const normalized = normalizeMaterializationOptions(options);
+  const key = `${trackId}:${String(normalized.expectedSourceFingerprint || "current").trim()}:${normalized.maxNewTasks ?? "capacity"}`;
   const active = materializationInFlight.get(key);
   if (active) return active;
-  const promise = materializeTrackSlice(trackId, expectedSourceFingerprint);
+  const promise = materializeTrackSlice(trackId, normalized);
   materializationInFlight.set(key, promise);
   try {
     return await promise;

@@ -196,6 +196,7 @@ export async function materializeExecutionPrioritySlice(input: {
   blueprint: ExecutionBlueprintModel;
   priorityModel: ExecutionPriorityModel;
   context: ExecutionPriorityContext;
+  maxNewTasks?: number;
 }): Promise<ExecutionMaterializationResult> {
   const initialTasks = await storage.getTasks();
   const existingByBlueprintId = liveTaskMap(initialTasks, input.trackId);
@@ -204,6 +205,10 @@ export async function materializeExecutionPrioritySlice(input: {
   const workstreamTitles = new Map(input.blueprint.workstreams.map((workstream) => [workstream.workstreamId, workstream.title]));
   const selectedIds = [...new Set(input.priorityModel.activeSlice.selectedTaskIds)];
   const skipped: ExecutionMaterializationResult["skipped"] = [];
+  const requestedLimit = Number.isFinite(Number(input.maxNewTasks))
+    ? Math.max(0, Math.floor(Number(input.maxNewTasks)))
+    : input.context.capacity.maxNewTasks;
+  const allowedNewTasks = Math.min(input.context.capacity.maxNewTasks, requestedLimit);
 
   if (
     input.priorityModel.executionBlueprintFingerprint !== input.blueprint.sourceFingerprint
@@ -260,7 +265,7 @@ export async function materializeExecutionPrioritySlice(input: {
       continue;
     }
 
-    if (created.length >= input.context.capacity.maxNewTasks) {
+    if (created.length >= allowedNewTasks) {
       skipped.push({ blueprintTaskId: blueprintTask.id, reason: "Current task load leaves no safe capacity for another new live task." });
       continue;
     }

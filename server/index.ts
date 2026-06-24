@@ -4,11 +4,14 @@ import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { llmUsageStats } from "./llm";
 import { registerCaptureRoutes } from "./capture";
+import { registerTaskLifecycleMiddleware } from "./taskLifecycleMiddleware";
 import { registerTrackResearchRoutes } from "./trackResearchRoutes";
 import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRoutes";
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
 import { registerTrackResearchExecutionRoutes } from "./trackResearchExecutionRoutes";
 import { registerTrackResearchExecutionPriorityRoutes } from "./trackResearchExecutionPriorityRoutes";
+import { registerTrackResearchExecutionFeedbackRoutes } from "./trackResearchExecutionFeedbackRoutes";
+import { registerExecutionFeedbackLifecycle } from "./trackResearchExecutionFeedbackService";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
 import { registerJobTruthRoutes } from "./jobTruth";
@@ -107,6 +110,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  registerExecutionFeedbackLifecycle();
+  registerTaskLifecycleMiddleware(app);
+
   // Capture remains the clean routing contract. Track Research sits before it so
   // focus-area exploration becomes a structured, persistent track plan.
   registerPersistenceAdminRoutes(app);
@@ -115,6 +121,7 @@ app.use((req, res, next) => {
   registerTrackResearchDevelopmentRoutes(app);
   registerTrackResearchExecutionRoutes(app);
   registerTrackResearchExecutionPriorityRoutes(app);
+  registerTrackResearchExecutionFeedbackRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);

@@ -57,6 +57,11 @@ function activeTask(task: Task): boolean {
   return !task.done && task.status !== "done" && ["today", "this_week", "later", "inbox"].includes(task.list);
 }
 
+function belongsToTrack(task: Task, trackId: number): boolean {
+  return task.relatedTrackId === trackId
+    || (task.sourceType === "career_track" && task.sourceId === trackId);
+}
+
 function taskSnapshot(task: Task): PriorityLiveTaskSnapshot {
   return {
     liveTaskId: task.id,
@@ -68,7 +73,7 @@ function taskSnapshot(task: Task): PriorityLiveTaskSnapshot {
     readiness: task.readiness,
     skipped: task.skipped || 0,
     size: task.size,
-    relatedTrackId: task.relatedTrackId ?? null,
+    relatedTrackId: task.relatedTrackId ?? (task.sourceType === "career_track" ? task.sourceId ?? null : null),
     sourceStepType: task.sourceStepType,
     createdAt: task.createdAt,
   };
@@ -166,9 +171,10 @@ export function buildExecutionPriorityContextFromData(input: {
 }): ExecutionPriorityContext {
   const now = input.now || new Date();
   const currentBlueprintIds = new Set(input.blueprint.tasks.map((task) => task.id));
-  const liveTasks = input.tasks.map(taskSnapshot);
+  const trackTasks = input.tasks.filter((task) => belongsToTrack(task, input.track.id));
+  const liveTasks = trackTasks.map(taskSnapshot);
   const openTasks = input.tasks.filter(activeTask);
-  const sameTrackOpen = openTasks.filter((task) => task.relatedTrackId === input.track.id);
+  const sameTrackOpen = trackTasks.filter(activeTask);
   const currentBlueprintOpen = liveTasks.filter((task) => task.blueprintTaskId && currentBlueprintIds.has(task.blueprintTaskId) && !task.done && task.status !== "done");
   const currentBlueprintCompleted = liveTasks.filter((task) => task.blueprintTaskId && currentBlueprintIds.has(task.blueprintTaskId) && (task.done || task.status === "done"));
   const deepOrProjectOpen = sameTrackOpen.filter((task) => task.size === "deep" || Number(task.estimateMinutes || 0) >= 90);
@@ -231,6 +237,7 @@ export async function collectExecutionPriorityContext(
 
 export const executionPriorityContextInternals = {
   activeTask,
+  belongsToTrack,
   daysUntil,
   contextFingerprint,
 };

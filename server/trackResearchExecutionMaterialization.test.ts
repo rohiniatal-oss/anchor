@@ -134,19 +134,19 @@ function liveTask(id: number, overrides: Record<string, any> = {}) {
   } as any;
 }
 
-test("materialized tasks preserve provenance, evidence and structured steps", () => {
+test("materialized tasks enter This Week and preserve provenance, evidence and structured steps", () => {
   const task = blueprintTask("blueprint-a");
   const input = buildMaterializedTaskInput({
     trackId: 7,
     blueprintTask: task,
     priority: priority(task.id),
     workstreamTitle: "Create credible proof",
-    list: "today",
+    list: "this_week",
     sort: 20,
   });
   const steps = JSON.parse(input.steps || "[]");
 
-  assert.equal(input.list, "today");
+  assert.equal(input.list, "this_week");
   assert.equal(input.relatedTrackId, 7);
   assert.equal(input.sourceType, "career_track");
   assert.equal(input.sourceStepType, sourceStepTypeForBlueprintTask(task.id));
@@ -165,7 +165,7 @@ test("dependent materialized tasks remain in inbox and wait on live prerequisite
     blueprintTask: task,
     priority: priority(task.id, { slot: "next", dependencyState: "selected_prerequisite" }),
     workstreamTitle: "Create credible proof",
-    list: "today",
+    list: "this_week",
     sort: 30,
     dependencyLiveTaskIds: [101],
   });
@@ -188,9 +188,26 @@ test("active live tasks take precedence over newer completed duplicates", () => 
     status: "done",
     createdAt: 2,
   });
-  const mapped = executionMaterializationInternals.liveTaskMap([active, completed]);
+  const mapped = executionMaterializationInternals.liveTaskMap([active, completed], 1);
 
   assert.equal(mapped.get(blueprintId)?.id, active.id);
+});
+
+test("a matching blueprint task from another track is never reused", () => {
+  const blueprintId = "shared-blueprint-id";
+  const otherTrack = liveTask(3, {
+    relatedTrackId: 2,
+    sourceId: 2,
+    sourceStepType: sourceStepTypeForBlueprintTask(blueprintId),
+  });
+  const thisTrack = liveTask(4, {
+    relatedTrackId: 1,
+    sourceId: 1,
+    sourceStepType: sourceStepTypeForBlueprintTask(blueprintId),
+  });
+  const mapped = executionMaterializationInternals.liveTaskMap([otherTrack, thisTrack], 1);
+
+  assert.equal(mapped.get(blueprintId)?.id, thisTrack.id);
 });
 
 test("selected tasks are ordered after their selected prerequisites", () => {

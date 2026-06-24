@@ -31,13 +31,18 @@ export function registerTrackResearchExecutionPriorityRoutes(app: Express) {
   app.post("/api/career-tracks/:id/execution-priority/materialize", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
-    const result = await materializePrioritizedExecutionSlice(id);
+    const expectedSourceFingerprint = typeof req.body?.sourceFingerprint === "string"
+      ? req.body.sourceFingerprint.trim()
+      : "";
+    const result = await materializePrioritizedExecutionSlice(id, expectedSourceFingerprint || undefined);
     if (!result) return res.status(404).json({ error: "Track not found" });
     if (!("materialization" in result)) {
       return res.status(409).json({
         error: "error" in result
           ? String(result.error || "Execution prioritization is not available yet")
           : "Execution prioritization is not available yet",
+        code: "code" in result ? result.code : undefined,
+        currentSourceFingerprint: "currentSourceFingerprint" in result ? result.currentSourceFingerprint : undefined,
       });
     }
     return res.json({

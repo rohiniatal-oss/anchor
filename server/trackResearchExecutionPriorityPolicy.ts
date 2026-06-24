@@ -5,6 +5,8 @@ import type {
   PrioritySlot,
 } from "./trackResearchExecutionPriority";
 
+export const MAX_ACTIVE_SLICE_WORKSTREAMS = 2;
+
 function uniqueStrings(values: unknown[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
@@ -33,6 +35,68 @@ function correctedSlot(
   return "parallel";
 }
 
+function boundedSelectedIds(
+  requestedSelectedIds: string[],
+  candidateById: Map<string, ExecutionPriorityModel["candidates"][number]>,
+  context: ExecutionPriorityContext,
+): { selectedIds: string[]; deferredReasonById: Map<string, string> } {
+  const deferredReasonById = new Map<string, string>();
+  const selectedIds: string[] = [];
+  const selectedSet = new Set<string>();
+  const workstreamIds = new Set<string>();
+
+  // Work already in motion is preserved even if it exceeds the preferred
+  // capacity. Guardrails apply to newly selected work, not to silent parking.
+  for (const id of requestedSelectedIds) {
+    const candidate = candidateById.get(id);
+    if (!candidate?.selected || candidate.liveState !== "open") continue;
+    selectedIds.push(id);
+    selectedSet.add(id);
+    workstreamIds.add(candidate.workstreamId);
+  }
+
+  for (const id of requestedSelectedIds) {
+    if (selectedSet.has(id)) continue;
+    const candidate = candidateById.get(id);
+    if (!candidate?.selected) continue;
+    if (selectedIds.length >= context.capacity.maxSelectedTasks) {
+      deferredReasonById.set(id, "Deferred because the current active slice is already at its safe task capacity.");
+      continue;
+    }
+    const addsWorkstream = !workstreamIds.has(candidate.workstreamId);
+    if (addsWorkstream && workstreamIds.size >= MAX_ACTIVE_SLICE_WORKSTREAMS) {
+      deferredReasonById.set(id, "Deferred to keep the active slice focused across no more than two workstreams.");
+      continue;
+    }
+    selectedIds.push(id);
+    selectedSet.add(id);
+    workstreamIds.add(candidate.workstreamId);
+  }
+
+  // If a newly selected task lost a prerequisite because of a policy cap, defer
+  // it as well. Existing open work remains visible and is flagged as a caveat.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const currentSet = new Set(selectedIds);
+    for (const id of [...selectedIds]) {
+      const candidate = candidateById.get(id);
+      if (!candidate || candidate.liveState === "open") continue;
+      const missing = candidate.dependencyTaskIds.filter((dependencyId) => {
+        const dependency = candidateById.get(dependencyId);
+        return !currentSet.has(dependencyId) && dependency?.liveState !== "open" && dependency?.liveState !== "completed";
+      });
+      if (!missing.length) continue;
+      const index = selectedIds.indexOf(id);
+      if (index >= 0) selectedIds.splice(index, 1);
+      deferredReasonById.set(id, "Deferred because a prerequisite is not active, completed or included in the bounded slice.");
+      changed = true;
+    }
+  }
+
+  return { selectedIds, deferredReasonById };
+}
+
 export function hardenExecutionPriorityModel(
   model: ExecutionPriorityModel,
   blueprint: ExecutionBlueprintModel,
@@ -41,9 +105,14 @@ export function hardenExecutionPriorityModel(
   const taskIds = new Set(blueprint.tasks.map((task) => task.id));
   const requestedSelectedIds = uniqueStrings(model.activeSlice.selectedTaskIds).filter((id) => taskIds.has(id));
   const candidateById = new Map(model.candidates.filter((candidate) => taskIds.has(candidate.taskId)).map((candidate) => [candidate.taskId, candidate]));
-  const selectedIds = requestedSelectedIds.filter((id) => candidateById.get(id)?.selected);
+  const bounded = boundedSelectedIds(requestedSelectedIds, candidateById, context);
+  const selectedIds = bounded.selectedIds;
   const selectedSet = new Set(selectedIds);
-  const nowTaskId = selectedSet.has(model.activeSlice.nowTaskId || "") ? model.activeSlice.nowTaskId : selectedIds[0] || null;
+  const preferredNowId = selectedSet.has(model.activeSlice.nowTaskId || "") ? model.activeSlice.nowTaskId : null;
+  const nowTaskId = preferredNowId
+    || selectedIds.find((id) => candidateById.get(id)?.liveState === "open")
+    || selectedIds[0]
+    || null;
   const candidates = model.candidates
     .filter((candidate) => taskIds.has(candidate.taskId))
     .map((candidate) => {
@@ -54,7 +123,11 @@ export function hardenExecutionPriorityModel(
         rank: selected ? selectedIds.indexOf(candidate.taskId) + 1 : 0,
         slot: correctedSlot(normalized, nowTaskId),
         whyNow: selected ? candidate.whyNow : "",
-        notNowReason: selected ? "" : candidate.notNowReason,
+        notNowReason: selected
+          ? ""
+          : bounded.deferredReasonById.get(candidate.taskId)
+            || candidate.notNowReason
+            || "Deferred after applying readiness, evidence value and active-load guardrails.",
       };
     })
     .sort((left, right) => {
@@ -68,15 +141,20 @@ export function hardenExecutionPriorityModel(
   const conditionalSelectedTaskIds = selectedCandidates.filter((candidate) => candidate.dependencyState === "conditional" || candidate.slot === "conditional").map((candidate) => candidate.taskId);
   const duplicateSelectedTaskIds = requestedSelectedIds.filter((id, index, all) => all.indexOf(id) !== index);
   const overCapacityBy = Math.max(0, selectedCandidates.length - context.capacity.maxSelectedTasks);
-  const caveats = model.quality.caveats.filter((caveat) => !/selected task has|role-specific task entered|duplicate blueprint task|preferred active-slice capacity/i.test(caveat));
+  const selectedWorkstreamIds = uniqueStrings(selectedCandidates.map((candidate) => candidate.workstreamId));
+  const newSelectedWorkstreamIds = uniqueStrings(selectedCandidates.filter((candidate) => candidate.liveState !== "open").map((candidate) => candidate.workstreamId));
+  const workstreamLimitExceeded = newSelectedWorkstreamIds.length > MAX_ACTIVE_SLICE_WORKSTREAMS;
+  const caveats = model.quality.caveats.filter((caveat) => !/selected task has|role-specific task entered|duplicate blueprint task|preferred active-slice capacity|workstreams/i.test(caveat));
   if (overCapacityBy > 0) caveats.push(`${overCapacityBy} existing active blueprint task${overCapacityBy === 1 ? " exceeds" : "s exceed"} the preferred active-slice capacity; Anchor preserved them rather than silently parking user work.`);
+  if (selectedWorkstreamIds.length > MAX_ACTIVE_SLICE_WORKSTREAMS && selectedCandidates.some((candidate) => candidate.liveState === "open")) caveats.push("Existing work spans more than two workstreams; Anchor preserved it but selected no additional workstream beyond the focused limit.");
+  if (workstreamLimitExceeded) caveats.push("Newly selected work exceeded the two-workstream focus limit.");
   if (blockedSelectedTaskIds.length) caveats.push("A selected task has an unmet prerequisite and cannot be materialized.");
   if (conditionalSelectedTaskIds.length) caveats.push("A role-specific task remains active from prior user action but will not be newly materialized into the shared slice.");
   if (duplicateSelectedTaskIds.length) caveats.push("The selected slice contained duplicate task references and was deduplicated.");
   const selectedDependencyCoverage = selectedCandidates.length
     ? Math.round((selectedCandidates.filter((candidate) => candidate.dependencyState !== "unmet").length / selectedCandidates.length) * 100)
     : 100;
-  const qualityStatus: ExecutionPriorityModel["quality"]["status"] = blockedSelectedTaskIds.length || duplicateSelectedTaskIds.length
+  const qualityStatus: ExecutionPriorityModel["quality"]["status"] = blockedSelectedTaskIds.length || duplicateSelectedTaskIds.length || workstreamLimitExceeded
     ? selectedDependencyCoverage >= 80 ? "usable_with_caveats" : "provisional"
     : overCapacityBy > 0 || conditionalSelectedTaskIds.length || caveats.length > 0
       ? "usable_with_caveats"
@@ -109,7 +187,7 @@ export function hardenExecutionPriorityModel(
       estimatedMinutes: selectedCandidates.reduce((sum, candidate) => sum + (candidate.effort === "quick" ? 15 : candidate.effort === "medium" ? 45 : candidate.effort === "deep" ? 90 : 180), 0),
       deepOrProjectTaskCount: selectedCandidates.filter((candidate) => candidate.effort === "deep" || candidate.effort === "project").length,
       userOwnedTaskCount: selectedCandidates.filter((candidate) => candidate.owner === "user").length,
-      workstreamIds: uniqueStrings(selectedCandidates.map((candidate) => candidate.workstreamId)),
+      workstreamIds: selectedWorkstreamIds,
     },
     quality: {
       status: qualityStatus,

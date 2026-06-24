@@ -7,6 +7,7 @@ import {
   EXECUTION_PRIORITY_POLICY_VERSION,
   EXECUTION_PRIORITY_VERSION,
   executionPrioritySourceFingerprint,
+  type ExecutionPriorityContext,
   type ExecutionPriorityModel,
 } from "./trackResearchExecutionPriority";
 import { collectExecutionPriorityContext } from "./trackResearchExecutionPriorityContext";
@@ -29,7 +30,7 @@ function parseJsonObject(value: string | null | undefined): Record<string, any> 
 function validExecutionPriorityModel(
   value: any,
   blueprint: ExecutionBlueprintModel,
-  contextFingerprint: string,
+  context: ExecutionPriorityContext,
 ): value is ExecutionPriorityModel {
   const taskIds = new Set(blueprint.tasks.map((task) => task.id));
   const candidates = Array.isArray(value?.candidates) ? value.candidates : [];
@@ -41,31 +42,8 @@ function validExecutionPriorityModel(
     && value?.policyVersion === EXECUTION_PRIORITY_POLICY_VERSION
     && value?.executionBlueprintVersion === blueprint.version
     && value?.executionBlueprintFingerprint === blueprint.sourceFingerprint
-    && value?.contextFingerprint === contextFingerprint
-    && value?.sourceFingerprint === executionPrioritySourceFingerprint(blueprint, {
-      ...value.__contextPlaceholder,
-      fingerprint: contextFingerprint,
-    } as any)
-    && candidates.length === taskIds.size
-    && candidates.every((candidate: any) => taskIds.has(candidate.taskId))
-    && selectedTaskIds.every((id: string) => taskIds.has(id));
-}
-
-function validPriorityModelWithoutRehash(
-  value: any,
-  blueprint: ExecutionBlueprintModel,
-  contextFingerprint: string,
-): value is ExecutionPriorityModel {
-  const taskIds = new Set(blueprint.tasks.map((task) => task.id));
-  const candidates = Array.isArray(value?.candidates) ? value.candidates : [];
-  const selectedTaskIds = Array.isArray(value?.activeSlice?.selectedTaskIds) ? value.activeSlice.selectedTaskIds : [];
-  return value?.mode === "execution_priority_model"
-    && value?.version === EXECUTION_PRIORITY_VERSION
-    && value?.policyVersion === EXECUTION_PRIORITY_POLICY_VERSION
-    && value?.executionBlueprintVersion === blueprint.version
-    && value?.executionBlueprintFingerprint === blueprint.sourceFingerprint
-    && value?.contextFingerprint === contextFingerprint
-    && typeof value?.sourceFingerprint === "string"
+    && value?.contextFingerprint === context.fingerprint
+    && value?.sourceFingerprint === executionPrioritySourceFingerprint(blueprint, context)
     && candidates.length === taskIds.size
     && candidates.every((candidate: any) => taskIds.has(candidate.taskId))
     && selectedTaskIds.every((id: string) => taskIds.has(id));
@@ -85,7 +63,7 @@ async function computeExecutionPriority(
   if (!context) return null;
   const intelligence = parseJsonObject(executionResult.track.trackIntelligence);
   const stored = intelligence.executionPriorityModel;
-  if (!force && validPriorityModelWithoutRehash(stored, blueprint, context.fingerprint)) {
+  if (!force && validExecutionPriorityModel(stored, blueprint, context)) {
     return {
       ...executionResult,
       executionPriorityModel: stored as ExecutionPriorityModel,
@@ -134,8 +112,9 @@ async function computeExecutionPriority(
 }
 
 type ExecutionPriorityResult = Awaited<ReturnType<typeof computeExecutionPriority>>;
+type MaterializationRouteResult = Awaited<ReturnType<typeof materializeTrackSlice>>;
 const priorityInFlight = new Map<number, Promise<ExecutionPriorityResult>>();
-const materializationInFlight = new Map<number, Promise<any>>();
+const materializationInFlight = new Map<number, Promise<MaterializationRouteResult>>();
 
 export async function ensureExecutionPriority(
   trackId: number,
@@ -198,7 +177,7 @@ async function materializeTrackSlice(trackId: number) {
   } as const;
 }
 
-async function ensureMaterializedTrackSlice(trackId: number) {
+async function ensureMaterializedTrackSlice(trackId: number): Promise<MaterializationRouteResult> {
   const active = materializationInFlight.get(trackId);
   if (active) return active;
   const promise = materializeTrackSlice(trackId);
@@ -234,7 +213,13 @@ export function registerTrackResearchExecutionPriorityRoutes(app: Express) {
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     const result = await ensureMaterializedTrackSlice(id);
     if (!result) return res.status(404).json({ error: "Track not found" });
-    if (!("materialization" in result)) return res.status(409).json({ error: resultError(result as any) });
+    if (!("materialization" in result)) {
+      return res.status(409).json({
+        error: "error" in result
+          ? String(result.error || "Execution prioritization is not available yet")
+          : "Execution prioritization is not available yet",
+      });
+    }
     return res.json({
       ...result.priorityResult,
       materializationResult: result.materialization,

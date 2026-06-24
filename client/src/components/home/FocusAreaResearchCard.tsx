@@ -7,6 +7,7 @@ import { queryClient } from "@/lib/queryClient";
 import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { TrackResearchReview } from "@/components/home/TrackResearchReview";
 import { TrackDevelopmentPlan } from "@/components/home/TrackDevelopmentPlan";
+import { TrackExecutionPriority } from "@/components/home/TrackExecutionPriority";
 import { TrackExecutionBlueprint } from "@/components/home/TrackExecutionBlueprint";
 
 type FocusAreaResearchCardProps = {
@@ -22,7 +23,23 @@ async function invalidateTrackResearchModels(trackId?: number) {
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/coverage`] }),
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/development-plan`] }),
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-blueprint`] }),
+    queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-priority`] }),
   ]);
+}
+
+async function activateTrackExecution(trackId: number) {
+  return mutateAndInvalidate(
+    "POST",
+    `/api/career-tracks/${trackId}/execution-priority/materialize`,
+    {},
+    [
+      `/api/career-tracks/${trackId}/execution-priority`,
+      "/api/tasks",
+      "/api/anchor/today",
+      "/api/plan/current",
+      "/api/career-tracks",
+    ],
+  );
 }
 
 export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardProps) {
@@ -55,6 +72,13 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
       });
       setFocus("");
       onResearched?.(track?.id);
+
+      // The target is an intended direction, not a fit question. Once research
+      // succeeds, Anchor can safely build the downstream models and activate only
+      // the small prioritised slice. Failures remain recoverable in the priority UI.
+      if (Number.isFinite(Number(track?.id))) {
+        void activateTrackExecution(Number(track.id)).catch(() => {});
+      }
     } catch (e: any) {
       setError(e?.message || "Could not research this career target. Try again in a moment.");
     } finally {
@@ -74,7 +98,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
             <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Research requirements</span>
           </div>
           <p className="mt-1 text-xs leading-snug text-muted-foreground">
-            Tell Anchor the direction you want. It will research what the market requires, assess the evidence you already have, build the development plan, and define the complete work hierarchy beneath it.
+            Tell Anchor the direction you want. It will research the market requirements, assess your evidence, build the development and execution plans, and activate only the smallest useful slice.
           </p>
 
           <form
@@ -132,6 +156,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
 
           <TrackResearchReview trackId={lastTrack?.id} />
           <TrackDevelopmentPlan trackId={lastTrack?.id} />
+          <TrackExecutionPriority trackId={lastTrack?.id} />
           <TrackExecutionBlueprint trackId={lastTrack?.id} />
         </div>
       </div>

@@ -8,6 +8,7 @@ import { registerTrackResearchRoutes } from "./trackResearchRoutes";
 import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRoutes";
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
 import { registerTrackResearchExecutionRoutes } from "./trackResearchExecutionRoutes";
+import { registerTrackResearchExecutionPriorityRoutes } from "./trackResearchExecutionPriorityRoutes";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
 import { registerJobTruthRoutes } from "./jobTruth";
@@ -113,6 +114,7 @@ app.use((req, res, next) => {
   registerTrackResearchCoverageRoutes(app);
   registerTrackResearchDevelopmentRoutes(app);
   registerTrackResearchExecutionRoutes(app);
+  registerTrackResearchExecutionPriorityRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);

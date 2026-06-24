@@ -8,7 +8,7 @@ on:
       - ".github/workflows/execution-blueprint-debug.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   typecheck-diagnostics:
@@ -16,13 +16,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.head_ref }}
           show-progress: false
-      - name: Print TypeScript errors
+      - name: Capture TypeScript errors
         shell: bash
         run: |
           npm ci --silent
           set +e
-          npm run check -- --pretty false > /tmp/typecheck.log 2>&1
+          npm run check -- --pretty false > typecheck-errors.txt 2>&1
           status=$?
-          cat /tmp/typecheck.log
+          cat typecheck-errors.txt
+          if [ "$status" -ne 0 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add typecheck-errors.txt
+            git commit -m "Capture execution blueprint typecheck errors"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
           exit $status

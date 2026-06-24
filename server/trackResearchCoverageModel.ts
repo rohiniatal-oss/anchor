@@ -126,11 +126,19 @@ function strengthRank(item: UserEvidenceItem): number {
   return 1;
 }
 
+function executionOutcome(item: UserEvidenceItem): boolean {
+  return item.sourceEntityType === "execution_outcome";
+}
+
 function categoryAllowsEvidence(category: RequirementCategory, item: UserEvidenceItem): boolean {
   if (!item.usableForCoverage || item.strength === "planned") return false;
   if (category === "network") return item.sourceType === "relationship" || item.sourceType === "interaction";
   if (category === "access") return item.sourceType === "relationship" || item.sourceType === "interaction";
-  if (category === "credential" || category === "eligibility") return item.sourceType === "cv" || item.sourceType === "profile_summary";
+  if (category === "credential" || category === "eligibility") {
+    return item.sourceType === "cv"
+      || item.sourceType === "profile_summary"
+      || (executionOutcome(item) && (item.strength === "direct" || item.strength === "verified"));
+  }
   if (category === "experience") return item.sourceType === "cv" || item.sourceType === "profile_summary" || item.sourceType === "win";
   if (category === "evidence") return item.sourceType === "learning_output" || item.sourceType === "proof_asset";
   if (category === "narrative") return ["cv", "profile_summary", "win", "learning_output", "proof_asset"].includes(item.sourceType);
@@ -155,9 +163,10 @@ function categorySourceAvailable(category: RequirementCategory, corpus: UserEvid
 }
 
 function accessEvidenceIsStrong(item: UserEvidenceItem): boolean {
+  if (executionOutcome(item) && (item.strength === "direct" || item.strength === "verified")) return true;
   if (item.sourceType === "interaction") {
     const text = normalize(`${item.label} ${item.detail}`);
-    return ["intro", "referral", "meeting"].some((term) => text.includes(term));
+    return ["intro", "referral", "meeting", "interview", "application"].some((term) => text.includes(term));
   }
   return item.sourceType === "relationship" && item.strength === "direct";
 }
@@ -169,7 +178,9 @@ function canProve(requirement: TargetRequirement, evidence: UserEvidenceItem[]):
   if (requirement.category === "network") return usable.some((item) => item.strength === "direct" || item.strength === "verified");
   if (requirement.category === "access") return usable.some(accessEvidenceIsStrong);
   if (requirement.category === "credential" || requirement.category === "eligibility") {
-    return usable.some((item) => item.sourceType === "cv" || item.sourceType === "profile_summary");
+    return usable.some((item) => item.sourceType === "cv"
+      || item.sourceType === "profile_summary"
+      || (executionOutcome(item) && (item.strength === "direct" || item.strength === "verified")));
   }
   if (requirement.category === "experience") {
     return usable.some((item) => item.sourceType === "cv" || item.sourceType === "win");
@@ -198,7 +209,9 @@ function evidenceScore(requirement: TargetRequirement, item: UserEvidenceItem, c
         ? 0.12
         : requirement.category === "experience" && ["cv", "win"].includes(item.sourceType)
           ? 0.08
-          : 0;
+          : (requirement.category === "credential" || requirement.category === "eligibility") && executionOutcome(item)
+            ? 0.12
+            : 0;
   return overlap + sameTrackBonus + sameCategoryBonus + strengthRank(item) * 0.025;
 }
 

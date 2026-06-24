@@ -15,7 +15,6 @@ import { blueprintTaskIdFromSourceStepType } from "./trackResearchExecutionPrior
 import {
   buildExecutionOutcome,
   confirmExecutionOutcome,
-  emptyExecutionOutcomeModel,
   normalizeExecutionOutcomeModel,
   type ConfirmExecutionOutcomeInput,
   type ExecutionOutcome,
@@ -257,12 +256,6 @@ async function handleTaskLifecycle(event: TaskLifecycleEvent): Promise<void> {
   }
 }
 
-function pendingConfirmationExists(intelligence: Record<string, any>, trackId: number): boolean {
-  const blueprint = currentBlueprint(intelligence);
-  const model = normalizeExecutionOutcomeModel(intelligence.executionOutcomeModel, trackId, blueprint?.sourceFingerprint || "");
-  return model.pendingOutcomeIds.length > 0;
-}
-
 async function updateOutcomeProcessingState(
   trackId: number,
   outcomeId: string,
@@ -312,7 +305,10 @@ async function processOutcome(trackId: number, outcome: ExecutionOutcome): Promi
       ? blueprintResult.executionBlueprintModel
       : beforeBlueprint;
     const priorityResult = await ensureExecutionPriority(trackId, true);
-    const materialization = priorityResult && "executionPriorityModel" in priorityResult
+    const materialization = outcome.state === "accepted"
+      && outcome.usableForCoverage
+      && priorityResult
+      && "executionPriorityModel" in priorityResult
       ? await materializePrioritizedExecutionSlice(trackId, {
         expectedSourceFingerprint: priorityResult.executionPriorityModel.sourceFingerprint,
         maxNewTasks: 1,
@@ -333,150 +329,4 @@ async function processOutcome(trackId: number, outcome: ExecutionOutcome): Promi
       processedAt: Date.now(),
     };
     await updateOutcomeProcessingState(trackId, outcome.id, {
-      processingState: "complete",
-      processingError: "",
-      coverageImpact: impact,
-    });
-    await storage.logActivity({
-      eventType: "execution_outcome_processed",
-      sourceType: "career_track",
-      sourceId: trackId,
-      taskId: outcome.liveTaskId,
-      metadata: JSON.stringify({
-        outcomeId: outcome.id,
-        improvedRequirementIds: impact.improvedRequirementIds,
-        newlyProvenRequirementIds: impact.newlyProvenRequirementIds,
-        nextMaterializedTaskIds: impact.nextMaterializedTaskIds,
-      }),
-    } as any);
-  } catch (error: any) {
-    await updateOutcomeProcessingState(trackId, outcome.id, {
-      processingState: "failed",
-      processingError: String(error?.message || "Execution outcome processing failed").slice(0, 700),
-    });
-  }
-}
-
-const processingInFlight = new Map<number, Promise<void>>();
-
-export function queueExecutionOutcomeProcessing(trackId: number): void {
-  if (processingInFlight.has(trackId)) return;
-  const promise = (async () => {
-    while (true) {
-      const track = await storage.getCareerTrack(trackId);
-      if (!track) return;
-      const intelligence = parseJsonObject(track.trackIntelligence);
-      if (pendingConfirmationExists(intelligence, trackId)) return;
-      const blueprint = currentBlueprint(intelligence);
-      const model = normalizeExecutionOutcomeModel(intelligence.executionOutcomeModel, trackId, blueprint?.sourceFingerprint || "");
-      const next = model.outcomes
-        .filter((outcome) => (outcome.state === "accepted" || outcome.state === "no_evidence")
-          && (outcome.processingState === "queued" || outcome.processingState === "failed"))
-        .sort((left, right) => left.completedAt - right.completedAt)[0];
-      if (!next) return;
-      await processOutcome(trackId, next);
-    }
-  })().finally(() => {
-    if (processingInFlight.get(trackId) === promise) processingInFlight.delete(trackId);
-  });
-  processingInFlight.set(trackId, promise);
-}
-
-export async function confirmOutcomeForTrack(
-  trackId: number,
-  outcomeId: string,
-  input: ConfirmExecutionOutcomeInput,
-): Promise<{ model: ExecutionOutcomeModel; outcome: ExecutionOutcome } | null> {
-  const result = await withTrackMutation(trackId, async () => {
-    const track = await storage.getCareerTrack(trackId);
-    if (!track) return null;
-    const intelligence = parseJsonObject(track.trackIntelligence);
-    const blueprint = currentBlueprint(intelligence);
-    let model = normalizeExecutionOutcomeModel(intelligence.executionOutcomeModel, trackId, blueprint?.sourceFingerprint || "");
-    const outcome = model.outcomes.find((candidate) => candidate.id === outcomeId);
-    if (!outcome) return null;
-    const confirmed = confirmExecutionOutcome(outcome, input);
-    model = replaceOutcome(model, confirmed);
-    await persistOutcomeModel(trackId, model);
-    if (confirmed.state === "reopened") {
-      const task = (await storage.getTasks()).find((candidate) => candidate.id === confirmed.liveTaskId);
-      if (task && isCompleted(task)) {
-        await storage.updateTask(task.id, {
-          done: false,
-          status: "not_started",
-          pinned: false,
-          list: "inbox",
-        } as any);
-      }
-      await ensureExecutionPriority(trackId, true);
-    }
-    await storage.logActivity({
-      eventType: "execution_outcome_confirmed",
-      sourceType: "career_track",
-      sourceId: trackId,
-      taskId: confirmed.liveTaskId,
-      metadata: JSON.stringify({ outcomeId, optionId: input.optionId, state: confirmed.state }),
-    } as any);
-    return { model, outcome: confirmed };
-  });
-  if (result?.outcome.processingState === "queued") queueExecutionOutcomeProcessing(trackId);
-  return result;
-}
-
-export async function getExecutionOutcomeState(trackId: number) {
-  const model = await reconcileExecutionOutcomesForTrack(trackId);
-  if (!model) return null;
-  if (model.queuedOutcomeIds.length) queueExecutionOutcomeProcessing(trackId);
-  const refreshedTrack = await storage.getCareerTrack(trackId);
-  const refreshedIntelligence = parseJsonObject(refreshedTrack?.trackIntelligence);
-  const refreshedBlueprint = currentBlueprint(refreshedIntelligence);
-  const refreshedModel = normalizeExecutionOutcomeModel(
-    refreshedIntelligence.executionOutcomeModel,
-    trackId,
-    refreshedBlueprint?.sourceFingerprint || model.currentBlueprintFingerprint,
-  );
-  return {
-    track: refreshedTrack,
-    executionOutcomeModel: refreshedModel,
-    pendingOutcomes: refreshedModel.outcomes.filter((outcome) => outcome.state === "pending_confirmation"),
-    recentOutcomes: [...refreshedModel.outcomes]
-      .filter((outcome) => outcome.state !== "pending_confirmation")
-      .sort((left, right) => right.updatedAt - left.updatedAt)
-      .slice(0, 8),
-    processing: processingInFlight.has(trackId) || refreshedModel.queuedOutcomeIds.length > 0,
-  };
-}
-
-let lifecycleRegistered = false;
-let reconciliationTimer: ReturnType<typeof setInterval> | null = null;
-
-export function registerExecutionOutcomeLifecycle(): void {
-  if (lifecycleRegistered) return;
-  lifecycleRegistered = true;
-  registerTaskLifecycleListener((event) => {
-    void handleTaskLifecycle(event).catch((error) => console.error("Execution outcome lifecycle failed:", error));
-  });
-  reconciliationTimer = setInterval(() => {
-    void storage.getCareerTracks().then((tracks) => {
-      for (const track of tracks.filter((candidate) => candidate.status === "active")) {
-        void reconcileExecutionOutcomesForTrack(track.id).catch(() => {});
-      }
-    }).catch(() => {});
-  }, 30_000);
-  reconciliationTimer.unref?.();
-}
-
-export function stopExecutionOutcomeLifecycleForTests(): void {
-  if (reconciliationTimer) clearInterval(reconciliationTimer);
-  reconciliationTimer = null;
-  lifecycleRegistered = false;
-}
-
-export const executionOutcomeServiceInternals = {
-  coverageChanges,
-  executionTaskTrackId,
-  isCompleted,
-  latestOutcomeForTask,
-  replaceOutcome,
-  statusRank,
-};
+      processingState

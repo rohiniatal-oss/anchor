@@ -41,7 +41,7 @@ async function computeExecutionBlueprint(
 ) {
   const developmentResult = await ensureDevelopmentPlan(trackId, false);
   if (!developmentResult) return null;
-  if ("error" in developmentResult) return developmentResult;
+  if (!("developmentPlanModel" in developmentResult)) return developmentResult;
 
   const developmentPlan = developmentResult.developmentPlanModel;
   const developmentPlanFingerprint = executionBlueprintSourceFingerprint(developmentPlan);
@@ -122,13 +122,19 @@ export async function ensureExecutionBlueprint(
   }
 }
 
+function resultError(result: Exclude<ExecutionBlueprintResult, null>): string {
+  return "error" in result
+    ? String(result.error || "The execution blueprint is not available yet")
+    : "The execution blueprint is not available yet";
+}
+
 export function registerTrackResearchExecutionRoutes(app: Express) {
   app.get("/api/career-tracks/:id/execution-blueprint", async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     const result = await ensureExecutionBlueprint(id, false);
     if (!result) return res.status(404).json({ error: "Track not found" });
-    if ("error" in result) return res.status(409).json({ error: result.error });
+    if (!("executionBlueprintModel" in result)) return res.status(409).json({ error: resultError(result) });
     return res.json(result);
   });
 
@@ -137,7 +143,7 @@ export function registerTrackResearchExecutionRoutes(app: Express) {
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     const result = await ensureExecutionBlueprint(id, true);
     if (!result) return res.status(404).json({ error: "Track not found" });
-    if ("error" in result) return res.status(409).json({ error: result.error });
+    if (!("executionBlueprintModel" in result)) return res.status(409).json({ error: resultError(result) });
     return res.json({ ...result, refreshed: true });
   });
 
@@ -146,7 +152,7 @@ export function registerTrackResearchExecutionRoutes(app: Express) {
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
     const result = await ensureExecutionBlueprint(id, false);
     if (!result) return res.status(404).json({ error: "Track not found" });
-    if ("error" in result) return res.status(409).json({ error: result.error });
+    if (!("executionBlueprintModel" in result)) return res.status(409).json({ error: resultError(result) });
     return res.status(409).json({
       error: "The complete work hierarchy now exists, but Anchor has not prioritized or selected the active execution slice. No live tasks were created.",
       nextStage: "execution_prioritization",

@@ -8,6 +8,7 @@ import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { TrackResearchReview } from "@/components/home/TrackResearchReview";
 import { TrackDevelopmentPlan } from "@/components/home/TrackDevelopmentPlan";
 import { TrackExecutionPriority } from "@/components/home/TrackExecutionPriority";
+import { TrackExecutionEvidence } from "@/components/home/TrackExecutionEvidence";
 import { TrackExecutionBlueprint } from "@/components/home/TrackExecutionBlueprint";
 
 type FocusAreaResearchCardProps = {
@@ -24,6 +25,7 @@ async function invalidateTrackResearchModels(trackId?: number) {
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/development-plan`] }),
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-blueprint`] }),
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-priority`] }),
+    queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-outcomes`] }),
   ]);
 }
 
@@ -98,7 +100,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
             <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Research requirements</span>
           </div>
           <p className="mt-1 text-xs leading-snug text-muted-foreground">
-            Tell Anchor the direction you want. It will research the market requirements, assess your evidence, build the development and execution plans, and activate only the smallest useful slice.
+            Tell Anchor the direction you want. It will research the market requirements, assess your evidence, build the development and execution plans, activate only the smallest useful slice, and update the plan as completed work creates new evidence.
           </p>
 
           <form
@@ -157,6 +159,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
           <TrackResearchReview trackId={lastTrack?.id} />
           <TrackDevelopmentPlan trackId={lastTrack?.id} />
           <TrackExecutionPriority trackId={lastTrack?.id} />
+          <TrackExecutionEvidence trackId={lastTrack?.id} />
           <TrackExecutionBlueprint trackId={lastTrack?.id} />
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -23,6 +23,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 type BlueprintOwner = "anchor" | "user" | "shared";
 type PrioritySlot = "now" | "active" | "next" | "parallel" | "later" | "blocked" | "conditional" | "completed";
 type PriorityLiveState = "not_materialized" | "open" | "completed" | "stale";
+
 type PriorityCandidate = {
   taskId: string;
   title: string;
@@ -45,6 +46,7 @@ type PriorityCandidate = {
 type ExecutionPriorityModel = {
   mode: "execution_priority_model";
   targetLabel: string;
+  sourceFingerprint: string;
   objective: string;
   selectionLogic: string;
   candidates: PriorityCandidate[];
@@ -76,6 +78,16 @@ type ExecutionPriorityModel = {
   };
 };
 
+type MaterializationResult = {
+  status: "materialized" | "partially_materialized" | "already_active" | "nothing_to_materialize";
+  created: Array<{ blueprintTaskId: string; liveTaskId: number }>;
+  reused: Array<{ blueprintTaskId: string; liveTaskId: number }>;
+  completed: Array<{ blueprintTaskId: string; liveTaskId: number }>;
+  skipped: Array<{ blueprintTaskId: string; reason: string }>;
+  activeLiveTaskIds: number[];
+  todayLiveTaskId: number | null;
+};
+
 type ExecutionPriorityResponse = {
   executionPriorityModel?: ExecutionPriorityModel | null;
   executionBlueprintModel?: {
@@ -94,6 +106,7 @@ type ExecutionPriorityResponse = {
       urgency: "high" | "medium" | "low";
     }>;
   };
+  materializationResult?: MaterializationResult;
 };
 
 const OWNER_META: Record<BlueprintOwner, { label: string; icon: typeof Bot; tone: string }> = {
@@ -128,6 +141,16 @@ const QUALITY_META = {
 
 function list(values?: string[]) {
   return (values || []).map((value) => String(value || "").trim()).filter(Boolean);
+}
+
+function activationMessage(result?: MaterializationResult): string {
+  if (!result) return "The selected work was refreshed.";
+  if (result.created.length) {
+    return `${result.created.length} selected task${result.created.length === 1 ? " is" : "s are"} now active in This Week. Today will choose from them using your current time and energy.`;
+  }
+  if (result.reused.length) return "The selected work was already active, so Anchor created no duplicates.";
+  if (result.skipped.length) return result.skipped[0]?.reason || "No task was activated because a safety condition changed.";
+  return "No additional live task was needed.";
 }
 
 function ActiveTaskCard({
@@ -174,6 +197,7 @@ function ActiveTaskCard({
 }
 
 export function TrackExecutionPriority({ trackId }: { trackId?: number }) {
+  const [statusMessage, setStatusMessage] = useState("");
   const queryKey = `/api/career-tracks/${trackId}/execution-priority`;
   const { data, isLoading, isError, refetch } = useQuery<ExecutionPriorityResponse>({
     queryKey: [queryKey],
@@ -181,12 +205,19 @@ export function TrackExecutionPriority({ trackId }: { trackId?: number }) {
     staleTime: 30_000,
     retry: false,
   });
+  const model = data?.executionPriorityModel;
   const materialize = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/career-tracks/${trackId}/execution-priority/materialize`, {});
-      return response.json();
+      if (!model?.sourceFingerprint) throw new Error("The displayed active slice is unavailable.");
+      const response = await apiRequest(
+        "POST",
+        `/api/career-tracks/${trackId}/execution-priority/materialize`,
+        { sourceFingerprint: model.sourceFingerprint },
+      );
+      return await response.json() as ExecutionPriorityResponse;
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      setStatusMessage(activationMessage(result.materializationResult));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: [queryKey] }),
         queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }),
@@ -195,9 +226,11 @@ export function TrackExecutionPriority({ trackId }: { trackId?: number }) {
         queryClient.invalidateQueries({ queryKey: ["/api/career-tracks"] }),
       ]);
     },
+    onError: (error: any) => {
+      setStatusMessage(error?.message || "Anchor could not activate the displayed slice. Recalculate and try again.");
+    },
   });
 
-  const model = data?.executionPriorityModel;
   const workstreamTitleById = useMemo(
     () => new Map((data?.executionBlueprintModel?.workstreams || []).map((workstream) => [workstream.workstreamId, workstream.title])),
     [data?.executionBlueprintModel?.workstreams],
@@ -304,19 +337,19 @@ export function TrackExecutionPriority({ trackId }: { trackId?: number }) {
           {alreadyActive ? <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-700" /> : <Play className="mt-0.5 h-4 w-4 text-primary" />}
           <div>
             <p className="text-xs font-semibold text-foreground">{alreadyActive ? "The selected slice is active" : `${newTaskCount} selected task${newTaskCount === 1 ? " is" : "s are"} ready to activate`}</p>
-            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{alreadyActive ? "Anchor will re-evaluate the slice as work is completed or your context changes." : "Anchor will add at most one ready task to Today and keep dependent work in Inbox."}</p>
+            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">{alreadyActive ? "Anchor will re-evaluate the slice as work is completed or your context changes." : "Ready work enters This Week. The Today planner remains the sole authority for today's time and energy."}</p>
           </div>
         </div>
         {!alreadyActive && (
-          <Button size="sm" onClick={() => materialize.mutate()} disabled={materialize.isPending} data-testid="button-materialize-execution-slice">
+          <Button size="sm" onClick={() => materialize.mutate()} disabled={materialize.isPending || model.quality.status === "provisional"} data-testid="button-materialize-execution-slice">
             {materialize.isPending ? <Sparkles className="mr-1 h-3.5 w-3.5 animate-pulse" /> : <ListTodo className="mr-1 h-3.5 w-3.5" />}
-            {materialize.isPending ? "Activating" : "Activate selected work"}
+            {materialize.isPending ? "Activating" : "Activate displayed work"}
           </Button>
         )}
       </div>
 
-      {materialize.isError && (
-        <p className="mt-2 text-[11px] leading-snug text-destructive">The selection remains saved, but Anchor could not add the tasks. Retry without rebuilding the plan.</p>
+      {statusMessage && (
+        <p className={`mt-2 text-[11px] leading-snug ${materialize.isError ? "text-destructive" : "text-primary"}`} role="status">{statusMessage}</p>
       )}
 
       {deferred.length > 0 && (
@@ -354,7 +387,7 @@ export function TrackExecutionPriority({ trackId }: { trackId?: number }) {
 
       <div className="mt-3 flex items-start gap-2 rounded-xl bg-muted/20 p-2.5">
         <LockKeyhole className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" />
-        <p className="text-[10px] leading-snug text-muted-foreground">Anchor selects automatically, but only the active slice is materialized. The full blueprint remains available for later recalculation rather than becoming a giant backlog.</p>
+        <p className="text-[10px] leading-snug text-muted-foreground">Activation uses the exact slice shown above. If context changes in another tab, Anchor rejects the stale request and asks you to refresh rather than activating unseen work.</p>
       </div>
     </section>
   );

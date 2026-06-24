@@ -9,6 +9,9 @@ import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRout
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
 import { registerTrackResearchExecutionRoutes } from "./trackResearchExecutionRoutes";
 import { registerTrackResearchExecutionPriorityRoutes } from "./trackResearchExecutionPriorityRoutes";
+import { registerTrackResearchExecutionOutcomeRoutes } from "./trackResearchExecutionOutcomeRoutes";
+import { registerExecutionOutcomeRuntime } from "./trackResearchExecutionOutcomeService";
+import { registerTaskLifecycleRoutes } from "./taskLifecycleRoutes";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
 import { registerJobTruthRoutes } from "./jobTruth";
@@ -110,11 +113,14 @@ app.use((req, res, next) => {
   // Capture remains the clean routing contract. Track Research sits before it so
   // focus-area exploration becomes a structured, persistent track plan.
   registerPersistenceAdminRoutes(app);
+  registerExecutionOutcomeRuntime();
+  registerTaskLifecycleRoutes(app);
   registerTrackResearchRoutes(app);
   registerTrackResearchCoverageRoutes(app);
   registerTrackResearchDevelopmentRoutes(app);
   registerTrackResearchExecutionRoutes(app);
   registerTrackResearchExecutionPriorityRoutes(app);
+  registerTrackResearchExecutionOutcomeRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);
@@ -148,7 +154,7 @@ app.use((req, res, next) => {
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
+  // doesn't interfere with all the other routes
   if (process.env.NODE_ENV === "production") {
     serveStatic(app);
   } else {

@@ -9,6 +9,10 @@ import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRout
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
 import { registerTrackResearchExecutionRoutes } from "./trackResearchExecutionRoutes";
 import { registerTrackResearchExecutionPriorityRoutes } from "./trackResearchExecutionPriorityRoutes";
+import {
+  registerExecutionOutcomeLifecycleObserver,
+  registerTrackResearchExecutionOutcomeRoutes,
+} from "./trackResearchExecutionOutcomeRoutes";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
 import { registerJobTruthRoutes } from "./jobTruth";
@@ -107,6 +111,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Observe task transitions before any task mutation routes are registered so
+  // completion and reopening flow into the evidence system consistently.
+  registerExecutionOutcomeLifecycleObserver(app);
+
   // Capture remains the clean routing contract. Track Research sits before it so
   // focus-area exploration becomes a structured, persistent track plan.
   registerPersistenceAdminRoutes(app);
@@ -115,6 +123,7 @@ app.use((req, res, next) => {
   registerTrackResearchDevelopmentRoutes(app);
   registerTrackResearchExecutionRoutes(app);
   registerTrackResearchExecutionPriorityRoutes(app);
+  registerTrackResearchExecutionOutcomeRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);

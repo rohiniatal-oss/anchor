@@ -16,6 +16,7 @@ import {
   materializeExecutionPrioritySlice,
   type ExecutionMaterializationResult,
 } from "./trackResearchExecutionMaterialization";
+import { normalizeExecutionOutcomeModel } from "./trackResearchExecutionOutcome";
 
 export type ExecutionMaterializationOptions = {
   expectedSourceFingerprint?: string;
@@ -196,6 +197,20 @@ async function materializeTrackSlice(
   }
   if (priorityResult.priorityContext.trackStatus !== "active") {
     return { error: "This career track is not active, so Anchor will not create new execution tasks." } as const;
+  }
+
+  const latestTrack = await storage.getCareerTrack(trackId);
+  const latestIntelligence = parseJsonObject(latestTrack?.trackIntelligence);
+  const outcomeModel = normalizeExecutionOutcomeModel(
+    latestIntelligence.executionOutcomeModel,
+    trackId,
+    priorityResult.executionBlueprintModel.sourceFingerprint,
+  );
+  if (outcomeModel.pendingOutcomeIds.length) {
+    return {
+      error: "Confirm the result of the completed execution task before Anchor activates more work.",
+      pendingOutcomeIds: outcomeModel.pendingOutcomeIds,
+    } as const;
   }
 
   const requestedLimit = Number.isFinite(Number(options.maxNewTasks))

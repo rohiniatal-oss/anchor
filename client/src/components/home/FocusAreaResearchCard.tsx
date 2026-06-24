@@ -8,6 +8,7 @@ import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { TrackResearchReview } from "@/components/home/TrackResearchReview";
 import { TrackDevelopmentPlan } from "@/components/home/TrackDevelopmentPlan";
 import { TrackExecutionBlueprint } from "@/components/home/TrackExecutionBlueprint";
+import { TrackActiveExecutionSlice } from "@/components/home/TrackActiveExecutionSlice";
 
 type FocusAreaResearchCardProps = {
   onResearched?: (trackId?: number) => void;
@@ -22,6 +23,7 @@ async function invalidateTrackResearchModels(trackId?: number) {
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/coverage`] }),
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/development-plan`] }),
     queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-blueprint`] }),
+    queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/active-execution-slice`] }),
   ]);
 }
 
@@ -74,7 +76,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
             <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Research requirements</span>
           </div>
           <p className="mt-1 text-xs leading-snug text-muted-foreground">
-            Tell Anchor the direction you want. It will research what the market requires, assess the evidence you already have, build the development plan, and define the complete work hierarchy beneath it.
+            Tell Anchor the direction you want. It will research what the market requires, assess the evidence you already have, build the development plan, define the work hierarchy, and select the smallest active slice.
           </p>
 
           <form
@@ -133,6 +135,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
           <TrackResearchReview trackId={lastTrack?.id} />
           <TrackDevelopmentPlan trackId={lastTrack?.id} />
           <TrackExecutionBlueprint trackId={lastTrack?.id} />
+          <TrackActiveExecutionSlice trackId={lastTrack?.id} />
         </div>
       </div>
     </section>

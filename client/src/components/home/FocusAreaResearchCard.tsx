@@ -3,6 +3,7 @@ import { Compass, Search, Sparkles, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { mutateAndInvalidate } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import { GOAL_SPINE_QUERY_KEYS } from "@/lib/homeTypes";
 import { TrackResearchReview } from "@/components/home/TrackResearchReview";
 import { TrackDevelopmentPlan } from "@/components/home/TrackDevelopmentPlan";
@@ -13,6 +14,16 @@ type FocusAreaResearchCardProps = {
 };
 
 const EXAMPLES = ["AI strategy", "geopolitical risk advisory", "government delivery roles"];
+
+async function invalidateTrackResearchModels(trackId?: number) {
+  if (!trackId) return;
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/research-plan`] }),
+    queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/coverage`] }),
+    queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/development-plan`] }),
+    queryClient.invalidateQueries({ queryKey: [`/api/career-tracks/${trackId}/execution-blueprint`] }),
+  ]);
+}
 
 export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardProps) {
   const [focus, setFocus] = useState("");
@@ -35,6 +46,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
       ]);
       const track = result?.track;
       const brief = result?.brief;
+      await invalidateTrackResearchModels(track?.id);
       setLastTrack({
         id: track?.id,
         name: track?.name || brief?.trackName || domain,

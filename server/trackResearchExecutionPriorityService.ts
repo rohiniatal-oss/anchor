@@ -153,10 +153,28 @@ async function persistMaterializationRun(
   } as any);
 }
 
-async function materializeTrackSlice(trackId: number) {
+export function executionPriorityMatchesExpectedFingerprint(
+  model: ExecutionPriorityModel,
+  expectedSourceFingerprint?: string | null,
+): boolean {
+  const expected = String(expectedSourceFingerprint || "").trim();
+  return !expected || model.sourceFingerprint === expected;
+}
+
+async function materializeTrackSlice(
+  trackId: number,
+  expectedSourceFingerprint?: string | null,
+) {
   const priorityResult = await ensureExecutionPriority(trackId, false);
   if (!priorityResult) return null;
   if (!("executionPriorityModel" in priorityResult)) return priorityResult;
+  if (!executionPriorityMatchesExpectedFingerprint(priorityResult.executionPriorityModel, expectedSourceFingerprint)) {
+    return {
+      error: "The active slice changed after it was displayed. Refresh the recommendation before activating it.",
+      code: "stale_displayed_slice",
+      currentSourceFingerprint: priorityResult.executionPriorityModel.sourceFingerprint,
+    } as const;
+  }
   if (priorityResult.executionBlueprintModel.quality.status === "provisional") {
     return { error: "The execution blueprint must be repaired before live tasks can be created." } as const;
   }
@@ -182,19 +200,21 @@ async function materializeTrackSlice(trackId: number) {
 }
 
 export type ExecutionMaterializationRouteResult = Awaited<ReturnType<typeof materializeTrackSlice>>;
-const materializationInFlight = new Map<number, Promise<ExecutionMaterializationRouteResult>>();
+const materializationInFlight = new Map<string, Promise<ExecutionMaterializationRouteResult>>();
 
 export async function materializePrioritizedExecutionSlice(
   trackId: number,
+  expectedSourceFingerprint?: string | null,
 ): Promise<ExecutionMaterializationRouteResult> {
-  const active = materializationInFlight.get(trackId);
+  const key = `${trackId}:${String(expectedSourceFingerprint || "current").trim()}`;
+  const active = materializationInFlight.get(key);
   if (active) return active;
-  const promise = materializeTrackSlice(trackId);
-  materializationInFlight.set(trackId, promise);
+  const promise = materializeTrackSlice(trackId, expectedSourceFingerprint);
+  materializationInFlight.set(key, promise);
   try {
     return await promise;
   } finally {
-    if (materializationInFlight.get(trackId) === promise) materializationInFlight.delete(trackId);
+    if (materializationInFlight.get(key) === promise) materializationInFlight.delete(key);
   }
 }
 

@@ -134,7 +134,7 @@ function liveTask(id: number, overrides: Record<string, any> = {}) {
   } as any;
 }
 
-test("materialized tasks preserve provenance, evidence and structured steps", () => {
+test("materialized tasks preserve provenance while remaining outside Today", () => {
   const task = blueprintTask("blueprint-a");
   const input = buildMaterializedTaskInput({
     trackId: 7,
@@ -146,7 +146,7 @@ test("materialized tasks preserve provenance, evidence and structured steps", ()
   });
   const steps = JSON.parse(input.steps || "[]");
 
-  assert.equal(input.list, "today");
+  assert.equal(input.list, "inbox");
   assert.equal(input.relatedTrackId, 7);
   assert.equal(input.sourceType, "career_track");
   assert.equal(input.sourceStepType, sourceStepTypeForBlueprintTask(task.id));

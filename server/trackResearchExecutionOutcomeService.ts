@@ -68,7 +68,7 @@ function taskTrackId(task: Task): number | null {
   return null;
 }
 
-function recordEvidenceFingerprint(record: ExecutionOutcomeRecord | null | undefined): string {
+function recordFingerprint(record: ExecutionOutcomeRecord | null | undefined): string {
   if (!record) return "missing";
   return JSON.stringify({
     status: record.status,
@@ -79,6 +79,30 @@ function recordEvidenceFingerprint(record: ExecutionOutcomeRecord | null | undef
     requirementIds: [...record.requirementIds].sort(),
     confirmationAnswer: record.confirmation.answer,
   });
+}
+
+function coverageContributionFingerprint(record: ExecutionOutcomeRecord | null | undefined): string {
+  if (!record || record.status !== "accepted" || !record.usableForCoverage) return "none";
+  return JSON.stringify({
+    strength: record.strength,
+    detail: record.detail,
+    sourceUrl: record.sourceUrl,
+    requirementIds: [...record.requirementIds].sort(),
+  });
+}
+
+function recordChanged(
+  before: ExecutionOutcomeRecord | null | undefined,
+  after: ExecutionOutcomeRecord,
+): boolean {
+  return recordFingerprint(before) !== recordFingerprint(after);
+}
+
+function coverageContributionChanged(
+  before: ExecutionOutcomeRecord | null | undefined,
+  after: ExecutionOutcomeRecord,
+): boolean {
+  return coverageContributionFingerprint(before) !== coverageContributionFingerprint(after);
 }
 
 function strongerThan(
@@ -104,13 +128,6 @@ function nextRecordForCompletedTask(input: {
   if (candidate.status === "accepted" && (existing.status !== "accepted" || strongerThan(candidate, existing))) return candidate;
   if (candidate.status === "operational_only" && existing.status === "pending_confirmation") return candidate;
   return existing;
-}
-
-function changedEvidence(
-  before: ExecutionOutcomeRecord | null | undefined,
-  after: ExecutionOutcomeRecord,
-): boolean {
-  return recordEvidenceFingerprint(before) !== recordEvidenceFingerprint(after);
 }
 
 async function persistOutcomeModel(
@@ -276,8 +293,10 @@ function reconcileCompletedTasks(input: {
       if (existing && existing.status !== "reopened") {
         const reopened = reopenExecutionOutcome(model, task.id);
         const next = reopened.records.find((record) => record.liveTaskId === task.id);
-        if (next && changedEvidence(existing, next)) {
-          existing.requirementIds.forEach((id) => affectedRequirementIds.add(id));
+        if (next && recordChanged(existing, next)) {
+          if (coverageContributionChanged(existing, next)) {
+            existing.requirementIds.forEach((id) => affectedRequirementIds.add(id));
+          }
           changedOutcomeCount += 1;
         }
         model = reopened;
@@ -295,7 +314,9 @@ function reconcileCompletedTasks(input: {
       existing,
     });
     if (!existing || record !== existing) {
-      if (changedEvidence(existing, record)) record.requirementIds.forEach((id) => affectedRequirementIds.add(id));
+      if (coverageContributionChanged(existing, record)) {
+        record.requirementIds.forEach((id) => affectedRequirementIds.add(id));
+      }
       model = upsertExecutionOutcome(model, record);
       changedOutcomeCount += 1;
     }
@@ -358,14 +379,13 @@ async function scanUnlocked(trackId: number): Promise<ExecutionOutcomeRuntimeRes
   }
 
   await persistOutcomeModel(trackId, reconciled.model);
-  const evidenceChangeIds = reconciled.affectedRequirementIds;
-  if (!evidenceChangeIds.length) {
+  if (!reconciled.affectedRequirementIds.length) {
     const milestoneProgress = buildExecutionMilestoneProgress(
       blueprintResult.developmentPlanModel,
       blueprintResult.coverageModel,
       reconciled.model.records,
     );
-    const nextModel = {
+    const nextModel: ExecutionOutcomeModel = {
       ...reconciled.model,
       milestoneProgress,
       generatedAt: Date.now(),
@@ -378,7 +398,7 @@ async function scanUnlocked(trackId: number): Promise<ExecutionOutcomeRuntimeRes
     trackId,
     model: reconciled.model,
     beforeCoverage,
-    affectedRequirementIds: evidenceChangeIds,
+    affectedRequirementIds: reconciled.affectedRequirementIds,
   });
   return resultView(refreshed.track || track, refreshed.model, refreshed.replan, reconciled.scannedTaskCount, reconciled.changedOutcomeCount);
 }
@@ -414,7 +434,7 @@ export async function confirmExecutionOutcome(input: {
     const existing = currentModel.records.find((record) => record.id === input.outcomeId);
     if (!existing) throw new Error("Execution outcome not found");
     const updated = applyExecutionOutcomeConfirmation(existing, input.confirmation);
-    const evidenceChanged = changedEvidence(existing, updated);
+    const contributionChanged = coverageContributionChanged(existing, updated);
     let model = upsertExecutionOutcome(currentModel, updated);
 
     if (input.confirmation.resolution === "mistaken") {
@@ -443,7 +463,7 @@ export async function confirmExecutionOutcome(input: {
       }),
     } as any);
 
-    if (!evidenceChanged) {
+    if (!contributionChanged) {
       const developmentPlan = intelligence.developmentPlanModel as DevelopmentPlanModel | undefined;
       const coverage = beforeCoverage;
       if (developmentPlan?.mode === "development_plan_model" && coverage?.mode === "coverage_model") {
@@ -469,10 +489,11 @@ export async function confirmExecutionOutcome(input: {
 }
 
 export const executionOutcomeServiceInternals = {
-  changedEvidence,
-  completed,
+  coverageContributionChanged,
+  coverageContributionFingerprint,
   nextRecordForCompletedTask,
   reconcileCompletedTasks,
-  recordEvidenceFingerprint,
+  recordChanged,
+  recordFingerprint,
   taskTrackId,
 };

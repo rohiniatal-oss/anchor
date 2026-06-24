@@ -23,6 +23,16 @@ function uniqueNumbers(values: Array<number | null | undefined>): number[] {
   return [...new Set(values.filter((value): value is number => typeof value === "number" && Number.isFinite(value)))];
 }
 
+function numberArray(value: unknown): number[] {
+  if (Array.isArray(value)) return uniqueNumbers(value.map(Number));
+  try {
+    const parsed = JSON.parse(String(value || "[]"));
+    return Array.isArray(parsed) ? uniqueNumbers(parsed.map(Number)) : [];
+  } catch {
+    return [];
+  }
+}
+
 function activeTask(task: Task): boolean {
   return !task.done && task.status !== "done";
 }
@@ -52,7 +62,13 @@ function liveTaskMap(tasks: Task[]): Map<string, Task> {
     const blueprintTaskId = blueprintTaskIdFromSourceStepType(task.sourceStepType);
     if (!blueprintTaskId) continue;
     const existing = result.get(blueprintTaskId);
-    if (!existing || (activeTask(task) && !activeTask(existing)) || task.createdAt > existing.createdAt) {
+    if (!existing) {
+      result.set(blueprintTaskId, task);
+      continue;
+    }
+    const taskOpen = activeTask(task) ? 1 : 0;
+    const existingOpen = activeTask(existing) ? 1 : 0;
+    if (taskOpen > existingOpen || (taskOpen === existingOpen && task.createdAt > existing.createdAt)) {
       result.set(blueprintTaskId, task);
     }
   }
@@ -117,6 +133,7 @@ function dependencyOrder(
 ): { ordered: TaskBlueprint[]; skipped: ExecutionMaterializationResult["skipped"] } {
   const selected = new Set(selectedIds);
   const processed = new Set<string>();
+  const failed = new Set<string>();
   const ordered: TaskBlueprint[] = [];
   const skipped: ExecutionMaterializationResult["skipped"] = [];
   let progressed = true;
@@ -129,6 +146,15 @@ function dependencyOrder(
       if (!task) {
         skipped.push({ blueprintTaskId: id, reason: "The selected blueprint task no longer exists." });
         processed.add(id);
+        failed.add(id);
+        progressed = true;
+        continue;
+      }
+      const failedDependencies = task.dependsOnTaskIds.filter((dependencyId) => selected.has(dependencyId) && failed.has(dependencyId));
+      if (failedDependencies.length) {
+        skipped.push({ blueprintTaskId: id, reason: `A selected prerequisite could not be materialized: ${failedDependencies.join(", ")}.` });
+        processed.add(id);
+        failed.add(id);
         progressed = true;
         continue;
       }
@@ -139,6 +165,7 @@ function dependencyOrder(
       if (unavailable.length) {
         skipped.push({ blueprintTaskId: id, reason: `Missing prerequisite blueprint task: ${unavailable.join(", ")}.` });
         processed.add(id);
+        failed.add(id);
         progressed = true;
         continue;
       }
@@ -169,7 +196,47 @@ export async function materializeExecutionPrioritySlice(input: {
   const blueprintById = new Map(input.blueprint.tasks.map((task) => [task.id, task]));
   const priorityById = new Map(input.priorityModel.candidates.map((candidate) => [candidate.taskId, candidate]));
   const workstreamTitles = new Map(input.blueprint.workstreams.map((workstream) => [workstream.workstreamId, workstream.title]));
-  const { ordered, skipped } = dependencyOrder(input.priorityModel.activeSlice.selectedTaskIds, blueprintById, existingByBlueprintId);
+  const selectedIds = [...new Set(input.priorityModel.activeSlice.selectedTaskIds)];
+  const skipped: ExecutionMaterializationResult["skipped"] = [];
+
+  if (
+    input.priorityModel.executionBlueprintFingerprint !== input.blueprint.sourceFingerprint
+    || input.priorityModel.contextFingerprint !== input.context.fingerprint
+  ) {
+    return {
+      status: "partially_materialized",
+      created: [],
+      reused: [],
+      completed: [],
+      skipped: selectedIds.map((blueprintTaskId) => ({
+        blueprintTaskId,
+        reason: "The priority selection is stale because the blueprint or execution context changed.",
+      })),
+      activeLiveTaskIds: [],
+      todayLiveTaskId: null,
+      materializedAt: Date.now(),
+    };
+  }
+
+  const eligibleIds = selectedIds.filter((taskId) => {
+    const blueprintTask = blueprintById.get(taskId);
+    const priority = priorityById.get(taskId);
+    if (!blueprintTask || !priority?.selected) {
+      skipped.push({ blueprintTaskId: taskId, reason: "The task is not a valid selected blueprint candidate." });
+      return false;
+    }
+    if (blueprintTask.readiness === "conditional" || priority.slot === "conditional") {
+      skipped.push({ blueprintTaskId: taskId, reason: "Role-specific work cannot enter the shared active slice until its route is active." });
+      return false;
+    }
+    if (priority.slot === "blocked" || input.priorityModel.quality.blockedSelectedTaskIds.includes(taskId)) {
+      skipped.push({ blueprintTaskId: taskId, reason: "The task has an unresolved prerequisite and cannot be materialized yet." });
+      return false;
+    }
+    return true;
+  });
+  const orderedResult = dependencyOrder(eligibleIds, blueprintById, existingByBlueprintId);
+  skipped.push(...orderedResult.skipped);
   const created: ExecutionMaterializationResult["created"] = [];
   const reused: ExecutionMaterializationResult["reused"] = [];
   const completed: ExecutionMaterializationResult["completed"] = [];
@@ -177,17 +244,34 @@ export async function materializeExecutionPrioritySlice(input: {
   let todayAvailable = initialTasks.filter((task) => activeTask(task) && task.list === "today").length < 3;
   let nextSort = Math.max(0, ...initialTasks.map((task) => task.sort || 0)) + 10;
 
-  for (const blueprintTask of ordered) {
+  for (const blueprintTask of orderedResult.ordered) {
     const priority = priorityById.get(blueprintTask.id);
     if (!priority?.selected) continue;
     const existing = existingByBlueprintId.get(blueprintTask.id);
     if (existing) {
-      liveIdByBlueprintId.set(blueprintTask.id, existing.id);
-      if (activeTask(existing)) reused.push({ blueprintTaskId: blueprintTask.id, liveTaskId: existing.id });
-      else completed.push({ blueprintTaskId: blueprintTask.id, liveTaskId: existing.id });
+      let retained = existing;
+      if (
+        activeTask(existing)
+        && priority.slot === "now"
+        && todayAvailable
+        && existing.list !== "today"
+        && existing.readiness !== "blocked"
+        && existing.readiness !== "waiting"
+      ) {
+        retained = await storage.updateTask(existing.id, { list: "today" } as any) || existing;
+        existingByBlueprintId.set(blueprintTask.id, retained);
+        todayAvailable = false;
+      }
+      liveIdByBlueprintId.set(blueprintTask.id, retained.id);
+      if (activeTask(retained)) reused.push({ blueprintTaskId: blueprintTask.id, liveTaskId: retained.id });
+      else completed.push({ blueprintTaskId: blueprintTask.id, liveTaskId: retained.id });
       continue;
     }
 
+    if (created.length >= input.context.capacity.maxNewTasks) {
+      skipped.push({ blueprintTaskId: blueprintTask.id, reason: "Current task load leaves no safe capacity for another new live task." });
+      continue;
+    }
     const dependencyLiveTaskIds = blueprintTask.dependsOnTaskIds
       .map((id) => liveIdByBlueprintId.get(id) || existingByBlueprintId.get(id)?.id)
       .filter((id): id is number => typeof id === "number");
@@ -217,7 +301,7 @@ export async function materializeExecutionPrioritySlice(input: {
 
   const currentTasks = await storage.getTasks();
   const currentById = new Map(currentTasks.map((task) => [task.id, task]));
-  const selectedLive = input.priorityModel.activeSlice.selectedTaskIds.map((blueprintTaskId) => {
+  const selectedLive = eligibleIds.map((blueprintTaskId) => {
     const liveTaskId = liveIdByBlueprintId.get(blueprintTaskId) || existingByBlueprintId.get(blueprintTaskId)?.id;
     const blueprintTask = blueprintById.get(blueprintTaskId);
     return liveTaskId && blueprintTask ? { blueprintTaskId, liveTaskId, blueprintTask } : null;
@@ -245,10 +329,19 @@ export async function materializeExecutionPrioritySlice(input: {
       });
     await storage.updateTask(entry.liveTaskId, {
       dependsOn: JSON.stringify(uniqueNumbers(openDependencyIds)),
-      blocks: JSON.stringify(uniqueNumbers(blocksById.get(entry.liveTaskId) || [])),
+      blocks: JSON.stringify(uniqueNumbers([...(numberArray(current.blocks)), ...(blocksById.get(entry.liveTaskId) || [])])),
       blockedBy: openDependencyIds.length ? openDependencyIds.join(",") : "",
       readiness: openDependencyIds.length ? "waiting" : "ready",
       sourceStatus: "active_slice",
+    } as any);
+  }
+
+  for (const [dependencyId, blockedIds] of blocksById) {
+    if (selectedLive.some((entry) => entry.liveTaskId === dependencyId)) continue;
+    const dependencyTask = currentById.get(dependencyId);
+    if (!dependencyTask || !activeTask(dependencyTask)) continue;
+    await storage.updateTask(dependencyId, {
+      blocks: JSON.stringify(uniqueNumbers([...numberArray(dependencyTask.blocks), ...blockedIds])),
     } as any);
   }
 

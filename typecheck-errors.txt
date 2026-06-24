@@ -1,8 +1,0 @@
-
-> rest-express@1.0.0 check
-> tsc --pretty false
-
-server/trackResearchExecutionRoutes.ts(46,45): error TS2339: Property 'developmentPlanModel' does not exist on type '{ readonly track: { id: number; name: string; status: string; description: string; createdAt: number; slug: string; targetRoleArchetype: string; priority: number; whyItFits: string; trackIntelligence: string; }; readonly requirementModel: RequirementModel; readonly coverageModel: QualityCoverageModel; readonly refre...'.
-  Property 'developmentPlanModel' does not exist on type '{ readonly track: { id: number; name: string; status: string; description: string; createdAt: number; slug: string; targetRoleArchetype: string; priority: number; whyItFits: string; trackIntelligence: string; }; readonly requirementModel: RequirementModel; readonly coverageModel: QualityCoverageModel; readonly refre...'.
-server/trackResearchExecutionRoutes.ts(153,39): error TS2339: Property 'executionBlueprintModel' does not exist on type '{ readonly track: { id: number; name: string; status: string; description: string; createdAt: number; slug: string; targetRoleArchetype: string; priority: number; whyItFits: string; trackIntelligence: string; }; readonly requirementModel: RequirementModel; readonly coverageModel: QualityCoverageModel; readonly refre...'.
-  Property 'executionBlueprintModel' does not exist on type '{ readonly track: { id: number; name: string; status: string; description: string; createdAt: number; slug: string; targetRoleArchetype: string; priority: number; whyItFits: string; trackIntelligence: string; }; readonly requirementModel: RequirementModel; readonly coverageModel: QualityCoverageModel; readonly refre...'.

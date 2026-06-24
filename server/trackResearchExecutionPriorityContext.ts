@@ -112,7 +112,7 @@ function learningSignals(trackId: number, learns: Learn[], now: Date): PriorityD
 
 function contactSignals(trackId: number, contacts: Contact[], now: Date): PriorityDeadlineSignal[] {
   return contacts.flatMap((contact) => {
-    if (contact.relatedTrackId !== trackId || ["archived", "cold"].includes(String(contact.status || "").toLowerCase())) return [];
+    if (contact.relatedTrackId !== trackId || String(contact.status || "").toLowerCase() === "archived") return [];
     const days = daysUntil(contact.nextFollowUpDate, now);
     if (days == null || days < -30 || days > 14) return [];
     return [{
@@ -172,11 +172,11 @@ export function buildExecutionPriorityContextFromData(input: {
   const currentBlueprintOpen = liveTasks.filter((task) => task.blueprintTaskId && currentBlueprintIds.has(task.blueprintTaskId) && !task.done && task.status !== "done");
   const currentBlueprintCompleted = liveTasks.filter((task) => task.blueprintTaskId && currentBlueprintIds.has(task.blueprintTaskId) && (task.done || task.status === "done"));
   const deepOrProjectOpen = sameTrackOpen.filter((task) => task.size === "deep" || Number(task.estimateMinutes || 0) >= 90);
-  const preferredSliceSize = openTasks.length >= 20 ? 3 : DEFAULT_ACTIVE_SLICE_SIZE;
-  const maxSelectedTasks = Math.min(MAX_ACTIVE_SLICE_SIZE, preferredSliceSize);
-  const trackCapacityRemaining = Math.max(0, maxSelectedTasks - sameTrackOpen.length);
-  const blueprintCapacityRemaining = Math.max(0, maxSelectedTasks - currentBlueprintOpen.length);
+  const preferredMax = Math.min(MAX_ACTIVE_SLICE_SIZE, openTasks.length >= 20 ? 3 : DEFAULT_ACTIVE_SLICE_SIZE);
+  const trackCapacityRemaining = Math.max(0, preferredMax - sameTrackOpen.length);
+  const blueprintCapacityRemaining = Math.max(0, preferredMax - currentBlueprintOpen.length);
   const maxNewTasks = Math.min(trackCapacityRemaining, blueprintCapacityRemaining);
+  const maxSelectedTasks = Math.max(currentBlueprintOpen.length, Math.min(preferredMax, currentBlueprintOpen.length + maxNewTasks));
   const deadlineSignals = [
     ...jobSignals(input.track.id, input.jobs || [], now),
     ...learningSignals(input.track.id, input.learns || [], now),

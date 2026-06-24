@@ -9,6 +9,7 @@ import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRout
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
 import { registerTrackResearchExecutionRoutes } from "./trackResearchExecutionRoutes";
 import { registerTrackResearchExecutionPriorityRoutes } from "./trackResearchExecutionPriorityRoutes";
+import { registerTrackResearchExecutionOutcomeRoutes } from "./trackResearchExecutionOutcomeRoutes";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
 import { registerJobTruthRoutes } from "./jobTruth";
@@ -115,6 +116,9 @@ app.use((req, res, next) => {
   registerTrackResearchDevelopmentRoutes(app);
   registerTrackResearchExecutionRoutes(app);
   registerTrackResearchExecutionPriorityRoutes(app);
+  // Register before task routes so completion and reopen transitions are observed
+  // without replacing the existing task-completion response contract.
+  registerTrackResearchExecutionOutcomeRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);

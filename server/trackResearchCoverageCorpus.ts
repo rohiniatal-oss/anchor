@@ -148,6 +148,12 @@ function canonicalExecutionOutcomeEvidence(record: ExecutionOutcomeRecord): User
   };
 }
 
+function genericExecutionCompletionWin(item: UserEvidenceItem, targetTrackId: number): boolean {
+  return item.sourceType === "win"
+    && normalize(item.sourceEntityType) === "career track"
+    && item.trackIds.includes(targetTrackId);
+}
+
 function canonicalKey(item: UserEvidenceItem): string {
   if (item.sourceEntityId != null) return `${item.sourceEntityType}:${item.sourceEntityId}`;
   return item.id;
@@ -186,7 +192,15 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
   ]);
 
   const byKey = new Map<string, UserEvidenceItem>();
+  let genericExecutionWinCount = 0;
   for (const item of base.items) {
+    // Sprint completion records a generic win for user feedback. For execution
+    // blueprint tasks, that checkbox-level event must not prove a requirement;
+    // the task-specific execution outcome below is the authoritative evidence.
+    if (genericExecutionCompletionWin(item, targetTrackId)) {
+      genericExecutionWinCount += 1;
+      continue;
+    }
     byKey.set(canonicalKey(item), {
       ...item,
       sourceUrl: safeExternalUrl(item.sourceUrl),
@@ -225,6 +239,9 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
   if (outcomeModel.pendingConfirmationIds.length) {
     caveats.push(`${outcomeModel.pendingConfirmationIds.length} completed execution outcome${outcomeModel.pendingConfirmationIds.length === 1 ? " is" : "s are"} awaiting one focused confirmation before it can affect coverage.`);
   }
+  if (genericExecutionWinCount) {
+    caveats.push("Generic task-completion wins were excluded from coverage; only task-specific execution outcomes can prove the linked requirements.");
+  }
 
   return {
     mode: "user_evidence_corpus",
@@ -242,6 +259,7 @@ export const coverageCorpusInternals = {
   canonicalLearnStatus,
   canonicalLearnEvidence,
   canonicalExecutionOutcomeEvidence,
+  genericExecutionCompletionWin,
   corpusFingerprint,
   safeExternalUrl,
 };

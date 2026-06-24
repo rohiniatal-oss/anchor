@@ -9,6 +9,7 @@ import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRout
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
 import { registerTrackResearchExecutionRoutes } from "./trackResearchExecutionRoutes";
 import { registerTrackResearchExecutionPriorityRoutes } from "./trackResearchExecutionPriorityRoutes";
+import { registerTrackResearchExecutionOutcomeRoutes } from "./trackResearchExecutionOutcomeRoutes";
 import { registerSprint1Routes } from "./sprint1";
 import { registerSprint2Routes } from "./sprint2";
 import { registerJobTruthRoutes } from "./jobTruth";
@@ -115,6 +116,9 @@ app.use((req, res, next) => {
   registerTrackResearchDevelopmentRoutes(app);
   registerTrackResearchExecutionRoutes(app);
   registerTrackResearchExecutionPriorityRoutes(app);
+  // Register before task routes so completion and reopen transitions are observed
+  // without replacing the existing task API response contract.
+  registerTrackResearchExecutionOutcomeRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);
@@ -158,7 +162,7 @@ app.use((req, res, next) => {
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
+  // this serves both the app and the API server.
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(
     {

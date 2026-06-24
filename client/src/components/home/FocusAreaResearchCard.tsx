@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Compass, Search, Sparkles, AlertCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Compass, Search, Sparkles, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { mutateAndInvalidate } from "@/lib/api";
@@ -15,7 +16,54 @@ type FocusAreaResearchCardProps = {
   onResearched?: (trackId?: number) => void;
 };
 
+type CareerTrackSummary = {
+  id: number;
+  name: string;
+  description: string;
+  status: string;
+  trackIntelligence: string;
+  createdAt: number;
+};
+
+type DisplayTrack = {
+  id: number;
+  name: string;
+  summary: string;
+  evidenceCount?: number;
+};
+
 const EXAMPLES = ["AI strategy", "geopolitical risk advisory", "government delivery roles"];
+const ACTIVE_TARGET_STORAGE_KEY = "anchor.activeCareerTargetId";
+
+function parseIntelligence(value: string): Record<string, any> {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function trackDisplay(track: CareerTrackSummary): DisplayTrack {
+  const intelligence = parseIntelligence(track.trackIntelligence);
+  return {
+    id: track.id,
+    name: track.name,
+    summary: intelligence.researchSummary || track.description || "Anchor has an evidence-backed requirement model for this target.",
+    evidenceCount: Array.isArray(intelligence.evidencePack) ? intelligence.evidencePack.length : undefined,
+  };
+}
+
+function researchedTrack(track: CareerTrackSummary): boolean {
+  const intelligence = parseIntelligence(track.trackIntelligence);
+  return Boolean(intelligence.researchedAt || intelligence.requirementModel || intelligence.coverageModel);
+}
+
+function storedTrackId(): number | undefined {
+  if (typeof window === "undefined") return undefined;
+  const value = Number(window.localStorage.getItem(ACTIVE_TARGET_STORAGE_KEY));
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
 
 async function invalidateTrackResearchModels(trackId?: number) {
   if (!trackId) return;
@@ -48,13 +96,55 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
   const [focus, setFocus] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [lastTrack, setLastTrack] = useState<{ id?: number; name: string; summary: string; evidenceCount?: number } | null>(null);
+  const [selectedTrackId, setSelectedTrackId] = useState<number | undefined>(storedTrackId);
+  const [recentTrack, setRecentTrack] = useState<DisplayTrack | null>(null);
+  const [activationMessage, setActivationMessage] = useState("");
+  const { data: tracks = [] } = useQuery<CareerTrackSummary[]>({
+    queryKey: ["/api/career-tracks"],
+    staleTime: 30_000,
+    retry: false,
+  });
+
+  const researchedTracks = useMemo(
+    () => tracks.filter(researchedTrack).sort((left, right) => {
+      const leftUpdated = Number(parseIntelligence(left.trackIntelligence).lastUpdated || left.createdAt || 0);
+      const rightUpdated = Number(parseIntelligence(right.trackIntelligence).lastUpdated || right.createdAt || 0);
+      return rightUpdated - leftUpdated;
+    }),
+    [tracks],
+  );
+
+  useEffect(() => {
+    if (selectedTrackId && researchedTracks.some((track) => track.id === selectedTrackId)) return;
+    const fallback = researchedTracks.find((track) => track.status === "active") || researchedTracks[0];
+    if (!fallback) return;
+    setSelectedTrackId(fallback.id);
+    if (typeof window !== "undefined") window.localStorage.setItem(ACTIVE_TARGET_STORAGE_KEY, String(fallback.id));
+  }, [researchedTracks, selectedTrackId]);
+
+  const selectedTrack = useMemo(
+    () => researchedTracks.find((track) => track.id === selectedTrackId),
+    [researchedTracks, selectedTrackId],
+  );
+  const displayTrack = recentTrack?.id === selectedTrackId
+    ? recentTrack
+    : selectedTrack
+      ? trackDisplay(selectedTrack)
+      : null;
+
+  function chooseTrack(trackId: number) {
+    setSelectedTrackId(trackId);
+    setRecentTrack(null);
+    setActivationMessage("");
+    if (typeof window !== "undefined") window.localStorage.setItem(ACTIVE_TARGET_STORAGE_KEY, String(trackId));
+  }
 
   async function researchFocusArea(value = focus) {
     const domain = value.trim();
     if (!domain || busy) return;
     setBusy(true);
     setError("");
+    setActivationMessage("");
     try {
       const result = await mutateAndInvalidate("POST", "/api/track-research", { domain }, [
         "/api/career-tracks",
@@ -65,21 +155,35 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
       ]);
       const track = result?.track;
       const brief = result?.brief;
-      await invalidateTrackResearchModels(track?.id);
-      setLastTrack({
-        id: track?.id,
+      const trackId = Number(track?.id);
+      await invalidateTrackResearchModels(trackId);
+      const nextTrack: DisplayTrack = {
+        id: trackId,
         name: track?.name || brief?.trackName || domain,
         summary: brief?.summary || track?.description || "Anchor created an evidence-backed requirement model for this target.",
         evidenceCount: Array.isArray(result?.evidencePack) ? result.evidencePack.length : undefined,
-      });
+      };
+      setRecentTrack(nextTrack);
+      chooseTrack(trackId);
+      setRecentTrack(nextTrack);
       setFocus("");
-      onResearched?.(track?.id);
+      onResearched?.(trackId);
 
-      // The target is an intended direction, not a fit question. Once research
-      // succeeds, Anchor can safely build the downstream models and activate only
-      // the small prioritised slice. Failures remain recoverable in the priority UI.
-      if (Number.isFinite(Number(track?.id))) {
-        void activateTrackExecution(Number(track.id)).catch(() => {});
+      if (Number.isFinite(trackId)) {
+        setActivationMessage("Anchor is selecting and activating the smallest safe execution slice.");
+        void activateTrackExecution(trackId)
+          .then((activation) => {
+            const created = Number(activation?.materializationResult?.created?.length || 0);
+            const reused = Number(activation?.materializationResult?.reused?.length || 0);
+            setActivationMessage(created
+              ? `${created} selected task${created === 1 ? " is" : "s are"} now available in Inbox. Today will decide when they fit.`
+              : reused
+                ? "The selected execution work was already active, so Anchor created no duplicates."
+                : "The plan is current and no additional live task was needed.");
+          })
+          .catch((activationError: any) => {
+            setActivationMessage(activationError?.message || "The plan is ready, but automatic activation did not complete. Use the active-slice retry action below.");
+          });
       }
     } catch (e: any) {
       setError(e?.message || "Could not research this career target. Try again in a moment.");
@@ -91,78 +195,4 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
   return (
     <section className="mb-6 rounded-xl border border-card-border bg-card p-4" data-testid="focus-area-research-card">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-          <Compass className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold leading-snug">Build toward a career direction</h2>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Research requirements</span>
-          </div>
-          <p className="mt-1 text-xs leading-snug text-muted-foreground">
-            Tell Anchor the direction you want. It will research the market requirements, assess your evidence, build the development and execution plans, activate only the smallest useful slice, and update the plan as completed work creates new evidence.
-          </p>
-
-          <form
-            className="mt-3 flex flex-col gap-2 sm:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              researchFocusArea();
-            }}
-          >
-            <Input
-              value={focus}
-              onChange={(event) => setFocus(event.target.value)}
-              placeholder="AI strategy, geopolitical risk, government delivery..."
-              aria-label="Career direction to build toward"
-              data-testid="input-focus-area"
-              disabled={busy}
-              className="h-10"
-            />
-            <Button type="submit" disabled={busy || !focus.trim()} className="h-10 shrink-0" data-testid="button-research-focus-area">
-              {busy ? <Sparkles className="mr-1 h-4 w-4 animate-pulse" /> : <Search className="mr-1 h-4 w-4" />}
-              {busy ? "Researching requirements" : "Research target"}
-            </Button>
-          </form>
-
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {EXAMPLES.map((example) => (
-              <button
-                key={example}
-                type="button"
-                onClick={() => researchFocusArea(example)}
-                disabled={busy}
-                className="rounded-full bg-muted px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                data-testid={`button-focus-example-${example.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`}
-              >
-                {example}
-              </button>
-            ))}
-          </div>
-
-          {error && (
-            <p className="mt-3 flex items-start gap-1.5 text-xs leading-snug text-destructive" data-testid="focus-area-error">
-              <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" /> {error}
-            </p>
-          )}
-
-          {lastTrack && (
-            <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2" data-testid="focus-area-result">
-              <p className="text-xs font-medium text-primary">Target researched: {lastTrack.name}</p>
-              <p className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground">{lastTrack.summary}</p>
-              {typeof lastTrack.evidenceCount === "number" && (
-                <p className="mt-1 text-[11px] text-muted-foreground">Used {lastTrack.evidenceCount} market evidence item{lastTrack.evidenceCount === 1 ? "" : "s"} to build the requirement model.</p>
-              )}
-            </div>
-          )}
-
-          <TrackResearchReview trackId={lastTrack?.id} />
-          <TrackDevelopmentPlan trackId={lastTrack?.id} />
-          <TrackExecutionPriority trackId={lastTrack?.id} />
-          <TrackExecutionEvidence trackId={lastTrack?.id} />
-          <TrackExecutionBlueprint trackId={lastTrack?.id} />
-        </div>
-      </div>
-    </section>
-  );
-}
+        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-lg bg

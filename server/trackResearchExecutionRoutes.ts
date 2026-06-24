@@ -5,6 +5,8 @@ import {
 } from "./trackResearchExecutionService";
 import { registerTrackResearchExecutionPriorityRoutes } from "./trackResearchExecutionPriorityRoutes";
 
+export { ensureExecutionBlueprint };
+
 export function registerTrackResearchExecutionRoutes(app: Express) {
   app.get("/api/career-tracks/:id/execution-blueprint", async (req, res) => {
     const id = Number(req.params.id);

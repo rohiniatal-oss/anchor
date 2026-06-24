@@ -37,6 +37,11 @@ function activeTask(task: Task): boolean {
   return !task.done && task.status !== "done";
 }
 
+function belongsToTrack(task: Task, trackId: number): boolean {
+  return task.relatedTrackId === trackId
+    || (task.sourceType === "career_track" && task.sourceId === trackId);
+}
+
 function effortMinutes(task: TaskBlueprint): number {
   if (task.effort === "quick") return 15;
   if (task.effort === "medium") return 45;
@@ -56,9 +61,10 @@ function serializedSteps(task: TaskBlueprint): string {
   })));
 }
 
-function liveTaskMap(tasks: Task[]): Map<string, Task> {
+function liveTaskMap(tasks: Task[], trackId: number): Map<string, Task> {
   const result = new Map<string, Task>();
   for (const task of tasks) {
+    if (!belongsToTrack(task, trackId)) continue;
     const blueprintTaskId = blueprintTaskIdFromSourceStepType(task.sourceStepType);
     if (!blueprintTaskId) continue;
     const existing = result.get(blueprintTaskId);
@@ -80,7 +86,7 @@ export function buildMaterializedTaskInput(input: {
   blueprintTask: TaskBlueprint;
   priority: PrioritizedBlueprintTask;
   workstreamTitle: string;
-  list: "today" | "inbox";
+  list: "this_week" | "inbox";
   sort: number;
   dependencyLiveTaskIds?: number[];
 }): InsertTask {
@@ -106,7 +112,7 @@ export function buildMaterializedTaskInput(input: {
     sourceStepType: sourceStepTypeForBlueprintTask(input.blueprintTask.id),
     sourceStepId: null,
     sourceUrl: "",
-    sourceNote: compact(`Workstream: ${input.workstreamTitle}. Why now: ${input.priority.whyNow} Expected evidence: ${input.blueprintTask.expectedEvidence}`),
+    sourceNote: compact(`Workstream: ${input.workstreamTitle}. Why active: ${input.priority.whyNow} Expected evidence: ${input.blueprintTask.expectedEvidence}`),
     sourceStatus: "active_slice",
     planItemId: null,
     relatedTrackId: input.trackId,
@@ -192,7 +198,7 @@ export async function materializeExecutionPrioritySlice(input: {
   context: ExecutionPriorityContext;
 }): Promise<ExecutionMaterializationResult> {
   const initialTasks = await storage.getTasks();
-  const existingByBlueprintId = liveTaskMap(initialTasks);
+  const existingByBlueprintId = liveTaskMap(initialTasks, input.trackId);
   const blueprintById = new Map(input.blueprint.tasks.map((task) => [task.id, task]));
   const priorityById = new Map(input.priorityModel.candidates.map((candidate) => [candidate.taskId, candidate]));
   const workstreamTitles = new Map(input.blueprint.workstreams.map((workstream) => [workstream.workstreamId, workstream.title]));
@@ -241,7 +247,6 @@ export async function materializeExecutionPrioritySlice(input: {
   const reused: ExecutionMaterializationResult["reused"] = [];
   const completed: ExecutionMaterializationResult["completed"] = [];
   const liveIdByBlueprintId = new Map<string, number>();
-  let todayAvailable = initialTasks.filter((task) => activeTask(task) && task.list === "today").length < 3;
   let nextSort = Math.max(0, ...initialTasks.map((task) => task.sort || 0)) + 10;
 
   for (const blueprintTask of orderedResult.ordered) {
@@ -249,22 +254,9 @@ export async function materializeExecutionPrioritySlice(input: {
     if (!priority?.selected) continue;
     const existing = existingByBlueprintId.get(blueprintTask.id);
     if (existing) {
-      let retained = existing;
-      if (
-        activeTask(existing)
-        && priority.slot === "now"
-        && todayAvailable
-        && existing.list !== "today"
-        && existing.readiness !== "blocked"
-        && existing.readiness !== "waiting"
-      ) {
-        retained = await storage.updateTask(existing.id, { list: "today" } as any) || existing;
-        existingByBlueprintId.set(blueprintTask.id, retained);
-        todayAvailable = false;
-      }
-      liveIdByBlueprintId.set(blueprintTask.id, retained.id);
-      if (activeTask(retained)) reused.push({ blueprintTaskId: blueprintTask.id, liveTaskId: retained.id });
-      else completed.push({ blueprintTaskId: blueprintTask.id, liveTaskId: retained.id });
+      liveIdByBlueprintId.set(blueprintTask.id, existing.id);
+      if (activeTask(existing)) reused.push({ blueprintTaskId: blueprintTask.id, liveTaskId: existing.id });
+      else completed.push({ blueprintTaskId: blueprintTask.id, liveTaskId: existing.id });
       continue;
     }
 
@@ -275,7 +267,7 @@ export async function materializeExecutionPrioritySlice(input: {
     const dependencyLiveTaskIds = blueprintTask.dependsOnTaskIds
       .map((id) => liveIdByBlueprintId.get(id) || existingByBlueprintId.get(id)?.id)
       .filter((id): id is number => typeof id === "number");
-    const requestedList: "today" | "inbox" = priority.slot === "now" && todayAvailable ? "today" : "inbox";
+    const requestedList: "this_week" = "this_week";
     const liveTask = await storage.createTask(buildMaterializedTaskInput({
       trackId: input.trackId,
       blueprintTask,
@@ -286,7 +278,6 @@ export async function materializeExecutionPrioritySlice(input: {
       dependencyLiveTaskIds,
     }));
     nextSort += 10;
-    if (liveTask.list === "today") todayAvailable = false;
     liveIdByBlueprintId.set(blueprintTask.id, liveTask.id);
     existingByBlueprintId.set(blueprintTask.id, liveTask);
     created.push({ blueprintTaskId: blueprintTask.id, liveTaskId: liveTask.id });
@@ -295,7 +286,7 @@ export async function materializeExecutionPrioritySlice(input: {
       sourceType: "career_track",
       sourceId: input.trackId,
       taskId: liveTask.id,
-      metadata: JSON.stringify({ blueprintTaskId: blueprintTask.id, slot: priority.slot, expectedEvidence: blueprintTask.expectedEvidence }),
+      metadata: JSON.stringify({ blueprintTaskId: blueprintTask.id, slot: priority.slot, expectedEvidence: blueprintTask.expectedEvidence, list: liveTask.list }),
     } as any);
   }
 
@@ -345,9 +336,7 @@ export async function materializeExecutionPrioritySlice(input: {
     } as any);
   }
 
-  const refreshedTasks = await storage.getTasks();
   const activeLiveTaskIds = uniqueNumbers([...created, ...reused].map((item) => item.liveTaskId));
-  const todayLiveTaskId = refreshedTasks.find((task) => activeLiveTaskIds.includes(task.id) && task.list === "today" && activeTask(task))?.id || null;
   const status: ExecutionMaterializationResult["status"] = created.length
     ? skipped.length ? "partially_materialized" : "materialized"
     : reused.length
@@ -363,13 +352,14 @@ export async function materializeExecutionPrioritySlice(input: {
     completed,
     skipped,
     activeLiveTaskIds,
-    todayLiveTaskId,
+    todayLiveTaskId: null,
     materializedAt: Date.now(),
   };
 }
 
 export const executionMaterializationInternals = {
   activeTask,
+  belongsToTrack,
   dependencyOrder,
   effortMinutes,
   liveTaskMap,

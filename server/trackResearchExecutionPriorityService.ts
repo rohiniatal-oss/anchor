@@ -10,6 +10,7 @@ import {
   type ExecutionPriorityModel,
 } from "./trackResearchExecutionPriority";
 import { collectExecutionPriorityContext } from "./trackResearchExecutionPriorityContext";
+import { hardenExecutionPriorityModel } from "./trackResearchExecutionPriorityPolicy";
 import { enhanceExecutionPriorityExplanations } from "./trackResearchExecutionPrioritySynthesis";
 import {
   materializeExecutionPrioritySlice,
@@ -79,7 +80,8 @@ async function computeExecutionPriority(
     executionBlueprintModel: blueprint,
     context,
   });
-  const executionPriorityModel = await enhanceExecutionPriorityExplanations(blueprint, context, draft);
+  const explained = await enhanceExecutionPriorityExplanations(blueprint, context, draft);
+  const executionPriorityModel = hardenExecutionPriorityModel(explained, blueprint, context);
 
   const latestTrack = await storage.getCareerTrack(trackId) || executionResult.track;
   const latestIntelligence = parseJsonObject(latestTrack.trackIntelligence);

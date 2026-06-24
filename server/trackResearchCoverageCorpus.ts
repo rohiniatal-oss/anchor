@@ -6,6 +6,10 @@ import {
   type UserEvidenceItem,
   type UserEvidenceSourceType,
 } from "./trackResearchCoverageEvidence";
+import {
+  parseExecutionFeedbackModel,
+  type ExecutionOutcomeRecord,
+} from "./trackResearchExecutionOutcome";
 
 function compact(value: unknown): string {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -103,6 +107,41 @@ function canonicalLearnEvidence(item: any): UserEvidenceItem | null {
   };
 }
 
+function executionOutcomeSourceType(outcome: ExecutionOutcomeRecord): UserEvidenceSourceType {
+  if (outcome.evidenceType === "proof" || outcome.evidenceType === "narrative") return "proof_asset";
+  if (outcome.evidenceType === "knowledge" || outcome.evidenceType === "skill") {
+    return outcome.sourceUrl ? "learning_output" : "completed_learning";
+  }
+  if (outcome.evidenceType === "relationship" || outcome.evidenceType === "access") return "interaction";
+  return "win";
+}
+
+function canonicalExecutionOutcome(outcome: ExecutionOutcomeRecord): UserEvidenceItem | null {
+  if (!["accepted", "pending_confirmation"].includes(outcome.status)) return null;
+  const accepted = outcome.status === "accepted" && outcome.usableForCoverage;
+  const sourceType = executionOutcomeSourceType(outcome);
+  const sourceUrl = safeExternalUrl(outcome.sourceUrl);
+  return {
+    id: stableId("user-evidence-execution-outcome", outcome.id, outcome.updatedAt),
+    sourceType,
+    label: compact(outcome.summary || outcome.taskTitle) || "Execution outcome",
+    detail: compact([
+      outcome.detail,
+      outcome.expectedEvidence ? `Expected evidence: ${outcome.expectedEvidence}` : "",
+      outcome.confirmationAnswer ? `Confirmed outcome: ${outcome.confirmationAnswer}` : "",
+      outcome.requirementIds.length ? `Linked requirements: ${outcome.requirementIds.join(", ")}` : "",
+    ].filter(Boolean).join(". ")),
+    sourceUrl,
+    strength: accepted ? outcome.strength : "planned",
+    state: accepted ? (sourceUrl && outcome.strength === "verified" ? "published" : "completed") : "planned",
+    usableForCoverage: accepted,
+    sourceEntityType: "execution_outcome",
+    sourceEntityId: outcome.liveTaskId,
+    trackIds: [outcome.trackId],
+    observedAt: outcome.acceptedAt || outcome.updatedAt || outcome.createdAt,
+  };
+}
+
 function canonicalKey(item: UserEvidenceItem): string {
   if (item.sourceEntityId != null) return `${item.sourceEntityType}:${item.sourceEntityId}`;
   return item.id;
@@ -129,15 +168,31 @@ function corpusFingerprint(items: UserEvidenceItem[], targetTrackId: number): st
 /**
  * Wrap the original evidence collector with current schema semantics.
  *
- * The wrapper intentionally keeps planned or active learning visible while
- * excluding it from coverage. It also includes track associations in the
- * fingerprint because track linkage affects relevance and ranking.
+ * Planned or pending items remain visible to the assessor but cannot prove
+ * coverage. Accepted execution outcomes enter through the same canonical corpus
+ * as CV, learning, proof and relationship evidence, so downstream cache
+ * invalidation is automatic and evidence-led.
  */
 export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): Promise<UserEvidenceCorpus> {
-  const [base, learns] = await Promise.all([
+  const [base, learns, track] = await Promise.all([
     buildUserEvidenceCorpus(targetTrackId),
     storage.getLearn(),
+    storage.getCareerTrack(targetTrackId),
   ]);
+
+  const intelligence = (() => {
+    try {
+      const parsed = JSON.parse(String(track?.trackIntelligence || "{}"));
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  })();
+  const feedbackModel = parseExecutionFeedbackModel(
+    intelligence.executionFeedbackModel,
+    targetTrackId,
+    intelligence.executionBlueprintModel?.sourceFingerprint || "",
+  );
 
   const byKey = new Map<string, UserEvidenceItem>();
   for (const item of base.items) {
@@ -152,6 +207,11 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
     if (!canonical) continue;
     byKey.set(canonicalKey(canonical), canonical);
   }
+  for (const outcome of feedbackModel.outcomes) {
+    const canonical = canonicalExecutionOutcome(outcome);
+    if (!canonical) continue;
+    byKey.set(canonicalKey(canonical), canonical);
+  }
 
   const items = [...byKey.values()]
     .sort((left, right) => {
@@ -162,11 +222,14 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
         || strength[right.strength] - strength[left.strength]
         || Number(right.observedAt || 0) - Number(left.observedAt || 0);
     })
-    .slice(0, 64);
+    .slice(0, 72);
 
   const caveats = [...base.caveats];
   if (items.some((item) => !item.usableForCoverage) && !caveats.some((item) => item.includes("In-progress and planned"))) {
     caveats.push("In-progress and planned items are visible to the assessor but are not treated as proven capability.");
+  }
+  if (feedbackModel.pendingConfirmationCount > 0) {
+    caveats.push(`${feedbackModel.pendingConfirmationCount} completed execution outcome${feedbackModel.pendingConfirmationCount === 1 ? " needs" : "s need"} one focused confirmation before it can affect coverage.`);
   }
 
   return {
@@ -184,6 +247,8 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
 export const coverageCorpusInternals = {
   canonicalLearnStatus,
   canonicalLearnEvidence,
+  canonicalExecutionOutcome,
+  executionOutcomeSourceType,
   corpusFingerprint,
   safeExternalUrl,
 };

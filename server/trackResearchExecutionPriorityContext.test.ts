@@ -98,10 +98,52 @@ test("capacity accounts for existing same-track work before adding blueprint tas
   assert.equal(context.capacity.maxSelectedTasks, 1);
 });
 
+test("blueprint matches from another track cannot suppress this track", () => {
+  const sharedBlueprintId = "shared-blueprint-id";
+  const otherTrackTask = task(9, {
+    relatedTrackId: 2,
+    sourceType: "career_track",
+    sourceId: 2,
+    sourceStepType: sourceStepTypeForBlueprintTask(sharedBlueprintId),
+    status: "in_progress",
+  });
+  const context = buildExecutionPriorityContextFromData({
+    track: track({ id: 1 }),
+    blueprint: blueprint([sharedBlueprintId]),
+    tasks: [otherTrackTask],
+    now: new Date("2026-06-24T12:00:00Z"),
+  });
+
+  assert.equal(context.activeLoad.globalOpen, 1);
+  assert.equal(context.activeLoad.sameTrackOpen, 0);
+  assert.equal(context.activeLoad.currentBlueprintOpen, 0);
+  assert.deepEqual(context.liveTasks, []);
+});
+
+test("career-track source identity is accepted when relatedTrackId is absent", () => {
+  const currentTrackTask = task(10, {
+    relatedTrackId: null,
+    sourceType: "career_track",
+    sourceId: 1,
+    sourceStepType: sourceStepTypeForBlueprintTask("a"),
+  });
+  const context = buildExecutionPriorityContextFromData({
+    track: track(),
+    blueprint: blueprint(["a"]),
+    tasks: [currentTrackTask],
+    now: new Date("2026-06-24T12:00:00Z"),
+  });
+
+  assert.equal(context.activeLoad.sameTrackOpen, 1);
+  assert.equal(context.activeLoad.currentBlueprintOpen, 1);
+  assert.equal(context.liveTasks[0]?.relatedTrackId, 1);
+});
+
 test("existing open blueprint tasks are preserved even when above preferred capacity", () => {
   const ids = ["a", "b", "c", "d", "e"];
   const tasks = ids.map((id, index) => task(index + 1, {
     sourceType: "career_track",
+    sourceId: 1,
     sourceStepType: sourceStepTypeForBlueprintTask(id),
   }));
   const context = buildExecutionPriorityContextFromData({
@@ -164,13 +206,13 @@ test("context fingerprint changes when live execution state changes", () => {
   const first = buildExecutionPriorityContextFromData({
     track: track(),
     blueprint: blueprint(["a"]),
-    tasks: [task(1, { sourceStepType: sourceStepTypeForBlueprintTask("a") })],
+    tasks: [task(1, { sourceType: "career_track", sourceId: 1, sourceStepType: sourceStepTypeForBlueprintTask("a") })],
     now: new Date("2026-06-24T12:00:00Z"),
   });
   const second = buildExecutionPriorityContextFromData({
     track: track(),
     blueprint: blueprint(["a"]),
-    tasks: [task(1, { sourceStepType: sourceStepTypeForBlueprintTask("a"), status: "in_progress" })],
+    tasks: [task(1, { sourceType: "career_track", sourceId: 1, sourceStepType: sourceStepTypeForBlueprintTask("a"), status: "in_progress" })],
     now: new Date("2026-06-24T12:00:00Z"),
   });
 

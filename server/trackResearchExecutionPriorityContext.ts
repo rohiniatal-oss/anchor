@@ -9,11 +9,25 @@ import {
   type PriorityDeadlineSignal,
   type PriorityLiveTaskSnapshot,
 } from "./trackResearchExecutionPriority";
+import {
+  executionOutcomeModelFingerprint,
+  normalizeExecutionOutcomeModel,
+} from "./trackResearchExecutionOutcome";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function compact(value: unknown): string {
   return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function parseJsonObject(value: string | null | undefined): Record<string, any> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function stableHash(value: string): string {
@@ -55,6 +69,11 @@ function urgencyFor(days: number): PriorityDeadlineSignal["urgency"] {
 
 function activeTask(task: Task): boolean {
   return !task.done && task.status !== "done" && ["today", "this_week", "later", "inbox"].includes(task.list);
+}
+
+function belongsToTrack(task: Task, trackId: number): boolean {
+  return task.relatedTrackId === trackId
+    || (task.sourceType === "career_track" && task.sourceId === trackId);
 }
 
 function taskSnapshot(task: Task): PriorityLiveTaskSnapshot {
@@ -127,7 +146,10 @@ function contactSignals(trackId: number, contacts: Contact[], now: Date): Priori
   });
 }
 
-function contextFingerprint(value: Omit<ExecutionPriorityContext, "fingerprint" | "generatedAt">): string {
+function contextFingerprint(
+  value: Omit<ExecutionPriorityContext, "fingerprint" | "generatedAt">,
+  outcomeFingerprint = "",
+): string {
   const live = value.liveTasks.map((task) => ({
     liveTaskId: task.liveTaskId,
     blueprintTaskId: task.blueprintTaskId,
@@ -152,6 +174,7 @@ function contextFingerprint(value: Omit<ExecutionPriorityContext, "fingerprint" 
     deadlines,
     activeLoad: value.activeLoad,
     capacity: value.capacity,
+    outcomeFingerprint,
   }));
 }
 
@@ -166,9 +189,10 @@ export function buildExecutionPriorityContextFromData(input: {
 }): ExecutionPriorityContext {
   const now = input.now || new Date();
   const currentBlueprintIds = new Set(input.blueprint.tasks.map((task) => task.id));
-  const liveTasks = input.tasks.map(taskSnapshot);
+  const trackTasks = input.tasks.filter((task) => belongsToTrack(task, input.track.id));
+  const liveTasks = trackTasks.map(taskSnapshot);
   const openTasks = input.tasks.filter(activeTask);
-  const sameTrackOpen = openTasks.filter((task) => task.relatedTrackId === input.track.id);
+  const sameTrackOpen = openTasks.filter((task) => belongsToTrack(task, input.track.id));
   const currentBlueprintOpen = liveTasks.filter((task) => task.blueprintTaskId && currentBlueprintIds.has(task.blueprintTaskId) && !task.done && task.status !== "done");
   const currentBlueprintCompleted = liveTasks.filter((task) => task.blueprintTaskId && currentBlueprintIds.has(task.blueprintTaskId) && (task.done || task.status === "done"));
   const deepOrProjectOpen = sameTrackOpen.filter((task) => task.size === "deep" || Number(task.estimateMinutes || 0) >= 90);
@@ -206,10 +230,17 @@ export function buildExecutionPriorityContextFromData(input: {
       maxPerWorkstream: 2,
     },
   };
+  const intelligence = parseJsonObject(input.track.trackIntelligence);
+  const outcomeModel = normalizeExecutionOutcomeModel(
+    intelligence.executionOutcomeModel,
+    input.track.id,
+    input.blueprint.sourceFingerprint,
+  );
+  const outcomeFingerprint = executionOutcomeModelFingerprint(outcomeModel);
 
   return {
     ...base,
-    fingerprint: contextFingerprint(base),
+    fingerprint: contextFingerprint(base, outcomeFingerprint),
     generatedAt: now.getTime(),
   };
 }
@@ -231,6 +262,7 @@ export async function collectExecutionPriorityContext(
 
 export const executionPriorityContextInternals = {
   activeTask,
+  belongsToTrack,
   daysUntil,
   contextFingerprint,
 };

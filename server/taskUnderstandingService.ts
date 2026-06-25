@@ -29,6 +29,12 @@ function findTask(tasks: Task[], id: number) {
   return tasks.find((task) => task.id === id) || null;
 }
 
+export function normalizeContextForUnderstanding(value: string) {
+  return String(value || "")
+    .replace(/\b(ex|former)-(?=[A-Z])/g, "$1 ")
+    .replace(/\b(worked)-(?=(?:at|for)\b)/gi, "$1 ");
+}
+
 function combinedContext(input: {
   userContext: UserContext;
   sourceContext?: string;
@@ -37,14 +43,14 @@ function combinedContext(input: {
   suppliedContext?: string;
   providerContext?: string;
 }) {
-  return [
+  return normalizeContextForUnderstanding([
     formatContextForPrompt(input.userContext),
     input.sourceContext ? `Source context:\n${input.sourceContext}` : "",
     input.parentContext ? `Parent workflow:\n${input.parentContext}` : "",
     input.crossEngineContext ? `Connected context:\n${input.crossEngineContext}` : "",
     input.suppliedContext ? `User clarification:\n${input.suppliedContext}` : "",
     input.providerContext || "",
-  ].filter(Boolean).join("\n\n");
+  ].filter(Boolean).join("\n\n"));
 }
 
 function patchChanged(task: Task, patch: Record<string, unknown>) {
@@ -56,6 +62,12 @@ function patchForBrief(task: Record<string, any>, brief: TaskBrief) {
   // An unresolved task is a clarification, not a 90-minute deep-work item. This
   // prevents the planner from adding the old blank-page starter step.
   if (brief.needsClarification && task.size !== "quick") patch.size = "medium";
+  if ((!task.category || task.category === "admin") && task.sourceType) {
+    if (task.sourceType === "job") patch.category = "job";
+    if (task.sourceType === "learn") patch.category = "learning";
+    if (task.sourceType === "contact") patch.category = "admin";
+    if (task.sourceType === "hustle") patch.category = "substack";
+  }
   return patch;
 }
 
@@ -113,6 +125,7 @@ export async function understandOpenTasksForPlanning() {
 export async function understandTaskInput(raw: Record<string, any>) {
   if (!shouldUnderstandTask(raw)) return raw;
   const userContext = await buildUserContext();
-  const brief = buildDeterministicTaskBrief(raw, formatContextForPrompt(userContext));
+  const context = normalizeContextForUnderstanding(formatContextForPrompt(userContext));
+  const brief = buildDeterministicTaskBrief(raw, context);
   return brief ? { ...raw, ...patchForBrief(raw, brief) } : raw;
 }

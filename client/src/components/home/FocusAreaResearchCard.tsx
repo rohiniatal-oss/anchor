@@ -32,7 +32,7 @@ type SelectedTrackSummary = {
   evidenceCount?: number;
 };
 
-type ActivationNotice = {
+type PlanNotice = {
   state: "idle" | "pending" | "success" | "error";
   message: string;
 };
@@ -63,17 +63,6 @@ function readStoredTargetId(): number | undefined {
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-function activationMessage(result: any): string {
-  const materialization = result?.materializationResult;
-  const created = Array.isArray(materialization?.created) ? materialization.created.length : 0;
-  const reused = Array.isArray(materialization?.reused) ? materialization.reused.length : 0;
-  const skipped = Array.isArray(materialization?.skipped) ? materialization.skipped : [];
-  if (created) return `Anchor activated ${created} task${created === 1 ? "" : "s"} in This Week. Today will choose from them using your available time and energy.`;
-  if (reused) return "The recommended work was already active, so Anchor created no duplicates.";
-  if (skipped.length) return skipped[0]?.reason || "Anchor kept the plan but did not activate work because a safety condition changed.";
-  return "The active slice is current and no additional live task was needed.";
-}
-
 async function invalidateTrackResearchModels(trackId?: number) {
   if (!trackId) return;
   await Promise.all([
@@ -85,28 +74,14 @@ async function invalidateTrackResearchModels(trackId?: number) {
   ]);
 }
 
-async function activateTrackExecution(trackId: number) {
-  return mutateAndInvalidate(
-    "POST",
-    `/api/career-tracks/${trackId}/execution-priority/materialize`,
-    {},
-    [
-      `/api/career-tracks/${trackId}/execution-priority`,
-      "/api/tasks",
-      "/api/anchor/today",
-      "/api/plan/current",
-      "/api/career-tracks",
-    ],
-  );
-}
-
 export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardProps) {
   const [focus, setFocus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState("");
   const [selectedTrackId, setSelectedTrackId] = useState<number | undefined>(readStoredTargetId);
   const [recentTrack, setRecentTrack] = useState<SelectedTrackSummary | null>(null);
-  const [activationNotice, setActivationNotice] = useState<ActivationNotice>({ state: "idle", message: "" });
+  const [planNotice, setPlanNotice] = useState<PlanNotice>({ state: "idle", message: "" });
   const { data: tracks = [] } = useQuery<CareerTrackSummary[]>({
     queryKey: ["/api/career-tracks"],
     staleTime: 60_000,
@@ -150,14 +125,39 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
     };
   }, [recentTrack, researchedTracks, selectedTrackId]);
 
-  function activateInBackground(trackId: number) {
-    setActivationNotice({ state: "pending", message: "Anchor is selecting and activating the smallest safe execution slice." });
-    void activateTrackExecution(trackId)
-      .then((result) => setActivationNotice({ state: "success", message: activationMessage(result) }))
-      .catch((activationError: any) => setActivationNotice({
+  const executionPrepared = useMemo(() => {
+    const stored = tracks.find((track) => track.id === selectedTrackId);
+    if (!stored) return false;
+    return parseIntelligence(stored.trackIntelligence).executionPriorityModel?.mode === "execution_priority_model";
+  }, [selectedTrackId, tracks]);
+
+  async function prepareExecution(trackId: number) {
+    if (preparing) return;
+    setPreparing(true);
+    setPlanNotice({
+      state: "pending",
+      message: "Building the development plan and a reviewable active slice. No live tasks will be created.",
+    });
+    try {
+      await mutateAndInvalidate(
+        "POST",
+        `/api/career-tracks/${trackId}/prepare-execution`,
+        {},
+        ["/api/career-tracks", "/api/strategy", "/api/strategy/diagnostics", ...GOAL_SPINE_QUERY_KEYS],
+      );
+      await invalidateTrackResearchModels(trackId);
+      setPlanNotice({
+        state: "success",
+        message: "The execution plan is ready. Review the displayed active slice below; it enters your task system only when you choose Activate displayed work.",
+      });
+    } catch (preparationError: any) {
+      setPlanNotice({
         state: "error",
-        message: activationError?.message || "The plan was created, but automatic activation did not complete. Use the active-slice control below to retry.",
-      }));
+        message: preparationError?.message || "The research is safe, but the execution plan could not be built yet.",
+      });
+    } finally {
+      setPreparing(false);
+    }
   }
 
   async function researchFocusArea(value = focus) {
@@ -165,7 +165,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
     if (!domain || busy) return;
     setBusy(true);
     setError("");
-    setActivationNotice({ state: "idle", message: "" });
+    setPlanNotice({ state: "idle", message: "" });
     try {
       const result = await mutateAndInvalidate("POST", "/api/track-research", { domain }, [
         "/api/career-tracks",
@@ -188,7 +188,10 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
         setRecentTrack(selected);
         setSelectedTrackId(trackId);
         onResearched?.(trackId);
-        activateInBackground(trackId);
+        setPlanNotice({
+          state: "success",
+          message: "Research complete. Nothing was added to your task system. Build the execution plan when you are ready to review the proposed work.",
+        });
       }
       setFocus("");
     } catch (e: any) {
@@ -210,7 +213,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
             <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Research requirements</span>
           </div>
           <p className="mt-1 text-xs leading-snug text-muted-foreground">
-            Tell Anchor the direction you want. It will research the market requirements, assess your evidence, build the development and execution plans, and activate only the smallest useful slice.
+            Tell Anchor the direction you want. It will research the market requirements and assess your evidence. Planning and task activation remain separate choices you control.
           </p>
 
           <form
@@ -267,7 +270,7 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
                   if (!Number.isFinite(nextId)) return;
                   setSelectedTrackId(nextId);
                   setRecentTrack((current) => current?.id === nextId ? current : null);
-                  setActivationNotice({ state: "idle", message: "" });
+                  setPlanNotice({ state: "idle", message: "" });
                 }}
                 data-testid="select-active-target"
               >
@@ -277,19 +280,36 @@ export function FocusAreaResearchCard({ onResearched }: FocusAreaResearchCardPro
           )}
 
           {selectedTrack && (
-            <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2" data-testid="focus-area-result">
-              <p className="text-xs font-medium text-primary">Active target: {selectedTrack.name}</p>
-              <p className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground">{selectedTrack.summary}</p>
-              {typeof selectedTrack.evidenceCount === "number" && (
-                <p className="mt-1 text-[11px] text-muted-foreground">Used {selectedTrack.evidenceCount} market evidence item{selectedTrack.evidenceCount === 1 ? "" : "s"} to build the requirement model.</p>
-              )}
+            <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-3" data-testid="focus-area-result">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-primary">Active target: {selectedTrack.name}</p>
+                  <p className="mt-1 line-clamp-2 text-xs leading-snug text-muted-foreground">{selectedTrack.summary}</p>
+                  {typeof selectedTrack.evidenceCount === "number" && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">Used {selectedTrack.evidenceCount} market evidence item{selectedTrack.evidenceCount === 1 ? "" : "s"} to build the requirement model.</p>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => prepareExecution(selectedTrack.id)}
+                  disabled={preparing}
+                  data-testid="button-prepare-execution-plan"
+                >
+                  {preparing ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 h-3.5 w-3.5" />}
+                  {preparing ? "Building plan" : executionPrepared ? "Refresh execution plan" : "Build execution plan"}
+                </Button>
+              </div>
+              <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+                Building the plan stores a reviewable blueprint. It does not create live tasks.
+              </p>
             </div>
           )}
 
-          {activationNotice.state !== "idle" && (
-            <div className={`mt-2 flex items-start gap-1.5 rounded-lg px-3 py-2 text-[11px] leading-snug ${activationNotice.state === "error" ? "bg-destructive/10 text-destructive" : activationNotice.state === "success" ? "bg-emerald-50 text-emerald-800" : "bg-muted/40 text-muted-foreground"}`} role="status" data-testid="execution-activation-status">
-              {activationNotice.state === "pending" ? <Loader2 className="mt-px h-3.5 w-3.5 shrink-0 animate-spin" /> : activationNotice.state === "success" ? <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" /> : <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />}
-              <span>{activationNotice.message}</span>
+          {planNotice.state !== "idle" && (
+            <div className={`mt-2 flex items-start gap-1.5 rounded-lg px-3 py-2 text-[11px] leading-snug ${planNotice.state === "error" ? "bg-destructive/10 text-destructive" : planNotice.state === "success" ? "bg-emerald-50 text-emerald-800" : "bg-muted/40 text-muted-foreground"}`} role="status" data-testid="execution-activation-status">
+              {planNotice.state === "pending" ? <Loader2 className="mt-px h-3.5 w-3.5 shrink-0 animate-spin" /> : planNotice.state === "success" ? <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" /> : <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />}
+              <span>{planNotice.message}</span>
             </div>
           )}
 

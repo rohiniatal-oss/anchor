@@ -847,6 +847,7 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [planItems, setPlanItems] = useState<PlanItemT[]>([]);
   const pinnedPlanItem = pinned ? planItems.find((it) => it.id === pinned.planItemId) || null : null;
   const [loadingPlan, setLoadingPlan] = useState(false);
+  const planChecked = useRef(false);
   const [showCompass, setShowCompass] = useState(false);
   const [showSecondary, setShowSecondary] = useState<boolean | null>(null);
   const [showDoneList, setShowDoneList] = useState<boolean | null>(null);
@@ -942,9 +943,11 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const [energy, setEnergy] = useState(defaultEnergyForNow);
   const taskById = new Map(tasks.map((task) => [task.id, task] as const));
 
-  // Load the PERSISTED plan (it lives in the DB now — survives reloads).
+  // Load the PERSISTED plan if one exists — but never auto-create one.
+  // The user must explicitly trigger plan creation ("Shape today's plan").
   useEffect(() => {
-    if (isLoading || tracksLoading || tracks.length === 0 || pinned || plan || loadingPlan) return;
+    if (isLoading || tracksLoading || tracks.length === 0 || pinned || plan || loadingPlan || planChecked.current) return;
+    planChecked.current = true;
     getPlan(energy, false, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, tracksLoading, pinned, tracks.length]);
@@ -1601,11 +1604,22 @@ export function TodayView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
               {plan.note && <p className="text-xs text-muted-foreground mt-3 italic">{plan.note}</p>}
             </div>
           ) : (
-            <StrategicNextSteps
-              tracks={diagnosticTracks}
-              recommendations={recommendations}
-              onOpenTab={onOpenTab}
-            />
+            <>
+              <StrategicNextSteps
+                tracks={diagnosticTracks}
+                recommendations={recommendations}
+                onOpenTab={onOpenTab}
+              />
+              {!plan && !loadingPlan && (
+                <button
+                  onClick={() => { planChecked.current = false; getPlan(energy, true); }}
+                  className="mt-4 w-full rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+                  data-testid="shape-today-plan"
+                >
+                  Shape today's plan
+                </button>
+              )}
+            </>
           )}
         </div>
       )}

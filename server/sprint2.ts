@@ -516,7 +516,7 @@ export function registerSprint2Routes(app: Express) {
     const day = String(req.query.day || todayKey());
     const energy = coerceEnergy(req.query.energy);
     const plan = await storage.getPlanByDate(day);
-    if (!plan) return res.json(await buildAdaptivePlan(day, energy));
+    if (!plan) return res.json({ plan: null, items: [], events: [], budget: null, memory: null, restart: false });
     const persistedItems = await storage.getPlanItems(plan.id);
     if (await shouldRefreshBroadPursuitPlan(persistedItems)) {
       return res.json(await buildAdaptivePlan(day, energy, { availableMinutes: readAvailableMinutes(req.query.availableMinutes), restart: false }));

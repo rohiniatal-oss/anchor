@@ -744,6 +744,7 @@ export function registerPlanningRoutes(app: Express) {
     const day = String(req.body?.day || new Date().toISOString().slice(0, 10));
     const task = (await storage.getTasks()).find((t) => t.id === id);
     if (!task) return res.status(404).json({ error: "Not found" });
+    if (task.done || task.status === "done") return res.json({ ok: true, alreadyDone: true });
     await storage.updateTask(id, { done: true, status: "done", pinned: false } as any);
     let completedMilestoneId: number | null = null;
     let nextMilestoneHint: string | null = null;

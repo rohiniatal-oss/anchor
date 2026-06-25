@@ -20,8 +20,8 @@ function parseJsonObject(value: string | null | undefined): Record<string, any> 
   }
 }
 
-function numberParam(value: string): number | null {
-  const id = Number(value);
+function numberParam(value: unknown): number | null {
+  const id = Number(Array.isArray(value) ? value[0] : value);
   return Number.isFinite(id) && id > 0 ? id : null;
 }
 

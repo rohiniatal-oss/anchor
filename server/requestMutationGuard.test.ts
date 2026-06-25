@@ -33,9 +33,9 @@ test("GET requests can read without changing storage", async () => {
   assert.equal(storage.updates, 0);
 });
 
-test("GET requests fail closed when a storage write is attempted", async () => {
+test("GET requests fail closed when a storage write is attempted", () => {
   const storage = guardedStorage();
-  await assert.rejects(
+  assert.throws(
     () => runWithRequestMethod("GET", "/api/tasks", () => storage.updateTask()),
     (error: unknown) => error instanceof ReadPurityViolation && error.status === 405,
   );

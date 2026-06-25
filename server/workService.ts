@@ -7,13 +7,22 @@ import type {
   WorkDecomposition,
   WorkDefinition,
 } from "@shared/work";
-import { workDecompositionSchema, workDefinitionSchema } from "@shared/work";
+import {
+  taskDecompositionSchema,
+  workDecompositionSchema,
+  workDefinitionSchema,
+} from "@shared/work";
 import { buildSourceContext } from "./taskBreakdownRoutes";
-import { collectTaskBreakdownContext, formatContextBlocksForPrompt, inputForTaskResearch } from "./contextProviders";
+import { collectTaskBreakdownContext, formatContextBlocksForPrompt } from "./contextProviders";
 import { storage, rawDb } from "./storage";
 import { buildUserContext, formatContextForPrompt } from "./userContext";
 import { decomposeWork, decomposeWorkDeterministically } from "./workDecomposition";
-import { forceDefinitionAsTask, interpretWork, interpretWorkDeterministically, normalizeContextForWork } from "./workInterpretation";
+import {
+  forceDefinitionAsTask,
+  interpretWork,
+  interpretWorkDeterministically,
+  normalizeContextForWork,
+} from "./workInterpretation";
 import {
   createConfirmedWorkDefinition,
   createProjectGraph,
@@ -54,7 +63,7 @@ export type WorkPreview = {
   readOnlyPreview: true;
 };
 
-function taskSize(minutes: number) {
+function sizeFor(minutes: number) {
   if (minutes <= 15) return "quick";
   if (minutes <= 60) return "medium";
   return "deep";
@@ -69,11 +78,11 @@ function stepsJson(steps: ActionStep[]) {
   })));
 }
 
-function baseTaskPatch(proposal: TaskProposal, steps: ActionStep[]) {
+function taskPatch(proposal: TaskProposal, steps: ActionStep[]) {
   return {
     title: proposal.title,
     category: proposal.category,
-    size: taskSize(proposal.estimateMinutes),
+    size: sizeFor(proposal.estimateMinutes),
     estimateMinutes: proposal.estimateMinutes,
     estimateConfidence: "medium",
     estimateReason: "work_decomposition_v1",
@@ -97,7 +106,7 @@ async function createOrUpdateTask(input: {
   projectId?: number | null;
   milestoneId?: number | null;
 }) {
-  const patch = baseTaskPatch(input.proposal, input.steps);
+  const patch = taskPatch(input.proposal, input.steps);
   let task: Task | undefined;
   if (input.sourceTaskId) {
     task = await storage.updateTask(input.sourceTaskId, {
@@ -135,7 +144,13 @@ async function createOrUpdateTask(input: {
   return task;
 }
 
-function publicTaskForContext(input: WorkPreviewInput): any {
+function sourceKind(sourceType: string) {
+  return ["job", "learn", "hustle", "contact", "goal"].includes(sourceType)
+    ? sourceType as "job" | "learn" | "hustle" | "contact" | "goal"
+    : "task" as const;
+}
+
+function providerTask(input: WorkPreviewInput): any {
   return {
     title: input.title,
     category: "thinking",
@@ -147,57 +162,49 @@ function publicTaskForContext(input: WorkPreviewInput): any {
   };
 }
 
-async function previewContext(input: WorkPreviewInput, sourceTask?: Task | null) {
-  const userContext = await buildUserContext();
-  const sections = [formatContextForPrompt(userContext)];
-  let bundle: Awaited<ReturnType<typeof buildSourceContext>> | null = null;
-  if (sourceTask) {
-    bundle = await buildSourceContext(sourceTask, userContext);
-    if (bundle.sourceContext) sections.push(`Source context:\n${bundle.sourceContext}`);
-    if (bundle.parentContext) sections.push(`Parent workflow:\n${bundle.parentContext}`);
-    if (bundle.crossEngineContext) sections.push(`Connected context:\n${bundle.crossEngineContext}`);
-  }
-  if (input.context) sections.push(`User clarification:\n${input.context}`);
-  if (input.refine) {
-    const task = sourceTask || publicTaskForContext(input);
-    const sourceBundle = bundle || {
-      sourceContext: input.sourceNote || "",
-      playbook: "",
-      sourceKind: "task" as const,
-      source: null,
-      parentContext: "",
-    };
-    const researchInput = inputForTaskResearch({
-      task,
-      sourceBundle,
-      userAuthoredContext: input.context || "",
-      mockMode: input.externalResearchMockMode,
-    });
-    const collected = await collectTaskBreakdownContext(researchInput);
-    const provider = formatContextBlocksForPrompt(collected.blocks);
-    if (provider) sections.push(provider);
-  }
-  return normalizeContextForWork(sections.filter(Boolean).join("\n\n"));
-}
-
 async function sourceTask(id?: number | null) {
   if (!id) return null;
   return (await storage.getTasks()).find((task) => task.id === id) || null;
 }
 
+async function previewContext(input: WorkPreviewInput, existingTask: Task | null) {
+  const userContext = await buildUserContext();
+  const sections = [formatContextForPrompt(userContext)];
+  const bundle = existingTask
+    ? await buildSourceContext(existingTask, userContext)
+    : {
+        sourceContext: input.sourceNote || "",
+        playbook: "",
+        sourceKind: sourceKind(input.sourceType || "task"),
+        source: null,
+        parentContext: "",
+        crossEngineContext: "",
+      };
+  if (bundle.sourceContext) sections.push(`Source context:\n${bundle.sourceContext}`);
+  if (bundle.parentContext) sections.push(`Parent workflow:\n${bundle.parentContext}`);
+  if ("crossEngineContext" in bundle && bundle.crossEngineContext) sections.push(`Connected context:\n${bundle.crossEngineContext}`);
+  if (input.context) sections.push(`User clarification:\n${input.context}`);
+  if (input.refine !== false) {
+    const collected = await collectTaskBreakdownContext({
+      task: existingTask || providerTask(input),
+      sourceBundle: bundle,
+      userAuthoredContext: input.context || "",
+      mockMode: input.externalResearchMockMode,
+    });
+    const providerContext = formatContextBlocksForPrompt(collected.blocks);
+    if (providerContext) sections.push(providerContext);
+  }
+  return normalizeContextForWork(sections.filter(Boolean).join("\n\n"));
+}
+
 export async function previewWork(input: WorkPreviewInput): Promise<WorkPreview> {
-  ensureWorkSchema();
   const existingTask = input.sourceType === "task" ? await sourceTask(input.sourceId) : null;
   const context = await previewContext(input, existingTask);
-  const initial = interpretWorkDeterministically({
-    ...input,
-    context,
-    candidateParent: null,
-  });
+  const firstPass = interpretWorkDeterministically({ ...input, context, candidateParent: null });
   const candidateParent = findCandidateParent({
-    title: initial.title,
-    objective: initial.objective,
-    relatedTrackId: input.relatedTrackId ?? initial.parentDirectionId,
+    title: firstPass.title,
+    objective: firstPass.objective,
+    relatedTrackId: input.relatedTrackId ?? firstPass.parentDirectionId,
   });
   const definition = input.refine === false
     ? interpretWorkDeterministically({ ...input, context, candidateParent })
@@ -210,13 +217,13 @@ export async function previewWork(input: WorkPreviewInput): Promise<WorkPreview>
     : await decomposeWork(definition, context);
   const nextAction = definition.workType === "project"
     ? "confirm_project"
-    : definition.workType === "milestone" && definition.candidateParent
+    : definition.candidateParent
       ? "attach_to_project"
       : "confirm_task";
   return { definition, decomposition, nextAction, readOnlyPreview: true };
 }
 
-function currentProjectMilestone(project: ProjectRecord, milestones: ProjectMilestoneRecord[]) {
+function currentMilestone(project: ProjectRecord, milestones: ProjectMilestoneRecord[]) {
   return milestones.find((milestone) => milestone.id === project.currentMilestoneId)
     || milestones.find((milestone) => milestone.status === "active")
     || milestones.find((milestone) => milestone.status === "proposed")
@@ -225,7 +232,6 @@ function currentProjectMilestone(project: ProjectRecord, milestones: ProjectMile
 }
 
 export async function projectDetail(projectId: number) {
-  ensureWorkSchema();
   const project = getProject(projectId);
   if (!project) return null;
   const [tasks, milestones, links] = await Promise.all([
@@ -243,12 +249,13 @@ export async function projectDetail(projectId: number) {
         .filter((link) => link.milestoneId === milestone.id)
         .map((link) => ({ link, task: taskById.get(link.taskId) || null })),
     })),
-    unassignedTasks: links.filter((link) => link.milestoneId == null).map((link) => ({ link, task: taskById.get(link.taskId) || null })),
+    unassignedTasks: links
+      .filter((link) => link.milestoneId == null)
+      .map((link) => ({ link, task: taskById.get(link.taskId) || null })),
   };
 }
 
 export function allProjectSummaries() {
-  ensureWorkSchema();
   return listProjects(["active", "paused", "proposed"]).map((project) => ({
     ...project,
     milestoneCount: listProjectMilestones(project.id).length,
@@ -256,18 +263,21 @@ export function allProjectSummaries() {
   }));
 }
 
-async function activateStandaloneTask(definition: WorkDefinition, decomposition: TaskDecomposition, sourceTaskId?: number | null) {
+function asTaskPlan(definition: WorkDefinition, decomposition: WorkDecomposition): TaskDecomposition {
+  if (decomposition.kind === "task") return decomposition.task;
+  const fallback = decomposeWorkDeterministically(forceDefinitionAsTask(definition));
+  if (fallback.kind !== "task") throw new Error("A task plan could not be created.");
+  return fallback.task;
+}
+
+async function activateStandaloneTask(definition: WorkDefinition, plan: TaskDecomposition, sourceTaskId?: number | null) {
   const task = await createOrUpdateTask({
-    proposal: decomposition.task,
-    steps: decomposition.steps,
+    proposal: plan.task,
+    steps: plan.steps,
     sourceTaskId,
     relatedTrackId: definition.parentDirectionId,
   });
-  const storedDefinition = createConfirmedWorkDefinition({
-    ...definition,
-    sourceType: "task",
-    sourceId: task.id,
-  });
+  const storedDefinition = createConfirmedWorkDefinition({ ...definition, sourceType: "task", sourceId: task.id });
   await storage.logActivity({
     eventType: "work_activated",
     sourceType: "task",
@@ -278,20 +288,18 @@ async function activateStandaloneTask(definition: WorkDefinition, decomposition:
   return { kind: "task" as const, task, definition: storedDefinition };
 }
 
-async function attachTaskToExistingProject(definition: WorkDefinition, decomposition: TaskDecomposition, sourceTaskId?: number | null) {
+async function attachToProject(definition: WorkDefinition, plan: TaskDecomposition, sourceTaskId?: number | null) {
   const projectId = definition.candidateParent?.projectId;
-  if (!projectId) return activateStandaloneTask(definition, decomposition, sourceTaskId);
-  const project = getProject(projectId);
-  if (!project) return activateStandaloneTask({ ...definition, candidateParent: null }, decomposition, sourceTaskId);
-  const milestones = listProjectMilestones(project.id);
-  const current = currentProjectMilestone(project, milestones);
+  const project = projectId ? getProject(projectId) : null;
+  if (!project) return activateStandaloneTask({ ...definition, candidateParent: null }, plan, sourceTaskId);
+  const milestone = currentMilestone(project, listProjectMilestones(project.id));
   const task = await createOrUpdateTask({
-    proposal: decomposition.task,
-    steps: decomposition.steps,
+    proposal: plan.task,
+    steps: plan.steps,
     sourceTaskId,
     relatedTrackId: project.relatedTrackId,
     projectId: project.id,
-    milestoneId: current?.id ?? null,
+    milestoneId: milestone?.id ?? null,
   });
   const storedDefinition = createConfirmedWorkDefinition({ ...definition, sourceType: "task", sourceId: task.id });
   await storage.logActivity({
@@ -299,9 +307,9 @@ async function attachTaskToExistingProject(definition: WorkDefinition, decomposi
     sourceType: "project",
     sourceId: project.id,
     taskId: task.id,
-    metadata: JSON.stringify({ workDefinitionId: storedDefinition.id, milestoneId: current?.id ?? null, explicit: true }),
+    metadata: JSON.stringify({ workDefinitionId: storedDefinition.id, milestoneId: milestone?.id ?? null, explicit: true }),
   } as any);
-  return { kind: "task" as const, task, project, milestone: current, definition: storedDefinition };
+  return { kind: "task" as const, task, project, milestone, definition: storedDefinition };
 }
 
 async function activateProject(definition: WorkDefinition, decomposition: ProjectDecomposition, sourceTaskId?: number | null) {
@@ -310,23 +318,23 @@ async function activateProject(definition: WorkDefinition, decomposition: Projec
     if (linked) return { kind: "project" as const, ...(await projectDetail(linked.projectId))! };
   }
   const graph = createProjectGraph({ definition, decomposition });
-  const current = graph.milestones.find((milestone) => milestone.milestoneKey === decomposition.currentMilestoneKey) || graph.milestones[0];
-  const activeTask = decomposition.currentTasks[decomposition.activeTaskIndex] || decomposition.currentTasks[0];
+  const milestone = graph.milestones.find((item) => item.milestoneKey === decomposition.currentMilestoneKey) || graph.milestones[0];
+  const proposal = decomposition.currentTasks[decomposition.activeTaskIndex] || decomposition.currentTasks[0];
   try {
     const task = await createOrUpdateTask({
-      proposal: activeTask,
+      proposal,
       steps: decomposition.activeTaskSteps,
       sourceTaskId,
       relatedTrackId: definition.parentDirectionId,
       projectId: graph.project.id,
-      milestoneId: current?.id ?? null,
+      milestoneId: milestone?.id ?? null,
     });
     await storage.logActivity({
       eventType: "project_activated",
       sourceType: "project",
       sourceId: graph.project.id,
       taskId: task.id,
-      metadata: JSON.stringify({ workDefinitionId: graph.definition.id, milestoneId: current?.id ?? null, explicit: true }),
+      metadata: JSON.stringify({ workDefinitionId: graph.definition.id, milestoneId: milestone?.id ?? null, explicit: true }),
     } as any);
     return { kind: "project" as const, ...(await projectDetail(graph.project.id))!, activeTask: task };
   } catch (error) {
@@ -341,7 +349,6 @@ export async function activateWork(input: {
   sourceTaskId?: number | null;
   mode?: "as_interpreted" | "as_task" | "attach_to_parent";
 }) {
-  ensureWorkSchema();
   let definition = workDefinitionSchema.parse(input.definition);
   let decomposition = workDecompositionSchema.parse(input.decomposition);
   if (input.mode === "as_task") {
@@ -354,85 +361,97 @@ export async function activateWork(input: {
     error.code = "work_clarification_required";
     throw error;
   }
-  if (decomposition.kind === "project" && definition.workType === "project") {
+  if (definition.workType === "project" && decomposition.kind === "project") {
     return activateProject(definition, decomposition.project, input.sourceTaskId);
   }
-  const taskPlan = decomposition.kind === "task"
-    ? decomposition.task
-    : decomposeWorkDeterministically(forceDefinitionAsTask(definition)).kind === "task"
-      ? (decomposeWorkDeterministically(forceDefinitionAsTask(definition)) as { kind: "task"; task: TaskDecomposition }).task
-      : null;
-  if (!taskPlan) throw new Error("A task plan could not be created.");
-  if (input.mode === "attach_to_parent" || definition.workType === "milestone") {
-    return attachTaskToExistingProject(definition, taskPlan, input.sourceTaskId);
+  const plan = asTaskPlan(definition, decomposition);
+  if (input.mode === "attach_to_parent" || definition.candidateParent) {
+    return attachToProject(definition, plan, input.sourceTaskId);
   }
-  return activateStandaloneTask(definition, taskPlan, input.sourceTaskId);
+  return activateStandaloneTask(definition, plan, input.sourceTaskId);
 }
 
-export async function previewNextProjectWork(projectId: number, refine = true) {
-  ensureWorkSchema();
-  const detail = await projectDetail(projectId);
-  if (!detail?.definition) return null;
-  const current = detail.milestones.find((milestone) => milestone.id === detail.project.currentMilestoneId)
-    || detail.milestones.find((milestone) => milestone.status === "active")
-    || detail.milestones.find((milestone) => milestone.status === "proposed");
-  if (!current) return null;
-  const openTasks = current.tasks.map((entry: any) => entry.task).filter((task: Task | null) => task && !task.done);
-  if (openTasks.length) {
-    return { project: detail.project, milestone: current, existingActiveTask: openTasks[0], requiresActivation: false };
-  }
-  if (current.status !== "done") {
-    return {
-      project: detail.project,
-      milestone: current,
-      requiresMilestoneReview: true,
-      message: "The current task is complete. Confirm the milestone outcome before Anchor opens the next frontier.",
-    };
-  }
-  const next = detail.milestones.find((milestone) => milestone.status === "proposed");
-  if (!next) return { project: detail.project, complete: true };
-  const stored = detail.project.decompositionModel;
-  const baseDefinition = {
+function milestoneTaskDefinition(project: ProjectRecord, milestone: ProjectMilestoneRecord): WorkDefinition {
+  return workDefinitionSchema.parse({
     version: 1,
     workType: "task",
-    title: next.title,
-    objective: next.outcome,
-    whyNow: `This is the next frontier in ${detail.project.title}.`,
-    desiredOutcome: next.outcome,
-    successCriteria: [next.doneWhen],
-    deliverables: [next.outcome],
+    title: milestone.title,
+    objective: milestone.outcome,
+    whyNow: `This is the next frontier in ${project.title}.`,
+    desiredOutcome: milestone.outcome,
+    successCriteria: [milestone.doneWhen],
+    deliverables: [milestone.outcome],
     constraints: [],
     assumptions: [],
     estimatedScope: "single_session",
     confidence: "medium",
-    parentDirectionId: detail.project.relatedTrackId,
-    candidateParent: { projectId, projectTitle: detail.project.title, reason: "This is the next milestone in the confirmed project.", confidence: 1 },
+    parentDirectionId: project.relatedTrackId,
+    candidateParent: {
+      projectId: project.id,
+      projectTitle: project.title,
+      reason: "This is the current milestone in the confirmed project.",
+      confidence: 1,
+    },
     needsClarification: false,
     clarifyingQuestion: "",
-    sourceTitle: next.title,
+    sourceTitle: milestone.title,
     sourceType: "project",
-    sourceId: projectId,
-  } satisfies WorkDefinition;
+    sourceId: project.id,
+  });
+}
+
+export async function previewNextProjectWork(projectId: number, refine = true) {
+  const detail = await projectDetail(projectId);
+  if (!detail?.definition) return null;
+  const milestone = detail.milestones.find((item) => item.id === detail.project.currentMilestoneId)
+    || detail.milestones.find((item) => item.status === "active")
+    || detail.milestones.find((item) => item.status === "proposed");
+  if (!milestone) return null;
+  const tasks = milestone.tasks.map((entry: any) => entry.task).filter(Boolean) as Task[];
+  const openTask = tasks.find((task) => !task.done);
+  if (openTask) {
+    return { project: detail.project, milestone, existingActiveTask: openTask, requiresActivation: false };
+  }
+  if (tasks.length > 0 && milestone.status !== "done") {
+    return {
+      project: detail.project,
+      milestone,
+      requiresMilestoneReview: true,
+      message: "The current task is complete. Confirm the milestone outcome before Anchor opens the next frontier.",
+    };
+  }
+  const definition = milestoneTaskDefinition(detail.project, milestone);
   const context = formatContextForPrompt(await buildUserContext());
-  const taskPlan = refine ? await decomposeWork(baseDefinition, context) : decomposeWorkDeterministically(baseDefinition);
-  const decomposition = taskPlan.kind === "task" ? taskPlan.task : decomposeWorkDeterministically(forceDefinitionAsTask(baseDefinition)).kind === "task"
-    ? (decomposeWorkDeterministically(forceDefinitionAsTask(baseDefinition)) as { kind: "task"; task: TaskDecomposition }).task
-    : null;
-  return { project: detail.project, milestone: next, decomposition, requiresActivation: true, sourceModel: stored?.version || 1 };
+  const generated = refine ? await decomposeWork(definition, context) : decomposeWorkDeterministically(definition);
+  return {
+    project: detail.project,
+    milestone,
+    decomposition: asTaskPlan(definition, generated),
+    requiresActivation: true,
+    readOnlyPreview: true,
+  };
+}
+
+function parseTaskDecomposition(value: unknown): TaskDecomposition {
+  const wrapped = workDecompositionSchema.safeParse(value);
+  if (wrapped.success && wrapped.data.kind === "task") return wrapped.data.task;
+  const direct = taskDecompositionSchema.safeParse(value);
+  if (direct.success) return direct.data;
+  throw new Error("Invalid task decomposition");
 }
 
 export async function activateNextProjectTask(input: { projectId: number; milestoneId: number; decomposition: unknown }) {
-  ensureWorkSchema();
   const project = getProject(input.projectId);
   if (!project) return null;
   const milestone = listProjectMilestones(project.id).find((item) => item.id === input.milestoneId);
   if (!milestone) return null;
-  const decomposition = taskDecompositionSchemaCompat(input.decomposition);
+  const plan = parseTaskDecomposition(input.decomposition);
   updateMilestoneStatus(milestone.id, "active");
-  rawDb.prepare("UPDATE projects SET current_milestone_id = ?, updated_at = ? WHERE id = ?").run(milestone.id, Date.now(), project.id);
+  rawDb.prepare("UPDATE projects SET current_milestone_id = ?, updated_at = ? WHERE id = ?")
+    .run(milestone.id, Date.now(), project.id);
   const task = await createOrUpdateTask({
-    proposal: decomposition.task,
-    steps: decomposition.steps,
+    proposal: plan.task,
+    steps: plan.steps,
     relatedTrackId: project.relatedTrackId,
     projectId: project.id,
     milestoneId: milestone.id,
@@ -440,21 +459,7 @@ export async function activateNextProjectTask(input: { projectId: number; milest
   return { project: getProject(project.id), milestone, task };
 }
 
-function taskDecompositionSchemaCompat(value: unknown): TaskDecomposition {
-  const parsed = workDecompositionSchema.safeParse(value);
-  if (parsed.success && parsed.data.kind === "task") return parsed.data.task;
-  const direct = (value as any)?.task && (value as any)?.steps ? value : null;
-  if (!direct) throw new Error("Invalid task decomposition");
-  return {
-    version: 1,
-    task: direct.task,
-    steps: direct.steps,
-    rollingPlan: false,
-  } as TaskDecomposition;
-}
-
 export function completeProjectMilestone(projectId: number, milestoneId: number) {
-  ensureWorkSchema();
   const project = getProject(projectId);
   const milestone = listProjectMilestones(projectId).find((item) => item.id === milestoneId);
   if (!project || !milestone) return null;

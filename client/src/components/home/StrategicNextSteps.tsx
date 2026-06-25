@@ -1,5 +1,8 @@
-import { Briefcase, GraduationCap, Users, ListChecks, Rocket } from "lucide-react";
+import { useState } from "react";
+import { Briefcase, GraduationCap, Users, ListChecks, Rocket, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { mutateAndInvalidate } from "@/lib/api";
+import { todayKey } from "@/lib/utils";
 import { buildPrepStarterDraft } from "@/lib/learnStarter";
 import {
   buildPrefillHash,
@@ -30,6 +33,41 @@ type NextStep = {
   onClick: () => void;
 };
 
+function ShapeTodayButton({ className = "" }: { className?: string }) {
+  const [building, setBuilding] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function shapeToday() {
+    if (building) return;
+    setBuilding(true);
+    setFailed(false);
+    try {
+      await mutateAndInvalidate(
+        "POST",
+        "/api/plan/prepare",
+        { day: todayKey(), energy: "medium" },
+        ["/api/plan/current", "/api/tasks", "/api/stats"],
+      );
+      // Today keeps its plan in local component state. Reloading after this
+      // explicit command lets the pure GET hydrate the newly persisted plan.
+      window.location.reload();
+    } catch {
+      setFailed(true);
+      setBuilding(false);
+    }
+  }
+
+  return (
+    <div className={className}>
+      <Button size="sm" onClick={shapeToday} disabled={building} data-testid="button-prepare-today-plan">
+        {building ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <ListChecks className="mr-1 h-3.5 w-3.5" />}
+        {building ? "Shaping today" : "Shape today's plan"}
+      </Button>
+      {failed && <p className="mt-1.5 text-[11px] text-destructive">The plan could not be prepared. Your existing work was not changed.</p>}
+    </div>
+  );
+}
+
 function nextStepsFooterText(steps: NextStep[]) {
   const setupCount = steps.filter((step) => step.mode === "setup").length;
   const doNowCount = steps.filter((step) => step.mode === "do-now").length;
@@ -37,9 +75,9 @@ function nextStepsFooterText(steps: NextStep[]) {
     return "Start with the first one. The rest can wait until that move is done.";
   }
   if (doNowCount > 0) {
-    return "Do the first one if it is already live. If not, set up the smallest missing piece and I will shape the day from there.";
+    return "Do the first one if it is already live. If not, set up the smallest missing piece, then shape today's plan.";
   }
-  return "Add one or two of these - I will shape a day plan from there.";
+  return "Add one or two of these, then choose when Anchor should shape the day.";
 }
 
 function visibleLearningRecommendationForTrack(
@@ -209,11 +247,14 @@ export function StrategicNextSteps({
     return (
       <div className="rounded-2xl border border-dashed border-border p-6 text-center" data-testid="strategic-next-steps-empty">
         <p className="text-sm text-muted-foreground mb-3">
-          Add a thought, a job, or something to learn - I will shape a day from there.
+          Add a thought, a job, or something to learn. Anchor will not create a plan until you ask it to.
         </p>
-        <Button size="sm" variant="outline" onClick={() => onOpenTab("braindump")}>
-          Brain dump
-        </Button>
+        <div className="flex flex-wrap justify-center gap-2">
+          <ShapeTodayButton />
+          <Button size="sm" variant="outline" onClick={() => onOpenTab("braindump")}>
+            Brain dump
+          </Button>
+        </div>
       </div>
     );
   }
@@ -237,9 +278,12 @@ export function StrategicNextSteps({
 
   return (
     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5" data-testid="strategic-next-steps">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-primary mb-3">
-        Your job search needs these first
-      </p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+          Your job search needs these first
+        </p>
+        <ShapeTodayButton />
+      </div>
       <div className="space-y-2.5">
         {steps.map((step, i) => {
           const Icon = step.icon;

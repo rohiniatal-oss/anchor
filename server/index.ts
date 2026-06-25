@@ -25,6 +25,9 @@ import { registerTaskBreakdownRoutes } from "./taskBreakdownRoutes";
 import { registerProfileRoutes } from "./profileRoutes";
 import { registerNetworkStrategyRoutes } from "./networkStrategyRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
+import { installReadPurityGuard } from "./requestMutationGuard";
+import { registerTaskLifecycleRoutes } from "./taskLifecycleRoutes";
+import { registerTrustBoundaryRoutes } from "./trustBoundaryRoutes";
 import { serveStatic } from "./static";
 import { initStorage, getStorageRuntime } from "./storage";
 import { seedInitialData } from "./seed";
@@ -48,7 +51,8 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
-initStorage();
+const runtime = initStorage();
+installReadPurityGuard(app, runtime.storage, runtime.rawDb);
 warnIfUsingDefaultDbPath();
 seedInitialData().catch((e) => console.error("Seed failed:", e));
 
@@ -83,23 +87,13 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      log(logLine);
+      // Never log response bodies: they can contain CV text, contacts, drafts,
+      // research evidence and other private career data.
+      log(`${req.method} ${path} ${res.statusCode} in ${duration}ms`);
     }
   });
 
@@ -107,6 +101,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // These boundaries are intentionally first. Existing URLs remain compatible,
+  // while reads become pure and all task transitions share one lifecycle.
+  registerTrustBoundaryRoutes(app);
+  registerTaskLifecycleRoutes(app);
+
   // Capture remains the clean routing contract. Track Research sits before it so
   // focus-area exploration becomes a structured, persistent track plan.
   registerPersistenceAdminRoutes(app);
@@ -143,7 +142,7 @@ app.use((req, res, next) => {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    return res.status(status).json({ message, code: err.code || undefined });
   });
 
   // importantly only setup vite in development and after

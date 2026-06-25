@@ -6,6 +6,9 @@ const PROTECTED_MUTATIONS = [
   /^\/api\/plan-items\/\d+\/start$/,
   /^\/api\/tasks\/\d+\/start$/,
   /^\/api\/career-tracks\/\d+\/execution-priority\/materialize$/,
+  /^\/api\/work\/(?:confirm|activate)$/,
+  /^\/api\/projects\/\d+\/activate-next$/,
+  /^\/api\/projects\/\d+\/milestones\/\d+\/complete$/,
 ];
 
 let lastBlockedBackgroundMutation: { url: string; at: number } | null = null;

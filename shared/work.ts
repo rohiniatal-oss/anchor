@@ -48,7 +48,6 @@ export const taskProposalSchema = z.object({
   whyNow: z.string().max(800).default(""),
   estimateMinutes: z.number().int().min(5).max(480).default(30),
   category: z.string().max(80).default("admin"),
-  steps: z.array(actionStepSchema).min(1).max(6),
 });
 
 export const milestoneProposalSchema = z.object({
@@ -66,6 +65,7 @@ export const projectDecompositionSchema = z.object({
   currentMilestoneKey: z.string().min(1).max(100),
   currentTasks: z.array(taskProposalSchema).min(1).max(3),
   activeTaskIndex: z.number().int().min(0).max(2).default(0),
+  activeTaskSteps: z.array(actionStepSchema).min(1).max(6),
   rollingPlan: z.literal(true),
   stopCondition: z.string().min(1).max(800),
 });
@@ -73,6 +73,7 @@ export const projectDecompositionSchema = z.object({
 export const taskDecompositionSchema = z.object({
   version: z.literal(1),
   task: taskProposalSchema,
+  steps: z.array(actionStepSchema).min(1).max(6),
   rollingPlan: z.literal(false),
 });
 

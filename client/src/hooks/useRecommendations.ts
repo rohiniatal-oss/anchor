@@ -1,28 +1,13 @@
-import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 
 export function useRecommendations<T = unknown[]>() {
   return useQuery<T>({ queryKey: ["/api/recommendations"] });
 }
 
+/**
+ * Kept as a compatibility hook for existing callers. Recommendation synthesis
+ * is now an explicit command rather than a hidden write performed on mount.
+ */
 export function useSyncRecommendationsOnMount() {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      try {
-        await apiRequest("POST", "/api/recommendations/sync");
-        if (!cancelled) {
-          await queryClient.invalidateQueries({ queryKey: ["/api/recommendations"] });
-        }
-      } catch {}
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [queryClient]);
+  return undefined;
 }

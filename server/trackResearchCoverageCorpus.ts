@@ -6,6 +6,10 @@ import {
   type UserEvidenceItem,
   type UserEvidenceSourceType,
 } from "./trackResearchCoverageEvidence";
+import {
+  normalizeExecutionOutcomeModel,
+  type ExecutionOutcomeRecord,
+} from "./trackResearchExecutionOutcome";
 
 function compact(value: unknown): string {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -47,6 +51,16 @@ function safeExternalUrl(value: unknown): string {
     return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : "";
   } catch {
     return "";
+  }
+}
+
+function parseJsonObject(value: string | null | undefined): Record<string, any> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
   }
 }
 
@@ -103,6 +117,37 @@ function canonicalLearnEvidence(item: any): UserEvidenceItem | null {
   };
 }
 
+function outcomeSourceType(record: ExecutionOutcomeRecord): UserEvidenceSourceType {
+  if (record.taskKind === "learning") return "completed_learning";
+  if (record.taskKind === "artifact" || record.taskKind === "validation") return record.sourceUrl ? "learning_output" : "proof_asset";
+  if (record.taskKind === "relationship" || record.taskKind === "access") return "interaction";
+  return "win";
+}
+
+function canonicalExecutionOutcomeEvidence(record: ExecutionOutcomeRecord): UserEvidenceItem | null {
+  if (record.status !== "accepted" || !record.usableForCoverage) return null;
+  const sourceType = outcomeSourceType(record);
+  return {
+    id: stableId("user-evidence-execution-outcome", record.id, record.updatedAt),
+    sourceType,
+    label: compact(record.label) || compact(record.expectedEvidence) || "Completed execution outcome",
+    detail: compact([
+      record.detail,
+      record.expectedEvidence ? `Expected evidence: ${record.expectedEvidence}` : "",
+      record.confirmation.answer ? `Confirmed outcome: ${record.confirmation.answer}` : "",
+      `Execution outcome ID: ${record.id}`,
+    ].filter(Boolean).join(". ")),
+    sourceUrl: safeExternalUrl(record.sourceUrl),
+    strength: record.strength,
+    state: record.sourceUrl ? "published" : "completed",
+    usableForCoverage: true,
+    sourceEntityType: "execution_outcome",
+    sourceEntityId: record.liveTaskId,
+    trackIds: [record.trackId],
+    observedAt: record.updatedAt,
+  };
+}
+
 function canonicalKey(item: UserEvidenceItem): string {
   if (item.sourceEntityId != null) return `${item.sourceEntityType}:${item.sourceEntityId}`;
   return item.id;
@@ -130,13 +175,14 @@ function corpusFingerprint(items: UserEvidenceItem[], targetTrackId: number): st
  * Wrap the original evidence collector with current schema semantics.
  *
  * The wrapper intentionally keeps planned or active learning visible while
- * excluding it from coverage. It also includes track associations in the
- * fingerprint because track linkage affects relevance and ranking.
+ * excluding it from coverage. Accepted execution outcomes are included only
+ * after the task-specific evidence policy has classified them as usable.
  */
 export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): Promise<UserEvidenceCorpus> {
-  const [base, learns] = await Promise.all([
+  const [base, learns, track] = await Promise.all([
     buildUserEvidenceCorpus(targetTrackId),
     storage.getLearn(),
+    storage.getCareerTrack(targetTrackId),
   ]);
 
   const byKey = new Map<string, UserEvidenceItem>();
@@ -149,6 +195,14 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
   }
   for (const learn of learns) {
     const canonical = canonicalLearnEvidence(learn);
+    if (!canonical) continue;
+    byKey.set(canonicalKey(canonical), canonical);
+  }
+
+  const intelligence = parseJsonObject(track?.trackIntelligence);
+  const outcomeModel = normalizeExecutionOutcomeModel(targetTrackId, intelligence.executionOutcomeModel);
+  for (const record of outcomeModel.records) {
+    const canonical = canonicalExecutionOutcomeEvidence(record);
     if (!canonical) continue;
     byKey.set(canonicalKey(canonical), canonical);
   }
@@ -168,6 +222,9 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
   if (items.some((item) => !item.usableForCoverage) && !caveats.some((item) => item.includes("In-progress and planned"))) {
     caveats.push("In-progress and planned items are visible to the assessor but are not treated as proven capability.");
   }
+  if (outcomeModel.pendingConfirmationIds.length) {
+    caveats.push(`${outcomeModel.pendingConfirmationIds.length} completed execution outcome${outcomeModel.pendingConfirmationIds.length === 1 ? " is" : "s are"} awaiting one focused confirmation before it can affect coverage.`);
+  }
 
   return {
     mode: "user_evidence_corpus",
@@ -184,6 +241,7 @@ export async function buildCanonicalUserEvidenceCorpus(targetTrackId: number): P
 export const coverageCorpusInternals = {
   canonicalLearnStatus,
   canonicalLearnEvidence,
+  canonicalExecutionOutcomeEvidence,
   corpusFingerprint,
   safeExternalUrl,
 };

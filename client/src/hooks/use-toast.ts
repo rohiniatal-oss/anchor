@@ -4,6 +4,7 @@ import type {
   ToastActionElement,
   ToastProps,
 } from "@/components/ui/toast"
+import { consumeBlockedBackgroundMutation } from "@/lib/queryClient"
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
@@ -140,6 +141,15 @@ function dispatch(action: Action) {
 type Toast = Omit<ToasterToast, "id">
 
 function toast({ ...props }: Toast) {
+  const title = typeof props.title === "string" ? props.title : ""
+  if (title.startsWith("Couldn't start that") && consumeBlockedBackgroundMutation()) {
+    return {
+      id: "background-intent-blocked",
+      dismiss: () => undefined,
+      update: (_next: ToasterToast) => undefined,
+    }
+  }
+
   const id = genId()
 
   const update = (props: ToasterToast) =>

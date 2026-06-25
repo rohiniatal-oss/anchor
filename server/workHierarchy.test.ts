@@ -28,16 +28,16 @@ test("broad research is identified as a project before any action steps exist", 
   assert.equal("steps" in definition, false);
 });
 
-test("a bounded research output remains a one-session task", () => {
+test("a research request with a bounded deliverable remains a one-session task", () => {
   const definition = interpretWorkDeterministically({
-    title: "Research TBI so I can decide whether to apply",
+    title: "Research TBI so I can produce one short application decision brief",
     sourceType: "capture",
     context: careerContext,
   });
 
   assert.equal(definition.workType, "task");
   assert.equal(definition.estimatedScope, "single_session");
-  assert.match(definition.objective, /decide whether to apply/i);
+  assert.match(definition.objective, /produce one short application decision brief/i);
 });
 
 test("multi-session work with a credible parent becomes a milestone candidate", () => {

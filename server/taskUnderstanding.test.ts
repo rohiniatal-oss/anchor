@@ -7,12 +7,13 @@ import {
   shouldUnderstandTask,
   taskPatchFromBrief,
 } from "./taskUnderstanding";
+import { normalizeContextForUnderstanding } from "./taskUnderstandingService";
 
-const careerContext = [
+const careerContext = normalizeContextForUnderstanding([
   "User profile: Rohini is an ex-Bain consultant and ex-Tony Blair Institute operator.",
   "Explicit goals/preferences: Target role types: AI governance, strategic advisory, and chief of staff.",
   "Active tracks: AI governance strategy; government delivery.",
-].join("\n");
+].join("\n"));
 
 function broadTask(title: string, extra: Record<string, unknown> = {}) {
   return {
@@ -29,6 +30,11 @@ function broadTask(title: string, extra: Record<string, unknown> = {}) {
     ...extra,
   } as any;
 }
+
+test("relationship phrasing is normalized before semantic understanding", () => {
+  assert.match(careerContext, /ex Tony Blair Institute/);
+  assert.doesNotMatch(careerContext, /ex-Tony Blair Institute/);
+});
 
 test("acronyms resolve from user context without a target-specific alias table", () => {
   const resolved = resolveTaskTarget("TBI", careerContext);
@@ -65,6 +71,7 @@ test("explicit research purpose produces a bounded source-led plan", () => {
   );
   assert.ok(brief);
   assert.equal(brief.needsClarification, false);
+  assert.equal(brief.target, "Acme");
   assert.match(brief.objective, /decide whether to apply/i);
   assert.match(brief.doneWhen, /source links/i);
   assert.equal(brief.steps.length, 4);
@@ -82,6 +89,7 @@ test("preparation tasks produce a usable brief rather than generic effort", () =
   const brief = buildDeterministicTaskBrief(broadTask("Prepare for the policy interview"), careerContext);
   assert.ok(brief);
   assert.equal(brief.kind, "preparation");
+  assert.equal(brief.needsClarification, false);
   assert.match(brief.desiredOutput, /preparation brief/i);
   assert.match(brief.steps.join(" "), /highest-risk point/i);
 });

@@ -45,6 +45,8 @@ type TaskLike = Partial<Pick<Task,
   | "blockerReason"
   | "size"
   | "estimateMinutes"
+  | "estimateConfidence"
+  | "estimateReason"
 >>;
 
 const CONNECTOR_WORDS = new Set(["a", "an", "and", "at", "for", "in", "of", "on", "the", "to", "with"]);
@@ -159,7 +161,9 @@ function extractTarget(title: string, kind: TaskUnderstandingKind): string {
     organization: /^(?:please\s+)?(?:organize|organise|sort\s+out|plan|work\s+on)\s+/i,
     unknown: /^$/,
   };
-  return compact(title.replace(patterns[kind], "")).replace(/[.?!]+$/g, "");
+  return compact(title.replace(patterns[kind], ""))
+    .replace(/\s+(?:so\s+that|so\s+i\s+can|to\s+help\s+me|in\s+order\s+to)\s+.+$/i, "")
+    .replace(/[.?!]+$/g, "");
 }
 
 function explicitPurpose(title: string, sourceNote: string): string {
@@ -187,13 +191,12 @@ function goalSignal(context: string): string {
   return compact(explicit).slice(0, 240);
 }
 
-function categoryFor(kind: TaskUnderstandingKind, sourceType: string): string {
-  if (sourceType === "job" || kind === "preparation" && /job|interview/i.test(sourceType)) return "job";
-  if (sourceType === "learn") return "learning";
-  if (sourceType === "contact" || kind === "communication") return "admin";
-  if (sourceType === "hustle" || kind === "creation") return "substack";
-  if (kind === "research" || kind === "decision" || kind === "review") return "thinking";
-  return "admin";
+function goalRelatesToTarget(target: string, resolvedTarget: string, goal: string): boolean {
+  const haystack = normalized(goal);
+  const tokens = [...words(target), ...words(resolvedTarget)]
+    .map((word) => word.toLowerCase())
+    .filter((word) => word.length >= 4 && !CONNECTOR_WORDS.has(word));
+  return tokens.some((token) => haystack.includes(token));
 }
 
 function briefTemplate(kind: TaskUnderstandingKind, target: string, resolvedTarget: string, purpose: string, whyNow: string): Pick<TaskBrief, "objective" | "desiredOutput" | "doneWhen" | "evidenceNeeded" | "steps"> {
@@ -210,23 +213,17 @@ function briefTemplate(kind: TaskUnderstandingKind, target: string, resolvedTarg
         `Open one primary or authoritative source for ${label} and save its link`,
         `Extract only the facts needed to answer: ${objective}`,
         `Write what those facts mean for ${whyNow || "the current goal"}, including the main uncertainty`,
-        `Save the brief with one decision or next action, then stop researching`,
+        "Save the brief with one decision or next action, then stop researching",
       ],
     };
   }
   if (kind === "decision") {
     const objective = purpose || `Choose the best next position on ${label}.`;
-    return {
-      objective,
-      desiredOutput: `a decision note for ${label}`,
-      doneWhen: `The real options, three decision criteria, current choice, and next test or action for ${label} are recorded.`,
-      evidenceNeeded: ["the real options", "the criteria that matter", "the evidence that could change the choice"],
-      steps: [`Write the exact decision about ${label} in one line`, `List the real options and the three criteria that matter to ${whyNow || "the goal"}`, "Mark the evidence for and against each option", "Record the current choice and next test or action"],
-    };
+    return { objective, desiredOutput: `a decision note for ${label}`, doneWhen: `The real options, three decision criteria, current choice, and next test or action for ${label} are recorded.`, evidenceNeeded: ["the real options", "the criteria that matter", "the evidence that could change the choice"], steps: [`Write the exact decision about ${label} in one line`, `List the real options and the three criteria that matter to ${whyNow || "the goal"}`, "Mark the evidence for and against each option", "Record the current choice and next test or action"] };
   }
   if (kind === "communication") {
     const objective = purpose || `Move the relationship or request involving ${label} forward.`;
-    return { objective, desiredOutput: `a sendable message to ${label}`, doneWhen: `A concise message to ${label} has a clear why-now, specific ask, and is sent or deliberately scheduled.`, evidenceNeeded: ["recipient", "why now", "smallest credible ask"], steps: [`Open the current thread or a blank message to ${label}`, `Write the why-now using the available context`, "Add one specific, low-friction ask", "Trim, send, or schedule the message"] };
+    return { objective, desiredOutput: `a sendable message to ${label}`, doneWhen: `A concise message to ${label} has a clear why-now, specific ask, and is sent or deliberately scheduled.`, evidenceNeeded: ["recipient", "why now", "smallest credible ask"], steps: [`Open the current thread or a blank message to ${label}`, "Write the why-now using the available context", "Add one specific, low-friction ask", "Trim, send, or schedule the message"] };
   }
   if (kind === "preparation") {
     const objective = purpose || `Be ready for ${label} with the highest-risk questions and evidence covered.`;
@@ -252,23 +249,24 @@ function briefTemplate(kind: TaskUnderstandingKind, target: string, resolvedTarg
 }
 
 export function buildDeterministicTaskBrief(task: TaskLike, context = ""): TaskBrief | null {
-  if (!shouldUnderstandTask(task)) return null;
   const title = compact(task.title);
+  if (!title || !BROAD_TITLE_RE.test(title)) return null;
   const kind = classifyKind(title);
   const target = extractTarget(title, kind);
   const resolution = resolveTaskTarget(target, context);
   const relationship = relationshipSignal(target, resolution.value, context);
   const explicit = explicitPurpose(title, compact(task.sourceNote));
   const goal = goalSignal(context);
+  const relatedGoal = goal && goalRelatesToTarget(target, resolution.value, goal) ? goal : "";
   const sourcePurpose = task.sourceType === "job" ? "Assess fit or move the opportunity forward."
     : task.sourceType === "contact" ? "Prepare a credible relationship move."
     : task.sourceType === "learn" ? "Build a capability or reusable learning output."
     : task.sourceType === "hustle" ? "Create a credible proof asset."
     : "";
-  const purpose = explicit || sourcePurpose || (relationship ? `Assess how current developments connect to that prior experience and the user's present goals.` : goal ? `Decide how this supports the user's current goals: ${goal}` : "");
-  const whyNow = relationship || (goal ? `It supports the current goal: ${goal}` : compact(task.sourceNote));
+  const purpose = explicit || sourcePurpose || (relationship ? "Assess how current developments connect to that prior experience and the user's present goals." : relatedGoal ? `Decide how this supports the user's current goals: ${relatedGoal}` : "");
+  const whyNow = relationship || (relatedGoal ? `It supports the current goal: ${relatedGoal}` : compact(task.sourceNote));
   const targetMissing = !target || /^(?:it|this|that|stuff|things?|work|task|project)$/i.test(target);
-  const needsClarification = kind === "unknown" || targetMissing || (!purpose && ["research", "preparation", "organization"].includes(kind));
+  const needsClarification = kind === "unknown" || targetMissing || (!purpose && ["research", "organization"].includes(kind));
   const clarifyingQuestion = targetMissing
     ? `What specific object or outcome should “${title}” produce?`
     : kind === "research"
@@ -351,11 +349,11 @@ export function taskPatchFromBrief(task: TaskLike, brief: TaskBrief): Record<str
     category: categoryForBrief(brief, compact(task.category)),
     sourceNote: existingNote.includes(TASK_BRIEF_MARKER) ? existingNote.replace(new RegExp(`${TASK_BRIEF_MARKER}.*$`), note) : [existingNote, note].filter(Boolean).join("\n"),
     estimateMinutes: task.estimateMinutes && task.estimateMinutes > 0 ? task.estimateMinutes : brief.kind === "research" ? 35 : 30,
-    estimateConfidence: "medium",
-    estimateReason: "task_brief_v1",
+    estimateConfidence: compact(task.estimateConfidence) || "medium",
+    estimateReason: compact(task.estimateReason) || "task_brief_v1",
   };
   if (replaceDone) patch.doneWhen = brief.needsClarification ? `The intended outcome for “${brief.target || compact(task.title)}” is clear enough to plan.` : brief.doneWhen;
-  if (isWeakDoneWhen(task.minimumOutcome)) patch.minimumOutcome = brief.needsClarification ? `The intended outcome is clarified.` : brief.desiredOutput;
+  if (isWeakDoneWhen(task.minimumOutcome)) patch.minimumOutcome = brief.needsClarification ? "The intended outcome is clarified." : brief.desiredOutput;
   if (replaceSteps) {
     patch.steps = brief.needsClarification ? "[]" : JSON.stringify(brief.steps.map((text, index) => ({ text, done: false, ...(index === brief.steps.length - 1 ? { workflowState: { workObject: brief.kind === "research" ? "Knowledge" : brief.kind === "decision" ? "Decision" : "Artifact", workflow: ["Understand", "Execute", "Verify"], workflowKind: "finite", currentStage: "Understand", stageOutput: brief.desiredOutput, completionCriteria: [brief.doneWhen], advanceCondition: brief.doneWhen, confidence: brief.confidence, taskBrief: brief } } : {}) })));
   }

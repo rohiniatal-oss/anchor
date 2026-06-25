@@ -51,6 +51,14 @@ function patchChanged(task: Task, patch: Record<string, unknown>) {
   return Object.entries(patch).some(([key, value]) => (task as any)[key] !== value);
 }
 
+function patchForBrief(task: Record<string, any>, brief: TaskBrief) {
+  const patch = taskPatchFromBrief(task, brief);
+  // An unresolved task is a clarification, not a 90-minute deep-work item. This
+  // prevents the planner from adding the old blank-page starter step.
+  if (brief.needsClarification && task.size !== "quick") patch.size = "medium";
+  return patch;
+}
+
 export async function understandTask(taskId: number, options: TaskUnderstandingOptions = {}): Promise<TaskUnderstandingResult> {
   const task = findTask(await storage.getTasks(), taskId);
   if (!task) return { task: null, brief: null, changed: false };
@@ -80,7 +88,7 @@ export async function understandTask(taskId: number, options: TaskUnderstandingO
   const fallback = buildDeterministicTaskBrief(task, context);
   if (!fallback) return { task, brief: null, changed: false };
   const brief = options.refine ? await refineTaskBriefWithLlm({ task, fallback, context }) : fallback;
-  const patch = taskPatchFromBrief(task, brief);
+  const patch = patchForBrief(task as any, brief);
   if (!patchChanged(task, patch)) return { task, brief, changed: false };
 
   const updated = await storage.updateTask(task.id, patch as any) || task;
@@ -106,5 +114,5 @@ export async function understandTaskInput(raw: Record<string, any>) {
   if (!shouldUnderstandTask(raw)) return raw;
   const userContext = await buildUserContext();
   const brief = buildDeterministicTaskBrief(raw, formatContextForPrompt(userContext));
-  return brief ? { ...raw, ...taskPatchFromBrief(raw, brief) } : raw;
+  return brief ? { ...raw, ...patchForBrief(raw, brief) } : raw;
 }

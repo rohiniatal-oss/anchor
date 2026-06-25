@@ -23,7 +23,9 @@ jobs:
         run: npm ci
 
       - name: TypeScript check
-        run: npm run check
+        run: |
+          set -o pipefail
+          npm run check 2>&1 | tee /tmp/anchor-typecheck.log
 
       - name: Development plan model tests
         if: always()
@@ -61,3 +63,14 @@ jobs:
       - name: Production build
         if: always()
         run: npm run build
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-diagnostics-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          retention-days: 3
+          path: |
+            /tmp/anchor-typecheck.log
+            /tmp/anchor-tests.log

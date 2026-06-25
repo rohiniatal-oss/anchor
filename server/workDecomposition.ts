@@ -56,7 +56,14 @@ function action(text: string, outputSpec: string, executor: ActionStep["executor
   return { text, outputSpec, executor, done: false };
 }
 
-function task(input: Omit<TaskProposal, "category" | "estimateMinutes"> & { category?: string; estimateMinutes?: number }, definition: WorkDefinition): TaskProposal {
+function task(
+  input: Omit<TaskProposal, "category" | "estimateMinutes" | "whyNow"> & {
+    category?: string;
+    estimateMinutes?: number;
+    whyNow?: string;
+  },
+  definition: WorkDefinition,
+): TaskProposal {
   return {
     title: compact(input.title).slice(0, 180),
     objective: compact(input.objective).slice(0, 800),
@@ -85,7 +92,7 @@ function researchProject(definition: WorkDefinition): ProjectDecomposition {
       key: "map-current-landscape",
       title: `Map the current ${target} landscape`,
       outcome: `A bounded map of the current parts of ${target} that could affect the project objective.`,
-      doneWhen: `The most relevant current teams, roles, programmes, people, or signals are listed with primary-source links and an explanation of relevance.`,
+      doneWhen: "The most relevant current teams, roles, programmes, people, or signals are listed with primary-source links and an explanation of relevance.",
     }, 0),
     milestone({
       key: "identify-real-options",
@@ -116,7 +123,7 @@ function researchProject(definition: WorkDefinition): ProjectDecomposition {
     task({
       title: `Map three current ${target} signals relevant to the objective`,
       objective: `Find the smallest evidence set that shows which current parts of ${target} matter to this project.`,
-      doneWhen: `Three current signals are saved from primary or authoritative sources, each with a link and one sentence explaining relevance.`,
+      doneWhen: "Three current signals are saved from primary or authoritative sources, each with a link and one sentence explaining relevance.",
       output: `A three-item current-landscape map for ${target}.`,
       estimateMinutes: 35,
     }, definition),
@@ -153,7 +160,7 @@ function creationProject(definition: WorkDefinition): ProjectDecomposition {
     milestone({ title: "Define the user, purpose, and quality bar", outcome: `The intended user, purpose, constraints, and success criteria for ${target} are explicit.`, doneWhen: "The required outcome and non-negotiable criteria are agreed." }, 0),
     milestone({ title: "Build the minimum viable structure", outcome: `The smallest complete structure for ${target} exists.`, doneWhen: "Every required section or component has a place and the largest unknown is marked." }, 1),
     milestone({ title: "Produce the first usable version", outcome: `A complete first version of ${target} exists.`, doneWhen: "The version can be reviewed or used end to end without placeholders that block its purpose." }, 2),
-    milestone({ title: "Validate and improve", outcome: `The version is tested against the success criteria and the most material weakness is corrected.`, doneWhen: "Evidence from review or use supports the main changes." }, 3),
+    milestone({ title: "Validate and improve", outcome: "The version is tested against the success criteria and the most material weakness is corrected.", doneWhen: "Evidence from review or use supports the main changes." }, 3),
     milestone({ title: "Deliver and record the result", outcome: definition.desiredOutcome, doneWhen: definition.successCriteria.join("; ") || "The final version is delivered and the result is recorded." }, 4),
   ];
   const currentTasks = [
@@ -212,7 +219,7 @@ function generalProject(definition: WorkDefinition): ProjectDecomposition {
 function taskDecomposition(definition: WorkDefinition): TaskDecomposition {
   const target = targetLabel(definition);
   const category = categoryFor(definition);
-  let proposal = task({
+  const proposal = task({
     title: definition.sourceTitle || definition.title,
     objective: definition.objective,
     doneWhen: definition.successCriteria.join("; ") || definition.desiredOutcome,

@@ -27,6 +27,7 @@ import { registerNetworkStrategyRoutes } from "./networkStrategyRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
 import { installReadPurityGuard } from "./requestMutationGuard";
 import { registerTaskLifecycleRoutes } from "./taskLifecycleRoutes";
+import { registerTaskUnderstandingRoutes } from "./taskUnderstandingRoutes";
 import { registerTrustBoundaryRoutes } from "./trustBoundaryRoutes";
 import { serveStatic } from "./static";
 import { initStorage, getStorageRuntime } from "./storage";
@@ -101,6 +102,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Understand broad tasks before intake, planning, lifecycle transitions, or
+  // decomposition can turn an ambiguous title into generic filler steps.
+  registerTaskUnderstandingRoutes(app);
+
   // These boundaries are intentionally first. Existing URLs remain compatible,
   // while reads become pure and all task transitions share one lifecycle.
   registerTrustBoundaryRoutes(app);

@@ -78,6 +78,7 @@ function sendError(res: Response, error: unknown) {
   });
 }
 
+/** Register the preview → confirm → activate work-object workflow. */
 export function registerWorkRoutes(app: Express) {
   app.post("/api/work/interpret", async (req, res) => {
     try {
@@ -89,7 +90,7 @@ export function registerWorkRoutes(app: Express) {
     }
   });
 
-  app.post("/api/work/activate", async (req, res) => {
+  const confirmWork = async (req: Request, res: Response) => {
     if (!requireExplicitIntent(req, res)) return;
     try {
       return res.json(await activateWork({
@@ -101,17 +102,24 @@ export function registerWorkRoutes(app: Express) {
     } catch (error) {
       return sendError(res, error);
     }
-  });
+  };
+
+  // /activate remains as a compatibility alias. Project confirmation creates
+  // only the project and milestone map; a separate command activates a task.
+  app.post("/api/work/confirm", confirmWork);
+  app.post("/api/work/activate", confirmWork);
 
   app.get("/api/projects", (_req, res) => {
-    return res.json(allProjectSummaries());
+    return res.json({ projects: allProjectSummaries(), readOnlySnapshot: true });
   });
 
   app.get("/api/projects/:id", async (req, res) => {
     const id = numberParam(req.params.id);
     if (!id) return res.status(400).json({ error: "Bad id" });
     const detail = await projectDetail(id);
-    return detail ? res.json(detail) : res.status(404).json({ error: "Project not found" });
+    return detail
+      ? res.json({ ...detail, readOnlySnapshot: true })
+      : res.status(404).json({ error: "Project not found" });
   });
 
   app.post("/api/projects/:id/decompose", async (req, res) => {
@@ -119,7 +127,9 @@ export function registerWorkRoutes(app: Express) {
     if (!id) return res.status(400).json({ error: "Bad id" });
     try {
       const result = await previewNextProjectWork(id, req.body?.refine !== false);
-      return result ? res.json({ ...result, readOnlyPreview: true }) : res.status(404).json({ error: "Project not found" });
+      return result
+        ? res.json({ ...result, readOnlyPreview: true })
+        : res.status(404).json({ error: "Project not found" });
     } catch (error) {
       return sendError(res, error);
     }
@@ -129,10 +139,18 @@ export function registerWorkRoutes(app: Express) {
     if (!requireExplicitIntent(req, res)) return;
     const id = numberParam(req.params.id);
     const milestoneId = Number(req.body?.milestoneId);
-    if (!id || !Number.isFinite(milestoneId)) return res.status(400).json({ error: "Project and milestone are required." });
+    if (!id || !Number.isFinite(milestoneId)) {
+      return res.status(400).json({ error: "Project and milestone are required." });
+    }
     try {
-      const result = await activateNextProjectTask({ projectId: id, milestoneId, decomposition: req.body?.decomposition });
-      return result ? res.json(result) : res.status(404).json({ error: "Project or milestone not found" });
+      const result = await activateNextProjectTask({
+        projectId: id,
+        milestoneId,
+        decomposition: req.body?.decomposition,
+      });
+      return result
+        ? res.json(result)
+        : res.status(404).json({ error: "Project or milestone not found" });
     } catch (error) {
       return sendError(res, error);
     }
@@ -143,8 +161,18 @@ export function registerWorkRoutes(app: Express) {
     const projectId = numberParam(req.params.id);
     const milestoneId = numberParam(req.params.milestoneId);
     if (!projectId || !milestoneId) return res.status(400).json({ error: "Bad id" });
-    const result = completeProjectMilestone(projectId, milestoneId);
-    return result ? res.json(result) : res.status(404).json({ error: "Project or milestone not found" });
+    try {
+      const result = await completeProjectMilestone(
+        projectId,
+        milestoneId,
+        req.body?.confirmIncomplete === true,
+      );
+      return result
+        ? res.json(result)
+        : res.status(404).json({ error: "Project or milestone not found" });
+    } catch (error) {
+      return sendError(res, error);
+    }
   });
 
   app.post("/api/tasks/:id/interpret", async (req, res) => {
@@ -157,8 +185,8 @@ export function registerWorkRoutes(app: Express) {
     }
   });
 
-  // Broad tasks stop here. The existing task-breakdown route remains the final
-  // layer for already-defined tasks whose only missing level is action steps.
+  // Broad work stops at a preview. The legacy breakdown route remains the final
+  // layer only for work already confirmed as an independently useful task.
   app.post("/api/tasks/:id/breakdown", async (req, res, next) => {
     try {
       const found = await taskPreviewInput(req);

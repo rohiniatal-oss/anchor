@@ -58,7 +58,6 @@ export interface TaskContextProvider {
 }
 
 export type ExternalResearchIntent =
-  | "entity_research"
   | "company_research"
   | "deadline_verification"
   | "eligibility_check"

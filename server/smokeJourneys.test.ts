@@ -35,6 +35,10 @@ test("Journey 1: GET /api/plan/current twice does not create duplicate plans or 
     relatedTrackId: track.id,
   } as any);
 
+  // Baseline before any GET
+  const tasksBefore = await h.storage.getTasks();
+  const winsBefore = await h.storage.getWins();
+
   // First fetch
   const r1 = await api(h.base, "GET", "/api/plan/current");
   assert.equal(r1.status, 200);
@@ -43,6 +47,11 @@ test("Journey 1: GET /api/plan/current twice does not create duplicate plans or 
   const plansAfter1 = await h.storage.getPlanByDate(day);
   const itemsAfter1 = plansAfter1 ? await h.storage.getPlanItems(plansAfter1.id) : [];
   const winsAfter1 = await h.storage.getWins();
+
+  assert.equal(tasksAfter1.length, tasksBefore.length,
+    "First GET must not create new tasks");
+  assert.equal(winsAfter1.length, winsBefore.length,
+    "First GET must not create new wins");
 
   // Second fetch — identical GET
   const r2 = await api(h.base, "GET", "/api/plan/current");
@@ -211,7 +220,7 @@ test("Journey 5: GET /api/anchor/today does not auto-create tasks from deadline 
     company: "DeepMind",
     status: "applied",
     relatedTrackId: track.id,
-    applicationDeadline: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    deadline: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
   } as any);
 
   const tasksBefore = await h.storage.getTasks();
@@ -238,7 +247,7 @@ test("Journey 5: viewing plan-items does not auto-activate deadline suggestions"
     company: "Anthropic",
     status: "interviewing",
     relatedTrackId: track.id,
-    applicationDeadline: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    deadline: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
   } as any);
 
   const tasksBefore = await h.storage.getTasks();

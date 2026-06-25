@@ -47,6 +47,16 @@ export class TaskLifecycleError extends Error {
   }
 }
 
+const ACTIVITY_EVENT: Record<TaskLifecycleAction, string> = {
+  start: "started",
+  complete: "completed",
+  reopen: "reopened",
+  skip: "skipped",
+  park: "parked",
+  block: "blocked",
+  move_later: "moved",
+};
+
 function parseMetadata(raw: string | null | undefined): Record<string, any> {
   try {
     const parsed = JSON.parse(raw || "{}");
@@ -80,17 +90,17 @@ function findTaskWin(tx: any, taskId: number): Win | null {
     .get() || null;
 }
 
+function activityEvent(action: TaskLifecycleAction): string {
+  return ACTIVITY_EVENT[action];
+}
+
 function idempotencyAlreadyApplied(tx: any, taskId: number, action: TaskLifecycleAction, key: string): boolean {
   if (!key) return false;
   const rows = tx.select().from(activityLog)
-    .where(and(eq(activityLog.taskId, taskId), eq(activityLog.eventType, action === "move_later" ? "moved" : action)))
+    .where(and(eq(activityLog.taskId, taskId), eq(activityLog.eventType, activityEvent(action))))
     .orderBy(desc(activityLog.id))
     .all();
   return rows.some((row: any) => parseMetadata(row.metadata).idempotencyKey === key);
-}
-
-function activityEvent(action: TaskLifecycleAction): string {
-  return action === "move_later" ? "moved" : action;
 }
 
 function recordActivity(tx: any, task: Task, action: TaskLifecycleAction, now: number, input: TaskLifecycleInput) {
@@ -195,7 +205,13 @@ function updateSourceOnComplete(tx: any, task: Task) {
   }
 }
 
-function lifecycleResult(action: TaskLifecycleAction, task: Task, win: Win | null, milestone: { completedMilestoneId: number | null; nextMilestoneHint: string | null }, idempotent: boolean): TaskLifecycleResult {
+function lifecycleResult(
+  action: TaskLifecycleAction,
+  task: Task,
+  win: Win | null,
+  milestone: { completedMilestoneId: number | null; nextMilestoneHint: string | null },
+  idempotent: boolean,
+): TaskLifecycleResult {
   return {
     ok: true,
     action,

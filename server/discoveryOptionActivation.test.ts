@@ -34,12 +34,13 @@ function option(overrides: Partial<RankedDiscoveryOption> = {}): RankedDiscovery
   };
 }
 
-async function capture(title = "Find three AI governance roles") {
+async function capture(title = "Find three AI governance roles", overrides: Record<string, unknown> = {}) {
   return h.storage.createTask({
     title,
     list: "inbox",
     done: false,
     category: "admin",
+    ...overrides,
   } as any);
 }
 
@@ -69,11 +70,17 @@ test("activating a role option creates one wishlist Job and reuses it on repeat"
   assert.match(first.json.followUp.description, /confirm the role is current/);
   assert.equal(first.json.followUp.targetId, first.json.object.id);
   assert.equal(first.json.followUp.sourceUrl, option().sourceUrl);
+  assert.equal(first.json.ownership.objectType, "job");
+  assert.equal(first.json.ownership.objectId, first.json.object.id);
+  assert.equal(first.json.ownership.ownershipState, "candidate_for_direction");
+  assert.equal(first.json.ownership.trackId, null);
   assert.equal(second.status, 200);
   assert.equal(second.json.reused, true);
   assert.equal(second.json.object.id, first.json.object.id);
   assert.equal(second.json.followUp.title, "Review the saved Job");
   assert.equal(second.json.followUp.targetId, first.json.object.id);
+  assert.equal(second.json.ownership.objectId, first.json.object.id);
+  assert.equal(second.json.ownership.ownershipState, "candidate_for_direction");
 
   const jobs = await h.storage.getJobs();
   assert.equal(jobs.length, before.jobs + 1);
@@ -85,6 +92,19 @@ test("activating a role option creates one wishlist Job and reuses it on repeat"
   assert.equal((await h.storage.getLearn()).length, before.learn);
   assert.equal((await h.storage.getContacts()).length, before.contacts);
   assert.equal((await h.storage.getHustles()).length, before.hustles);
+});
+
+test("activation reports linked ownership when the capture has a direction", async () => {
+  const task = await capture("Find three AI governance roles", { relatedTrackId: 42 });
+  const response = await api(h.base, "POST", `/api/capture/${task.id}/discovery-options/activate`, {
+    option: option(),
+    activationType: "job",
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.json.ownership.objectType, "job");
+  assert.equal(response.json.ownership.ownershipState, "linked_to_direction");
+  assert.equal(response.json.ownership.trackId, 42);
 });
 
 test("activating people learning proof and evidence options creates the matching explicit object", async () => {
@@ -109,21 +129,29 @@ test("activating people learning proof and evidence options creates the matching
   assert.equal(person.status, 200);
   assert.equal(person.json.activationType, "contact");
   assert.equal(person.json.followUp.title, "Prepare one outreach angle");
+  assert.equal(person.json.ownership.objectType, "contact");
+  assert.equal(person.json.ownership.ownershipState, "candidate_for_direction");
   assert.equal((await h.storage.getContacts()).length, 1);
 
   assert.equal(learn.status, 200);
   assert.equal(learn.json.activationType, "learn");
   assert.equal(learn.json.followUp.title, "Define the learning output");
+  assert.equal(learn.json.ownership.objectType, "learn");
+  assert.equal(learn.json.ownership.ownershipState, "candidate_for_direction");
   assert.equal((await h.storage.getLearn()).length, 1);
 
   assert.equal(proof.status, 200);
   assert.equal(proof.json.activationType, "proof");
   assert.equal(proof.json.followUp.title, "Outline the proof asset");
+  assert.equal(proof.json.ownership.objectType, "hustle");
+  assert.equal(proof.json.ownership.ownershipState, "candidate_for_direction");
   assert.equal((await h.storage.getHustles()).length, 1);
 
   assert.equal(task.status, 200);
   assert.equal(task.json.activationType, "task");
   assert.equal(task.json.followUp.title, "Make the pursue-or-stop decision");
+  assert.equal(task.json.ownership.objectType, "task");
+  assert.equal(task.json.ownership.ownershipState, "candidate_for_direction");
   assert.equal((await h.storage.getTasks()).filter((item) => item.sourceType === "discovery_option").length, 1);
 });
 

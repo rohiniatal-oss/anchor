@@ -6,10 +6,10 @@ export * from "./types";
 export * from "./notion";
 export * from "./externalResearch";
 
-const BROAD_RESEARCH_RE = /^(?:please\s+)?(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand)\s+(?:about\s+)?(.+?)\s*$/i;
+const BROAD_SEARCH_RE = /^(?:please\s+)?(?:search(?:\s+for)?|find(?:\s+me)?|look\s+(?:up|for|into)|find\s+out\s+about|identify|map(?:\s+out)?|scan|source|shortlist|discover|locate|research|investigate|explore|understand)\s+(?:about\s+|for\s+)?(.+?)\s*$/i;
 
-export function inputForTaskResearch(input: TaskContextProviderInput): TaskContextProviderInput {
-  const match = String(input.task.title || "").trim().match(BROAD_RESEARCH_RE);
+export function inputForTaskSearch(input: TaskContextProviderInput): TaskContextProviderInput {
+  const match = String(input.task.title || "").trim().match(BROAD_SEARCH_RE);
   if (!match?.[1]) return input;
   const target = String(match[1])
     .replace(/\s+(?:so\s+that|so\s+i\s+can|to\s+help\s+me|in\s+order\s+to)\s+.+$/i, "")
@@ -23,14 +23,17 @@ export function inputForTaskResearch(input: TaskContextProviderInput): TaskConte
       // The provider only uses this adapted task to build a public query. The
       // original title remains authoritative everywhere else.
       title: target,
-      doneWhen: "Identify the public entity or topic, its current landscape, and the evidence relevant to the task objective",
+      doneWhen: "Identify the public entity, opportunity, resource, person type, or topic; its current landscape; and the evidence relevant to the task objective",
     },
   };
 }
 
+// Backward-compatible export for existing tests and callers.
+export const inputForTaskResearch = inputForTaskSearch;
+
 export async function collectTaskBreakdownContext(input: TaskContextProviderInput) {
   const userAuthored = await notionContextProvider.collect(input);
-  const researchInput = inputForTaskResearch({
+  const researchInput = inputForTaskSearch({
     ...input,
     userAuthoredBlocks: userAuthored.blocks,
   });

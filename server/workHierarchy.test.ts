@@ -4,6 +4,7 @@ import { decomposeWorkDeterministically } from "./workDecomposition";
 import {
   forceDefinitionAsTask,
   interpretWorkDeterministically,
+  needsWorkInterpretation,
   normalizeContextForWork,
 } from "./workInterpretation";
 
@@ -38,6 +39,39 @@ test("a research request with a bounded deliverable remains a one-session task",
   assert.equal(definition.workType, "task");
   assert.equal(definition.estimatedScope, "single_session");
   assert.match(definition.objective, /produce one short application decision brief/i);
+});
+
+test("search discovery titles are interpreted before legacy step breakdown", () => {
+  assert.equal(needsWorkInterpretation({
+    title: "Find three AI governance roles",
+    doneWhen: "You've done something concrete, even if small",
+    steps: JSON.stringify([{ text: "Write one rough sentence to break the blank page", done: false }]),
+  }), true);
+
+  const definition = interpretWorkDeterministically({
+    title: "Find three AI governance roles",
+    sourceType: "capture",
+    context: careerContext,
+  });
+
+  assert.equal(definition.workType, "task");
+  assert.equal(definition.estimatedScope, "single_session");
+  assert.match(definition.title, /three AI governance roles/i);
+  assert.match(definition.desiredOutcome, /sourced answer/i);
+  assert.ok(definition.successCriteria.some((criterion) => /source|claim|implication|question/i.test(criterion)));
+  assert.equal("steps" in definition, false);
+});
+
+test("unbounded search discovery becomes project-shaped until the user narrows it", () => {
+  const definition = interpretWorkDeterministically({
+    title: "Search for Bain alumni in AI strategy",
+    sourceType: "capture",
+    context: careerContext,
+  });
+
+  assert.equal(definition.workType, "project");
+  assert.equal(definition.estimatedScope, "multi_session");
+  assert.match(definition.desiredOutcome, /decision-ready result/i);
 });
 
 test("multi-session work with a credible parent becomes a milestone candidate", () => {

@@ -1,5 +1,6 @@
 import type { CandidateParent, WorkDefinition, WorkScope, WorkType } from "@shared/work";
 import { workDefinitionSchema } from "@shared/work";
+import { extractSearchDiscoveryTarget, isSearchDiscoveryTitle } from "@shared/captureResearch";
 import { llmJSON, LLM_MODELS } from "./llm";
 
 export type WorkInterpretationInput = {
@@ -27,7 +28,8 @@ type DefinitionTemplateInput = {
 };
 
 const CONNECTOR_WORDS = new Set(["a", "an", "and", "at", "for", "in", "of", "on", "the", "to", "with"]);
-const BROAD_WORK_RE = /^(?:please\s+)?(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand|prepare|review|work\s+on|improve|fix|sort\s+out|think\s+about|plan|figure\s+out|develop|build|create|draft|write|organize|organise|update|launch|set\s+up)\b/i;
+const SEARCH_DISCOVERY_RE = /^(?:please\s+)?(?:search|find|look\s+up|look\s+for|identify|map|scan|source|shortlist|discover)\b/i;
+const BROAD_WORK_RE = /^(?:please\s+)?(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand|prepare|review|work\s+on|improve|fix|sort\s+out|think\s+about|plan|figure\s+out|develop|build|create|draft|write|organize|organise|update|launch|set\s+up|search|find|look\s+up|look\s+for|identify|map|scan|source|shortlist|discover)\b/i;
 const ATOMIC_RE = /^(?:send|email|reply|forward|pay|book|cancel|confirm|call|text|message|sign|renew|submit|post|share|download|upload|print|return|schedule|open|save|paste|attach)\b/i;
 const DECISION_RE = /^(?:decide|choose|compare|evaluate|figure\s+out|think\s+about|whether)\b/i;
 const PROJECT_SIGNAL_RE = /\b(strategy|transition|search|campaign|launch|programme|program|portfolio|pipeline|path|move into|build toward|set up|end to end|from scratch)\b/i;
@@ -125,6 +127,7 @@ export function needsWorkInterpretation(input: Pick<WorkInterpretationInput, "ti
 }
 
 function classifyIntent(title: string) {
+  if (isSearchDiscoveryTitle(title) || SEARCH_DISCOVERY_RE.test(title)) return "search";
   if (/^(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand)\b/i.test(title)) return "research";
   if (DECISION_RE.test(title)) return "decision";
   if (/^(?:prepare|prep)\b/i.test(title)) return "preparation";
@@ -136,8 +139,9 @@ function classifyIntent(title: string) {
 }
 
 function extractTarget(title: string) {
+  if (isSearchDiscoveryTitle(title)) return extractSearchDiscoveryTarget(title);
   return compact(title
-    .replace(/^(?:please\s+)?(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand|prepare|prep(?:are)?\s+for|review|audit|check|assess|inspect|work\s+on|improve|fix|sort\s+out|think\s+about|plan|figure\s+out|develop|build|create|draft|write|organize|organise|update|launch|set\s+up)\s+(?:about\s+)?/i, "")
+    .replace(/^(?:please\s+)?(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand|prepare|prep(?:are)?\s+for|review|audit|check|assess|inspect|work\s+on|improve|fix|sort\s+out|think\s+about|plan|figure\s+out|develop|build|create|draft|write|organize|organise|update|launch|set\s+up|search\s+for|find|look\s+up|look\s+for|identify|map|scan|source|shortlist|discover)\s+(?:about\s+)?/i, "")
     .replace(/\s+(?:so\s+that|so\s+i\s+can|to\s+help\s+me|in\s+order\s+to)\s+.+$/i, "")
     .replace(/[.?!]+$/g, ""));
 }
@@ -190,7 +194,7 @@ function inferScope(title: string, intent: string): WorkScope {
   if (PROJECT_SIGNAL_RE.test(title) || hasMultiOutcomeLanguage(title)) {
     return /\b(month|quarter|ongoing|transition|campaign|programme|program)\b/i.test(title) ? "multi_week" : "multi_session";
   }
-  if (["research", "creation", "improvement", "organization"].includes(intent) && !BOUNDED_OUTPUT_RE.test(title)) return "multi_session";
+  if (["research", "search", "creation", "improvement", "organization"].includes(intent) && !BOUNDED_OUTPUT_RE.test(title)) return "multi_session";
   return "single_session";
 }
 
@@ -213,15 +217,20 @@ function sourcePurpose(sourceType: string) {
   return "";
 }
 
+function evidenceIntent(intent: string) {
+  return intent === "research" || intent === "search";
+}
+
 function definitionTemplate(input: DefinitionTemplateInput) {
   const label = input.resolvedTarget || input.target || "the work";
   const purpose = input.purpose;
+  const evidenceBased = evidenceIntent(input.intent);
   if (input.workType === "project") {
-    const objective = purpose || (input.intent === "research"
-      ? `Decide what ${label} means for the current goal and what action should follow.`
+    const objective = purpose || (evidenceBased
+      ? `Find the right evidence about ${label}, decide what it means for the current goal, and choose what action should follow.`
       : `Move ${label} from an ambiguous intention to a completed, usable outcome.`);
     return {
-      title: input.intent === "research" ? `Decide whether and how to pursue ${label}` : `Complete ${label}`,
+      title: evidenceBased ? `Decide what to do with ${label}` : `Complete ${label}`,
       objective,
       desiredOutcome: `A decision-ready result for ${label}, with the relevant evidence, intermediate outcomes, and next commitment visible.`,
       successCriteria: [
@@ -229,7 +238,7 @@ function definitionTemplate(input: DefinitionTemplateInput) {
         "The important intermediate outcomes are complete or deliberately ruled out",
         "The final decision, deliverable, or next commitment is recorded",
       ],
-      deliverables: input.intent === "research"
+      deliverables: evidenceBased
         ? [`A sourced map of ${label}`, "A relevance or fit assessment", "A pursue, change, monitor, or stop decision"]
         : [`A usable final outcome for ${label}`, "A record of the decisive evidence or checks"],
     };
@@ -252,19 +261,19 @@ function definitionTemplate(input: DefinitionTemplateInput) {
       deliverables: [`A decision note for ${label}`],
     };
   }
-  const objective = purpose || (input.intent === "research"
-    ? `Answer one bounded question about ${label} and use it to make a decision or next move.`
+  const objective = purpose || (evidenceBased
+    ? `Answer one bounded search question about ${label} and use it to make a decision or next move.`
     : `Produce one independently useful result for ${label}.`);
   return {
     title: input.target || label,
     objective,
-    desiredOutcome: input.intent === "research"
+    desiredOutcome: evidenceBased
       ? `A short sourced answer about ${label} that ends in a decision or next action.`
       : `One independently useful output for ${label}.`,
-    successCriteria: input.intent === "research"
+    successCriteria: evidenceBased
       ? ["The question is answered", "Material claims have source links", "The implication and next action are explicit"]
       : ["The specified output exists", "The done condition is objectively checkable"],
-    deliverables: input.intent === "research" ? [`A sourced answer about ${label}`] : [`The completed output for ${label}`],
+    deliverables: evidenceBased ? [`A sourced answer about ${label}`] : [`The completed output for ${label}`],
   };
 }
 
@@ -301,7 +310,7 @@ export function interpretWorkDeterministically(input: WorkInterpretationInput): 
   const targetMissing = !target || /^(?:it|this|that|stuff|things?|work|task|project)$/i.test(target);
   const needsClarification = workType === "reference"
     || targetMissing
-    || (!purpose && ["research", "organization"].includes(intent));
+    || (!purpose && ["research", "search", "organization"].includes(intent));
   const clarifyingQuestion = targetMissing
     ? `What specific result should “${title}” produce?`
     : workType === "project"
@@ -338,7 +347,7 @@ function cleanList(value: unknown, max = 8) {
 /** Refine a deterministic definition while retaining validated provenance fields. */
 export async function interpretWork(input: WorkInterpretationInput): Promise<WorkDefinition> {
   const fallback = interpretWorkDeterministically(input);
-  const prompt = `You are Anchor's work-interpretation engine. Identify the correct level of work before planning it.\n\nINPUT\n${JSON.stringify({ title: input.title, sourceType: input.sourceType, sourceNote: input.sourceNote, relatedTrackId: input.relatedTrackId, candidateParent: input.candidateParent })}\n\nAVAILABLE CONTEXT\n${String(input.context || "").slice(0, 9000)}\n\nDETERMINISTIC DRAFT\n${JSON.stringify(fallback)}\n\nReturn only JSON matching this shape: workType, title, objective, whyNow, desiredOutcome, successCriteria, deliverables, constraints, assumptions, estimatedScope, confidence, parentDirectionId, candidateParent, needsClarification, clarifyingQuestion.\n\nRules:\n- Classify as project when several independently useful outcomes or multiple sessions are required.\n- Classify as milestone only when it clearly belongs under the proposed existing project.\n- Classify as task when one independently useful output can be completed in one session.\n- Do not create execution steps.\n- Use source, relationship, track, profile, and prior-work context.\n- Resolve entities only from supplied context or public evidence.\n- Ask exactly one clarification only when the desired overall outcome would otherwise be materially wrong.\n- Preserve uncertainty in assumptions.\n- A project outcome is not 'do research'; it is the decision, capability, artifact, or changed state the research enables.`;
+  const prompt = `You are Anchor's work-interpretation engine. Identify the correct level of work before planning it.\n\nINPUT\n${JSON.stringify({ title: input.title, sourceType: input.sourceType, sourceNote: input.sourceNote, relatedTrackId: input.relatedTrackId, candidateParent: input.candidateParent })}\n\nAVAILABLE CONTEXT\n${String(input.context || "").slice(0, 9000)}\n\nDETERMINISTIC DRAFT\n${JSON.stringify(fallback)}\n\nReturn only JSON matching this shape: workType, title, objective, whyNow, desiredOutcome, successCriteria, deliverables, constraints, assumptions, estimatedScope, confidence, parentDirectionId, candidateParent, needsClarification, clarifyingQuestion.\n\nRules:\n- Classify as project when several independently useful outcomes or multiple sessions are required.\n- Classify as milestone only when it clearly belongs under the proposed existing project.\n- Classify as task when one independently useful output can be completed in one session.\n- Do not create execution steps.\n- Use source, relationship, track, profile, and prior-work context.\n- Resolve entities only from supplied context or public evidence.\n- Ask exactly one clarification only when the desired overall outcome would otherwise be materially wrong.\n- Preserve uncertainty in assumptions.\n- A project outcome is not 'do research'; it is the decision, capability, artifact, or changed state the research/search enables.`;
   const result = await llmJSON<Record<string, unknown>>(prompt, { model: LLM_MODELS.breakdown, retries: 1 });
   if (!result) return fallback;
   const candidate = {

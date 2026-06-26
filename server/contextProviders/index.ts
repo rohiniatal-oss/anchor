@@ -1,6 +1,7 @@
 import { externalResearchContextProvider } from "./externalResearch";
 import { notionContextProvider } from "./notion";
 import type { ContextBlock, TaskContextProviderInput } from "./types";
+import { extractSearchDiscoveryTarget, isSearchDiscoveryTitle } from "@shared/captureResearch";
 
 export * from "./types";
 export * from "./notion";
@@ -9,9 +10,11 @@ export * from "./externalResearch";
 const BROAD_RESEARCH_RE = /^(?:please\s+)?(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand)\s+(?:about\s+)?(.+?)\s*$/i;
 
 export function inputForTaskResearch(input: TaskContextProviderInput): TaskContextProviderInput {
-  const match = String(input.task.title || "").trim().match(BROAD_RESEARCH_RE);
-  if (!match?.[1]) return input;
-  const target = String(match[1])
+  const title = String(input.task.title || "").trim();
+  const searchTarget = isSearchDiscoveryTitle(title) ? extractSearchDiscoveryTarget(title) : "";
+  const match = searchTarget ? null : title.match(BROAD_RESEARCH_RE);
+  if (!searchTarget && !match?.[1]) return input;
+  const target = String(searchTarget || match?.[1])
     .replace(/\s+(?:so\s+that|so\s+i\s+can|to\s+help\s+me|in\s+order\s+to)\s+.+$/i, "")
     .replace(/[.?!]+$/g, "")
     .trim();

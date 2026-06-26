@@ -9,6 +9,7 @@ import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, P
 import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evidence";
 import { computeLearningGaps, topLearningGapSignal, type TrackLearningGap, type LearningGapSignal } from "./learningStrategy";
 import { buildUserContext, contextFingerprint } from "./userContext";
+import { getPersistedOwnership, type StrategicObjectType } from "./objectOwnership";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the bottleneck types, and a
@@ -466,21 +467,29 @@ export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
 
 export type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
 
+const UNLINKED_OBJECT_TYPE: Record<UnlinkedItem["entity"], StrategicObjectType> = {
+  jobs: "job",
+  learn: "learn",
+  contacts: "contact",
+  hustles: "hustle",
+};
+
 // Source items with no track link (trackId null/0) — orphans that should be linked.
 export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; counts: Record<string, number> }> {
   const [jobs, learn, contacts, hustles] = await Promise.all([
     storage.getJobs(), storage.getLearn(), storage.getContacts(), storage.getHustles(),
   ]);
+  const persistedOwnership = getPersistedOwnership();
+  const manuallyResolved = (entity: UnlinkedItem["entity"], id: number) => {
+    const record = persistedOwnership.get(`${UNLINKED_OBJECT_TYPE[entity]}:${id}`);
+    return record?.source === "manual" && record.ownershipState === "unclassified_capture";
+  };
   const items: UnlinkedItem[] = [];
-  for (const j of jobs) if (isJobLive(j) && !getTrackId("jobs", j)) items.push({ entity: "jobs", id: j.id, title: j.title, status: j.status });
-  for (const l of learn) if (!isLearnDone(l) && getLearnStatus(l) !== "closed" && !getTrackId("learn", l)) items.push({ entity: "learn", id: l.id, title: l.title, status: l.learnStatus });
-  for (const c of contacts) if (!getTrackId("contacts", c)) items.push({ entity: "contacts", id: c.id, title: c.who || c.name || "contact", status: c.status });
-  for (const h of hustles) if (!getTrackId("hustles", h)) items.push({ entity: "hustles", id: h.id, title: h.title, status: h.stage });
+  for (const j of jobs) if (isJobLive(j) && !getTrackId("jobs", j) && !manuallyResolved("jobs", j.id)) items.push({ entity: "jobs", id: j.id, title: j.title, status: j.status });
+  for (const l of learn) if (!isLearnDone(l) && getLearnStatus(l) !== "closed" && !getTrackId("learn", l) && !manuallyResolved("learn", l.id)) items.push({ entity: "learn", id: l.id, title: l.title, status: l.learnStatus });
+  for (const c of contacts) if (!getTrackId("contacts", c) && !manuallyResolved("contacts", c.id)) items.push({ entity: "contacts", id: c.id, title: c.who || c.name || "contact", status: c.status });
+  for (const h of hustles) if (!getTrackId("hustles", h) && !manuallyResolved("hustles", h.id)) items.push({ entity: "hustles", id: h.id, title: h.title, status: h.stage });
   const counts: Record<string, number> = { jobs: 0, learn: 0, contacts: 0, hustles: 0 };
   for (const it of items) counts[it.entity]++;
   return { items, counts };
 }
-
-
-
-

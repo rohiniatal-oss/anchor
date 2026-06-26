@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Trophy, Lightbulb, ArrowUpRight, Briefcase, Users,
   GraduationCap, Target, ChevronRight, Link2, AlertTriangle,
-  BookOpen, CheckCircle2, FolderKanban,
+  BookOpen, CheckCircle2, FolderKanban, Ban, Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -36,7 +36,21 @@ type TrackDiagnostic = {
   } | null;
   bottleneck: string; bottleneckLabel: string; recommendedMove: string;
 };
-type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
+type OwnershipAction = "assign_to_track" | "park" | "stop";
+type OwnershipSuggestion = {
+  action: OwnershipAction;
+  trackId: number | null;
+  trackName: string | null;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+};
+type UnlinkedItem = {
+  entity: "jobs" | "learn" | "contacts" | "hustles";
+  id: number;
+  title: string;
+  status: string;
+  suggestion?: OwnershipSuggestion;
+};
 type StrategyInsight = { kind: string; text: string };
 type LearningGapSignal = {
   trackId: number; trackName: string; gapDomains: string[];
@@ -200,6 +214,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
   const { data: recommendations = [] } = useRecommendations<RecommendationItem[]>();
   const { data: careerTracks = [] } = useCareerTracks();
   const [openRecommendationId, setOpenRecommendationId] = useState<string>("");
+  const [busyOwnershipKey, setBusyOwnershipKey] = useState<string>("");
   if (isLoading) return <Loading />;
   const activeGoal = goalState?.goals?.[0] || null;
   const tracks = data?.tracks || [];
@@ -347,8 +362,62 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
 
   const ENTITY_TAB: Record<UnlinkedItem["entity"], Tab> = { jobs: "jobs", learn: "learn", contacts: "network", hustles: "strategy" };
   const ENTITY_LABEL: Record<UnlinkedItem["entity"], string> = { jobs: "Role", learn: "Learning", contacts: "Contact", hustles: "Project" };
-  async function linkUnlinked(it: UnlinkedItem, trackId: number) {
-    await mutateAndInvalidate("PATCH", `/api/${it.entity}/${it.id}/link-track`, { trackId }, [`/api/${it.entity}`, "/api/strategy", "/api/strategy/diagnostics", "/api/strategy/unlinked", "/api/strategy/front-door", ...GOAL_SPINE_QUERY_KEYS]);
+  const OBJECT_TYPE: Record<UnlinkedItem["entity"], "job" | "learn" | "contact" | "hustle"> = { jobs: "job", learn: "learn", contacts: "contact", hustles: "hustle" };
+  const OWNERSHIP_INVALIDATE_KEYS = [
+    "/api/strategy",
+    "/api/strategy/diagnostics",
+    "/api/strategy/unlinked",
+    "/api/strategy/front-door",
+    "/api/ownership/strategic-objects",
+    "/api/anchor/today",
+    ...GOAL_SPINE_QUERY_KEYS,
+  ];
+  function ownershipKey(it: UnlinkedItem) {
+    return `${it.entity}-${it.id}`;
+  }
+  function ownershipActionLabel(suggestion?: OwnershipSuggestion) {
+    if (!suggestion) return "Resolve";
+    if (suggestion.action === "assign_to_track") return `Assign to ${suggestion.trackName || "role type"}`;
+    if (suggestion.action === "park") return "Park";
+    return "Stop";
+  }
+  function recommendationText(suggestion?: OwnershipSuggestion) {
+    if (!suggestion) return "Anchor needs a decision for this item.";
+    if (suggestion.action === "assign_to_track") return `Anchor recommends assigning this to ${suggestion.trackName || "a role type"}.`;
+    if (suggestion.action === "park") return "Anchor recommends parking this outside active execution.";
+    return "Anchor recommends stopping this as active strategic work.";
+  }
+  async function resolveOwnership(it: UnlinkedItem, action: OwnershipAction, trackId?: number | null) {
+    if (action === "stop" && typeof window !== "undefined" && !window.confirm("Stop this item? Anchor will no longer treat it as active strategic work.")) return;
+    const key = ownershipKey(it);
+    if (busyOwnershipKey) return;
+    setBusyOwnershipKey(key);
+    try {
+      await mutateAndInvalidate(
+        "POST",
+        "/api/ownership/strategic-objects/resolve",
+        {
+          objectType: OBJECT_TYPE[it.entity],
+          objectId: it.id,
+          action,
+          ...(trackId ? { trackId } : {}),
+          reason: it.suggestion?.reason ? `Resolved from Strategy cleanup: ${it.suggestion.reason}` : "Resolved from Strategy cleanup.",
+        },
+        [`/api/${it.entity}`, ...OWNERSHIP_INVALIDATE_KEYS],
+      );
+    } finally {
+      setBusyOwnershipKey("");
+    }
+  }
+  async function acceptOwnershipSuggestion(it: UnlinkedItem) {
+    const suggestion = it.suggestion;
+    if (!suggestion) return;
+    if (suggestion.action === "assign_to_track") {
+      if (!suggestion.trackId) return;
+      await resolveOwnership(it, "assign_to_track", suggestion.trackId);
+      return;
+    }
+    await resolveOwnership(it, suggestion.action);
   }
   async function updateRecommendationStatus(id: number, status: string) {
     await mutateAndInvalidate("PATCH", `/api/recommendations/${id}`, { status }, ["/api/recommendations"]);
@@ -530,30 +599,64 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
         <div className="mb-5 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
-            <span className="text-sm font-medium">{unlinkedItems.length} item{unlinkedItems.length > 1 ? "s" : ""} not assigned to a path yet</span>
+            <span className="text-sm font-medium">{unlinkedItems.length} item{unlinkedItems.length > 1 ? "s" : ""} needs an ownership decision</span>
           </div>
           <div className="space-y-1.5">
-            {unlinkedItems.map((it) => (
-              <div key={`${it.entity}-${it.id}`} className="flex items-center gap-2 rounded-lg bg-card border border-card-border px-3 py-2" data-testid={`unlinked-${it.entity}-${it.id}`}>
-                <span className="text-[10px] rounded-full bg-muted text-muted-foreground px-1.5 py-0.5 shrink-0">{ENTITY_LABEL[it.entity]}</span>
-                <span className="flex-1 text-sm truncate">{it.title}</span>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button className="text-xs text-primary font-medium hover:underline inline-flex items-center gap-1 shrink-0" data-testid={`button-link-unlinked-${it.entity}-${it.id}`}><Link2 className="w-3.5 h-3.5" /> Link</button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-56 p-1.5" align="end">
-                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Assign to a path</p>
-                    <div className="space-y-0.5">
-                      {careerTracks.map((t) => (
-                        <button key={t.id} onClick={() => linkUnlinked(it, t.id)} className="w-full text-left text-sm px-2 py-1.5 rounded-md hover-elevate">{t.name}</button>
-                      ))}
-                      {careerTracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No role types yet.</p>}
+            {unlinkedItems.map((it) => {
+              const suggestion = it.suggestion;
+              const busy = busyOwnershipKey === ownershipKey(it);
+              const canAccept = !!suggestion && (suggestion.action !== "assign_to_track" || !!suggestion.trackId);
+              return (
+                <div key={`${it.entity}-${it.id}`} className="flex flex-col gap-2 rounded-lg bg-card border border-card-border px-3 py-2 sm:flex-row sm:items-start" data-testid={`unlinked-${it.entity}-${it.id}`}>
+                  <span className="w-fit text-[10px] rounded-full bg-muted text-muted-foreground px-1.5 py-0.5 shrink-0">{ENTITY_LABEL[it.entity]}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-sm font-medium leading-snug">{it.title}</span>
+                      <span className="text-[10px] rounded-full bg-muted/70 text-muted-foreground px-1.5 py-0.5">{it.status}</span>
                     </div>
-                  </PopoverContent>
-                </Popover>
-                <button onClick={() => onOpenTab(ENTITY_TAB[it.entity])} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Open"><ChevronRight className="w-4 h-4" /></button>
-              </div>
-            ))}
+                    <p className="mt-1 text-xs text-primary leading-snug" data-testid={`ownership-recommendation-${it.entity}-${it.id}`}>
+                      {recommendationText(suggestion)} {suggestion ? `(${suggestion.confidence} confidence)` : ""}
+                    </p>
+                    {suggestion?.reason && <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{suggestion.reason}</p>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+                    {suggestion && (
+                      <Button size="sm" variant="outline" onClick={() => acceptOwnershipSuggestion(it)} disabled={busyOwnershipKey !== "" || !canAccept} data-testid={`button-accept-ownership-${it.entity}-${it.id}`}>
+                        {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : suggestion.action === "assign_to_track" ? <Link2 className="mr-1 h-3.5 w-3.5" /> : suggestion.action === "stop" ? <Ban className="mr-1 h-3.5 w-3.5" /> : null}
+                        {ownershipActionLabel(suggestion)}
+                      </Button>
+                    )}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button size="sm" variant="ghost" disabled={busyOwnershipKey !== ""} data-testid={`button-assign-other-${it.entity}-${it.id}`}>
+                          <Link2 className="mr-1 h-3.5 w-3.5" /> Assign
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-1.5" align="end">
+                        <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">Assign to a path</p>
+                        <div className="space-y-0.5">
+                          {careerTracks.map((t) => (
+                            <button key={t.id} onClick={() => resolveOwnership(it, "assign_to_track", t.id)} className="w-full text-left text-sm px-2 py-1.5 rounded-md hover-elevate">{t.name}</button>
+                          ))}
+                          {careerTracks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground">No role types yet.</p>}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                    {suggestion?.action !== "park" && (
+                      <Button size="sm" variant="ghost" onClick={() => resolveOwnership(it, "park")} disabled={busyOwnershipKey !== ""} data-testid={`button-park-ownership-${it.entity}-${it.id}`}>
+                        Park
+                      </Button>
+                    )}
+                    {suggestion?.action !== "stop" && (
+                      <Button size="sm" variant="ghost" onClick={() => resolveOwnership(it, "stop")} disabled={busyOwnershipKey !== ""} data-testid={`button-stop-ownership-${it.entity}-${it.id}`}>
+                        <Ban className="mr-1 h-3.5 w-3.5" /> Stop
+                      </Button>
+                    )}
+                    <button onClick={() => onOpenTab(ENTITY_TAB[it.entity])} className="text-muted-foreground hover:text-foreground shrink-0" aria-label="Open"><ChevronRight className="w-4 h-4" /></button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

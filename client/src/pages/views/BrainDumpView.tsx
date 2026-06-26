@@ -12,6 +12,7 @@ import { Loading } from "@/components/home/Loading";
 import { Empty } from "@/components/home/Empty";
 import { WorkPreviewPanel, type WorkPreviewResponse } from "@/components/home/WorkPreviewPanel";
 import type { Task } from "@shared/schema";
+import { isCareerDirectionResearchTitle } from "@shared/captureResearch";
 
 type CaptureSug = { id: number; route: string; label: string; reason: string; confidence: string; question?: string };
 
@@ -26,7 +27,7 @@ const ROUTE_ACTION_LABEL: Record<string, string> = {
   deadline: "Add a deadline",
   blocker: "Flag as blocked",
   decision: "Define the decision",
-  research: "Understand and plan",
+  research: "Research direction",
   note: "Save as a note",
   duplicate: "Already captured",
   parking_lot: "Park for later",
@@ -42,10 +43,23 @@ const CONFIDENCE_LABEL: Record<string, string> = {
 const BROAD_WORK_RE = /^(?:please\s+)?(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand|prepare|review|work\s+on|improve|fix|sort\s+out|think\s+about|plan|figure\s+out|develop|build|create|draft|write|organize|organise|update|launch|set\s+up)\b/i;
 
 function needsWorkPreview(task: Task, route?: string) {
-  if (route === "research" || route === "decision" || route === "subtask") return true;
+  if (route === "research") return !isCareerDirectionResearchTitle(task.title);
+  if (route === "decision" || route === "subtask") return true;
   if (route === "proof" && BROAD_WORK_RE.test(task.title)) return true;
   return BROAD_WORK_RE.test(task.title) && ["task", "keep", undefined].includes(route);
 }
+
+const CAPTURE_INVALIDATIONS = [
+  "/api/tasks",
+  "/api/jobs",
+  "/api/learn",
+  "/api/hustles",
+  "/api/contacts",
+  "/api/career-tracks",
+  "/api/projects",
+  "/api/plan/current",
+  ...GOAL_SPINE_QUERY_KEYS,
+];
 
 export default function BrainDumpView() {
   const { data: tasks = [], isLoading } = useQuery<Task[]>({ queryKey: ["/api/tasks"] });
@@ -55,6 +69,7 @@ export default function BrainDumpView() {
   const [sorting, setSorting] = useState(false);
   const [suggestingId, setSuggestingId] = useState<number | null>(null);
   const [planningId, setPlanningId] = useState<number | null>(null);
+  const [routingId, setRoutingId] = useState<number | null>(null);
   const [triage, setTriage] = useState<Record<number, CaptureSug>>({});
   const [workPreviews, setWorkPreviews] = useState<Record<number, WorkPreviewResponse>>({});
   const { toast } = useToast();
@@ -123,7 +138,7 @@ export default function BrainDumpView() {
   }
 
   async function interpretWork(task: Task) {
-    if (planningId === task.id) return;
+    if (planningId === task.id || routingId === task.id) return;
     setPlanningId(task.id);
     try {
       const response = await apiRequest("POST", "/api/work/interpret", {
@@ -152,37 +167,60 @@ export default function BrainDumpView() {
       await interpretWork(task);
       return;
     }
-    await mutateAndInvalidate(
-      "POST",
-      `/api/capture/${task.id}/route`,
-      { route },
-      ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current", ...GOAL_SPINE_QUERY_KEYS],
-    );
-    setTriage((current) => { const next = { ...current }; delete next[task.id]; return next; });
-    toast({ title: label });
+    if (routingId === task.id || planningId === task.id) return;
+    setRoutingId(task.id);
+    try {
+      const result = await mutateAndInvalidate(
+        "POST",
+        `/api/capture/${task.id}/route`,
+        { route },
+        CAPTURE_INVALIDATIONS,
+      );
+      setTriage((current) => { const next = { ...current }; delete next[task.id]; return next; });
+      toast({
+        title: label,
+        description: route === "research" ? result?.reason || "The direction model is ready. No live work was created." : undefined,
+      });
+    } catch (error: any) {
+      toast({
+        title: route === "research" ? "Couldn't research that direction" : "Couldn't file that capture",
+        description: error?.message || "The original capture is still safe in your inbox.",
+      });
+    } finally {
+      setRoutingId((current) => current === task.id ? null : current);
+    }
   }
 
   async function acceptAll() {
     const actionable = inbox.filter((task) => {
       const suggestion = triage[task.id];
-      return suggestion && suggestion.route !== "keep" && !needsWorkPreview(task, suggestion.route);
+      return suggestion
+        && suggestion.route !== "keep"
+        && suggestion.route !== "research"
+        && !needsWorkPreview(task, suggestion.route);
     });
     if (!actionable.length) {
-      toast({ title: "Project-shaped items need review", description: "Use Understand and plan so Anchor can show the project or task before creating work." });
+      toast({
+        title: "Nothing can be bulk-filed safely",
+        description: "Projects and career-direction research each need one explicit review.",
+      });
       return;
     }
     await Promise.all(actionable.map((task) => mutateAndInvalidate(
       "POST",
       `/api/capture/${task.id}/route`,
       { route: triage[task.id].route },
-      ["/api/tasks", "/api/jobs", "/api/learn", "/api/hustles", "/api/contacts", "/api/plan/current", ...GOAL_SPINE_QUERY_KEYS],
+      CAPTURE_INVALIDATIONS,
     )));
     setTriage((current) => {
       const next = { ...current };
       actionable.forEach((task) => { delete next[task.id]; });
       return next;
     });
-    toast({ title: `Filed ${actionable.length} item${actionable.length > 1 ? "s" : ""}`, description: "Items that may be projects were left for your review." });
+    toast({
+      title: `Filed ${actionable.length} item${actionable.length > 1 ? "s" : ""}`,
+      description: "Projects and direction research were left for individual review.",
+    });
   }
 
   function clearWorkPreview(taskId: number) {
@@ -227,7 +265,13 @@ export default function BrainDumpView() {
             </p>
           ) : Object.keys(triage).length > 0 ? (
             <div className="flex flex-wrap items-center gap-3">
-              {inbox.some((task) => triage[task.id] && triage[task.id].route !== "keep" && !needsWorkPreview(task, triage[task.id].route)) && (
+              {inbox.some((task) => {
+                const suggestion = triage[task.id];
+                return suggestion
+                  && suggestion.route !== "keep"
+                  && suggestion.route !== "research"
+                  && !needsWorkPreview(task, suggestion.route);
+              }) && (
                 <Button variant="default" size="sm" onClick={acceptAll} data-testid="button-accept-all-braindump" className="inline-flex items-center gap-1.5">
                   <ArrowRight className="h-4 w-4" /> Accept straightforward suggestions
                 </Button>
@@ -251,6 +295,8 @@ export default function BrainDumpView() {
           {inbox.map((task) => {
             const suggestion = triage[task.id];
             const preview = workPreviews[task.id];
+            const busy = planningId === task.id || routingId === task.id;
+            const researching = routingId === task.id && suggestion?.route === "research";
             return (
               <div key={task.id} className="group rounded-lg border border-card-border bg-card px-3 py-2.5" data-testid={`braindump-${task.id}`}>
                 <div className="flex items-center gap-2">
@@ -263,7 +309,7 @@ export default function BrainDumpView() {
                         className="h-7 px-2"
                         onClick={() => suggestOne(task.id)}
                         data-testid={`button-route-braindump-${task.id}`}
-                        disabled={suggestingId === task.id}
+                        disabled={suggestingId === task.id || busy}
                       >
                         {suggestingId === task.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <ArrowRight className="mr-1 h-3 w-3" />}
                         {suggestingId === task.id ? "Thinking..." : "Suggest"}
@@ -276,16 +322,16 @@ export default function BrainDumpView() {
                         className="h-7 px-2"
                         onClick={() => interpretWork(task)}
                         data-testid={`button-understand-work-${task.id}`}
-                        disabled={planningId === task.id}
+                        disabled={busy}
                       >
                         {planningId === task.id ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Layers className="mr-1 h-3 w-3" />}
                         {planningId === task.id ? "Understanding..." : "Plan work"}
                       </Button>
                     )}
                     {!suggestion && !preview && !BROAD_WORK_RE.test(task.title) && (
-                      <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => applyRoute(task, "today", "Added to today")} data-testid={`button-addday-${task.id}`}>Add to day</Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2" onClick={() => applyRoute(task, "today", "Added to today")} data-testid={`button-addday-${task.id}`} disabled={busy}>Add to day</Button>
                     )}
-                    <button onClick={() => remove(task.id)} aria-label="Delete" data-testid={`button-delete-braindump-${task.id}`} className="ml-0.5 text-muted-foreground hover:text-destructive"><X className="h-4 w-4" /></button>
+                    <button onClick={() => remove(task.id)} aria-label="Delete" data-testid={`button-delete-braindump-${task.id}`} className="ml-0.5 text-muted-foreground hover:text-destructive" disabled={busy}><X className="h-4 w-4" /></button>
                   </div>
                 </div>
 
@@ -302,16 +348,17 @@ export default function BrainDumpView() {
                         <button
                           onClick={() => applyRoute(task, suggestion.route, ROUTE_ACTION_LABEL[suggestion.route] || "Filed")}
                           data-testid={`button-triage-accept-${task.id}`}
-                          className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary hover-elevate"
+                          className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary hover-elevate disabled:opacity-60"
+                          disabled={busy}
                         >
-                          {planningId === task.id ? <Loader2 className="h-3 w-3 animate-spin" /> : needsWorkPreview(task, suggestion.route) ? <Layers className="h-3 w-3" /> : <ArrowRight className="h-3 w-3" />}
-                          {planningId === task.id ? "Understanding..." : ROUTE_ACTION_LABEL[suggestion.route] || "File it"}
+                          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : needsWorkPreview(task, suggestion.route) ? <Layers className="h-3 w-3" /> : <ArrowRight className="h-3 w-3" />}
+                          {researching ? "Researching..." : planningId === task.id ? "Understanding..." : ROUTE_ACTION_LABEL[suggestion.route] || "File it"}
                         </button>
                       )}
-                      {!needsWorkPreview(task, suggestion.route) && suggestion.route !== "today" && (
-                        <button onClick={() => applyRoute(task, "today", "Added to today")} data-testid={`button-triage-today-${task.id}`} className="text-xs text-muted-foreground hover:text-foreground">or put it on today's plan</button>
+                      {!needsWorkPreview(task, suggestion.route) && !["today", "research"].includes(suggestion.route) && (
+                        <button onClick={() => applyRoute(task, "today", "Added to today")} data-testid={`button-triage-today-${task.id}`} className="text-xs text-muted-foreground hover:text-foreground" disabled={busy}>or put it on today's plan</button>
                       )}
-                      <button onClick={() => setTriage((current) => { const next = { ...current }; delete next[task.id]; return next; })} data-testid={`button-triage-dismiss-${task.id}`} className="text-xs text-muted-foreground hover:text-foreground">leave it here for now</button>
+                      <button onClick={() => setTriage((current) => { const next = { ...current }; delete next[task.id]; return next; })} data-testid={`button-triage-dismiss-${task.id}`} className="text-xs text-muted-foreground hover:text-foreground" disabled={busy}>leave it here for now</button>
                     </div>
                   </div>
                 )}

@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { llmUsageStats } from "./llm";
 import { registerCaptureRoutes } from "./capture";
 import { registerCaptureResearchRoutes } from "./captureResearchRoutes";
+import { registerSearchDiscoveryRoutes } from "./searchDiscovery";
 import { registerTrackResearchRoutes } from "./trackResearchRoutes";
 import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRoutes";
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
@@ -120,9 +121,9 @@ app.use((req, res, next) => {
   registerTrustBoundaryRoutes(app);
   registerTaskLifecycleRoutes(app);
 
-  // Track research is the single career-direction research brain. The capture
-  // interceptor is registered before the legacy router so a research route can
-  // never reach the old domain-brief materializer.
+  // Track research is the single career-direction research brain. Search and
+  // discovery capture routing is registered before the legacy router so search-
+  // like requests cannot auto-materialize objects.
   registerPersistenceAdminRoutes(app);
   registerTrackResearchRoutes(app);
   registerTrackResearchCoverageRoutes(app);
@@ -130,6 +131,7 @@ app.use((req, res, next) => {
   registerTrackResearchExecutionRoutes(app);
   registerTrackResearchExecutionPriorityRoutes(app);
   registerCaptureResearchRoutes(app);
+  registerSearchDiscoveryRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);

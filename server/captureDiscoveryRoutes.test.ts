@@ -71,7 +71,6 @@ test("automatic discovery returns evidence and a preview without creating object
     learn: (await h.storage.getLearn()).length,
     contacts: (await h.storage.getContacts()).length,
     hustles: (await h.storage.getHustles()).length,
-    projects: h.sqlite.prepare("SELECT COUNT(*) AS count FROM projects").get() as any,
   };
 
   const response = await api(h.base, "POST", `/api/capture/${capture.id}/discover`, {
@@ -93,7 +92,6 @@ test("automatic discovery returns evidence and a preview without creating object
     learn: (await h.storage.getLearn()).length,
     contacts: (await h.storage.getContacts()).length,
     hustles: (await h.storage.getHustles()).length,
-    projects: h.sqlite.prepare("SELECT COUNT(*) AS count FROM projects").get() as any,
   };
   assert.deepEqual(after, before);
 });

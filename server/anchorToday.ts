@@ -32,8 +32,18 @@ function isVague(task: Task) {
   return !task.doneWhen && !hasSteps(task);
 }
 
+function discoveryResolutionStatus(task: Task) {
+  if (task.sourceType !== "discovery_option") return "";
+  const status = String(task.sourceStatus || "").toLowerCase();
+  return status === "parked" || status === "stopped" ? status : "";
+}
+
+function isResolvedDiscoveryTask(task: Task) {
+  return discoveryResolutionStatus(task) !== "";
+}
+
 function isUnassignedDiscoveryTask(task: Task) {
-  return task.sourceType === "discovery_option" && !task.relatedTrackId;
+  return task.sourceType === "discovery_option" && !task.relatedTrackId && !isResolvedDiscoveryTask(task);
 }
 
 function firstStepFromTask(task: Task) {
@@ -75,9 +85,16 @@ export function assessExistingTasks(tasks: Task[], bestMove: { title: string; la
     let score = task.list === "today" ? 2 : 0;
     const matches = taskMatchesSpineMove(task, bestMove.title, bestMove.lane);
     const blocked = task.readiness === "blocked" || !!task.blockerReason;
+    const resolvedDiscovery = discoveryResolutionStatus(task);
     const unassignedDiscovery = isUnassignedDiscoveryTask(task);
 
-    if (unassignedDiscovery && matches) {
+    if (resolvedDiscovery) {
+      action = "ignore";
+      reason = resolvedDiscovery === "parked"
+        ? "This discovery result was intentionally parked."
+        : "This discovery result was stopped.";
+      score -= 5;
+    } else if (unassignedDiscovery && matches) {
       action = "shrink";
       reason = "This discovery result matches the spine move, but needs a direction assignment or parking decision before execution.";
       score += 5;

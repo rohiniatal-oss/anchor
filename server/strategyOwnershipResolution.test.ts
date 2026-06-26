@@ -24,6 +24,10 @@ function hasUnlinkedItem(bucket: Awaited<ReturnType<typeof getUnlinkedItems>>, e
   return bucket.items.some((item) => item.entity === entity && item.id === id);
 }
 
+function unlinkedItem(bucket: Awaited<ReturnType<typeof getUnlinkedItems>>, entity: string, id: number) {
+  return bucket.items.find((item) => item.entity === entity && item.id === id);
+}
+
 async function createTrack(name = "AI governance") {
   return h.storage.createCareerTrack({
     slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
@@ -33,6 +37,44 @@ async function createTrack(name = "AI governance") {
     whyItFits: "Test direction",
   } as any);
 }
+
+test("unlinked items include an ownership recommendation with reason and confidence", async () => {
+  const track = await createTrack("AI governance");
+  const job = await h.storage.createJob({
+    title: "AI Governance Lead",
+    company: "Example Org",
+    status: "wishlist",
+    sourceType: "discovery_option",
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "jobs", job.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "assign_to_track");
+  assert.equal(item.suggestion.trackId, track.id);
+  assert.equal(item.suggestion.trackName, "AI governance");
+  assert.equal(item.suggestion.confidence, "high");
+  assert.match(item.suggestion.reason, /matches AI governance/i);
+});
+
+test("ambiguous unlinked items recommend parking instead of forcing a role type", async () => {
+  await createTrack("AI governance");
+  const learn = await h.storage.createLearn({
+    title: "General systems thinking",
+    type: "resource",
+    learnStatus: "open",
+    requiredOutput: "A general note",
+    proofIntent: true,
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "learn", learn.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "park");
+  assert.equal(item.suggestion.trackId, null);
+  assert.equal(item.suggestion.confidence, "low");
+  assert.match(item.suggestion.reason, /No role type clearly matches/i);
+});
 
 test("parked unlinked jobs leave the Strategy unlinked queue", async () => {
   const job = await h.storage.createJob({
@@ -52,7 +94,7 @@ test("parked unlinked jobs leave the Strategy unlinked queue", async () => {
 
   assert.ok(result);
   assert.equal(result.ownership.source, "manual");
-  assert.equal(result.ownership.ownershipState, "unclassified_capture");
+  assert.equal(result.ownership.ownershipState, "parked");
   assert.equal(result.ownership.trackId, null);
 
   const bucket = await getUnlinkedItems();
@@ -79,7 +121,7 @@ test("stopped contacts leave the Strategy unlinked queue even when their status 
   assert.ok(result);
   assert.equal(result.action, "stop");
   assert.equal(result.ownership.source, "manual");
-  assert.equal(result.ownership.ownershipState, "unclassified_capture");
+  assert.equal(result.ownership.ownershipState, "stopped");
 
   const updated = (await h.storage.getContacts()).find((item) => item.id === contact.id);
   assert.equal(updated?.status, "archived");

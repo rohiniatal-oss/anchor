@@ -1,7 +1,7 @@
 import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { rawDb, storage, type TrackEntity } from "./storage";
 
-export type OwnershipState = "linked_to_direction" | "candidate_for_direction" | "unclassified_capture";
+export type OwnershipState = "linked_to_direction" | "candidate_for_direction" | "unclassified_capture" | "parked" | "stopped";
 export type OwnershipConfidence = "high" | "medium" | "low";
 export type StrategicObjectType = "task" | "job" | "learn" | "contact" | "hustle";
 export type OwnershipResolutionAction = "assign_to_track" | "park" | "stop";
@@ -409,6 +409,8 @@ export function summarizeOwnership(records: StrategicObjectOwnership[]) {
     linked_to_direction: 0,
     candidate_for_direction: 0,
     unclassified_capture: 0,
+    parked: 0,
+    stopped: 0,
     persisted: 0,
   };
   for (const record of records) {
@@ -489,13 +491,13 @@ export async function resolveStrategicObjectOwnership(
   } else if (action === "park") {
     object = await parkStrategicObject(objectType, objectId);
     if (!object) return null;
-    ownershipState = "unclassified_capture";
+    ownershipState = "parked";
     confidence = "medium";
     reason ||= "Intentionally parked; keep it out of execution until it is assigned to a direction.";
   } else {
     object = await stopStrategicObject(objectType, objectId);
     if (!object) return null;
-    ownershipState = "unclassified_capture";
+    ownershipState = "stopped";
     confidence = "high";
     reason ||= "Stopped by the user; do not treat this as active strategic work.";
   }

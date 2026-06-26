@@ -465,7 +465,21 @@ export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
   };
 }
 
-export type UnlinkedItem = { entity: "jobs" | "learn" | "contacts" | "hustles"; id: number; title: string; status: string };
+export type OwnershipSuggestion = {
+  action: "assign_to_track" | "park" | "stop";
+  trackId: number | null;
+  trackName: string | null;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+};
+
+export type UnlinkedItem = {
+  entity: "jobs" | "learn" | "contacts" | "hustles";
+  id: number;
+  title: string;
+  status: string;
+  suggestion: OwnershipSuggestion;
+};
 
 const UNLINKED_OBJECT_TYPE: Record<UnlinkedItem["entity"], StrategicObjectType> = {
   jobs: "job",
@@ -474,21 +488,146 @@ const UNLINKED_OBJECT_TYPE: Record<UnlinkedItem["entity"], StrategicObjectType> 
   hustles: "hustle",
 };
 
-// Source items with no track link (trackId null/0) — orphans that should be linked.
+const RESOLVED_MANUAL_STATES = new Set(["unclassified_capture", "parked", "stopped"]);
+const TOKEN_STOPWORDS = new Set([
+  "the", "and", "for", "with", "from", "into", "about", "role", "roles", "lead", "manager", "senior", "associate",
+  "director", "head", "jobs", "job", "contact", "learning", "resource", "project", "proof", "asset", "example", "open", "ai",
+]);
+
+function normalized(value: unknown) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function tokenSet(value: unknown) {
+  return new Set(normalized(value).split(" ").filter((token) => token.length > 2 && !TOKEN_STOPWORDS.has(token)));
+}
+
+function trackMatchScore(track: CareerTrack, sourceText: string) {
+  const source = normalized(sourceText);
+  const trackName = normalized(track.name);
+  let score = trackName && source.includes(trackName) ? 4 : 0;
+  const sourceTokens = tokenSet(sourceText);
+  const trackTokens = tokenSet(`${track.name} ${track.description} ${track.targetRoleArchetype} ${track.whyItFits}`);
+  for (const token of trackTokens) if (sourceTokens.has(token)) score += 1;
+  return score;
+}
+
+function suggestOwnership(entity: UnlinkedItem["entity"], status: string, sourceText: string, tracks: CareerTrack[]): OwnershipSuggestion {
+  const canonicalStatus = normalized(status);
+  if (entity === "contacts" && canonicalStatus && !["to contact", "messaged", "replied"].includes(canonicalStatus)) {
+    return {
+      action: "stop",
+      trackId: null,
+      trackName: null,
+      confidence: "high",
+      reason: "This contact is already outside the active contact statuses, so Anchor should stop treating it as unresolved strategic work.",
+    };
+  }
+
+  if (tracks.length === 0) {
+    return {
+      action: "park",
+      trackId: null,
+      trackName: null,
+      confidence: "low",
+      reason: "There are no role types to assign this to yet, so keep it out of active execution until a direction exists.",
+    };
+  }
+
+  const ranked = tracks
+    .map((track) => ({ track, score: trackMatchScore(track, sourceText) }))
+    .sort((a, b) => b.score - a.score);
+  const best = ranked[0];
+  const second = ranked[1];
+  if (best && best.score >= 4) {
+    return {
+      action: "assign_to_track",
+      trackId: best.track.id,
+      trackName: best.track.name,
+      confidence: "high",
+      reason: `The item context directly matches ${best.track.name}.`,
+    };
+  }
+  if (best && best.score >= 2 && best.score > (second?.score || 0)) {
+    return {
+      action: "assign_to_track",
+      trackId: best.track.id,
+      trackName: best.track.name,
+      confidence: "medium",
+      reason: `The item context overlaps most with ${best.track.name}.`,
+    };
+  }
+
+  return {
+    action: "park",
+    trackId: null,
+    trackName: null,
+    confidence: "low",
+    reason: "No role type clearly matches this item yet, so parking is safer than forcing it into the wrong direction.",
+  };
+}
+
+function shouldHideManuallyResolved(entity: UnlinkedItem["entity"], id: number, persistedOwnership: ReturnType<typeof getPersistedOwnership>) {
+  const record = persistedOwnership.get(`${UNLINKED_OBJECT_TYPE[entity]}:${id}`);
+  return record?.source === "manual" && RESOLVED_MANUAL_STATES.has(record.ownershipState);
+}
+
+function withSuggestion(
+  item: Omit<UnlinkedItem, "suggestion">,
+  sourceText: string,
+  tracks: CareerTrack[],
+): UnlinkedItem {
+  return {
+    ...item,
+    suggestion: suggestOwnership(item.entity, item.status, sourceText, tracks),
+  };
+}
+
+// Source items with no track link (trackId null/0) — orphans that should be resolved.
 export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; counts: Record<string, number> }> {
-  const [jobs, learn, contacts, hustles] = await Promise.all([
-    storage.getJobs(), storage.getLearn(), storage.getContacts(), storage.getHustles(),
+  const [jobs, learn, contacts, hustles, tracks] = await Promise.all([
+    storage.getJobs(), storage.getLearn(), storage.getContacts(), storage.getHustles(), storage.getCareerTracks(),
   ]);
   const persistedOwnership = getPersistedOwnership();
-  const manuallyResolved = (entity: UnlinkedItem["entity"], id: number) => {
-    const record = persistedOwnership.get(`${UNLINKED_OBJECT_TYPE[entity]}:${id}`);
-    return record?.source === "manual" && record.ownershipState === "unclassified_capture";
-  };
   const items: UnlinkedItem[] = [];
-  for (const j of jobs) if (isJobLive(j) && !getTrackId("jobs", j) && !manuallyResolved("jobs", j.id)) items.push({ entity: "jobs", id: j.id, title: j.title, status: j.status });
-  for (const l of learn) if (!isLearnDone(l) && getLearnStatus(l) !== "closed" && !getTrackId("learn", l) && !manuallyResolved("learn", l.id)) items.push({ entity: "learn", id: l.id, title: l.title, status: l.learnStatus });
-  for (const c of contacts) if (!getTrackId("contacts", c) && !manuallyResolved("contacts", c.id)) items.push({ entity: "contacts", id: c.id, title: c.who || c.name || "contact", status: c.status });
-  for (const h of hustles) if (!getTrackId("hustles", h) && !manuallyResolved("hustles", h.id)) items.push({ entity: "hustles", id: h.id, title: h.title, status: h.stage });
+
+  for (const j of jobs) {
+    if (isJobLive(j) && !getTrackId("jobs", j) && !shouldHideManuallyResolved("jobs", j.id, persistedOwnership)) {
+      items.push(withSuggestion(
+        { entity: "jobs", id: j.id, title: j.title, status: j.status },
+        `${j.title} ${j.company} ${j.roleArchetype} ${j.note} ${j.nextStep} ${j.jdText}`,
+        tracks,
+      ));
+    }
+  }
+  for (const l of learn) {
+    if (!isLearnDone(l) && getLearnStatus(l) !== "closed" && !getTrackId("learn", l) && !shouldHideManuallyResolved("learn", l.id, persistedOwnership)) {
+      items.push(withSuggestion(
+        { entity: "learn", id: l.id, title: l.title, status: l.learnStatus },
+        `${l.title} ${l.category} ${l.type} ${l.capabilityBuilt} ${l.requiredOutput} ${l.note}`,
+        tracks,
+      ));
+    }
+  }
+  for (const c of contacts) {
+    if (!getTrackId("contacts", c) && !shouldHideManuallyResolved("contacts", c.id, persistedOwnership)) {
+      items.push(withSuggestion(
+        { entity: "contacts", id: c.id, title: c.who || c.name || "contact", status: c.status },
+        `${c.name} ${c.who} ${c.sector} ${c.why} ${c.sourceNetwork} ${c.targetOrg} ${c.targetRole} ${c.askType} ${c.referralPotential}`,
+        tracks,
+      ));
+    }
+  }
+  for (const h of hustles) {
+    if (!getTrackId("hustles", h) && !shouldHideManuallyResolved("hustles", h.id, persistedOwnership)) {
+      items.push(withSuggestion(
+        { entity: "hustles", id: h.id, title: h.title, status: h.stage },
+        `${h.title} ${h.note} ${h.nextStep} ${h.audience} ${h.coreClaim} ${h.contentPillar} ${h.firstPostIdea}`,
+        tracks,
+      ));
+    }
+  }
+
   const counts: Record<string, number> = { jobs: 0, learn: 0, contacts: 0, hustles: 0 };
   for (const it of items) counts[it.entity]++;
   return { items, counts };

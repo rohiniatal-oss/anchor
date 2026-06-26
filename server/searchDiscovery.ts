@@ -3,6 +3,7 @@ import { classifyCapture, type CaptureSuggestion } from "./capture";
 import { storage } from "./storage";
 
 const SEARCH_ROUTE_ALIASES = new Set(["search", "discover", "discovery", "explore", "research"]);
+const SAFE_PARKING_ROUTES = new Set(["keep", "note", "duplicate", "parking_lot", "idea"]);
 const SEARCH_COMMAND_RE = /^(?:please\s+)?(?:search(?:\s+for)?|find(?:\s+me)?|look\s+(?:up|for|into)|find\s+out\s+about|identify|map(?:\s+out)?|scan|source|shortlist|discover|locate|research|investigate|explore|understand)\b/i;
 const HARD_SEARCH_COMMAND_RE = /^(?:please\s+)?(?:search(?:\s+for)?|look\s+(?:up|for|into)|find\s+out\s+about|research|investigate|explore|understand)\b/i;
 const SEARCH_OBJECT_RE = /\b(roles?|jobs?|postings?|vacanc(?:y|ies)|companies|organisations|organizations|people|contacts?|alumni|experts?|courses?|programs?|programmes?|fellowships?|resources?|articles?|reports?|datasets?|examples?|events?|grants?|funders?|teams?|workstreams?|requirements?|landscape|market|opportunities|paths?)\b/i;
@@ -47,9 +48,7 @@ export function classifySearchDiscoveryCapture(id: number, title: string): Captu
     reason: generic
       ? "This is a search request, but the target or purpose is too broad to create objects safely"
       : "This is search/discovery work. Anchor should understand the goal and preview results before creating jobs, contacts, learning items, or tasks.",
-    question: generic
-      ? "What should this search help you decide, produce, or change?"
-      : undefined,
+    question: generic ? "What should this search help you decide, produce, or change?" : undefined,
   };
 }
 
@@ -57,8 +56,12 @@ function classifySearchAwareCapture(id: number, title: string) {
   return classifySearchDiscoveryCapture(id, title) || classifyCapture(id, title);
 }
 
-function isSearchRoute(rawRoute: unknown) {
+function isExplicitSearchRoute(rawRoute: unknown) {
   return SEARCH_ROUTE_ALIASES.has(lower(rawRoute));
+}
+
+function canPassThrough(rawRoute: unknown) {
+  return SAFE_PARKING_ROUTES.has(lower(rawRoute));
 }
 
 async function safeSearchRoute(id: number) {
@@ -107,10 +110,13 @@ export function registerSearchDiscoveryRoutes(app: Express) {
   });
 
   app.post("/api/capture/:id/route", async (req: Request, res: Response, next: NextFunction) => {
-    const rawRoute = req.body?.route || req.body?.category;
-    if (!isSearchRoute(rawRoute)) return next();
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: "Bad id" });
+    const rawRoute = req.body?.route || req.body?.category;
+    if (canPassThrough(rawRoute)) return next();
+    const task = (await storage.getTasks()).find((item) => item.id === id);
+    if (!task) return res.status(404).json({ error: "Capture not found" });
+    if (!isExplicitSearchRoute(rawRoute) && !isSearchDiscoveryCapture(task.title)) return next();
     const result = await safeSearchRoute(id);
     return res.status(result.status).json(result.body);
   });

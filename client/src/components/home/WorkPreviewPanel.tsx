@@ -47,6 +47,18 @@ export type WorkPreviewResponse = {
 
 type DiscoveryActivationType = "job" | "contact" | "learn" | "proof" | "task";
 
+type DiscoveryActivationFollowUp = {
+  title: string;
+  description: string;
+  targetId?: number | null;
+  sourceUrl?: string;
+};
+
+type DiscoveryActivationResult = {
+  reused?: boolean;
+  followUp?: DiscoveryActivationFollowUp;
+};
+
 type ConfirmedProject = {
   kind: "project";
   project: { id: number; title: string; objective: string; desiredOutcome: string; currentMilestoneId?: number | null };
@@ -142,6 +154,13 @@ function optionActivationLabel(kind: RankedDiscoveryOption["kind"]) {
   if (kind === "learning" || kind === "resource") return "Save as Learn";
   if (kind === "proof") return "Save as Proof";
   return "Create follow-up task";
+}
+
+function activationDescription(result: DiscoveryActivationResult | null | undefined, fallback: string) {
+  if (result?.followUp?.title && result.followUp.description) {
+    return `${result.followUp.title}: ${result.followUp.description}`;
+  }
+  return fallback;
 }
 
 export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onResolved }: Props) {
@@ -242,10 +261,13 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
       const result = await mutateAndInvalidate("POST", `/api/capture/${task.id}/discovery-options/activate`, {
         option,
         activationType,
-      }, INVALIDATE_AFTER_WORK);
+      }, INVALIDATE_AFTER_WORK) as DiscoveryActivationResult;
       toast({
         title: result?.reused ? "Option already saved" : optionActivationLabel(option.kind),
-        description: result?.reused ? "Anchor reused the existing object instead of creating a duplicate." : "Anchor created the selected object from this ranked option.",
+        description: activationDescription(
+          result,
+          result?.reused ? "Anchor reused the existing object instead of creating a duplicate." : "Anchor created the selected object from this ranked option.",
+        ),
       });
       onResolved();
     } catch (error: any) {

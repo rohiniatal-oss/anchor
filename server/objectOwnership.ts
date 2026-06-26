@@ -95,9 +95,9 @@ export function deriveTaskOwnership(task: Task): StrategicObjectOwnership {
   const linked = ownershipFromTrackLink("task", task.id, trackId, "Task is explicitly linked to a career direction.");
   if (linked) return linked;
 
-  const strategicSource = ["project", "work_definition", "recommendation", "track_research", "project_capture"].includes(task.sourceType);
+  const strategicSource = ["project", "work_definition", "recommendation", "track_research", "project_capture", "discovery_option"].includes(task.sourceType);
   const strategicCategory = ["job", "learning", "substack", "hustle", "interview"].includes(task.category);
-  const needsParent = includesAny(task.sourceStatus, ["needs_parent", "routed:decision", "research"]);
+  const needsParent = includesAny(task.sourceStatus, ["needs_parent", "routed:decision", "research", "discovery_option"]);
   if (strategicSource || strategicCategory || needsParent) {
     return {
       objectType: "task",

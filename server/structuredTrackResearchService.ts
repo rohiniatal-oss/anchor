@@ -64,6 +64,11 @@ export type StructuredTrackResearchRunner = (
 
 export type StructuredTrackResearchDependencies = {
   runBaseResearch?: StructuredTrackResearchRunner;
+  buildRequirementModel?: typeof buildRequirementModel;
+  enhanceRequirementModel?: typeof enhanceRequirementModelWithLlm;
+  buildCareerArchitecture?: typeof buildCareerArchitecture;
+  buildBottleneckDiagnosis?: typeof buildBottleneckDiagnosis;
+  buildWorkspaceView?: typeof architectureWorkspaceView;
 };
 
 function compact(value: unknown): string {
@@ -166,11 +171,17 @@ async function runResearchPipeline(
     : result.track;
   const currentIntelligence = parseJsonObject(canonicalTrack.trackIntelligence);
   const sourceResearchAt = Number(currentIntelligence.researchedAt || Date.now());
-  const draftRequirementModel = buildRequirementModel(canonicalTrack, result.brief, sourceResearchAt);
-  const requirementModel = await enhanceRequirementModelWithLlm(canonicalTrack, result.brief, draftRequirementModel);
-  const careerArchitecture = buildCareerArchitecture(canonicalTrack, result.brief, result.organizedWorkspace);
-  const bottleneckDiagnosis = buildBottleneckDiagnosis(canonicalTrack, result.brief, careerArchitecture);
-  const organizedWorkspace = architectureWorkspaceView(
+  const buildRequirements = dependencies.buildRequirementModel || buildRequirementModel;
+  const enhanceRequirements = dependencies.enhanceRequirementModel || enhanceRequirementModelWithLlm;
+  const buildArchitecture = dependencies.buildCareerArchitecture || buildCareerArchitecture;
+  const diagnoseBottlenecks = dependencies.buildBottleneckDiagnosis || buildBottleneckDiagnosis;
+  const buildWorkspace = dependencies.buildWorkspaceView || architectureWorkspaceView;
+
+  const draftRequirementModel = buildRequirements(canonicalTrack, result.brief, sourceResearchAt);
+  const requirementModel = await enhanceRequirements(canonicalTrack, result.brief, draftRequirementModel);
+  const careerArchitecture = buildArchitecture(canonicalTrack, result.brief, result.organizedWorkspace);
+  const bottleneckDiagnosis = diagnoseBottlenecks(canonicalTrack, result.brief, careerArchitecture);
+  const organizedWorkspace = buildWorkspace(
     result.organizedWorkspace,
     careerArchitecture,
     bottleneckDiagnosis,

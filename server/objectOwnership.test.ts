@@ -8,6 +8,7 @@ import {
   ensureObjectOwnershipSchema,
   getPersistedOwnership,
   ownershipSnapshot,
+  resolveStrategicObjectOwnership,
 } from "./objectOwnership";
 
 let h: Harness;
@@ -175,4 +176,32 @@ test("manual ownership overrides are preserved during backfill", async () => {
   assert.equal(stored.source, "manual");
   assert.equal(stored.ownershipState, "candidate_for_direction");
   assert.equal(stored.reason, "Manually reviewed");
+});
+
+test("manual park and stop resolutions persist distinct states", async () => {
+  const job = await h.storage.createJob({
+    title: "Ambiguous role",
+    company: "Acme",
+    status: "wishlist",
+  } as any);
+  const contact = await h.storage.createContact({
+    who: "Ambiguous person",
+    status: "to_contact",
+    relationshipStrength: "cold",
+    askType: "advice",
+  } as any);
+
+  const parked = await resolveStrategicObjectOwnership({ objectType: "job", objectId: job.id, action: "park" });
+  const stopped = await resolveStrategicObjectOwnership({ objectType: "contact", objectId: contact.id, action: "stop" });
+
+  assert.equal(parked?.ownership.ownershipState, "parked");
+  assert.equal(stopped?.ownership.ownershipState, "stopped");
+
+  const persisted = getPersistedOwnership();
+  assert.equal(persisted.get(`job:${job.id}`)?.ownershipState, "parked");
+  assert.equal(persisted.get(`contact:${contact.id}`)?.ownershipState, "stopped");
+
+  const snapshot = await ownershipSnapshot();
+  assert.equal(snapshot.summary.parked, 1);
+  assert.equal(snapshot.summary.stopped, 1);
 });

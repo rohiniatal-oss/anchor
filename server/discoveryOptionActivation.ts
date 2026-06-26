@@ -1,6 +1,14 @@
-import type { Task } from "@shared/schema";
+import type { Contact, Hustle, Job, Learn, Task } from "@shared/schema";
 import { storage } from "./storage";
 import type { RankedDiscoveryOption } from "./discoveryOptions";
+import {
+  deriveContactOwnership,
+  deriveHustleOwnership,
+  deriveJobOwnership,
+  deriveLearnOwnership,
+  deriveTaskOwnership,
+  type StrategicObjectOwnership,
+} from "./objectOwnership";
 
 export type DiscoveryActivationType = "job" | "contact" | "learn" | "proof" | "task";
 
@@ -17,9 +25,10 @@ export type DiscoveryOptionActivationResult = {
   object: unknown;
   task?: Task | null;
   followUp: DiscoveryActivationFollowUp;
+  ownership: StrategicObjectOwnership;
 };
 
-type RawDiscoveryOptionActivationResult = Omit<DiscoveryOptionActivationResult, "followUp">;
+type RawDiscoveryOptionActivationResult = Omit<DiscoveryOptionActivationResult, "followUp" | "ownership">;
 
 const ACTIVATION_TYPES = new Set<DiscoveryActivationType>(["job", "contact", "learn", "proof", "task"]);
 
@@ -88,6 +97,14 @@ function objectLabel(activationType: DiscoveryActivationType) {
   if (activationType === "learn") return "Learn item";
   if (activationType === "proof") return "Proof asset";
   return "Task";
+}
+
+function ownershipFor(result: RawDiscoveryOptionActivationResult): StrategicObjectOwnership {
+  if (result.activationType === "job") return deriveJobOwnership(result.object as Job);
+  if (result.activationType === "contact") return deriveContactOwnership(result.object as Contact);
+  if (result.activationType === "learn") return deriveLearnOwnership(result.object as Learn);
+  if (result.activationType === "proof") return deriveHustleOwnership(result.object as Hustle);
+  return deriveTaskOwnership((result.task || result.object) as Task);
 }
 
 function followUpFor(result: RawDiscoveryOptionActivationResult, option: RankedDiscoveryOption): DiscoveryActivationFollowUp {
@@ -299,9 +316,11 @@ export async function activateDiscoveryOption(input: {
   else if (activationType === "proof") rawResult = await activateProof(capture, option);
   else rawResult = await activateTask(capture, option);
 
+  const ownership = ownershipFor(rawResult);
   const result: DiscoveryOptionActivationResult = {
     ...rawResult,
     followUp: followUpFor(rawResult, option),
+    ownership,
   };
 
   await storage.updateTask(capture.id, {
@@ -314,7 +333,7 @@ export async function activateDiscoveryOption(input: {
     sourceType: "task",
     sourceId: capture.id,
     taskId: result.task?.id,
-    metadata: JSON.stringify({ activationType: result.activationType, reused: result.reused, option: optionPayload(option), followUp: result.followUp, explicit: true }),
+    metadata: JSON.stringify({ activationType: result.activationType, reused: result.reused, option: optionPayload(option), followUp: result.followUp, ownership: result.ownership, explicit: true }),
   } as any);
   return result;
 }

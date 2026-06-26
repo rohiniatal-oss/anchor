@@ -32,7 +32,12 @@ function isVague(task: Task) {
   return !task.doneWhen && !hasSteps(task);
 }
 
+function isUnassignedDiscoveryTask(task: Task) {
+  return task.sourceType === "discovery_option" && !task.relatedTrackId;
+}
+
 function firstStepFromTask(task: Task) {
+  if (isUnassignedDiscoveryTask(task)) return "Assign this discovery result to a career direction, intentionally park it, or stop it.";
   try {
     const parsed = JSON.parse(task.steps || "[]");
     const step = Array.isArray(parsed) ? parsed.find((s) => s && typeof s.text === "string" && !s.done) : null;
@@ -63,15 +68,20 @@ function taskMatchesSpineMove(task: Task, title: string, lane: CanonicalLaneName
   return false;
 }
 
-function assessExistingTasks(tasks: Task[], bestMove: { title: string; lane: CanonicalLaneName }) {
+export function assessExistingTasks(tasks: Task[], bestMove: { title: string; lane: CanonicalLaneName }) {
   return activeTasks(tasks).map((task) => {
     let action: ExistingTaskAction = "ignore";
     let reason = "Not clearly connected to the current track move.";
     let score = task.list === "today" ? 2 : 0;
     const matches = taskMatchesSpineMove(task, bestMove.title, bestMove.lane);
     const blocked = task.readiness === "blocked" || !!task.blockerReason;
+    const unassignedDiscovery = isUnassignedDiscoveryTask(task);
 
-    if (blocked && matches) {
+    if (unassignedDiscovery && matches) {
+      action = "shrink";
+      reason = "This discovery result matches the spine move, but needs a direction assignment or parking decision before execution.";
+      score += 5;
+    } else if (blocked && matches) {
       action = "shrink";
       reason = "This matches the spine move but is blocked, so reduce it to the unblock step.";
       score += 3;

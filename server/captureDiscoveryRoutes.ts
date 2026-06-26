@@ -3,6 +3,7 @@ import type { Task } from "@shared/schema";
 import { isCareerDirectionResearchTitle, isSearchDiscoveryTitle } from "@shared/captureResearch";
 import { classifyCapture, type CaptureSuggestion } from "./capture";
 import { collectTaskBreakdownContext, formatContextBlocksForPrompt, type ContextBlock } from "./contextProviders";
+import { buildRankedDiscoveryOptions } from "./discoveryOptions";
 import { storage } from "./storage";
 import { previewWork } from "./workService";
 
@@ -25,7 +26,7 @@ function searchDiscoverySuggestion(task: Task): CaptureSuggestion {
     category: "research",
     label: "Search / Discover",
     confidence: "high",
-    reason: "This is discovery work. Anchor should search automatically, understand the goal, and preview results before creating any objects.",
+    reason: "This is discovery work. Anchor should search automatically, rank the results, and preview the best next option before creating any objects.",
     question: "What should this search help you decide, produce, or change?",
   };
 }
@@ -112,10 +113,13 @@ async function automaticDiscoveryPreview(task: Task, req: Request) {
     mockMode: mockMode(req.body?.externalResearchMockMode),
   });
   const evidence = (collected.blocks.externalResearch || []).map(evidenceFromBlock);
+  const ranked = buildRankedDiscoveryOptions({ title: task.title, evidence });
   const providerContext = formatContextBlocksForPrompt(collected.blocks);
   const userContext = [
     String(req.body?.context || "").trim().slice(0, 1500),
     providerContext,
+    ranked.options.length ? `Ranked discovery options:\n${ranked.options.map((option) => `${option.rank}. ${option.title}: ${option.whyRelevant}`).join("\n")}` : "",
+    ranked.recommendedNextAction ? `Recommended next action: ${ranked.recommendedNextAction}` : "",
   ].filter(Boolean).join("\n\n");
   const preview = await previewWork({
     title: task.title,
@@ -136,6 +140,9 @@ async function automaticDiscoveryPreview(task: Task, req: Request) {
     evidenceStatus: collected.externalResearch.status,
     evidenceQuery: collected.externalResearch.debug?.query || "",
     evidenceProvider: collected.externalResearch.provider,
+    rankedOptions: ranked.options,
+    discoverySummary: ranked.summary,
+    recommendedNextAction: ranked.recommendedNextAction,
   };
 }
 

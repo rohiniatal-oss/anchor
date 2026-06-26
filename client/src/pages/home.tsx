@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   Sun, Moon, Sparkles, Briefcase, GraduationCap, Trophy,
-  ChevronDown, ChevronRight, Users, Compass, FileText,
+  ChevronDown, ChevronRight, Users, Compass, FileText, FolderKanban,
 } from "lucide-react";
 import { AnchorLogo } from "@/components/AnchorLogo";
 import { useTheme } from "@/components/ThemeProvider";
@@ -11,6 +11,7 @@ import { type Tab, tabFromPath, pathForTab } from "@/lib/homeTypes";
 import { TodayView } from "@/pages/views/TodayView";
 import { StrategyView } from "@/pages/views/StrategyView";
 import BrainDumpView from "@/pages/views/BrainDumpView";
+import { ProjectsView } from "@/pages/views/ProjectsView";
 import { JobsView } from "@/pages/views/JobsView";
 import { NetworkView } from "@/pages/views/NetworkView";
 import { LearnView } from "@/pages/views/LearnView";
@@ -26,6 +27,7 @@ const HEADER_TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
 ];
 
 const MORE_TABS: { id: Tab; label: string; icon: typeof Sun; blurb: string }[] = [
+  { id: "projects", label: "Projects", icon: FolderKanban, blurb: "Multi-step outcomes and current frontiers" },
   { id: "learn", label: "Learn", icon: GraduationCap, blurb: "What you're learning" },
   { id: "wins", label: "Wins", icon: Trophy, blurb: "What's gone well" },
   { id: "profile", label: "Profile", icon: FileText, blurb: "Your CV for tailored suggestions" },
@@ -69,15 +71,15 @@ export default function Home() {
               </button>
             ))}
             <div className="relative">
-              <button onClick={() => setMoreOpen((o) => !o)} data-testid="button-more"
-                className={`flex items-center gap-1 px-2.5 py-2 rounded-md text-sm font-medium hover-elevate transition-colors ${MORE_TABS.some((t) => t.id === tab) ? "text-foreground bg-muted/60" : "text-muted-foreground"}`}>
+              <button onClick={() => setMoreOpen((open) => !open)} data-testid="button-more"
+                className={`flex items-center gap-1 px-2.5 py-2 rounded-md text-sm font-medium hover-elevate transition-colors ${MORE_TABS.some((item) => item.id === tab) ? "text-foreground bg-muted/60" : "text-muted-foreground"}`}>
                 <span className="hidden sm:inline">More</span>
                 <ChevronDown className={`w-4 h-4 transition-transform ${moreOpen ? "rotate-180" : ""}`} />
               </button>
               {moreOpen && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setMoreOpen(false)} />
-                  <div className="absolute right-0 mt-1 w-56 rounded-xl border border-card-border bg-card shadow-lg p-1.5 z-40">
+                  <div className="absolute right-0 mt-1 w-64 rounded-xl border border-card-border bg-card shadow-lg p-1.5 z-40">
                     {MORE_TABS.map(({ id, label, icon: Icon, blurb }) => (
                       <button key={id} onClick={() => go(id)} data-testid={`tab-${id}`}
                         className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-left hover-elevate ${tab === id ? "text-primary" : ""}`}>
@@ -114,6 +116,7 @@ export default function Home() {
           </>
         )}
         {tab === "braindump" && <BrainDumpView />}
+        {tab === "projects" && <ProjectsView />}
         {tab === "jobs" && <JobsView />}
         {tab === "network" && <NetworkView />}
         {tab === "learn" && <LearnView />}

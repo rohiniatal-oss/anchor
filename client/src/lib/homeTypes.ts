@@ -3,8 +3,8 @@ export type { WinCategory };
 
 export type Step = { text: string; done: boolean; substeps?: string[]; workflowState?: { workObject?: string; currentStage?: string; stageOutput?: string; completionCriteria?: string[]; advanceCondition?: string } };
 
-export type Tab = "today" | "strategy" | "braindump" | "jobs" | "network" | "learn" | "wins" | "profile";
-export const HOME_ROUTE_PATHS = ["/", "/strategy", "/braindump", "/jobs", "/network", "/learn", "/wins", "/profile"] as const;
+export type Tab = "today" | "strategy" | "braindump" | "projects" | "jobs" | "network" | "learn" | "wins" | "profile";
+export const HOME_ROUTE_PATHS = ["/", "/strategy", "/braindump", "/projects", "/jobs", "/network", "/learn", "/wins", "/profile"] as const;
 
 export const GOAL_SPINE_QUERY_KEYS = ["/api/goals/state", "/api/strategy/front-door", "/api/strategy/diagnostics"] as const;
 export const PENDING_CONTACT_DRAFT_KEY = "anchor.pending-contact-draft";
@@ -128,6 +128,8 @@ export function tabFromPath(path: string): Tab {
       return "strategy";
     case "/braindump":
       return "braindump";
+    case "/projects":
+      return "projects";
     case "/jobs":
       return "jobs";
     case "/network":

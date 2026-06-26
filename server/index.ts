@@ -28,6 +28,8 @@ import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptiona
 import { installReadPurityGuard } from "./requestMutationGuard";
 import { registerTaskLifecycleRoutes } from "./taskLifecycleRoutes";
 import { registerTrustBoundaryRoutes } from "./trustBoundaryRoutes";
+import { registerWorkRoutes } from "./workRoutes";
+import { ensureWorkSchema } from "./workRepository";
 import { serveStatic } from "./static";
 import { initStorage, getStorageRuntime } from "./storage";
 import { seedInitialData } from "./seed";
@@ -52,6 +54,9 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 const runtime = initStorage();
+// Project tables are installed before the request guard so future GET routes can
+// remain pure reads while still working against old production databases.
+ensureWorkSchema();
 installReadPurityGuard(app, runtime.storage, runtime.rawDb);
 warnIfUsingDefaultDbPath();
 seedInitialData().catch((e) => console.error("Seed failed:", e));
@@ -101,6 +106,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Work interpretation is a preview boundary. It identifies project vs task,
+  // then separates project decomposition from task-level action breakdown.
+  registerWorkRoutes(app);
+
   // These boundaries are intentionally first. Existing URLs remain compatible,
   // while reads become pure and all task transitions share one lifecycle.
   registerTrustBoundaryRoutes(app);

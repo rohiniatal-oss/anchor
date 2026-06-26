@@ -18,7 +18,12 @@ before(async () => {
 });
 
 after(async () => { await h.close(); });
-beforeEach(() => { h.reset(); ensureObjectOwnershipSchema(); });
+beforeEach(() => {
+  h.reset();
+  ensureObjectOwnershipSchema();
+  h.sqlite.prepare("DELETE FROM strategic_object_ownership").run();
+  h.sqlite.prepare("DELETE FROM sqlite_sequence WHERE name = ?").run("strategic_object_ownership");
+});
 
 async function createTrack() {
   return h.storage.createCareerTrack({

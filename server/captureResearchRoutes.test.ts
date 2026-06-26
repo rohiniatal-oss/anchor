@@ -59,6 +59,8 @@ test("career-direction detection separates field exploration from bounded entity
   assert.equal(isCareerDirectionResearchCapture("Research AI governance roles"), true);
   assert.equal(isCareerDirectionResearchCapture("Research Tony Blair Institute"), false);
   assert.equal(isCareerDirectionResearchCapture("Research TBI"), false);
+  assert.equal(isCareerDirectionResearchCapture("Explore Tony Blair Institute"), false);
+  assert.equal(isCareerDirectionResearchCapture("Explore TBI"), false);
   assert.equal(careerDirectionDomain("Explore AI strategy roles"), "AI strategy");
 });
 

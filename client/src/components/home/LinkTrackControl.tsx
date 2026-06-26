@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Ban, Link2, Loader2, PauseCircle } from "lucide-react";
+import { Ban, Link2, Loader2 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { mutateAndInvalidate } from "@/lib/api";
@@ -99,7 +99,7 @@ export function LinkTrackControl({ entity, id, trackId, tracks }: { entity: Trac
             data-testid={`button-park-ownership-${entity}-${id}`}
             className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 disabled:opacity-60"
           >
-            {busy === "park" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PauseCircle className="w-3.5 h-3.5" />}
+            {busy === "park" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
             Park
           </button>
           <button

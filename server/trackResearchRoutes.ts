@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "./storage";
 import { researchCareerDirection } from "./structuredTrackResearchService";
-import { materializeTrackResearch } from "./trackResearchAgent";
+import { materializeTrackResearchActivation as materializeTrackResearch } from "./trackResearchActivationInventory";
 import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
 import { buildBottleneckDiagnosis } from "./trackResearchBottlenecks";
 import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";

@@ -4,12 +4,22 @@ import type { RankedDiscoveryOption } from "./discoveryOptions";
 
 export type DiscoveryActivationType = "job" | "contact" | "learn" | "proof" | "task";
 
+export type DiscoveryActivationFollowUp = {
+  title: string;
+  description: string;
+  targetId?: number | null;
+  sourceUrl?: string;
+};
+
 export type DiscoveryOptionActivationResult = {
   activationType: DiscoveryActivationType;
   reused: boolean;
   object: unknown;
   task?: Task | null;
+  followUp: DiscoveryActivationFollowUp;
 };
+
+type RawDiscoveryOptionActivationResult = Omit<DiscoveryOptionActivationResult, "followUp">;
 
 const ACTIVATION_TYPES = new Set<DiscoveryActivationType>(["job", "contact", "learn", "proof", "task"]);
 
@@ -23,6 +33,12 @@ function normalize(value: unknown) {
 
 function title(value: unknown, fallback = "Discovery option") {
   return compact(value, 180) || fallback;
+}
+
+function objectId(object: unknown): number | null {
+  if (!object || typeof object !== "object" || !("id" in object)) return null;
+  const id = Number((object as { id?: unknown }).id);
+  return Number.isFinite(id) ? id : null;
 }
 
 function sourceDomain(option: RankedDiscoveryOption) {
@@ -66,6 +82,67 @@ function categoryFor(kind: RankedDiscoveryOption["kind"]) {
   return "thinking";
 }
 
+function objectLabel(activationType: DiscoveryActivationType) {
+  if (activationType === "job") return "Job";
+  if (activationType === "contact") return "Contact";
+  if (activationType === "learn") return "Learn item";
+  if (activationType === "proof") return "Proof asset";
+  return "Task";
+}
+
+function followUpFor(result: RawDiscoveryOptionActivationResult, option: RankedDiscoveryOption): DiscoveryActivationFollowUp {
+  const sourceUrl = option.sourceUrl || undefined;
+  const targetId = objectId(result.object);
+  if (result.reused) {
+    const label = objectLabel(result.activationType);
+    return {
+      title: `Review the saved ${label}`,
+      description: `Anchor reused an existing ${label.toLowerCase()}. Open it and update the next step only if this source changes the decision.`,
+      targetId,
+      sourceUrl,
+    };
+  }
+
+  if (result.activationType === "job") {
+    return {
+      title: "Verify this role",
+      description: "Open the source, confirm the role is current, then decide whether it deserves a real application push.",
+      targetId,
+      sourceUrl,
+    };
+  }
+  if (result.activationType === "contact") {
+    return {
+      title: "Prepare one outreach angle",
+      description: "Use the source to write the specific reason this person is relevant before sending or saving outreach.",
+      targetId,
+      sourceUrl,
+    };
+  }
+  if (result.activationType === "learn") {
+    return {
+      title: "Define the learning output",
+      description: "Decide the note, exercise, or proof artifact this resource should produce before starting it.",
+      targetId,
+      sourceUrl,
+    };
+  }
+  if (result.activationType === "proof") {
+    return {
+      title: "Outline the proof asset",
+      description: "Extract the structure worth borrowing, then draft an original outline before committing to build.",
+      targetId,
+      sourceUrl,
+    };
+  }
+  return {
+    title: "Make the pursue-or-stop decision",
+    description: "Open the evidence, write the one fact that changes the decision, then choose save, contact, learn, build, monitor, or stop.",
+    targetId,
+    sourceUrl,
+  };
+}
+
 function optionPayload(option: RankedDiscoveryOption) {
   return JSON.stringify({
     rank: option.rank,
@@ -82,7 +159,7 @@ async function captureTask(captureId: number) {
   return (await storage.getTasks()).find((task) => task.id === captureId) || null;
 }
 
-async function activateJob(capture: Task, option: RankedDiscoveryOption) {
+async function activateJob(capture: Task, option: RankedDiscoveryOption): Promise<RawDiscoveryOptionActivationResult> {
   const jobs = await storage.getJobs();
   const existing = jobs.find((job) => {
     const sourceMatch = option.sourceUrl && [job.url, job.sourceUrl].some((url) => normalize(url) === normalize(option.sourceUrl));
@@ -110,7 +187,7 @@ async function activateJob(capture: Task, option: RankedDiscoveryOption) {
   return { activationType: "job" as const, reused: false, object: job, task: null };
 }
 
-async function activateContact(capture: Task, option: RankedDiscoveryOption) {
+async function activateContact(capture: Task, option: RankedDiscoveryOption): Promise<RawDiscoveryOptionActivationResult> {
   const contacts = await storage.getContacts();
   const existing = contacts.find((contact) => normalize(contact.who || contact.name) === normalize(option.title));
   if (existing) return { activationType: "contact" as const, reused: true, object: existing, task: null };
@@ -130,7 +207,7 @@ async function activateContact(capture: Task, option: RankedDiscoveryOption) {
   return { activationType: "contact" as const, reused: false, object: contact, task: null };
 }
 
-async function activateLearn(capture: Task, option: RankedDiscoveryOption) {
+async function activateLearn(capture: Task, option: RankedDiscoveryOption): Promise<RawDiscoveryOptionActivationResult> {
   const learnItems = await storage.getLearn();
   const existing = learnItems.find((item) => {
     const sourceMatch = option.sourceUrl && normalize(item.url) === normalize(option.sourceUrl);
@@ -153,7 +230,7 @@ async function activateLearn(capture: Task, option: RankedDiscoveryOption) {
   return { activationType: "learn" as const, reused: false, object: learn, task: null };
 }
 
-async function activateProof(capture: Task, option: RankedDiscoveryOption) {
+async function activateProof(capture: Task, option: RankedDiscoveryOption): Promise<RawDiscoveryOptionActivationResult> {
   const hustles = await storage.getHustles();
   const existing = hustles.find((hustle) => normalize(hustle.title) === normalize(option.title));
   if (existing) return { activationType: "proof" as const, reused: true, object: existing, task: null };
@@ -167,7 +244,7 @@ async function activateProof(capture: Task, option: RankedDiscoveryOption) {
   return { activationType: "proof" as const, reused: false, object: hustle, task: null };
 }
 
-async function activateTask(capture: Task, option: RankedDiscoveryOption) {
+async function activateTask(capture: Task, option: RankedDiscoveryOption): Promise<RawDiscoveryOptionActivationResult> {
   const tasks = await storage.getTasks();
   const existing = tasks.find((task) =>
     task.sourceType === "discovery_option"
@@ -215,12 +292,17 @@ export async function activateDiscoveryOption(input: {
   if (!option?.title) throw new Error("A ranked discovery option is required");
   const activationType = activationTypeFor(input.activationType, option);
 
-  let result: DiscoveryOptionActivationResult;
-  if (activationType === "job") result = await activateJob(capture, option);
-  else if (activationType === "contact") result = await activateContact(capture, option);
-  else if (activationType === "learn") result = await activateLearn(capture, option);
-  else if (activationType === "proof") result = await activateProof(capture, option);
-  else result = await activateTask(capture, option);
+  let rawResult: RawDiscoveryOptionActivationResult;
+  if (activationType === "job") rawResult = await activateJob(capture, option);
+  else if (activationType === "contact") rawResult = await activateContact(capture, option);
+  else if (activationType === "learn") rawResult = await activateLearn(capture, option);
+  else if (activationType === "proof") rawResult = await activateProof(capture, option);
+  else rawResult = await activateTask(capture, option);
+
+  const result: DiscoveryOptionActivationResult = {
+    ...rawResult,
+    followUp: followUpFor(rawResult, option),
+  };
 
   await storage.updateTask(capture.id, {
     sourceStatus: "discovery_option_activated",
@@ -232,7 +314,7 @@ export async function activateDiscoveryOption(input: {
     sourceType: "task",
     sourceId: capture.id,
     taskId: result.task?.id,
-    metadata: JSON.stringify({ activationType: result.activationType, reused: result.reused, option: optionPayload(option), explicit: true }),
+    metadata: JSON.stringify({ activationType: result.activationType, reused: result.reused, option: optionPayload(option), followUp: result.followUp, explicit: true }),
   } as any);
   return result;
 }

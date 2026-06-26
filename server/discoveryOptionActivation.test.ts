@@ -65,9 +65,15 @@ test("activating a role option creates one wishlist Job and reuses it on repeat"
   assert.equal(first.status, 200);
   assert.equal(first.json.activationType, "job");
   assert.equal(first.json.reused, false);
+  assert.equal(first.json.followUp.title, "Verify this role");
+  assert.match(first.json.followUp.description, /confirm the role is current/);
+  assert.equal(first.json.followUp.targetId, first.json.object.id);
+  assert.equal(first.json.followUp.sourceUrl, option().sourceUrl);
   assert.equal(second.status, 200);
   assert.equal(second.json.reused, true);
   assert.equal(second.json.object.id, first.json.object.id);
+  assert.equal(second.json.followUp.title, "Review the saved Job");
+  assert.equal(second.json.followUp.targetId, first.json.object.id);
 
   const jobs = await h.storage.getJobs();
   assert.equal(jobs.length, before.jobs + 1);
@@ -102,18 +108,22 @@ test("activating people learning proof and evidence options creates the matching
 
   assert.equal(person.status, 200);
   assert.equal(person.json.activationType, "contact");
+  assert.equal(person.json.followUp.title, "Prepare one outreach angle");
   assert.equal((await h.storage.getContacts()).length, 1);
 
   assert.equal(learn.status, 200);
   assert.equal(learn.json.activationType, "learn");
+  assert.equal(learn.json.followUp.title, "Define the learning output");
   assert.equal((await h.storage.getLearn()).length, 1);
 
   assert.equal(proof.status, 200);
   assert.equal(proof.json.activationType, "proof");
+  assert.equal(proof.json.followUp.title, "Outline the proof asset");
   assert.equal((await h.storage.getHustles()).length, 1);
 
   assert.equal(task.status, 200);
   assert.equal(task.json.activationType, "task");
+  assert.equal(task.json.followUp.title, "Make the pursue-or-stop decision");
   assert.equal((await h.storage.getTasks()).filter((item) => item.sourceType === "discovery_option").length, 1);
 });
 

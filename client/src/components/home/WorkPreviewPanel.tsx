@@ -54,9 +54,16 @@ type DiscoveryActivationFollowUp = {
   sourceUrl?: string;
 };
 
+type DiscoveryActivationOwnership = {
+  ownershipState?: "linked_to_direction" | "candidate_for_direction" | "unclassified_capture";
+  trackId?: number | null;
+  reason?: string;
+};
+
 type DiscoveryActivationResult = {
   reused?: boolean;
   followUp?: DiscoveryActivationFollowUp;
+  ownership?: DiscoveryActivationOwnership;
 };
 
 type ConfirmedProject = {
@@ -156,11 +163,25 @@ function optionActivationLabel(kind: RankedDiscoveryOption["kind"]) {
   return "Create follow-up task";
 }
 
-function activationDescription(result: DiscoveryActivationResult | null | undefined, fallback: string) {
-  if (result?.followUp?.title && result.followUp.description) {
-    return `${result.followUp.title}: ${result.followUp.description}`;
+function ownershipDescription(ownership?: DiscoveryActivationOwnership) {
+  if (ownership?.ownershipState === "linked_to_direction" && ownership.trackId) {
+    return `Direction link: track #${ownership.trackId}.`;
   }
-  return fallback;
+  if (ownership?.ownershipState === "candidate_for_direction") {
+    return "Direction link: unassigned. Assign it to a career direction or intentionally park it.";
+  }
+  if (ownership?.ownershipState === "unclassified_capture") {
+    return "Direction link: unclassified. Keep parked unless it becomes strategically relevant.";
+  }
+  return "";
+}
+
+function activationDescription(result: DiscoveryActivationResult | null | undefined, fallback: string) {
+  const followUp = result?.followUp?.title && result.followUp.description
+    ? `${result.followUp.title}: ${result.followUp.description}`
+    : fallback;
+  const ownership = ownershipDescription(result?.ownership);
+  return ownership ? `${followUp} ${ownership}` : followUp;
 }
 
 export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onResolved }: Props) {

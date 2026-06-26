@@ -8,6 +8,7 @@ const PROTECTED_MUTATIONS = [
   /^\/api\/career-tracks\/\d+\/execution-priority\/materialize$/,
   /^\/api\/work\/(?:confirm|activate)$/,
   /^\/api\/capture\/\d+\/discovery-options\/activate$/,
+  /^\/api\/ownership\/strategic-objects\/resolve$/,
   /^\/api\/projects\/\d+\/activate-next$/,
   /^\/api\/projects\/\d+\/milestones\/\d+\/complete$/,
 ];

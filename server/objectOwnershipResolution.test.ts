@@ -90,7 +90,7 @@ test("parking a discovery task clears the track and keeps Today from executing i
   });
 
   assert.ok(result);
-  assert.equal(result.ownership.ownershipState, "unclassified_capture");
+  assert.equal(result.ownership.ownershipState, "parked");
   assert.equal(result.ownership.trackId, null);
   assert.equal(result.ownership.source, "manual");
 
@@ -125,7 +125,7 @@ test("stopping a learn item closes it and records manual ownership", async () =>
 
   assert.equal(response.status, 200);
   assert.equal(response.json.action, "stop");
-  assert.equal(response.json.ownership.ownershipState, "unclassified_capture");
+  assert.equal(response.json.ownership.ownershipState, "stopped");
   assert.equal(response.json.ownership.source, "manual");
 
   const updated = await h.storage.getLearnItem(learn.id);

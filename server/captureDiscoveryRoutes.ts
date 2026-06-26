@@ -2,7 +2,9 @@ import type { Express, NextFunction, Request, Response } from "express";
 import type { Task } from "@shared/schema";
 import { isCareerDirectionResearchTitle, isSearchDiscoveryTitle } from "@shared/captureResearch";
 import { classifyCapture, type CaptureSuggestion } from "./capture";
+import { collectTaskBreakdownContext, formatContextBlocksForPrompt, type ContextBlock } from "./contextProviders";
 import { storage } from "./storage";
+import { previewWork } from "./workService";
 
 const MATERIALIZING_ROUTES = new Set(["job", "learn", "network", "proof", "task", "today", "subtask", "decision", "research"]);
 
@@ -22,7 +24,7 @@ function searchDiscoverySuggestion(task: Task): CaptureSuggestion {
     category: "research",
     label: "Search / Discover",
     confidence: "high",
-    reason: "This is discovery work. Anchor should understand the goal and preview the work before creating any objects.",
+    reason: "This is discovery work. Anchor should search automatically, understand the goal, and preview results before creating any objects.",
     question: "What should this search help you decide, produce, or change?",
   };
 }
@@ -40,6 +42,82 @@ function workPreviewRequired(task: Task, route: string) {
   return MATERIALIZING_ROUTES.has(route);
 }
 
+function mockMode(value: unknown) {
+  const mode = String(value || "");
+  return ["success", "empty", "rate_limited", "unavailable", "error"].includes(mode)
+    ? mode as "success" | "empty" | "rate_limited" | "unavailable" | "error"
+    : undefined;
+}
+
+function compact(value: unknown) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function evidenceFromBlock(block: ContextBlock) {
+  return {
+    title: compact(block.sourceTitle || block.label || "Public source"),
+    snippet: compact(block.text),
+    url: compact(block.sourceUrl),
+    domain: compact(block.sourceDomain),
+    date: compact(block.sourceDate),
+    citationId: compact(block.metadata?.citationId),
+  };
+}
+
+async function taskForId(id: number) {
+  return (await storage.getTasks()).find((item) => item.id === id) || null;
+}
+
+async function automaticDiscoveryPreview(task: Task, req: Request) {
+  const sourceBundle = {
+    sourceContext: task.sourceNote || "",
+    playbook: "",
+    sourceKind: "task" as const,
+    source: null,
+    parentContext: "",
+  };
+  const collected = await collectTaskBreakdownContext({
+    task: {
+      title: task.title,
+      category: task.category,
+      doneWhen: task.doneWhen,
+      minimumOutcome: task.minimumOutcome,
+      sourceUrl: task.sourceUrl,
+      sourceNote: task.sourceNote,
+      sourceType: task.sourceType,
+    },
+    sourceBundle,
+    userAuthoredContext: String(req.body?.context || "").trim().slice(0, 1500),
+    mockMode: mockMode(req.body?.externalResearchMockMode),
+  });
+  const evidence = (collected.blocks.externalResearch || []).map(evidenceFromBlock);
+  const providerContext = formatContextBlocksForPrompt(collected.blocks);
+  const userContext = [
+    String(req.body?.context || "").trim().slice(0, 1500),
+    providerContext,
+  ].filter(Boolean).join("\n\n");
+  const preview = await previewWork({
+    title: task.title,
+    sourceType: "task",
+    sourceId: task.id,
+    sourceNote: task.sourceNote,
+    doneWhen: task.doneWhen,
+    minimumOutcome: task.minimumOutcome,
+    steps: task.steps,
+    relatedTrackId: task.relatedTrackId,
+    context: userContext,
+    refine: false,
+  });
+  return {
+    ...preview,
+    automaticDiscovery: true,
+    evidence,
+    evidenceStatus: collected.externalResearch.status,
+    evidenceQuery: collected.externalResearch.debug?.query || "",
+    evidenceProvider: collected.externalResearch.provider,
+  };
+}
+
 export function registerCaptureDiscoveryRoutes(app: Express) {
   app.post("/api/capture/sort", async (_req, res) => {
     const inbox = (await storage.getTasks()).filter((task) => task.list === "inbox" && !task.done);
@@ -49,24 +127,35 @@ export function registerCaptureDiscoveryRoutes(app: Express) {
   app.post("/api/capture/:id/suggest", async (req, res, next: NextFunction) => {
     const id = numberParam(req.params.id);
     if (!id) return next();
-    const task = (await storage.getTasks()).find((item) => item.id === id);
+    const task = await taskForId(id);
     if (!task) return next();
     if (!isSearchDiscoveryCapture(task)) return next();
     return res.json({ suggestion: searchDiscoverySuggestion(task) });
+  });
+
+  app.post("/api/capture/:id/discover", async (req, res) => {
+    const id = numberParam(req.params.id);
+    if (!id) return res.status(400).json({ error: "Bad id" });
+    const task = await taskForId(id);
+    if (!task) return res.status(404).json({ error: "Capture not found" });
+    if (!isSearchDiscoveryCapture(task)) {
+      return res.status(400).json({ error: "This capture is not search or discovery work." });
+    }
+    return res.json(await automaticDiscoveryPreview(task, req));
   });
 
   app.post("/api/capture/:id/route", async (req: Request, res: Response, next: NextFunction) => {
     const route = requestedRoute(req);
     const id = numberParam(req.params.id);
     if (!id || !route) return next();
-    const task = (await storage.getTasks()).find((item) => item.id === id);
+    const task = await taskForId(id);
     if (!task || !workPreviewRequired(task, route)) return next();
 
     return res.status(409).json({
       error: "Search and discovery captures must be interpreted before Anchor creates objects.",
       code: "work_interpretation_required",
       route,
-      nextAction: "interpret_work",
+      nextAction: "auto_discover",
       suggestion: searchDiscoverySuggestion(task),
       task,
       downstreamObjectsCreated: {

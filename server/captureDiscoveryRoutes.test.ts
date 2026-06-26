@@ -31,7 +31,7 @@ test("search discovery titles are distinct from career-direction research", () =
   assert.equal(isCareerDirectionResearchTitle("Explore AI strategy roles"), true);
 });
 
-test("capture suggest labels search discovery as automatic preview-first work", async () => {
+test("capture suggest labels search discovery as automatic ranked preview work", async () => {
   const capture = await h.storage.createTask({
     title: "Find three AI governance roles",
     list: "inbox",
@@ -44,7 +44,7 @@ test("capture suggest labels search discovery as automatic preview-first work", 
   assert.equal(response.status, 200);
   assert.equal(response.json.suggestion.route, "research");
   assert.equal(response.json.suggestion.label, "Search / Discover");
-  assert.match(response.json.suggestion.reason, /search automatically/i);
+  assert.match(response.json.suggestion.reason, /rank the useful options/i);
 });
 
 test("capture sort overrides legacy job and learn classification for search discovery", async () => {
@@ -63,7 +63,7 @@ test("capture sort overrides legacy job and learn classification for search disc
   assert.notEqual((byId.get(atomic.id) as any).label, "Search / Discover");
 });
 
-test("automatic discovery returns evidence and a preview without creating objects", async () => {
+test("automatic discovery returns evidence ranked options and a preview without creating objects", async () => {
   const capture = await h.storage.createTask({ title: "Find three AI governance roles", list: "inbox", done: false } as any);
   const before = {
     tasks: (await h.storage.getTasks()).length,
@@ -85,6 +85,12 @@ test("automatic discovery returns evidence and a preview without creating object
   assert.match(response.json.evidence[0].snippet, /roles|requirements/i);
   assert.ok(response.json.definition);
   assert.ok(response.json.decomposition);
+  assert.ok(response.json.discoveryRecommendation);
+  assert.ok(response.json.discoveryRecommendation.options.length >= 1);
+  assert.equal(response.json.discoveryRecommendation.options[0].rank, 1);
+  assert.equal(response.json.discoveryRecommendation.options[0].kind, "role");
+  assert.match(response.json.discoveryRecommendation.options[0].nextAction, /verified opportunity|role model example/i);
+  assert.match(response.json.discoveryRecommendation.recommendedNextMove, /verified opportunity|role model example/i);
 
   const after = {
     tasks: (await h.storage.getTasks()).length,

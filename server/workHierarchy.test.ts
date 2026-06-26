@@ -57,7 +57,8 @@ test("search discovery titles are interpreted before legacy step breakdown", () 
   assert.equal(definition.workType, "task");
   assert.equal(definition.estimatedScope, "single_session");
   assert.match(definition.title, /three AI governance roles/i);
-  assert.match(definition.objective, /search question|evidence/i);
+  assert.match(definition.desiredOutcome, /sourced answer/i);
+  assert.ok(definition.successCriteria.some((criterion) => /source|claim|implication|question/i.test(criterion)));
   assert.equal("steps" in definition, false);
 });
 

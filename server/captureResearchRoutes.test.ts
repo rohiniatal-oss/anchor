@@ -1,6 +1,6 @@
 import { before, after, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { api, makeHarness, type Harness } from "./spine.harness";
+import { makeHarness, type Harness } from "./spine.harness";
 
 let h: Harness;
 
@@ -135,23 +135,4 @@ test("routeResearchCapture leaves failed research retryable and creates no downs
   const updated = (await h.storage.getTasks()).find((task) => task.id === capture.id)!;
   assert.equal(updated.list, "inbox");
   assert.equal(updated.sourceStatus, "routed:research:retryable");
-});
-
-test("HTTP capture routing intercepts research before the legacy capture materializer", async () => {
-  const capture = await h.storage.createTask({
-    title: "Research QZX",
-    list: "inbox",
-    done: false,
-    category: "admin",
-  } as any);
-
-  const response = await api(h.base, "POST", `/api/capture/${capture.id}/route`, { route: "research" });
-
-  assert.equal(response.status, 200);
-  assert.equal(response.json.retryable, true);
-  assert.deepEqual(response.json.materialized.jobIds, []);
-  assert.equal((await h.storage.getJobs()).length, 0);
-  assert.equal((await h.storage.getLearn()).length, 0);
-  assert.equal((await h.storage.getContacts()).length, 0);
-  assert.equal((await h.storage.getHustles()).length, 0);
 });

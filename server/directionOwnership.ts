@@ -1,5 +1,5 @@
 import type { Contact, Hustle, Job, Learn } from "@shared/schema";
-import { rawDb, storage } from "./storage";
+import { getStorageRuntime, rawDb, storage } from "./storage";
 
 export const DIRECTION_OWNERSHIP_STATES = [
   "linked_to_direction",
@@ -44,13 +44,10 @@ export type DirectionOwnershipAudit = {
 };
 
 const ENTITY_TYPES: DirectionEntityType[] = ["job", "learn", "contact", "hustle"];
+let ensuredForDbPath = "";
 
 function compact(value: unknown) {
   return String(value || "").trim().replace(/\s+/g, " ");
-}
-
-function tableName(type: DirectionEntityType) {
-  return type === "job" ? "jobs" : type === "learn" ? "learn" : type === "contact" ? "contacts" : "hustles";
 }
 
 function validEntityType(value: unknown): value is DirectionEntityType {
@@ -88,6 +85,8 @@ function defaultReason(type: DirectionEntityType, entity: DirectionEntity) {
 }
 
 export function ensureDirectionOwnershipSchema() {
+  const dbPath = getStorageRuntime().dbPath;
+  if (ensuredForDbPath === dbPath) return;
   rawDb.exec(`
     CREATE TABLE IF NOT EXISTS direction_ownerships (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +106,7 @@ export function ensureDirectionOwnershipSchema() {
     CREATE INDEX IF NOT EXISTS idx_direction_ownership_candidate ON direction_ownerships(candidate_track_id);
     CREATE INDEX IF NOT EXISTS idx_direction_ownership_state ON direction_ownerships(ownership_state);
   `);
+  ensuredForDbPath = dbPath;
 }
 
 function ownershipRows() {

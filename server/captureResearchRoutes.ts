@@ -106,7 +106,7 @@ export async function routeResearchCapture(
   let result: StructuredTrackResearchResult | null = null;
   try {
     result = await runner(domain, { materialize: false });
-  } catch (error) {
+  } catch {
     result = null;
   }
 
@@ -134,7 +134,7 @@ export async function routeResearchCapture(
       track: result.track,
       brief: result.brief,
       organizedWorkspace: result.organizedWorkspace,
-      materialized: result.materialized || zeroMaterialized(),
+      materialized: zeroMaterialized(),
       task: updated || task,
       reason: `Researched ${domain} and stored one direction model. No execution objects were created.`,
     },

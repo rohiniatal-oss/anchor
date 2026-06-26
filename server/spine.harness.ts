@@ -20,7 +20,7 @@ const TABLES = [
   "tasks", "events", "jobs", "job_pipeline_steps", "proof_asset_steps",
   "learn", "hustles", "wins", "contacts", "career_tracks",
   "discovery_sessions", "recommendations", "recommendation_subdivisions", "recommendation_milestones",
-  "day_plans", "day_plan_items", "entity_links", "activity_log",
+  "day_plans", "day_plan_items", "entity_links", "direction_ownerships", "activity_log",
 ];
 
 // The suite shares one initialized harness/DB per process. Per-test isolation
@@ -36,6 +36,7 @@ export async function makeHarness(): Promise<Harness> {
 
   // Schema is created by storage.ts during explicit initStorage(dbPath).
   const express = (await import("express")).default;
+  const { registerDirectionOwnershipRoutes } = await import("./directionOwnershipRoutes");
   const { registerCaptureRoutes } = await import("./capture");
   const { registerSprint2Routes } = await import("./sprint2");
   const { registerSprint1Routes } = await import("./sprint1");
@@ -53,6 +54,7 @@ export async function makeHarness(): Promise<Harness> {
   const app = express();
   app.use(express.json());
   const httpServer = createServer(app);
+  registerDirectionOwnershipRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);
@@ -70,8 +72,12 @@ export async function makeHarness(): Promise<Harness> {
 
   const reset = () => {
     for (const t of TABLES) {
-      sqlite.prepare(`DELETE FROM ${t}`).run();
-      sqlite.prepare(`DELETE FROM sqlite_sequence WHERE name = ?`).run(t);
+      try {
+        sqlite.prepare(`DELETE FROM ${t}`).run();
+        sqlite.prepare(`DELETE FROM sqlite_sequence WHERE name = ?`).run(t);
+      } catch {
+        // Optional extension tables may not exist in older test branches.
+      }
     }
   };
 

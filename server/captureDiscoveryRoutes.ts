@@ -3,6 +3,7 @@ import type { Task } from "@shared/schema";
 import { isCareerDirectionResearchTitle, isSearchDiscoveryTitle } from "@shared/captureResearch";
 import { classifyCapture, type CaptureSuggestion } from "./capture";
 import { collectTaskBreakdownContext, formatContextBlocksForPrompt, type ContextBlock } from "./contextProviders";
+import { buildDiscoveryRecommendation, type DiscoveryEvidence } from "./discoveryOptions";
 import { storage } from "./storage";
 import { previewWork } from "./workService";
 
@@ -25,7 +26,7 @@ function searchDiscoverySuggestion(task: Task): CaptureSuggestion {
     category: "research",
     label: "Search / Discover",
     confidence: "high",
-    reason: "This is discovery work. Anchor should search automatically, understand the goal, and preview results before creating any objects.",
+    reason: "This is discovery work. Anchor should search automatically, rank the useful options, and preview results before creating any objects.",
     question: "What should this search help you decide, produce, or change?",
   };
 }
@@ -58,7 +59,7 @@ function compact(value: unknown) {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
 
-function evidenceFromBlock(block: ContextBlock) {
+function evidenceFromBlock(block: ContextBlock): DiscoveryEvidence {
   return {
     title: compact(block.sourceTitle || block.label || "Public source"),
     snippet: compact(block.text),
@@ -112,10 +113,14 @@ async function automaticDiscoveryPreview(task: Task, req: Request) {
     mockMode: mockMode(req.body?.externalResearchMockMode),
   });
   const evidence = (collected.blocks.externalResearch || []).map(evidenceFromBlock);
+  const discoveryRecommendation = buildDiscoveryRecommendation(task.title, evidence);
   const providerContext = formatContextBlocksForPrompt(collected.blocks);
   const userContext = [
     String(req.body?.context || "").trim().slice(0, 1500),
     providerContext,
+    discoveryRecommendation.options.length
+      ? `Discovery recommendation:\n${discoveryRecommendation.summary}\nRecommended next move: ${discoveryRecommendation.recommendedNextMove}`
+      : "",
   ].filter(Boolean).join("\n\n");
   const preview = await previewWork({
     title: task.title,
@@ -133,6 +138,7 @@ async function automaticDiscoveryPreview(task: Task, req: Request) {
     ...preview,
     automaticDiscovery: true,
     evidence,
+    discoveryRecommendation,
     evidenceStatus: collected.externalResearch.status,
     evidenceQuery: collected.externalResearch.debug?.query || "",
     evidenceProvider: collected.externalResearch.provider,

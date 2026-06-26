@@ -181,5 +181,4 @@ test("assigning without a track id is rejected", async () => {
 
   assert.equal(response.status, 400);
   assert.match(response.json.error, /trackId/);
-}
-);
+});

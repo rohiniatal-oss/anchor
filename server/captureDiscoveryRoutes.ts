@@ -33,6 +33,10 @@ function isSearchDiscoveryCapture(task: Task) {
   return isSearchDiscoveryTitle(task.title) && !isCareerDirectionResearchTitle(task.title);
 }
 
+function isSearchDiscoveryTitleForWork(title: string) {
+  return isSearchDiscoveryTitle(title) && !isCareerDirectionResearchTitle(title);
+}
+
 export function classifyCaptureWithDiscovery(task: Task): CaptureSuggestion {
   return isSearchDiscoveryCapture(task) ? searchDiscoverySuggestion(task) : classifyCapture(task.id, task.title);
 }
@@ -68,6 +72,22 @@ async function taskForId(id: number) {
   return (await storage.getTasks()).find((item) => item.id === id) || null;
 }
 
+function bodyTask(req: Request, fallback?: Task | null): Task {
+  return {
+    ...(fallback || {}),
+    id: fallback?.id || Number(req.body?.sourceId || 0),
+    title: String(req.body?.title || fallback?.title || ""),
+    category: String(req.body?.category || fallback?.category || "thinking"),
+    doneWhen: String(req.body?.doneWhen || fallback?.doneWhen || ""),
+    minimumOutcome: String(req.body?.minimumOutcome || fallback?.minimumOutcome || ""),
+    sourceUrl: String(req.body?.sourceUrl || fallback?.sourceUrl || ""),
+    sourceNote: String(req.body?.sourceNote || fallback?.sourceNote || ""),
+    sourceType: String(req.body?.sourceType || fallback?.sourceType || "task"),
+    steps: req.body?.steps ?? fallback?.steps ?? "[]",
+    relatedTrackId: req.body?.relatedTrackId == null ? fallback?.relatedTrackId ?? null : Number(req.body.relatedTrackId),
+  } as Task;
+}
+
 async function automaticDiscoveryPreview(task: Task, req: Request) {
   const sourceBundle = {
     sourceContext: task.sourceNote || "",
@@ -99,7 +119,7 @@ async function automaticDiscoveryPreview(task: Task, req: Request) {
   const preview = await previewWork({
     title: task.title,
     sourceType: "task",
-    sourceId: task.id,
+    sourceId: task.id || null,
     sourceNote: task.sourceNote,
     doneWhen: task.doneWhen,
     minimumOutcome: task.minimumOutcome,
@@ -119,6 +139,15 @@ async function automaticDiscoveryPreview(task: Task, req: Request) {
 }
 
 export function registerCaptureDiscoveryRoutes(app: Express) {
+  app.post("/api/work/interpret", async (req: Request, res: Response, next: NextFunction) => {
+    const title = String(req.body?.title || "").trim();
+    if (!isSearchDiscoveryTitleForWork(title)) return next();
+    const sourceId = numberParam(req.body?.sourceId);
+    const fallback = sourceId ? await taskForId(sourceId) : null;
+    const task = bodyTask(req, fallback);
+    return res.json(await automaticDiscoveryPreview(task, req));
+  });
+
   app.post("/api/capture/sort", async (_req, res) => {
     const inbox = (await storage.getTasks()).filter((task) => task.list === "inbox" && !task.done);
     return res.json({ suggestions: inbox.map(classifyCaptureWithDiscovery) });

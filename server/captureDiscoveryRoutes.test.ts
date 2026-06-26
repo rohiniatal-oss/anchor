@@ -31,7 +31,7 @@ test("search discovery titles are distinct from career-direction research", () =
   assert.equal(isCareerDirectionResearchTitle("Explore AI strategy roles"), true);
 });
 
-test("capture suggest labels search discovery as preview-first work", async () => {
+test("capture suggest labels search discovery as automatic preview-first work", async () => {
   const capture = await h.storage.createTask({
     title: "Find three AI governance roles",
     list: "inbox",
@@ -44,7 +44,7 @@ test("capture suggest labels search discovery as preview-first work", async () =
   assert.equal(response.status, 200);
   assert.equal(response.json.suggestion.route, "research");
   assert.equal(response.json.suggestion.label, "Search / Discover");
-  assert.match(response.json.suggestion.reason, /preview/i);
+  assert.match(response.json.suggestion.reason, /search automatically/i);
 });
 
 test("capture sort overrides legacy job and learn classification for search discovery", async () => {
@@ -61,6 +61,41 @@ test("capture sort overrides legacy job and learn classification for search disc
   assert.equal((byId.get(courseSearch.id) as any).route, "research");
   assert.equal((byId.get(courseSearch.id) as any).label, "Search / Discover");
   assert.notEqual((byId.get(atomic.id) as any).label, "Search / Discover");
+});
+
+test("automatic discovery returns evidence and a preview without creating objects", async () => {
+  const capture = await h.storage.createTask({ title: "Find three AI governance roles", list: "inbox", done: false } as any);
+  const before = {
+    tasks: (await h.storage.getTasks()).length,
+    jobs: (await h.storage.getJobs()).length,
+    learn: (await h.storage.getLearn()).length,
+    contacts: (await h.storage.getContacts()).length,
+    hustles: (await h.storage.getHustles()).length,
+    projects: h.sqlite.prepare("SELECT COUNT(*) AS count FROM projects").get() as any,
+  };
+
+  const response = await api(h.base, "POST", `/api/capture/${capture.id}/discover`, {
+    externalResearchMockMode: "success",
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.json.automaticDiscovery, true);
+  assert.equal(response.json.readOnlyPreview, true);
+  assert.equal(response.json.evidenceStatus, "ok");
+  assert.ok(response.json.evidence.length >= 1);
+  assert.match(response.json.evidence[0].snippet, /roles|requirements/i);
+  assert.ok(response.json.definition);
+  assert.ok(response.json.decomposition);
+
+  const after = {
+    tasks: (await h.storage.getTasks()).length,
+    jobs: (await h.storage.getJobs()).length,
+    learn: (await h.storage.getLearn()).length,
+    contacts: (await h.storage.getContacts()).length,
+    hustles: (await h.storage.getHustles()).length,
+    projects: h.sqlite.prepare("SELECT COUNT(*) AS count FROM projects").get() as any,
+  };
+  assert.deepEqual(after, before);
 });
 
 test("direct search discovery routing cannot create jobs learn items contacts proof assets or tasks", async () => {
@@ -85,7 +120,7 @@ test("direct search discovery routing cannot create jobs learn items contacts pr
   for (const response of [jobResponse, learnResponse, networkResponse, proofResponse]) {
     assert.equal(response.status, 409);
     assert.equal(response.json.code, "work_interpretation_required");
-    assert.equal(response.json.nextAction, "interpret_work");
+    assert.equal(response.json.nextAction, "auto_discover");
     assert.equal(response.json.downstreamObjectsCreated.jobs, 0);
     assert.equal(response.json.downstreamObjectsCreated.learningItems, 0);
     assert.equal(response.json.downstreamObjectsCreated.contacts, 0);

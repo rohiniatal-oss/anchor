@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, CheckCircle2, Layers, Loader2, Pencil, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, ExternalLink, Layers, Loader2, Pencil, Search, X } from "lucide-react";
 import type { Task } from "@shared/schema";
 import type { WorkDefinition, WorkDecomposition } from "@shared/work";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,25 @@ import { mutateAndInvalidate } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+export type WorkPreviewEvidence = {
+  title: string;
+  snippet: string;
+  url?: string;
+  domain?: string;
+  date?: string;
+  citationId?: string;
+};
+
 export type WorkPreviewResponse = {
   definition: WorkDefinition;
   decomposition: WorkDecomposition | null;
   nextAction: "clarify" | "confirm_project" | "confirm_task" | "attach_to_project";
   readOnlyPreview: true;
+  automaticDiscovery?: boolean;
+  evidence?: WorkPreviewEvidence[];
+  evidenceStatus?: string;
+  evidenceQuery?: string;
+  evidenceProvider?: string;
 };
 
 type ConfirmedProject = {
@@ -71,6 +85,14 @@ function actionLabel(definition: WorkDefinition) {
   if (definition.workType === "project") return "Confirm project";
   if (definition.candidateParent) return `Add to ${definition.candidateParent.projectTitle}`;
   return definition.workType === "decision" ? "Confirm decision task" : "Confirm task";
+}
+
+function evidenceEmptyMessage(status?: string) {
+  if (status === "rate_limited") return "Anchor tried to search, but the research provider is rate-limited. The capture is still safe.";
+  if (status === "unavailable") return "Automatic search is disabled for this environment. The capture is still safe.";
+  if (status === "error") return "Anchor tried to search, but the provider failed. The capture is still safe.";
+  if (status === "empty") return "Anchor searched but did not find enough reliable public evidence yet.";
+  return "Anchor will use saved context and your clarification until reliable public evidence is available.";
 }
 
 export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onResolved }: Props) {
@@ -216,6 +238,7 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
   const definition = preview.definition;
   const projectPlan = preview.decomposition?.kind === "project" ? preview.decomposition.project : null;
   const taskPlan = preview.decomposition?.kind === "task" ? preview.decomposition.task : null;
+  const evidence = preview.evidence || [];
 
   return (
     <div className="mt-3 rounded-xl border border-primary/25 bg-primary/5 p-3.5" data-testid={`work-preview-${task.id}`}>
@@ -228,6 +251,36 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
         </div>
         <button onClick={onClose} aria-label="Close work preview" className="shrink-0 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
       </div>
+
+      {preview.automaticDiscovery && (
+        <div className="mt-3 rounded-lg border border-card-border bg-card/80 p-3" data-testid={`automatic-discovery-${task.id}`}>
+          <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <Search className="h-3.5 w-3.5" /> Anchor searched automatically
+          </p>
+          {evidence.length > 0 ? (
+            <div className="mt-2 space-y-2">
+              {evidence.map((item, index) => (
+                <div key={`${item.url || item.title}-${index}`} className="rounded-md border border-card-border bg-background/70 p-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs font-medium leading-snug">{item.title || `Source ${index + 1}`}</p>
+                    {item.url && (
+                      <a href={item.url} target="_blank" rel="noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Open source">
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{item.snippet}</p>
+                  {(item.domain || item.date) && (
+                    <p className="mt-1 text-[10px] text-muted-foreground">{[item.domain, item.date].filter(Boolean).join(" · ")}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{evidenceEmptyMessage(preview.evidenceStatus)}</p>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 grid gap-2 text-xs">
         <div>

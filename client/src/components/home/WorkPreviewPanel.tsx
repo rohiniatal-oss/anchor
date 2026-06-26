@@ -16,6 +16,25 @@ export type WorkPreviewEvidence = {
   citationId?: string;
 };
 
+export type WorkPreviewDiscoveryOption = {
+  rank: number;
+  kind: "role" | "person" | "course" | "organization" | "proof" | "resource" | "general";
+  title: string;
+  why: string;
+  fitSignal: string;
+  nextAction: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  sourceDomain: string;
+  confidence: "high" | "medium" | "low";
+};
+
+export type WorkPreviewDiscoveryRecommendation = {
+  summary: string;
+  recommendedNextMove: string;
+  options: WorkPreviewDiscoveryOption[];
+};
+
 export type WorkPreviewResponse = {
   definition: WorkDefinition;
   decomposition: WorkDecomposition | null;
@@ -23,6 +42,7 @@ export type WorkPreviewResponse = {
   readOnlyPreview: true;
   automaticDiscovery?: boolean;
   evidence?: WorkPreviewEvidence[];
+  discoveryRecommendation?: WorkPreviewDiscoveryRecommendation;
   evidenceStatus?: string;
   evidenceQuery?: string;
   evidenceProvider?: string;
@@ -93,6 +113,16 @@ function evidenceEmptyMessage(status?: string) {
   if (status === "error") return "Anchor tried to search, but the provider failed. The capture is still safe.";
   if (status === "empty") return "Anchor searched but did not find enough reliable public evidence yet.";
   return "Anchor will use saved context and your clarification until reliable public evidence is available.";
+}
+
+function optionKindLabel(kind: WorkPreviewDiscoveryOption["kind"]) {
+  if (kind === "role") return "Role signal";
+  if (kind === "person") return "People signal";
+  if (kind === "course") return "Learning signal";
+  if (kind === "organization") return "Organization signal";
+  if (kind === "proof") return "Proof signal";
+  if (kind === "resource") return "Resource signal";
+  return "Discovery signal";
 }
 
 export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onResolved }: Props) {
@@ -239,6 +269,7 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
   const projectPlan = preview.decomposition?.kind === "project" ? preview.decomposition.project : null;
   const taskPlan = preview.decomposition?.kind === "task" ? preview.decomposition.task : null;
   const evidence = preview.evidence || [];
+  const recommendation = preview.discoveryRecommendation;
 
   return (
     <div className="mt-3 rounded-xl border border-primary/25 bg-primary/5 p-3.5" data-testid={`work-preview-${task.id}`}>
@@ -257,6 +288,30 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
           <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             <Search className="h-3.5 w-3.5" /> Anchor searched automatically
           </p>
+          {recommendation && recommendation.options.length > 0 && (
+            <div className="mt-2 rounded-lg border border-primary/15 bg-primary/5 p-3" data-testid={`discovery-recommendation-${task.id}`}>
+              <p className="text-xs font-medium text-foreground">{recommendation.summary}</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Recommended next move: {recommendation.recommendedNextMove}</p>
+              <div className="mt-2 space-y-2">
+                {recommendation.options.slice(0, 3).map((option) => (
+                  <div key={`${option.rank}-${option.title}`} className="rounded-md border border-card-border bg-card/80 p-2">
+                    <div className="flex items-start gap-2">
+                      <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary">{option.rank}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="text-xs font-medium leading-snug">{option.title}</p>
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{optionKindLabel(option.kind)}</span>
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{option.confidence} confidence</span>
+                        </div>
+                        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{option.why}</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-foreground/80">{option.nextAction}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {evidence.length > 0 ? (
             <div className="mt-2 space-y-2">
               {evidence.map((item, index) => (

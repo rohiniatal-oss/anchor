@@ -27,21 +27,24 @@ function categoryFor(definition: WorkDefinition) {
   if (/\b(role|job|application|interview|career|hiring)\b/.test(text)) return "job";
   if (/\b(learn|practice|capability|skill|course)\b/.test(text)) return "learning";
   if (/\b(write|memo|article|portfolio|publish|proof asset)\b/.test(text)) return "substack";
-  if (/\b(contact|message|outreach|conversation|relationship|reconnect)\b/.test(text)) return "admin";
+  if (/\b(contact|message|outreach|conversation|relationship|reconnect|people|alumni)\b/.test(text)) return "admin";
   return definition.workType === "decision" ? "thinking" : "admin";
 }
 
+const WORK_COMMAND_RE = /^(?:please\s+)?(?:search(?:\s+for)?|find(?:\s+me)?|look\s+(?:up|for|into)|find\s+out\s+about|identify|map(?:\s+out)?|scan|source|shortlist|discover|locate|research|investigate|explore|understand|prepare|review|work\s+on|improve|fix|sort\s+out|think\s+about|plan|figure\s+out|develop|build|create|draft|write|organize|organise|update|launch|set\s+up)\s+(?:about\s+|for\s+)?/i;
+
 function targetLabel(definition: WorkDefinition) {
   const source = compact(definition.sourceTitle);
-  const stripped = source.replace(/^(?:please\s+)?(?:research|investigate|look\s+into|find\s+out\s+about|explore|understand|prepare|review|work\s+on|improve|fix|sort\s+out|think\s+about|plan|figure\s+out|develop|build|create|draft|write|organize|organise|update|launch|set\s+up)\s+(?:about\s+)?/i, "")
+  const stripped = source.replace(WORK_COMMAND_RE, "")
     .replace(/\s+(?:so\s+that|so\s+i\s+can|to\s+help\s+me|in\s+order\s+to)\s+.+$/i, "")
     .replace(/[.?!]+$/g, "")
     .trim();
   return stripped || definition.title;
 }
 
-function isResearch(definition: WorkDefinition) {
-  return /\b(research|investigate|landscape|source|evidence|sourced|current developments|pursue)\b/i.test(`${definition.sourceTitle} ${definition.objective} ${definition.desiredOutcome}`);
+function isDiscovery(definition: WorkDefinition) {
+  return /\b(search|find|lookup|look up|look for|identify|map|scan|source|shortlist|discover|locate|research|investigate|landscape|evidence|sourced|current developments|pursue)\b/i
+    .test(`${definition.sourceTitle} ${definition.objective} ${definition.desiredOutcome} ${definition.deliverables.join(" ")}`);
 }
 
 function isCreation(definition: WorkDefinition) {
@@ -85,19 +88,19 @@ function milestone(input: Omit<MilestoneProposal, "key" | "sequence"> & { key?: 
   };
 }
 
-function researchProject(definition: WorkDefinition): ProjectDecomposition {
+function discoveryProject(definition: WorkDefinition): ProjectDecomposition {
   const target = targetLabel(definition);
   const milestones = [
     milestone({
       key: "map-current-landscape",
       title: `Map the current ${target} landscape`,
       outcome: `A bounded map of the current parts of ${target} that could affect the project objective.`,
-      doneWhen: "The most relevant current teams, roles, programmes, people, or signals are listed with primary-source links and an explanation of relevance.",
+      doneWhen: "The most relevant current teams, roles, programmes, people, resources, or signals are listed with primary-source links and an explanation of relevance.",
     }, 0),
     milestone({
       key: "identify-real-options",
-      title: "Identify the realistic paths",
-      outcome: "The plausible opportunity, relationship, learning, or no-action paths are explicit.",
+      title: "Identify the realistic options",
+      outcome: "The plausible opportunity, relationship, learning, resource, or no-action paths are explicit.",
       doneWhen: "Each realistic path has enough evidence to compare and obvious non-options are ruled out.",
     }, 1),
     milestone({
@@ -110,7 +113,7 @@ function researchProject(definition: WorkDefinition): ProjectDecomposition {
       key: "test-access-or-action",
       title: "Test the strongest route",
       outcome: "One concrete application, conversation, verification, or evidence-building move tests the best path.",
-      doneWhen: "The test produces new information or a usable artifact rather than more open-ended research.",
+      doneWhen: "The test produces new information or a usable artifact rather than more open-ended searching.",
     }, 3),
     milestone({
       key: "make-decision",
@@ -131,7 +134,7 @@ function researchProject(definition: WorkDefinition): ProjectDecomposition {
       title: `Write the question each ${target} signal must answer`,
       objective: "Prevent broad browsing by defining the decision-relevant question for each signal.",
       doneWhen: "Each saved signal is tied to one question that could change the project decision.",
-      output: "Three decision-relevant research questions.",
+      output: "Three decision-relevant search questions.",
       estimateMinutes: 15,
       category: "thinking",
     }, definition),
@@ -145,7 +148,7 @@ function researchProject(definition: WorkDefinition): ProjectDecomposition {
     activeTaskIndex: 0,
     activeTaskSteps: [
       action(`Open a primary or authoritative source for ${target} and save the first current page relevant to “${definition.objective}”`, "One saved source link"),
-      action("Extract the specific team, role, programme, person, or change shown by the source", "One factual signal in plain language", "system"),
+      action("Extract the specific team, role, programme, person, resource, or change shown by the source", "One factual signal in plain language", "system"),
       action(`Write one sentence on how that signal could change the ${definition.title} decision`, "One relevance sentence", "user_learning"),
       action("Repeat until three distinct signals are saved, then mark the strongest one", "A three-item map with one priority signal"),
     ],
@@ -229,7 +232,7 @@ function taskDecomposition(definition: WorkDefinition): TaskDecomposition {
     category,
   }, definition);
   let steps: ActionStep[];
-  if (isResearch(definition)) {
+  if (isDiscovery(definition)) {
     steps = [
       action(`Open one primary or authoritative source for ${target} and save the link`, "One source link"),
       action(`Extract only the facts needed to answer “${definition.objective}”`, "A short set of decisive facts", "system"),
@@ -263,8 +266,8 @@ function taskDecomposition(definition: WorkDefinition): TaskDecomposition {
 
 export function decomposeWorkDeterministically(definition: WorkDefinition): WorkDecomposition {
   if (definition.workType === "project") {
-    const project = isResearch(definition)
-      ? researchProject(definition)
+    const project = isDiscovery(definition)
+      ? discoveryProject(definition)
       : isCreation(definition)
         ? creationProject(definition)
         : generalProject(definition);

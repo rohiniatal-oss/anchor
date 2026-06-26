@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { llmUsageStats } from "./llm";
 import { registerCaptureRoutes } from "./capture";
 import { registerCaptureResearchRoutes } from "./captureResearchRoutes";
+import { registerDirectionOwnershipRoutes } from "./directionOwnershipRoutes";
 import { registerTrackResearchRoutes } from "./trackResearchRoutes";
 import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRoutes";
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
@@ -115,6 +116,7 @@ app.use((req, res, next) => {
   // while reads become pure and all task transitions share one lifecycle.
   registerTrustBoundaryRoutes(app);
   registerTaskLifecycleRoutes(app);
+  registerDirectionOwnershipRoutes(app);
 
   // Track research is the single career-direction research brain. The capture
   // interceptor is registered before the legacy router so a research route can

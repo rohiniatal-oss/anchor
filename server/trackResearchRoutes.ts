@@ -1,12 +1,11 @@
 import type { Express } from "express";
 import { storage } from "./storage";
-import { runStructuredTrackResearch } from "./trackResearchMethod";
+import { researchCareerDirection } from "./structuredTrackResearchService";
 import { materializeTrackResearch } from "./trackResearchAgent";
 import { applyAutomaticActivationFilter, buildCareerArchitecture } from "./trackResearchArchitecture";
 import { buildBottleneckDiagnosis } from "./trackResearchBottlenecks";
 import { architectureWorkspaceView } from "./trackResearchArchitectureWorkspace";
 import { buildRequirementModel, REQUIREMENT_MODEL_VERSION } from "./trackResearchRequirementModel";
-import { enhanceRequirementModelWithLlm } from "./trackResearchRequirementSynthesis";
 
 function parseJsonObject(value: string): Record<string, any> | null {
   if (!value) return null;
@@ -162,60 +161,21 @@ async function handleTrackResearch(req: any, res: any) {
   const domain = readDomain(req.body);
   if (!domain) return res.status(400).json({ error: "No domain provided" });
 
-  // Market and role-family research are supporting inputs. The durable output of
-  // this stage is the evidence-backed requirement model.
-  const result = await runStructuredTrackResearch(domain, { materialize: false });
-  if (!result) return res.status(500).json({ error: "Could not generate track research" });
-
-  const currentIntelligence = parseJsonObject(result.track.trackIntelligence || "") || {};
-  const sourceResearchAt = Number(currentIntelligence.researchedAt || Date.now());
-  const draftRequirementModel = buildRequirementModel(result.track, result.brief, sourceResearchAt);
-  const requirementModel = await enhanceRequirementModelWithLlm(result.track, result.brief, draftRequirementModel);
-  const architecture = buildCareerArchitecture(result.track, result.brief, result.organizedWorkspace);
-  const bottleneckDiagnosis = buildBottleneckDiagnosis(result.track, result.brief, architecture);
-  const organizedWorkspace = architectureWorkspaceView(result.organizedWorkspace, architecture, bottleneckDiagnosis);
-  const nextIntelligence = {
-    ...currentIntelligence,
-    requirementModel,
-    organizedWorkspace,
-    careerArchitecture: architecture,
-    bottleneckDiagnosis,
-    automaticSelection: architecture.automaticSelection,
-    lastUpdated: Date.now(),
-  };
-  const updatedTrack = await storage.updateCareerTrack(result.track.id, { trackIntelligence: JSON.stringify(nextIntelligence) } as any);
-
-  res.json({
-    track: updatedTrack || result.track,
-    brief: result.brief,
-    plan: result.brief.plan,
-    searchPlan: result.brief.searchPlan,
-    evidencePack: result.brief.evidencePack,
-    researchEvidence: result.brief.researchEvidence,
-    careerHypothesis: result.brief.careerHypothesis,
-    pathHypotheses: result.brief.pathHypotheses,
-    trackHypotheses: result.brief.trackHypotheses,
-    requirementGraph: result.brief.requirementGraph,
-    careerCapitalPortfolio: result.brief.careerCapitalPortfolio,
-    gapPortfolio: result.brief.gapPortfolio,
-    interventionRecommendations: result.brief.interventionRecommendations,
-    developmentPlans: result.brief.developmentPlans,
-    evidenceLoops: result.brief.evidenceLoops,
-    fitGapMatrix: result.brief.fitGapMatrix,
-    requirementModel,
-    organizedWorkspace,
-    careerArchitecture: architecture,
-    bottleneckDiagnosis,
-    automaticSelection: architecture.automaticSelection,
-    materialized: null,
-  });
+  try {
+    const result = await researchCareerDirection(domain);
+    if (!result) return res.status(500).json({ error: "Could not generate track research" });
+    return res.json(result);
+  } catch (error) {
+    console.error("Structured track research failed:", error);
+    return res.status(500).json({ error: "Could not generate track research" });
+  }
 }
 
 export function registerTrackResearchRoutes(app: Express) {
   app.post("/api/track-research", handleTrackResearch);
 
-  // Backward-compatible focus-area entry point. This route is registered before
-  // capture.ts, so broad target research uses the structured research agent.
+  // Backward-compatible focus-area entry point. Both URLs now use the same
+  // structured research service and never materialize execution objects.
   app.post("/api/explore", handleTrackResearch);
 
   app.get("/api/career-tracks/:id/research-plan", async (req, res) => {

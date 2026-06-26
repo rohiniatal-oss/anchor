@@ -11,6 +11,8 @@ export type DiscoveryOptionActivationResult = {
   task?: Task | null;
 };
 
+const ACTIVATION_TYPES = new Set<DiscoveryActivationType>(["job", "contact", "learn", "proof", "task"]);
+
 function compact(value: unknown, max = 500) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
 }
@@ -50,6 +52,12 @@ function defaultActivationType(kind: RankedDiscoveryOption["kind"]): DiscoveryAc
   return "task";
 }
 
+function activationTypeFor(value: unknown, option: RankedDiscoveryOption): DiscoveryActivationType {
+  if (value == null || value === "") return defaultActivationType(option.kind);
+  if (ACTIVATION_TYPES.has(value as DiscoveryActivationType)) return value as DiscoveryActivationType;
+  throw new Error("Unsupported discovery activation type");
+}
+
 function categoryFor(kind: RankedDiscoveryOption["kind"]) {
   if (kind === "role") return "job";
   if (kind === "learning" || kind === "resource") return "learning";
@@ -76,10 +84,11 @@ async function captureTask(captureId: number) {
 
 async function activateJob(capture: Task, option: RankedDiscoveryOption) {
   const jobs = await storage.getJobs();
-  const key = normalize(option.sourceUrl || option.title);
   const existing = jobs.find((job) => {
     const sourceMatch = option.sourceUrl && [job.url, job.sourceUrl].some((url) => normalize(url) === normalize(option.sourceUrl));
-    return sourceMatch || normalize(`${job.title} ${job.company}`) === normalize(`${option.title} ${sourceDomain(option)}`) || normalize(job.title) === normalize(option.title);
+    return sourceMatch
+      || normalize(`${job.title} ${job.company}`) === normalize(`${option.title} ${sourceDomain(option)}`)
+      || normalize(job.title) === normalize(option.title);
   });
   if (existing) return { activationType: "job" as const, reused: true, object: existing, task: null };
   const job = await storage.createJob({
@@ -116,6 +125,7 @@ async function activateContact(capture: Task, option: RankedDiscoveryOption) {
     targetRole: capture.title,
     sourceNetwork: sourceDomain(option),
     relatedTrackId: capture.relatedTrackId ?? undefined,
+    linkedinUrl: option.sourceUrl || "",
   } as any);
   return { activationType: "contact" as const, reused: false, object: contact, task: null };
 }
@@ -196,14 +206,14 @@ async function activateTask(capture: Task, option: RankedDiscoveryOption) {
 
 export async function activateDiscoveryOption(input: {
   captureId: number;
-  option: RankedDiscoveryOption;
+  option?: RankedDiscoveryOption;
   activationType?: DiscoveryActivationType;
 }): Promise<DiscoveryOptionActivationResult | null> {
   const capture = await captureTask(input.captureId);
   if (!capture) return null;
   const option = input.option;
-  const activationType = input.activationType || defaultActivationType(option.kind);
   if (!option?.title) throw new Error("A ranked discovery option is required");
+  const activationType = activationTypeFor(input.activationType, option);
 
   let result: DiscoveryOptionActivationResult;
   if (activationType === "job") result = await activateJob(capture, option);

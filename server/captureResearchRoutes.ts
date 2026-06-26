@@ -1,16 +1,14 @@
 import type { Express, Request, Response } from "express";
 import type { Task } from "@shared/schema";
+import {
+  extractCareerDirectionDomain,
+  isCareerDirectionResearchTitle,
+} from "@shared/captureResearch";
 import { storage } from "./storage";
-import { interpretCapture } from "./captureInterpret";
 import {
   researchCareerDirection,
   type StoredStructuredTrackResearchResult,
 } from "./structuredTrackResearchService";
-
-const CAREER_DIRECTION_VERB_RE = /^(?:please\s+)?(?:explore|get\s+into|break\s+into|map\s+out)\b/i;
-const CAREER_DIRECTION_NOUN_RE = /\b(?:career|careers|field|industry|industries|job|jobs|profession|professions|role|roles|sector|sectors|space)\b/i;
-const RESEARCH_PREFIX_RE = /^(?:please\s+)?(?:explore|get\s+into|break\s+into|look\s+into|research|understand|investigate|learn\s+about|map\s+out)\s+/i;
-const GENERIC_SUFFIX_RE = /\s+(?:career|careers|field|industry|industries|job|jobs|profession|professions|role|roles|sector|sectors|space)\s*$/i;
 
 export type CareerDirectionResearchRunner = (
   domain: string,
@@ -20,26 +18,8 @@ function compact(value: unknown): string {
   return String(value || "").trim().replace(/\s+/g, " ");
 }
 
-/**
- * Direction research is narrower than general research. It covers exploration
- * of a role family, career path, field, or sector. Entity research such as
- * "Research TBI" stays in the project/task interpretation flow.
- */
-export function isCareerDirectionResearchCapture(title: string): boolean {
-  const cleaned = compact(title);
-  if (!cleaned) return false;
-  const interpretation = interpretCapture(cleaned);
-  if (interpretation.mode !== "research") return false;
-  return CAREER_DIRECTION_VERB_RE.test(cleaned) || CAREER_DIRECTION_NOUN_RE.test(cleaned);
-}
-
-export function careerDirectionDomain(title: string): string {
-  const cleaned = compact(title);
-  const interpreted = interpretCapture(cleaned);
-  const inferred = compact(interpreted.domain);
-  if (inferred) return inferred;
-  return compact(cleaned.replace(RESEARCH_PREFIX_RE, "").replace(GENERIC_SUFFIX_RE, ""));
-}
+export const isCareerDirectionResearchCapture = isCareerDirectionResearchTitle;
+export const careerDirectionDomain = extractCareerDirectionDomain;
 
 function researchNote(task: Task, result: StoredStructuredTrackResearchResult) {
   const line = `Career direction researched: ${result.track.name}. The evidence-backed direction model was stored without activating jobs, learning items, contacts, proof assets, projects, or tasks.`;
@@ -60,7 +40,7 @@ export async function routeCareerDirectionCapture(
   const task = (await storage.getTasks()).find((item) => item.id === id);
   if (!task) return { status: 404, body: { error: "Capture not found" } };
 
-  if (!isCareerDirectionResearchCapture(task.title)) {
+  if (!isCareerDirectionResearchTitle(task.title)) {
     return {
       status: 409,
       body: {
@@ -73,7 +53,7 @@ export async function routeCareerDirectionCapture(
     };
   }
 
-  const domain = careerDirectionDomain(task.title);
+  const domain = extractCareerDirectionDomain(task.title);
   if (!domain) {
     return {
       status: 409,

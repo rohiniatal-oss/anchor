@@ -7,6 +7,7 @@ import { storage } from "./storage";
 import { previewWork } from "./workService";
 
 const MATERIALIZING_ROUTES = new Set(["job", "learn", "network", "proof", "task", "today", "subtask", "decision", "research"]);
+const DEFAULT_DISCOVERY_PURPOSE = "so I can produce an evidence-backed shortlist and next action";
 
 function requestedRoute(req: Request) {
   return String(req.body?.route || req.body?.category || "").trim().toLowerCase();
@@ -120,7 +121,7 @@ async function automaticDiscoveryPreview(task: Task, req: Request) {
     title: task.title,
     sourceType: "task",
     sourceId: task.id || null,
-    sourceNote: task.sourceNote,
+    sourceNote: [task.sourceNote, DEFAULT_DISCOVERY_PURPOSE].filter(Boolean).join(". "),
     doneWhen: task.doneWhen,
     minimumOutcome: task.minimumOutcome,
     steps: task.steps,

@@ -45,6 +45,8 @@ export type WorkPreviewResponse = {
   recommendedNextAction?: string;
 };
 
+type DiscoveryActivationType = "job" | "contact" | "learn" | "proof" | "task";
+
 type ConfirmedProject = {
   kind: "project";
   project: { id: number; title: string; objective: string; desiredOutcome: string; currentMilestoneId?: number | null };
@@ -83,6 +85,10 @@ const INVALIDATE_AFTER_WORK = [
   "/api/plan/current",
   "/api/anchor/today",
   "/api/stats",
+  "/api/jobs",
+  "/api/learn",
+  "/api/contacts",
+  "/api/hustles",
 ];
 
 function typeLabel(definition: WorkDefinition) {
@@ -122,9 +128,26 @@ function optionKindLabel(kind: RankedDiscoveryOption["kind"]) {
   return "Evidence";
 }
 
+function optionActivationType(kind: RankedDiscoveryOption["kind"]): DiscoveryActivationType {
+  if (kind === "role") return "job";
+  if (kind === "person") return "contact";
+  if (kind === "learning" || kind === "resource") return "learn";
+  if (kind === "proof") return "proof";
+  return "task";
+}
+
+function optionActivationLabel(kind: RankedDiscoveryOption["kind"]) {
+  if (kind === "role") return "Save as Job";
+  if (kind === "person") return "Save as Contact";
+  if (kind === "learning" || kind === "resource") return "Save as Learn";
+  if (kind === "proof") return "Save as Proof";
+  return "Create follow-up task";
+}
+
 export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onResolved }: Props) {
   const { toast } = useToast();
   const [busy, setBusy] = useState<"confirm" | "task" | "project" | "reinterpret" | "activate" | null>(null);
+  const [activatingOptionRank, setActivatingOptionRank] = useState<number | null>(null);
   const [editingGoal, setEditingGoal] = useState(preview.definition.needsClarification);
   const [goal, setGoal] = useState("");
   const [confirmed, setConfirmed] = useState<ConfirmedProject | null>(null);
@@ -209,6 +232,26 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
       toast({ title: "Couldn't activate the task", description: error?.message || "The project remains confirmed and unchanged." });
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function activateRankedOption(option: RankedDiscoveryOption) {
+    const activationType = optionActivationType(option.kind);
+    setActivatingOptionRank(option.rank);
+    try {
+      const result = await mutateAndInvalidate("POST", `/api/capture/${task.id}/discovery-options/activate`, {
+        option,
+        activationType,
+      }, INVALIDATE_AFTER_WORK);
+      toast({
+        title: result?.reused ? "Option already saved" : optionActivationLabel(option.kind),
+        description: result?.reused ? "Anchor reused the existing object instead of creating a duplicate." : "Anchor created the selected object from this ranked option.",
+      });
+      onResolved();
+    } catch (error: any) {
+      toast({ title: "Couldn't activate that option", description: error?.message || "The discovery results were not changed." });
+    } finally {
+      setActivatingOptionRank(null);
     }
   }
 
@@ -328,6 +371,17 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
                     </div>
                     <p className="mt-1 leading-relaxed text-muted-foreground">{option.whyRelevant}</p>
                     <p className="mt-1 leading-relaxed text-foreground/80">Next: {option.nextAction}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 h-7 px-2 text-xs"
+                      onClick={() => activateRankedOption(option)}
+                      disabled={busy !== null || activatingOptionRank !== null}
+                      data-testid={`button-activate-discovery-option-${task.id}-${option.rank}`}
+                    >
+                      {activatingOptionRank === option.rank ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <ArrowRight className="mr-1 h-3 w-3" />}
+                      {activatingOptionRank === option.rank ? "Saving" : optionActivationLabel(option.kind)}
+                    </Button>
                   </li>
                 ))}
               </ol>
@@ -425,18 +479,18 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
 
       {!editingGoal && !definition.needsClarification && preview.decomposition && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={() => confirm(definition.candidateParent ? "attach_to_parent" : "as_interpreted")} disabled={busy !== null} data-testid={`button-confirm-work-${task.id}`}>
+          <Button size="sm" onClick={() => confirm(definition.candidateParent ? "attach_to_parent" : "as_interpreted")} disabled={busy !== null || activatingOptionRank !== null} data-testid={`button-confirm-work-${task.id}`}>
             {busy === "confirm" ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
             {actionLabel(definition)}
           </Button>
           {definition.workType !== "task" && definition.workType !== "decision" && (
-            <Button size="sm" variant="outline" onClick={() => confirm("as_task")} disabled={busy !== null} data-testid={`button-work-as-task-${task.id}`}>
+            <Button size="sm" variant="outline" onClick={() => confirm("as_task")} disabled={busy !== null || activatingOptionRank !== null} data-testid={`button-work-as-task-${task.id}`}>
               {busy === "task" ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               Treat as one-off task
             </Button>
           )}
           {definition.workType !== "project" && (
-            <Button size="sm" variant="outline" onClick={() => interpret(goal, "project")} disabled={busy !== null} data-testid={`button-work-as-project-${task.id}`}>
+            <Button size="sm" variant="outline" onClick={() => interpret(goal, "project")} disabled={busy !== null || activatingOptionRank !== null} data-testid={`button-work-as-project-${task.id}`}>
               {busy === "project" ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
               Make this a project
             </Button>

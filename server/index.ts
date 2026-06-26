@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import { registerRoutes } from "./routes";
 import { llmUsageStats } from "./llm";
 import { registerCaptureRoutes } from "./capture";
+import { registerCaptureResearchRoutes } from "./captureResearchRoutes";
 import { registerTrackResearchRoutes } from "./trackResearchRoutes";
 import { registerTrackResearchCoverageRoutes } from "./trackResearchCoverageRoutes";
 import { registerTrackResearchDevelopmentRoutes } from "./trackResearchDevelopmentRoutes";
@@ -115,14 +116,16 @@ app.use((req, res, next) => {
   registerTrustBoundaryRoutes(app);
   registerTaskLifecycleRoutes(app);
 
-  // Capture remains the clean routing contract. Track Research sits before it so
-  // focus-area exploration becomes a structured, persistent track plan.
+  // Track research is the single career-direction research brain. The capture
+  // interceptor is registered before the legacy router so a research route can
+  // never reach the old domain-brief materializer.
   registerPersistenceAdminRoutes(app);
   registerTrackResearchRoutes(app);
   registerTrackResearchCoverageRoutes(app);
   registerTrackResearchDevelopmentRoutes(app);
   registerTrackResearchExecutionRoutes(app);
   registerTrackResearchExecutionPriorityRoutes(app);
+  registerCaptureResearchRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);

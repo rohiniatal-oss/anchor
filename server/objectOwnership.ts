@@ -277,10 +277,10 @@ export async function backfillStrategicObjectOwnership() {
       object_type, object_id, ownership_state, track_id, reason, confidence, source, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, 'backfilled', ?, ?)
     ON CONFLICT(object_type, object_id) DO UPDATE SET
-      ownership_state = excluded.ownership_state,
-      track_id = excluded.track_id,
-      reason = excluded.reason,
-      confidence = excluded.confidence,
+      ownership_state = CASE WHEN strategic_object_ownership.source = 'manual' THEN strategic_object_ownership.ownership_state ELSE excluded.ownership_state END,
+      track_id = CASE WHEN strategic_object_ownership.source = 'manual' THEN strategic_object_ownership.track_id ELSE excluded.track_id END,
+      reason = CASE WHEN strategic_object_ownership.source = 'manual' THEN strategic_object_ownership.reason ELSE excluded.reason END,
+      confidence = CASE WHEN strategic_object_ownership.source = 'manual' THEN strategic_object_ownership.confidence ELSE excluded.confidence END,
       source = CASE WHEN strategic_object_ownership.source = 'manual' THEN 'manual' ELSE 'backfilled' END,
       updated_at = excluded.updated_at
   `);

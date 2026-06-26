@@ -64,10 +64,11 @@ test("routeResearchCapture stores one direction model and creates zero execution
   };
 
   const result = await routeResearchCapture(capture.id, fakeRunner);
+  const body = result.body as any;
 
   assert.equal(result.status, 200);
   assert.deepEqual(calledWith, { domain: "AI strategy", materialize: false });
-  assert.deepEqual(result.body.materialized, {
+  assert.deepEqual(body.materialized, {
     trackId: undefined,
     jobIds: [],
     learnIds: [],
@@ -92,7 +93,7 @@ test("routeResearchCapture stores one direction model and creates zero execution
   assert.equal(updated.list, "captured");
   assert.equal(updated.sourceType, "career_track");
   assert.equal(updated.sourceStatus, "routed:research:track");
-  assert.equal(updated.relatedTrackId, result.body.track.id);
+  assert.equal(updated.relatedTrackId, body.track.id);
 });
 
 test("routeResearchCapture leaves failed research retryable and creates no downstream objects", async () => {
@@ -112,10 +113,11 @@ test("routeResearchCapture leaves failed research retryable and creates no downs
   };
 
   const result = await routeResearchCapture(capture.id, async () => null);
+  const body = result.body as any;
 
   assert.equal(result.status, 200);
-  assert.equal(result.body.retryable, true);
-  assert.deepEqual(result.body.materialized, {
+  assert.equal(body.retryable, true);
+  assert.deepEqual(body.materialized, {
     trackId: undefined,
     jobIds: [],
     learnIds: [],

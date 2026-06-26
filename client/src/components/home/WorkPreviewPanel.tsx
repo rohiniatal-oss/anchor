@@ -16,6 +16,20 @@ export type WorkPreviewEvidence = {
   citationId?: string;
 };
 
+export type RankedDiscoveryOption = {
+  rank: number;
+  kind: "role" | "person" | "learning" | "organization" | "proof" | "resource" | "evidence";
+  title: string;
+  whyRelevant: string;
+  confidence: "high" | "medium" | "low";
+  evidenceIndex: number;
+  score: number;
+  sourceTitle: string;
+  sourceUrl?: string;
+  sourceDomain?: string;
+  nextAction: string;
+};
+
 export type WorkPreviewResponse = {
   definition: WorkDefinition;
   decomposition: WorkDecomposition | null;
@@ -26,6 +40,9 @@ export type WorkPreviewResponse = {
   evidenceStatus?: string;
   evidenceQuery?: string;
   evidenceProvider?: string;
+  rankedOptions?: RankedDiscoveryOption[];
+  discoverySummary?: string;
+  recommendedNextAction?: string;
 };
 
 type ConfirmedProject = {
@@ -93,6 +110,16 @@ function evidenceEmptyMessage(status?: string) {
   if (status === "error") return "Anchor tried to search, but the provider failed. The capture is still safe.";
   if (status === "empty") return "Anchor searched but did not find enough reliable public evidence yet.";
   return "Anchor will use saved context and your clarification until reliable public evidence is available.";
+}
+
+function optionKindLabel(kind: RankedDiscoveryOption["kind"]) {
+  if (kind === "role") return "Role";
+  if (kind === "person") return "Person";
+  if (kind === "learning") return "Learning";
+  if (kind === "organization") return "Organization";
+  if (kind === "proof") return "Proof";
+  if (kind === "resource") return "Resource";
+  return "Evidence";
 }
 
 export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onResolved }: Props) {
@@ -239,6 +266,7 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
   const projectPlan = preview.decomposition?.kind === "project" ? preview.decomposition.project : null;
   const taskPlan = preview.decomposition?.kind === "task" ? preview.decomposition.task : null;
   const evidence = preview.evidence || [];
+  const rankedOptions = preview.rankedOptions || [];
 
   return (
     <div className="mt-3 rounded-xl border border-primary/25 bg-primary/5 p-3.5" data-testid={`work-preview-${task.id}`}>
@@ -278,6 +306,39 @@ export function WorkPreviewPanel({ task, preview, onPreviewChange, onClose, onRe
             </div>
           ) : (
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{evidenceEmptyMessage(preview.evidenceStatus)}</p>
+          )}
+
+          {rankedOptions.length > 0 && (
+            <div className="mt-3" data-testid={`ranked-discovery-options-${task.id}`}>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Ranked options</p>
+              {preview.discoverySummary && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{preview.discoverySummary}</p>}
+              <ol className="mt-2 space-y-2">
+                {rankedOptions.map((option) => (
+                  <li key={`${option.rank}-${option.title}`} className="rounded-md border border-card-border bg-background/70 p-2 text-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium leading-snug">{option.rank}. {option.title}</p>
+                        <p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{optionKindLabel(option.kind)} · {option.confidence} confidence</p>
+                      </div>
+                      {option.sourceUrl && (
+                        <a href={option.sourceUrl} target="_blank" rel="noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground" aria-label="Open ranked source">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+                    <p className="mt-1 leading-relaxed text-muted-foreground">{option.whyRelevant}</p>
+                    <p className="mt-1 leading-relaxed text-foreground/80">Next: {option.nextAction}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {preview.recommendedNextAction && (
+            <div className="mt-3 rounded-md border border-primary/20 bg-primary/5 p-2 text-xs" data-testid={`recommended-discovery-action-${task.id}`}>
+              <p className="font-medium text-foreground">Recommended next move</p>
+              <p className="mt-0.5 leading-relaxed text-muted-foreground">{preview.recommendedNextAction}</p>
+            </div>
           )}
         </div>
       )}

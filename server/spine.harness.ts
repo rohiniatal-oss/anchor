@@ -36,6 +36,7 @@ export async function makeHarness(): Promise<Harness> {
 
   // Schema is created by storage.ts during explicit initStorage(dbPath).
   const express = (await import("express")).default;
+  const { registerCaptureResearchRoutes } = await import("./captureResearchRoutes");
   const { registerCaptureRoutes } = await import("./capture");
   const { registerSprint2Routes } = await import("./sprint2");
   const { registerSprint1Routes } = await import("./sprint1");
@@ -53,6 +54,7 @@ export async function makeHarness(): Promise<Harness> {
   const app = express();
   app.use(express.json());
   const httpServer = createServer(app);
+  registerCaptureResearchRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);

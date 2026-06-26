@@ -111,6 +111,10 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Discovery automation must sit before the generic work interpreter so a
+  // search-shaped capture can automatically return evidence, not a search task.
+  registerCaptureDiscoveryRoutes(app);
+
   // Work interpretation is a preview boundary. It identifies project vs task,
   // then separates project decomposition from task-level action breakdown.
   registerWorkRoutes(app);
@@ -121,16 +125,15 @@ app.use((req, res, next) => {
   registerTrustBoundaryRoutes(app);
   registerTaskLifecycleRoutes(app);
 
-  // Track research is the single career-direction research brain. The discovery
-  // and research interceptors are registered before the legacy router so search
-  // captures can never materialize objects without work interpretation.
+  // Track research is the single career-direction research brain. The research
+  // interceptor is registered before the legacy router so career-direction
+  // research can never reach the old domain-brief materializer.
   registerPersistenceAdminRoutes(app);
   registerTrackResearchRoutes(app);
   registerTrackResearchCoverageRoutes(app);
   registerTrackResearchDevelopmentRoutes(app);
   registerTrackResearchExecutionRoutes(app);
   registerTrackResearchExecutionPriorityRoutes(app);
-  registerCaptureDiscoveryRoutes(app);
   registerCaptureResearchRoutes(app);
   registerCaptureRoutes(app);
   registerSprint2Routes(app);

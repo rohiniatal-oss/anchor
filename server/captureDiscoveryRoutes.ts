@@ -3,6 +3,7 @@ import type { Task } from "@shared/schema";
 import { isCareerDirectionResearchTitle, isSearchDiscoveryTitle } from "@shared/captureResearch";
 import { classifyCapture, type CaptureSuggestion } from "./capture";
 import { collectTaskBreakdownContext, formatContextBlocksForPrompt, type ContextBlock } from "./contextProviders";
+import { activateDiscoveryOption } from "./discoveryOptionActivation";
 import { buildRankedDiscoveryOptions } from "./discoveryOptions";
 import { storage } from "./storage";
 import { previewWork } from "./workService";
@@ -17,6 +18,19 @@ function requestedRoute(req: Request) {
 function numberParam(value: unknown): number | null {
   const id = Number(Array.isArray(value) ? value[0] : value);
   return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+function backgroundMutation(req: Request): boolean {
+  return String(req.header("X-Anchor-User-Intent") || "").toLowerCase() === "background";
+}
+
+function requireExplicitIntent(req: Request, res: Response) {
+  if (!backgroundMutation(req)) return true;
+  res.status(409).json({
+    error: "Activating a discovery option needs an explicit user action.",
+    code: "explicit_user_intent_required",
+  });
+  return false;
 }
 
 function searchDiscoverySuggestion(task: Task): CaptureSuggestion {
@@ -179,6 +193,23 @@ export function registerCaptureDiscoveryRoutes(app: Express) {
       return res.status(400).json({ error: "This capture is not search or discovery work." });
     }
     return res.json(await automaticDiscoveryPreview(task, req));
+  });
+
+  app.post("/api/capture/:id/discovery-options/activate", async (req, res) => {
+    if (!requireExplicitIntent(req, res)) return;
+    const id = numberParam(req.params.id);
+    if (!id) return res.status(400).json({ error: "Bad id" });
+    try {
+      const result = await activateDiscoveryOption({
+        captureId: id,
+        option: req.body?.option,
+        activationType: req.body?.activationType,
+      });
+      return result ? res.json(result) : res.status(404).json({ error: "Capture not found" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not activate discovery option";
+      return res.status(/required|unsupported/i.test(message) ? 400 : 500).json({ error: message });
+    }
   });
 
   app.post("/api/capture/:id/route", async (req: Request, res: Response, next: NextFunction) => {

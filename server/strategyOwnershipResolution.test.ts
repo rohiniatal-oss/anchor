@@ -28,13 +28,14 @@ function unlinkedItem(bucket: Awaited<ReturnType<typeof getUnlinkedItems>>, enti
   return bucket.items.find((item) => item.entity === entity && item.id === id);
 }
 
-async function createTrack(name = "AI governance") {
+async function createTrack(name = "AI governance", overrides: Record<string, unknown> = {}) {
   return h.storage.createCareerTrack({
     slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
     name,
     status: "active",
     priority: 10,
     whyItFits: "Test direction",
+    ...overrides,
   } as any);
 }
 
@@ -55,6 +56,56 @@ test("unlinked items include an ownership recommendation with reason and confide
   assert.equal(item.suggestion.trackName, "AI governance");
   assert.equal(item.suggestion.confidence, "high");
   assert.match(item.suggestion.reason, /matches AI governance/i);
+});
+
+test("ownership recommendations use saved source evidence when the visible title is generic", async () => {
+  const track = await createTrack("AI governance");
+  const job = await h.storage.createJob({
+    title: "Policy Analyst",
+    company: "Example Org",
+    status: "wishlist",
+    sourceType: "discovery_option",
+    sourceUrl: "https://jobs.example.org/frontier-ai-governance-policy",
+    roleModel: JSON.stringify({
+      sourceTitle: "Frontier AI governance policy role",
+      requirements: ["model governance", "AI regulation", "risk management"],
+      nextAction: "Verify whether the role is current before applying.",
+    }),
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "jobs", job.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "assign_to_track");
+  assert.equal(item.suggestion.trackId, track.id);
+  assert.equal(item.suggestion.trackName, "AI governance");
+  assert.equal(item.suggestion.confidence, "high");
+  assert.match(item.suggestion.reason, /source evidence.*matches AI governance/i);
+});
+
+test("ownership recommendations compare source evidence with track intelligence", async () => {
+  const track = await createTrack("Policy operations", {
+    trackIntelligence: JSON.stringify({
+      roleFamilies: ["frontier model governance"],
+      capabilityDomains: ["model evaluations", "risk controls"],
+    }),
+  });
+  const learn = await h.storage.createLearn({
+    title: "Reading packet",
+    type: "resource",
+    learnStatus: "open",
+    note: "Source discusses model evaluations for frontier governance teams.",
+    proofIntent: true,
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "learn", learn.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "assign_to_track");
+  assert.equal(item.suggestion.trackId, track.id);
+  assert.equal(item.suggestion.trackName, "Policy operations");
+  assert.ok(["medium", "high"].includes(item.suggestion.confidence));
+  assert.match(item.suggestion.reason, /source evidence/i);
 });
 
 test("ambiguous unlinked items recommend parking instead of forcing a role type", async () => {

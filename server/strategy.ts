@@ -481,6 +481,19 @@ export type UnlinkedItem = {
   suggestion: OwnershipSuggestion;
 };
 
+type OwnershipEvidence = {
+  titleText: string;
+  objectText: string;
+  sourceText: string;
+  allText: string;
+};
+
+type OwnershipMatch = {
+  score: number;
+  objectScore: number;
+  sourceScore: number;
+};
+
 const UNLINKED_OBJECT_TYPE: Record<UnlinkedItem["entity"], StrategicObjectType> = {
   jobs: "job",
   learn: "learn",
@@ -492,7 +505,12 @@ const RESOLVED_MANUAL_STATES = new Set(["unclassified_capture", "parked", "stopp
 const TOKEN_STOPWORDS = new Set([
   "the", "and", "for", "with", "from", "into", "about", "role", "roles", "lead", "manager", "senior", "associate",
   "director", "head", "jobs", "job", "contact", "learning", "resource", "project", "proof", "asset", "example", "open", "ai",
+  "http", "https", "www", "com", "org", "edu", "net", "careers", "apply", "application", "profile", "source", "title",
 ]);
+
+function compactText(...values: unknown[]) {
+  return values.map((value) => String(value || "").trim()).filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
 
 function normalized(value: unknown) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
@@ -502,17 +520,116 @@ function tokenSet(value: unknown) {
   return new Set(normalized(value).split(" ").filter((token) => token.length > 2 && !TOKEN_STOPWORDS.has(token)));
 }
 
-function trackMatchScore(track: CareerTrack, sourceText: string) {
-  const source = normalized(sourceText);
-  const trackName = normalized(track.name);
-  let score = trackName && source.includes(trackName) ? 4 : 0;
-  const sourceTokens = tokenSet(sourceText);
-  const trackTokens = tokenSet(`${track.name} ${track.description} ${track.targetRoleArchetype} ${track.whyItFits}`);
-  for (const token of trackTokens) if (sourceTokens.has(token)) score += 1;
-  return score;
+function flattenJsonValue(value: unknown, depth = 0): string {
+  if (value == null || depth > 5) return "";
+  if (["string", "number", "boolean"].includes(typeof value)) return String(value);
+  if (Array.isArray(value)) return compactText(...value.map((item) => flattenJsonValue(item, depth + 1)));
+  if (typeof value === "object") return compactText(...Object.values(value as Record<string, unknown>).map((item) => flattenJsonValue(item, depth + 1)));
+  return "";
 }
 
-function suggestOwnership(entity: UnlinkedItem["entity"], status: string, sourceText: string, tracks: CareerTrack[]): OwnershipSuggestion {
+function jsonEvidence(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    return flattenJsonValue(JSON.parse(raw));
+  } catch {
+    return raw;
+  }
+}
+
+function urlEvidence(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    return compactText(
+      parsed.hostname.replace(/^www\./, "").replace(/\./g, " "),
+      parsed.pathname.replace(/[\/_-]+/g, " "),
+    );
+  } catch {
+    return raw.replace(/https?:\/\//g, " ").replace(/[\/_:.-]+/g, " ");
+  }
+}
+
+function makeOwnershipEvidence(input: { titleText: string; objectText?: string; sourceText?: string }): OwnershipEvidence {
+  return {
+    titleText: compactText(input.titleText),
+    objectText: compactText(input.objectText),
+    sourceText: compactText(input.sourceText),
+    allText: compactText(input.titleText, input.objectText, input.sourceText),
+  };
+}
+
+function trackEvidenceText(track: CareerTrack) {
+  return compactText(track.name, track.slug, track.description, track.targetRoleArchetype, track.whyItFits, jsonEvidence(track.trackIntelligence));
+}
+
+function jobOwnershipEvidence(job: Job): OwnershipEvidence {
+  return makeOwnershipEvidence({
+    titleText: compactText(job.title, job.company),
+    objectText: compactText(job.location, job.roleArchetype, job.note, job.nextStep, job.flag, job.narrativeAngle),
+    sourceText: compactText(job.sourceType, job.sourceUrl, urlEvidence(job.sourceUrl), job.jdText, jsonEvidence(job.companyBrief), jsonEvidence(job.roleModel)),
+  });
+}
+
+function learnOwnershipEvidence(item: Learn): OwnershipEvidence {
+  return makeOwnershipEvidence({
+    titleText: item.title,
+    objectText: compactText(item.category, item.type, item.capabilityBuilt, item.requiredOutput, item.outputTitle),
+    sourceText: compactText(item.sourceType, item.url, urlEvidence(item.url), item.note, item.outputEvidenceUrl, urlEvidence(item.outputEvidenceUrl)),
+  });
+}
+
+function contactOwnershipEvidence(contact: Contact): OwnershipEvidence {
+  return makeOwnershipEvidence({
+    titleText: compactText(contact.who, contact.name),
+    objectText: compactText(contact.sector, contact.why, contact.targetOrg, contact.targetRole, contact.askType, contact.referralPotential),
+    sourceText: compactText(contact.sourceNetwork, contact.linkedinUrl, urlEvidence(contact.linkedinUrl), contact.note, contact.messageDraft, contact.lastMessage),
+  });
+}
+
+function hustleOwnershipEvidence(hustle: Hustle): OwnershipEvidence {
+  return makeOwnershipEvidence({
+    titleText: hustle.title,
+    objectText: compactText(hustle.audience, hustle.coreClaim, hustle.contentPillar, hustle.firstPostIdea),
+    sourceText: compactText(hustle.note, hustle.nextStep),
+  });
+}
+
+function trackMatchScore(track: CareerTrack, evidence: OwnershipEvidence): OwnershipMatch {
+  const trackName = normalized(track.name);
+  const source = normalized(evidence.sourceText);
+  const object = normalized(compactText(evidence.titleText, evidence.objectText));
+  const all = normalized(evidence.allText);
+  let score = 0;
+  let objectScore = 0;
+  let sourceScore = 0;
+
+  if (trackName && all.includes(trackName)) {
+    score += 4;
+    if (source.includes(trackName)) sourceScore += 4;
+    else objectScore += 4;
+  }
+
+  const sourceTokens = tokenSet(evidence.sourceText);
+  const objectTokens = tokenSet(compactText(evidence.titleText, evidence.objectText));
+  const trackTokens = tokenSet(trackEvidenceText(track));
+  for (const token of trackTokens) {
+    if (objectTokens.has(token)) {
+      score += 1;
+      objectScore += 1;
+    }
+    if (sourceTokens.has(token)) {
+      score += 1;
+      sourceScore += 1;
+    }
+  }
+
+  return { score, objectScore, sourceScore };
+}
+
+function suggestOwnership(entity: UnlinkedItem["entity"], status: string, evidence: OwnershipEvidence, tracks: CareerTrack[]): OwnershipSuggestion {
   const canonicalStatus = normalized(status);
   if (entity === "contacts" && canonicalStatus && !["to contact", "messaged", "replied"].includes(canonicalStatus)) {
     return {
@@ -535,26 +652,29 @@ function suggestOwnership(entity: UnlinkedItem["entity"], status: string, source
   }
 
   const ranked = tracks
-    .map((track) => ({ track, score: trackMatchScore(track, sourceText) }))
-    .sort((a, b) => b.score - a.score);
+    .map((track) => ({ track, match: trackMatchScore(track, evidence) }))
+    .sort((a, b) => b.match.score - a.match.score);
   const best = ranked[0];
   const second = ranked[1];
-  if (best && best.score >= 4) {
+  const secondScore = second?.match.score || 0;
+  const basis = best && best.match.sourceScore >= Math.max(2, best.match.objectScore) ? "saved source evidence" : "item context";
+
+  if (best && best.match.score >= 4 && best.match.score > secondScore) {
     return {
       action: "assign_to_track",
       trackId: best.track.id,
       trackName: best.track.name,
       confidence: "high",
-      reason: `The item context directly matches ${best.track.name}.`,
+      reason: `The ${basis} directly matches ${best.track.name}.`,
     };
   }
-  if (best && best.score >= 2 && best.score > (second?.score || 0)) {
+  if (best && best.match.score >= 2 && best.match.score > secondScore) {
     return {
       action: "assign_to_track",
       trackId: best.track.id,
       trackName: best.track.name,
       confidence: "medium",
-      reason: `The item context overlaps most with ${best.track.name}.`,
+      reason: `The ${basis} overlaps most with ${best.track.name}.`,
     };
   }
 
@@ -574,12 +694,12 @@ function shouldHideManuallyResolved(entity: UnlinkedItem["entity"], id: number, 
 
 function withSuggestion(
   item: Omit<UnlinkedItem, "suggestion">,
-  sourceText: string,
+  evidence: OwnershipEvidence,
   tracks: CareerTrack[],
 ): UnlinkedItem {
   return {
     ...item,
-    suggestion: suggestOwnership(item.entity, item.status, sourceText, tracks),
+    suggestion: suggestOwnership(item.entity, item.status, evidence, tracks),
   };
 }
 
@@ -595,7 +715,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
     if (isJobLive(j) && !getTrackId("jobs", j) && !shouldHideManuallyResolved("jobs", j.id, persistedOwnership)) {
       items.push(withSuggestion(
         { entity: "jobs", id: j.id, title: j.title, status: j.status },
-        `${j.title} ${j.company} ${j.roleArchetype} ${j.note} ${j.nextStep} ${j.jdText}`,
+        jobOwnershipEvidence(j),
         tracks,
       ));
     }
@@ -604,7 +724,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
     if (!isLearnDone(l) && getLearnStatus(l) !== "closed" && !getTrackId("learn", l) && !shouldHideManuallyResolved("learn", l.id, persistedOwnership)) {
       items.push(withSuggestion(
         { entity: "learn", id: l.id, title: l.title, status: l.learnStatus },
-        `${l.title} ${l.category} ${l.type} ${l.capabilityBuilt} ${l.requiredOutput} ${l.note}`,
+        learnOwnershipEvidence(l),
         tracks,
       ));
     }
@@ -613,7 +733,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
     if (!getTrackId("contacts", c) && !shouldHideManuallyResolved("contacts", c.id, persistedOwnership)) {
       items.push(withSuggestion(
         { entity: "contacts", id: c.id, title: c.who || c.name || "contact", status: c.status },
-        `${c.name} ${c.who} ${c.sector} ${c.why} ${c.sourceNetwork} ${c.targetOrg} ${c.targetRole} ${c.askType} ${c.referralPotential}`,
+        contactOwnershipEvidence(c),
         tracks,
       ));
     }
@@ -622,7 +742,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
     if (!getTrackId("hustles", h) && !shouldHideManuallyResolved("hustles", h.id, persistedOwnership)) {
       items.push(withSuggestion(
         { entity: "hustles", id: h.id, title: h.title, status: h.stage },
-        `${h.title} ${h.note} ${h.nextStep} ${h.audience} ${h.coreClaim} ${h.contentPillar} ${h.firstPostIdea}`,
+        hustleOwnershipEvidence(h),
         tracks,
       ));
     }

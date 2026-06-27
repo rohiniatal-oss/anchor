@@ -655,7 +655,10 @@ function buildTrackOwnershipContexts(
   for (const track of tracks) {
     const liveJobs = jobs.filter((job) => getTrackId("jobs", job) === track.id && isOpportunityActionable(job)).length;
     const activeLearn = learn.filter((item) => getTrackId("learn", item) === track.id && !isLearnDone(item) && getLearnStatus(item) !== "closed" && isLearnActive(item)).length;
-    const activeContacts = contacts.filter((contact) => getTrackId("contacts", contact) === track.id && ["to_contact", "messaged", "replied"].includes(normalized(contact.status))).length;
+    const activeContacts = contacts.filter((contact) => {
+      const status = normalized(contact.status);
+      return getTrackId("contacts", contact) === track.id && ["to contact", "messaged", "replied"].includes(status);
+    }).length;
     const liveProof = hustles.filter((hustle) => getTrackId("hustles", hustle) === track.id && isProofLive(hustle)).length;
     contexts.set(track.id, {
       status: track.status,

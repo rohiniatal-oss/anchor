@@ -64,7 +64,7 @@ async function compose(trackId: number): Promise<any> {
   return res.json;
 }
 
-test("an active curriculum injects its due day as the Today 'now' anchor", async () => {
+test("an active curriculum injects its due day and advances through the normal Today task flow", async () => {
   const trackId = await createTrack();
   const curriculum = await compose(trackId);
   const days = curriculum.modules.flatMap((m: any) => m.days);
@@ -82,8 +82,19 @@ test("an active curriculum injects its due day as the Today 'now' anchor", async
   const refreshedDay1 = refreshed.json.modules.flatMap((m: any) => m.days)[0];
   assert.equal(refreshedDay1.dayPlanItemId ?? null, anchor.id);
 
-  // Complete Day 1, then the next weekday should surface Day 2 as the anchor.
-  await api(h.base, "POST", `/api/curricula/${curriculum.id}/days/${days[0].id}/complete`, {});
+  // Complete Day 1 through the normal Today task flow, not the curriculum route.
+  const started = await api(h.base, "POST", `/api/plan-items/${anchor.id}/start`, { day: day1Date });
+  assert.equal(started.status, 200, JSON.stringify(started.json));
+  assert.equal(started.json.task.sourceType, "curriculum_day");
+  assert.equal(started.json.task.sourceId, days[0].id);
+
+  const completed = await api(h.base, "POST", `/api/tasks/${started.json.task.id}/complete`, { day: day1Date });
+  assert.equal(completed.status, 200, JSON.stringify(completed.json));
+  const afterComplete = await api(h.base, "GET", `/api/curricula/${curriculum.id}`);
+  const completedDay1 = afterComplete.json.modules.flatMap((m: any) => m.days)[0];
+  assert.equal(completedDay1.status, "completed");
+
+  // The next weekday should surface Day 2 as the anchor.
   const day2Date = days[1].plannedDate;
   const plan2 = await api(h.base, "POST", "/api/plan/recompute", { day: day2Date });
   const anchor2 = plan2.json.items.find((i: any) => i.sourceType === "curriculum_day" && i.slot === "now");
@@ -104,10 +115,12 @@ test("a track with NO curriculum produces no curriculum injection (unchanged Tod
   assert.equal(again.json.items.filter((i: any) => i.sourceType === "curriculum_day").length, 0);
 });
 
-test("getCurriculum hydrates artifacts with global numbering under each day", async () => {
+test("getCurriculum hydrates artifacts and module metadata", async () => {
   const trackId = await createTrack();
   const curriculum = await compose(trackId);
   const days = curriculum.modules.flatMap((m: any) => m.days);
+  assert.equal(curriculum.modules[0].phaseTitle, "Foundations");
+  assert.equal(curriculum.modules[1].rationale, "apply");
   // Days 1-4 carry one artifact each (bluf, issue_map, comparison_table, synthesis_memo); day 5 none.
   assert.equal(days[0].artifacts.length, 1);
   assert.equal(days[4].artifacts.length, 0);

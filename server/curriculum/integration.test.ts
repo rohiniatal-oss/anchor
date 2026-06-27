@@ -33,7 +33,7 @@ function canned5(): ComposedCurriculum {
       { weekNumber: 1, phaseTitle: "Foundations", title: "Foundations", focus: "fo", objective: "ob", rationale: "frame first",
         sources: [{ tier: "spine", title: "EU AI Act", author: "EU Parliament", url: "search: EU AI Act text", why: "core" }],
         days: [day(1, "bluf"), day(2, "issue_map"), day(3, "comparison_table")] },
-      { weekNumber: 2, phaseTitle: "Application", title: "Application", focus: "fa", objective: "oa", rationale: "apply",
+      { weekNumber: 1, phaseTitle: "Application", title: "Application", focus: "fa", objective: "oa", rationale: "apply",
         sources: [], days: [day(4, "synthesis_memo"), day(5)] },
     ],
   };

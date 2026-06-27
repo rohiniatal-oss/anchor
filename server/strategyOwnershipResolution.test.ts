@@ -39,7 +39,7 @@ async function createTrack(name = "AI governance", overrides: Record<string, unk
   } as any);
 }
 
-test("unlinked items include an ownership recommendation with reason and confidence", async () => {
+test("unlinked items include an ownership recommendation with reason confidence priority and next action", async () => {
   const track = await createTrack("AI governance");
   const job = await h.storage.createJob({
     title: "AI Governance Lead",
@@ -55,7 +55,10 @@ test("unlinked items include an ownership recommendation with reason and confide
   assert.equal(item.suggestion.trackId, track.id);
   assert.equal(item.suggestion.trackName, "AI governance");
   assert.equal(item.suggestion.confidence, "high");
+  assert.equal(item.suggestion.priority, "now");
   assert.match(item.suggestion.reason, /matches AI governance/i);
+  assert.match(item.suggestion.priorityReason, /no live role signal/i);
+  assert.match(item.suggestion.nextAction, /Verify the source/i);
 });
 
 test("ownership recommendations use saved source evidence when the visible title is generic", async () => {
@@ -80,6 +83,7 @@ test("ownership recommendations use saved source evidence when the visible title
   assert.equal(item.suggestion.trackId, track.id);
   assert.equal(item.suggestion.trackName, "AI governance");
   assert.equal(item.suggestion.confidence, "high");
+  assert.equal(item.suggestion.priority, "now");
   assert.match(item.suggestion.reason, /source evidence.*matches AI governance/i);
 });
 
@@ -108,6 +112,107 @@ test("ownership recommendations compare source evidence with track intelligence"
   assert.match(item.suggestion.reason, /source evidence/i);
 });
 
+test("matched items become later when the track already has live work", async () => {
+  const track = await createTrack("AI governance");
+  await h.storage.createJob({
+    title: "Existing AI Governance role",
+    company: "Example Org",
+    status: "wishlist",
+    relatedTrackId: track.id,
+  } as any);
+  const job = await h.storage.createJob({
+    title: "AI Governance Analyst",
+    company: "Another Org",
+    status: "wishlist",
+    sourceType: "discovery_option",
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "jobs", job.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "assign_to_track");
+  assert.equal(item.suggestion.trackId, track.id);
+  assert.equal(item.suggestion.priority, "later");
+  assert.match(item.suggestion.priorityReason, /already has live work/i);
+  assert.match(item.suggestion.nextAction, /saved context/i);
+});
+
+test("contact suggestions become now when a track has live roles but no contact path", async () => {
+  const track = await createTrack("AI governance");
+  await h.storage.createJob({
+    title: "AI Governance Lead",
+    company: "Example Org",
+    status: "wishlist",
+    relatedTrackId: track.id,
+  } as any);
+  const contact = await h.storage.createContact({
+    who: "AI governance hiring manager",
+    status: "to_contact",
+    relationshipStrength: "cold",
+    askType: "advice",
+    targetRole: "AI governance",
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "contacts", contact.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "assign_to_track");
+  assert.equal(item.suggestion.trackId, track.id);
+  assert.equal(item.suggestion.priority, "now");
+  assert.match(item.suggestion.priorityReason, /no active contact path/i);
+});
+
+test("contact suggestions become later when an active contact path already exists", async () => {
+  const track = await createTrack("AI governance");
+  await h.storage.createJob({
+    title: "AI Governance Lead",
+    company: "Example Org",
+    status: "wishlist",
+    relatedTrackId: track.id,
+  } as any);
+  await h.storage.createContact({
+    who: "Existing AI governance advisor",
+    status: "to_contact",
+    relationshipStrength: "warm",
+    askType: "advice",
+    targetRole: "AI governance",
+    relatedTrackId: track.id,
+  } as any);
+  const contact = await h.storage.createContact({
+    who: "AI governance recruiter",
+    status: "to_contact",
+    relationshipStrength: "cold",
+    askType: "advice",
+    targetRole: "AI governance",
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "contacts", contact.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "assign_to_track");
+  assert.equal(item.suggestion.trackId, track.id);
+  assert.equal(item.suggestion.priority, "later");
+  assert.match(item.suggestion.priorityReason, /already has live work/i);
+  assert.match(item.suggestion.nextAction, /saved context/i);
+});
+
+test("inactive tracks can match but stay later instead of entering execution", async () => {
+  const track = await createTrack("AI governance", { status: "watch" });
+  const job = await h.storage.createJob({
+    title: "AI Governance Lead",
+    company: "Example Org",
+    status: "wishlist",
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "jobs", job.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "assign_to_track");
+  assert.equal(item.suggestion.trackId, track.id);
+  assert.equal(item.suggestion.priority, "later");
+  assert.match(item.suggestion.priorityReason, /not active/i);
+});
+
 test("ambiguous unlinked items recommend parking instead of forcing a role type", async () => {
   await createTrack("AI governance");
   const learn = await h.storage.createLearn({
@@ -124,7 +229,25 @@ test("ambiguous unlinked items recommend parking instead of forcing a role type"
   assert.equal(item.suggestion.action, "park");
   assert.equal(item.suggestion.trackId, null);
   assert.equal(item.suggestion.confidence, "low");
+  assert.equal(item.suggestion.priority, "parked");
   assert.match(item.suggestion.reason, /No role type clearly matches/i);
+  assert.match(item.suggestion.nextAction, /Leave it parked/i);
+});
+
+test("inactive contacts recommend stop priority", async () => {
+  const contact = await h.storage.createContact({
+    who: "Past networking lead",
+    status: "archived",
+    relationshipStrength: "cold",
+    askType: "advice",
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "contacts", contact.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "stop");
+  assert.equal(item.suggestion.priority, "stop");
+  assert.match(item.suggestion.nextAction, /Stop tracking/i);
 });
 
 test("parked unlinked jobs leave the Strategy unlinked queue", async () => {

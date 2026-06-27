@@ -37,12 +37,16 @@ type TrackDiagnostic = {
   bottleneck: string; bottleneckLabel: string; recommendedMove: string;
 };
 type OwnershipAction = "assign_to_track" | "park" | "stop";
+type OwnershipPriority = "now" | "later" | "parked" | "stop";
 type OwnershipSuggestion = {
   action: OwnershipAction;
   trackId: number | null;
   trackName: string | null;
   confidence: "high" | "medium" | "low";
   reason: string;
+  priority: OwnershipPriority;
+  priorityReason: string;
+  nextAction: string;
 };
 type UnlinkedItem = {
   entity: "jobs" | "learn" | "contacts" | "hustles";
@@ -206,6 +210,22 @@ function recommendationPrimaryActionLabel(entityType: string) {
   if (entityType === "hustle") return "Add to my projects";
   if (entityType === "job") return "Add to my jobs";
   return "Add as a task";
+}
+
+function ownershipPriorityLabel(priority?: OwnershipPriority) {
+  if (priority === "now") return "Useful now";
+  if (priority === "later") return "Save for later";
+  if (priority === "parked") return "Parked";
+  if (priority === "stop") return "Stop";
+  return "Needs decision";
+}
+
+function ownershipPriorityClass(priority?: OwnershipPriority) {
+  if (priority === "now") return "bg-primary/10 text-primary";
+  if (priority === "later") return "bg-slate-100 text-slate-700";
+  if (priority === "parked") return "bg-muted text-muted-foreground";
+  if (priority === "stop") return "bg-destructive/10 text-destructive";
+  return "bg-muted text-muted-foreground";
 }
 
 export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
@@ -392,6 +412,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     const key = ownershipKey(it);
     if (busyOwnershipKey) return;
     setBusyOwnershipKey(key);
+    const suggestedReason = [it.suggestion?.reason, it.suggestion?.priorityReason].filter(Boolean).join(" ");
     try {
       await mutateAndInvalidate(
         "POST",
@@ -401,7 +422,7 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           objectId: it.id,
           action,
           ...(trackId ? { trackId } : {}),
-          reason: it.suggestion?.reason ? `Resolved from Strategy cleanup: ${it.suggestion.reason}` : "Resolved from Strategy cleanup.",
+          reason: suggestedReason ? `Resolved from Strategy cleanup: ${suggestedReason}` : "Resolved from Strategy cleanup.",
         },
         [`/api/${it.entity}`, ...OWNERSHIP_INVALIDATE_KEYS],
       );
@@ -613,11 +634,18 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-sm font-medium leading-snug">{it.title}</span>
                       <span className="text-[10px] rounded-full bg-muted/70 text-muted-foreground px-1.5 py-0.5">{it.status}</span>
+                      {suggestion && (
+                        <span className={`text-[10px] rounded-full px-1.5 py-0.5 ${ownershipPriorityClass(suggestion.priority)}`} data-testid={`ownership-priority-${it.entity}-${it.id}`}>
+                          {ownershipPriorityLabel(suggestion.priority)}
+                        </span>
+                      )}
                     </div>
                     <p className="mt-1 text-xs text-primary leading-snug" data-testid={`ownership-recommendation-${it.entity}-${it.id}`}>
                       {recommendationText(suggestion)} {suggestion ? `(${suggestion.confidence} confidence)` : ""}
                     </p>
                     {suggestion?.reason && <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{suggestion.reason}</p>}
+                    {suggestion?.priorityReason && <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{suggestion.priorityReason}</p>}
+                    {suggestion?.nextAction && <p className="mt-1 text-[11px] text-foreground/80 leading-snug">Next: {suggestion.nextAction}</p>}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
                     {suggestion && (

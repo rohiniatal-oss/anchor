@@ -465,12 +465,17 @@ export async function getStrategyFrontDoor(): Promise<StrategyFrontDoor> {
   };
 }
 
+export type OwnershipPriority = "now" | "later" | "parked" | "stop";
+
 export type OwnershipSuggestion = {
   action: "assign_to_track" | "park" | "stop";
   trackId: number | null;
   trackName: string | null;
   confidence: "high" | "medium" | "low";
   reason: string;
+  priority: OwnershipPriority;
+  priorityReason: string;
+  nextAction: string;
 };
 
 export type UnlinkedItem = {
@@ -492,6 +497,16 @@ type OwnershipMatch = {
   score: number;
   objectScore: number;
   sourceScore: number;
+};
+
+type TrackOwnershipContext = {
+  status: string;
+  priority: number;
+  liveJobs: number;
+  activeLearn: number;
+  activeContacts: number;
+  liveProof: number;
+  liveObjects: number;
 };
 
 const UNLINKED_OBJECT_TYPE: Record<UnlinkedItem["entity"], StrategicObjectType> = {
@@ -629,7 +644,96 @@ function trackMatchScore(track: CareerTrack, evidence: OwnershipEvidence): Owner
   return { score, objectScore, sourceScore };
 }
 
-function suggestOwnership(entity: UnlinkedItem["entity"], status: string, evidence: OwnershipEvidence, tracks: CareerTrack[]): OwnershipSuggestion {
+function buildTrackOwnershipContexts(
+  tracks: CareerTrack[],
+  jobs: Job[],
+  learn: Learn[],
+  contacts: Contact[],
+  hustles: Hustle[],
+) {
+  const contexts = new Map<number, TrackOwnershipContext>();
+  for (const track of tracks) {
+    const liveJobs = jobs.filter((job) => getTrackId("jobs", job) === track.id && isOpportunityActionable(job)).length;
+    const activeLearn = learn.filter((item) => getTrackId("learn", item) === track.id && !isLearnDone(item) && getLearnStatus(item) !== "closed" && isLearnActive(item)).length;
+    const activeContacts = contacts.filter((contact) => {
+      const status = normalized(contact.status);
+      return getTrackId("contacts", contact) === track.id && ["to contact", "messaged", "replied"].includes(status);
+    }).length;
+    const liveProof = hustles.filter((hustle) => getTrackId("hustles", hustle) === track.id && isProofLive(hustle)).length;
+    contexts.set(track.id, {
+      status: track.status,
+      priority: track.priority,
+      liveJobs,
+      activeLearn,
+      activeContacts,
+      liveProof,
+      liveObjects: liveJobs + activeLearn + activeContacts + liveProof,
+    });
+  }
+  return contexts;
+}
+
+function priorityForAssignment(entity: UnlinkedItem["entity"], track: CareerTrack, context: TrackOwnershipContext | undefined): Pick<OwnershipSuggestion, "priority" | "priorityReason" | "nextAction"> {
+  const ctx = context || { status: track.status, priority: track.priority, liveJobs: 0, activeLearn: 0, activeContacts: 0, liveProof: 0, liveObjects: 0 };
+  if (normalized(ctx.status) !== "active") {
+    return {
+      priority: "later",
+      priorityReason: `${track.name} is not active right now, so this should be saved without entering execution.`,
+      nextAction: "Assign it to preserve the evidence; do not create a Today task yet.",
+    };
+  }
+
+  if (entity === "jobs" && ctx.liveJobs === 0) {
+    return {
+      priority: "now",
+      priorityReason: `${track.name} has no live role signal yet, so this could make the direction concrete.`,
+      nextAction: "Verify the source and decide whether this should become the first live role signal for the track.",
+    };
+  }
+
+  if (entity === "contacts" && ctx.liveJobs > 0 && ctx.activeContacts === 0) {
+    return {
+      priority: "now",
+      priorityReason: `${track.name} has live roles but no active contact path yet.`,
+      nextAction: "Assign the contact, then decide the smallest useful outreach or advice ask.",
+    };
+  }
+
+  if (ctx.liveObjects === 0 && ctx.priority >= 10) {
+    return {
+      priority: "now",
+      priorityReason: `${track.name} is an active priority but has no live strategic objects yet.`,
+      nextAction: "Assign it, then choose one verification step before adding any execution work.",
+    };
+  }
+
+  return {
+    priority: "later",
+    priorityReason: `${track.name} already has live work, so this should not interrupt the current execution queue.`,
+    nextAction: "Assign it to the track and keep it as saved context; only turn it into work when capacity opens.",
+  };
+}
+
+function parkedSuggestion(reason: string, nextAction = "Leave it parked; revisit only when a matching active direction exists."): OwnershipSuggestion {
+  return {
+    action: "park",
+    trackId: null,
+    trackName: null,
+    confidence: "low",
+    reason,
+    priority: "parked",
+    priorityReason: "This does not deserve active attention until its direction is clearer.",
+    nextAction,
+  };
+}
+
+function suggestOwnership(
+  entity: UnlinkedItem["entity"],
+  status: string,
+  evidence: OwnershipEvidence,
+  tracks: CareerTrack[],
+  trackContexts: Map<number, TrackOwnershipContext>,
+): OwnershipSuggestion {
   const canonicalStatus = normalized(status);
   if (entity === "contacts" && canonicalStatus && !["to contact", "messaged", "replied"].includes(canonicalStatus)) {
     return {
@@ -638,17 +742,17 @@ function suggestOwnership(entity: UnlinkedItem["entity"], status: string, eviden
       trackName: null,
       confidence: "high",
       reason: "This contact is already outside the active contact statuses, so Anchor should stop treating it as unresolved strategic work.",
+      priority: "stop",
+      priorityReason: "It is already inactive, so keeping it in Strategy would create false work.",
+      nextAction: "Stop tracking it as active strategic work; no follow-up task should be created.",
     };
   }
 
   if (tracks.length === 0) {
-    return {
-      action: "park",
-      trackId: null,
-      trackName: null,
-      confidence: "low",
-      reason: "There are no role types to assign this to yet, so keep it out of active execution until a direction exists.",
-    };
+    return parkedSuggestion(
+      "There are no role types to assign this to yet, so keep it out of active execution until a direction exists.",
+      "Create or choose a direction first; then reconsider this item.",
+    );
   }
 
   const ranked = tracks
@@ -666,6 +770,7 @@ function suggestOwnership(entity: UnlinkedItem["entity"], status: string, eviden
       trackName: best.track.name,
       confidence: "high",
       reason: `The ${basis} directly matches ${best.track.name}.`,
+      ...priorityForAssignment(entity, best.track, trackContexts.get(best.track.id)),
     };
   }
   if (best && best.match.score >= 2 && best.match.score > secondScore) {
@@ -675,16 +780,11 @@ function suggestOwnership(entity: UnlinkedItem["entity"], status: string, eviden
       trackName: best.track.name,
       confidence: "medium",
       reason: `The ${basis} overlaps most with ${best.track.name}.`,
+      ...priorityForAssignment(entity, best.track, trackContexts.get(best.track.id)),
     };
   }
 
-  return {
-    action: "park",
-    trackId: null,
-    trackName: null,
-    confidence: "low",
-    reason: "No role type clearly matches this item yet, so parking is safer than forcing it into the wrong direction.",
-  };
+  return parkedSuggestion("No role type clearly matches this item yet, so parking is safer than forcing it into the wrong direction.");
 }
 
 function shouldHideManuallyResolved(entity: UnlinkedItem["entity"], id: number, persistedOwnership: ReturnType<typeof getPersistedOwnership>) {
@@ -696,10 +796,11 @@ function withSuggestion(
   item: Omit<UnlinkedItem, "suggestion">,
   evidence: OwnershipEvidence,
   tracks: CareerTrack[],
+  trackContexts: Map<number, TrackOwnershipContext>,
 ): UnlinkedItem {
   return {
     ...item,
-    suggestion: suggestOwnership(item.entity, item.status, evidence, tracks),
+    suggestion: suggestOwnership(item.entity, item.status, evidence, tracks, trackContexts),
   };
 }
 
@@ -709,6 +810,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
     storage.getJobs(), storage.getLearn(), storage.getContacts(), storage.getHustles(), storage.getCareerTracks(),
   ]);
   const persistedOwnership = getPersistedOwnership();
+  const trackContexts = buildTrackOwnershipContexts(tracks, jobs, learn, contacts, hustles);
   const items: UnlinkedItem[] = [];
 
   for (const j of jobs) {
@@ -717,6 +819,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
         { entity: "jobs", id: j.id, title: j.title, status: j.status },
         jobOwnershipEvidence(j),
         tracks,
+        trackContexts,
       ));
     }
   }
@@ -726,6 +829,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
         { entity: "learn", id: l.id, title: l.title, status: l.learnStatus },
         learnOwnershipEvidence(l),
         tracks,
+        trackContexts,
       ));
     }
   }
@@ -735,6 +839,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
         { entity: "contacts", id: c.id, title: c.who || c.name || "contact", status: c.status },
         contactOwnershipEvidence(c),
         tracks,
+        trackContexts,
       ));
     }
   }
@@ -744,6 +849,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
         { entity: "hustles", id: h.id, title: h.title, status: h.stage },
         hustleOwnershipEvidence(h),
         tracks,
+        trackContexts,
       ));
     }
   }

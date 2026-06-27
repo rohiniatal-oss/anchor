@@ -14,6 +14,38 @@ import {
 import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 import { buildTaskIntakeDefaults, contextualizeTask, intakeWords, llmEnrichTask } from "./taskIntakeInference";
+import { getDueCurriculumAnchors, linkDayToPlanItem } from "./curriculum/repository";
+
+// Plan-item sourceType for an injected curriculum day (the daily anchor).
+const CURRICULUM_DAY_SOURCE = "curriculum_day";
+
+// Build the "now"-slot anchor items for any curriculum days that are due today.
+// Each due active curriculum contributes one item; they outrank synthesised
+// coverage prompts, which get demoted from "now" to "next".
+function curriculumAnchorItems(day: string) {
+  return getDueCurriculumAnchors(day).map((a) => ({
+    slot: "now",
+    isMVD: false,
+    why: `Today's anchor from your ${a.theme} curriculum`,
+    explanation: {
+      summary: `Today's anchor from your ${a.theme} curriculum`,
+      whyNow: `This is day ${a.dayNumber} of ${a.totalDays} of your ${a.theme} curriculum.`,
+      whyThis: `It is the next scheduled day in your ${a.theme} curriculum.`,
+      supportingReasons: [] as string[],
+      firstStep: a.day.activity,
+      stopRule: a.day.doneWhen,
+    },
+    candidate: {
+      source: CURRICULUM_DAY_SOURCE,
+      sourceId: a.day.id,
+      taskId: null,
+      title: a.day.title,
+      doneWhen: a.day.doneWhen,
+      sourceNote: "",
+      sourceStatus: "",
+    },
+  }));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
@@ -291,6 +323,15 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
     : result.note;
   const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, plannerNote].filter(Boolean).join(" ");
 
+  // Inject due curriculum days as the day's anchors. They sit ahead of the
+  // synthesised coverage prompts (demoted from "now" to "next") so the curriculum
+  // drives Today. Users with no active curriculum see the plan unchanged.
+  const anchorItems = curriculumAnchorItems(day);
+  const finalPlan = anchorItems.length
+    ? [...anchorItems, ...correctedPlan.map((it) => (it.slot === "now" ? { ...it, slot: "next" } : it))]
+    : correctedPlan;
+  const curriculumLinks: { dayId: number; planItemId: number }[] = [];
+
   const plan = db.transaction((tx) => {
     const now = Date.now();
     let current = tx.select().from(dayPlans).where(eq(dayPlans.date, day)).get() as DayPlan | undefined;
@@ -325,7 +366,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
 
     let minimumViableItemId: number | null = null;
     let sequence = 0;
-    for (const item of correctedPlan) {
+    for (const item of finalPlan) {
       const c = item.candidate;
       const previousAction = actioned.get(`${c.source}:${c.sourceId}`);
       const created = tx.insert(dayPlanItems).values({
@@ -350,6 +391,9 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         createdAt: now,
       } as any).returning().get();
       if (item.isMVD || sequence === 1) minimumViableItemId = created.id;
+      if (c.source === CURRICULUM_DAY_SOURCE && c.sourceId != null) {
+        curriculumLinks.push({ dayId: c.sourceId, planItemId: created.id });
+      }
     }
 
     current = tx.update(dayPlans).set({
@@ -358,6 +402,9 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
     } as any).where(eq(dayPlans.id, current.id)).returning().get() as DayPlan;
     return current;
   });
+
+  // Bidirectional link: record which day_plan_item each curriculum day produced.
+  for (const link of curriculumLinks) linkDayToPlanItem(link.dayId, link.planItemId);
 
   const items = (await storage.getPlanItems(plan.id)).map((item) => ({
     ...item,

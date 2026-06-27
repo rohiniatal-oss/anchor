@@ -162,6 +162,40 @@ test("contact suggestions become now when a track has live roles but no contact 
   assert.match(item.suggestion.priorityReason, /no active contact path/i);
 });
 
+test("contact suggestions become later when an active contact path already exists", async () => {
+  const track = await createTrack("AI governance");
+  await h.storage.createJob({
+    title: "AI Governance Lead",
+    company: "Example Org",
+    status: "wishlist",
+    relatedTrackId: track.id,
+  } as any);
+  await h.storage.createContact({
+    who: "Existing AI governance advisor",
+    status: "to_contact",
+    relationshipStrength: "warm",
+    askType: "advice",
+    targetRole: "AI governance",
+    relatedTrackId: track.id,
+  } as any);
+  const contact = await h.storage.createContact({
+    who: "AI governance recruiter",
+    status: "to_contact",
+    relationshipStrength: "cold",
+    askType: "advice",
+    targetRole: "AI governance",
+  } as any);
+
+  const item = unlinkedItem(await getUnlinkedItems(), "contacts", contact.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.action, "assign_to_track");
+  assert.equal(item.suggestion.trackId, track.id);
+  assert.equal(item.suggestion.priority, "later");
+  assert.match(item.suggestion.priorityReason, /already has live work/i);
+  assert.match(item.suggestion.nextAction, /saved context/i);
+});
+
 test("inactive tracks can match but stay later instead of entering execution", async () => {
   const track = await createTrack("AI governance", { status: "watch" });
   const job = await h.storage.createJob({

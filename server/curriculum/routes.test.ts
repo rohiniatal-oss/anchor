@@ -17,11 +17,11 @@ function canned(): ComposedCurriculum {
     hoursPerDay: 5,
     capstone: { shape: "interview_ready", title: "Interview pack", description: "d", doneWhen: "ready" },
     modules: [
-      { weekNumber: 1, title: "Foundations", focus: "fo", objective: "ob",
+      { weekNumber: 1, phaseTitle: "Foundations", title: "Foundations", focus: "fo", objective: "ob", rationale: "frame first",
         sources: [{ tier: "spine", title: "EU AI Act", author: "EU", url: "", why: "core" }],
-        days: [day(1), day(2), day(3)] },
-      { weekNumber: 2, title: "Application", focus: "fa", objective: "oa", sources: [],
-        days: [day(4), day(5), day(6)] },
+        days: [day(1), day(2), day(3), day(4), day(5)] },
+      { weekNumber: 2, phaseTitle: "Application", title: "Application", focus: "fa", objective: "oa", rationale: "apply",
+        sources: [], days: [day(6), day(7), day(8), day(9), day(10)] },
     ],
   };
 }
@@ -53,14 +53,15 @@ test("compose → fetch → complete → skip → slip intervention over HTTP", 
   const composeRes = await api(h.base, "POST", "/api/curricula/compose", {
     trackId, weeks: 2, hoursPerDay: 5, capstoneShape: "interview_ready", startDate: START,
   });
-  assert.equal(composeRes.status, 201);
+  assert.equal(composeRes.status, 201, JSON.stringify(composeRes.json));
   const curriculumId = composeRes.json.id;
   assert.equal(composeRes.json.theme, "AI strategy, governance, and policy");
 
   const fetched = await api(h.base, "GET", `/api/curricula/${curriculumId}`);
   assert.equal(fetched.status, 200);
   const days = fetched.json.modules.flatMap((m: any) => m.days);
-  assert.equal(days.length, 6);
+  assert.equal(days.length, 10);
+  assert.equal(fetched.json.modules[0].phaseTitle, "Foundations");
   assert.equal(days[0].plannedDate, START);
 
   // complete day 1
@@ -73,7 +74,7 @@ test("compose → fetch → complete → skip → slip intervention over HTTP", 
   const afterSkipDays = s1.json.modules.flatMap((m: any) => m.days);
   assert.equal(afterSkipDays[1].status, "skipped");
   assert.equal(afterSkipDays[2].plannedDate, nextWeekday(START, 3));
-  assert.equal(afterSkipDays[5].plannedDate, nextWeekday(START, 6));
+  assert.equal(afterSkipDays[9].plannedDate, nextWeekday(START, 10));
 
   // no intervention yet
   let events = await api(h.base, "GET", `/api/curricula/${curriculumId}/events`);
@@ -120,4 +121,6 @@ test("export endpoint returns markdown", async () => {
   assert.equal(res.status, 200);
   assert.match(text, /# AI strategy, governance, and policy/);
   assert.match(text, /## Week 1 — Foundations/);
+  assert.match(text, /\*\*Phase:\*\* Foundations/);
+  assert.match(text, /\*\*Rationale:\*\* frame first/);
 });

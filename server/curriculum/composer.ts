@@ -15,7 +15,7 @@
 import { llmJSON as defaultLlmJSON, MODEL_PRIMARY } from "../llm";
 import type { CareerTrack } from "@shared/schema";
 import { composedCurriculumSchema, type ComposedCurriculum, type ComposeInput } from "./types";
-import { CANONICAL_TECHNIQUES } from "./techniques";
+import { CANONICAL_TECHNIQUES, isCanonicalTechnique } from "./techniques";
 
 export class CurriculumComposeError extends Error {
   status: number;
@@ -180,6 +180,56 @@ export function buildComposePrompt(track: CareerTrack, input: ComposeInput): str
   ].filter(Boolean).join("\n");
 }
 
+function hasDifferentNumber(actual: number, expected: number): boolean {
+  return Math.abs(actual - expected) > 1e-9;
+}
+
+function composedContractIssues(curriculum: ComposedCurriculum, input: ComposeInput): string[] {
+  const expectedWeeks = clamp(input.weeks, 1, 104);
+  const expectedHours = clamp(input.hoursPerDay, 0, 24);
+  const expectedDays = expectedWeeks * 5;
+  const issues: string[] = [];
+
+  if (curriculum.weeks !== expectedWeeks) {
+    issues.push(`weeks must be ${expectedWeeks}, got ${curriculum.weeks}`);
+  }
+  if (hasDifferentNumber(curriculum.hoursPerDay, expectedHours)) {
+    issues.push(`hoursPerDay must be ${expectedHours}, got ${curriculum.hoursPerDay}`);
+  }
+  if (curriculum.capstone.shape !== input.capstoneShape) {
+    issues.push(`capstone.shape must be ${input.capstoneShape}, got ${curriculum.capstone.shape}`);
+  }
+
+  const totalDays = curriculum.modules.reduce((sum, mod) => sum + mod.days.length, 0);
+  if (totalDays !== expectedDays) {
+    issues.push(`curriculum must contain ${expectedDays} weekday study days, got ${totalDays}`);
+  }
+
+  curriculum.modules.forEach((mod, modIndex) => {
+    if (mod.weekNumber > expectedWeeks) {
+      issues.push(`modules.${modIndex}.weekNumber must be <= ${expectedWeeks}, got ${mod.weekNumber}`);
+    }
+    mod.days.forEach((day, dayIndex) => {
+      if (day.hours != null && hasDifferentNumber(day.hours, expectedHours)) {
+        issues.push(`modules.${modIndex}.days.${dayIndex}.hours must be ${expectedHours}, got ${day.hours}`);
+      }
+      day.artifacts.forEach((artifact, artifactIndex) => {
+        if (!isCanonicalTechnique(artifact.techniqueKey)) {
+          issues.push(`modules.${modIndex}.days.${dayIndex}.artifacts.${artifactIndex}.techniqueKey is not canonical: ${artifact.techniqueKey}`);
+        }
+      });
+    });
+  });
+
+  curriculum.milestones.forEach((milestone, index) => {
+    if (milestone.atDayIndex > expectedDays) {
+      issues.push(`milestones.${index}.atDayIndex must be <= ${expectedDays}, got ${milestone.atDayIndex}`);
+    }
+  });
+
+  return issues;
+}
+
 /**
  * Compose + validate. Throws CurriculumComposeError on null/invalid model output
  * (which is also what a missing OPENAI_API_KEY produces). Returns a validated
@@ -226,5 +276,15 @@ export async function composeCurriculum(
       422,
     );
   }
+
+  const contractIssues = composedContractIssues(parsed.data, input);
+  if (contractIssues.length > 0) {
+    throw new CurriculumComposeError(
+      `The composed curriculum violated the requested contract: ${contractIssues.slice(0, 6).join("; ")}`,
+      "invalid_model_output",
+      422,
+    );
+  }
+
   return parsed.data;
 }

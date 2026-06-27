@@ -3,6 +3,8 @@
 // has the full current schema without invoking drizzle-kit push (interactive).
 // CREATE TABLE IF NOT EXISTS makes this safe to run on an already-pushed DB.
 // Kept as one place so a schema change here is obvious and shared everywhere.
+import { CURRICULUM_DDL } from "./curriculum/ddl";
+
 export const SPINE_DDL = `
 CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -356,6 +358,7 @@ CREATE INDEX IF NOT EXISTS idx_contact_interactions_contact ON contact_interacti
 CREATE INDEX IF NOT EXISTS idx_network_gaps_track ON network_gaps(track_id);
 CREATE INDEX IF NOT EXISTS idx_recommendation_milestones_rec ON recommendation_milestones(recommendation_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+${CURRICULUM_DDL}
 `;
 
 // Migrations for columns added to existing tables after initial release.

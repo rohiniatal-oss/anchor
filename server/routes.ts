@@ -17,6 +17,7 @@ import { migrateFellowshipLearnRows } from "./fellowshipMigration";
 import { registerPlanningRoutes } from "./planningRoutes";
 import { registerStrategyRoutes } from "./strategyRoutes";
 import { registerTaskAssistRoutes } from "./taskAssistRoutes";
+import { registerCurriculumRoutes } from "./curriculum/routes";
 import { registerWorkflowStepRoutes } from "./workflowStepRoutes";
 import { normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { normalizeRecommendationMilestones, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
@@ -805,6 +806,9 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
 
   // Compact wins summary (by-category + window counts + streak + derived track per win).
   app.get("/api/wins/summary", async (_req, res) => res.json(await computeWinsSummary()));
+
+  // ═══ LIVING CURRICULUM — LLM-composed, persisted, daily-materialised plans ═══
+  registerCurriculumRoutes(app);
 
   return httpServer;
 }

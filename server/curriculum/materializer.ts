@@ -54,22 +54,24 @@ export function skipDay(curriculumId: number, dayId: number, reason = ""): Persi
     rawDb.prepare("UPDATE curriculum_days SET status = 'skipped', skipped_at = ?, completed_at = NULL WHERE id = ?")
       .run(Date.now(), dayId);
 
-    // Recompute each still-planned later day's date from its effective day-index
-    // rather than incrementing the existing date. The schedule is then always
-    // derivable from (startDate, dayIndex, skipsBeforeThisDay) and stays
-    // weekday-clean even after many skips. cumulativeSkips counts every skip up to
-    // and including this one (all skipped days sit before the remaining planned
-    // days in sequence), and is computed once before the loop.
-    const cumulativeSkips = getCurriculumEvents(curriculumId, "day_skipped").length + 1;
+    // Recompute planned dates from first principles after every skip. Each day is
+    // shifted only by skipped curriculum days with a lower sequence number, so a
+    // later skip performed before an earlier one cannot over-shift intermediate
+    // planned days.
     const base = startDate?.start_date || "";
-    const laterPlanned = rawDb.prepare(
-      "SELECT id, day_index FROM curriculum_days WHERE curriculum_id = ? AND sequence > ? AND status = 'planned'",
-    ).all(curriculumId, day.sequence) as { id: number; day_index: number }[];
+    const skipped = rawDb.prepare(
+      "SELECT sequence FROM curriculum_days WHERE curriculum_id = ? AND status = 'skipped'",
+    ).all(curriculumId) as { sequence: number }[];
+    const planned = rawDb.prepare(
+      "SELECT id, day_index, sequence FROM curriculum_days WHERE curriculum_id = ? AND status = 'planned' ORDER BY sequence, id",
+    ).all(curriculumId) as { id: number; day_index: number; sequence: number }[];
     const shift = rawDb.prepare("UPDATE curriculum_days SET planned_date = ? WHERE id = ?");
-    for (const d of laterPlanned) {
-      shift.run(nextWeekday(base, d.day_index + cumulativeSkips), d.id);
+    for (const d of planned) {
+      const skipsBeforeThisDay = skipped.filter((s) => s.sequence < d.sequence).length;
+      shift.run(nextWeekday(base, d.day_index + skipsBeforeThisDay), d.id);
     }
-    recordCurriculumEvent(curriculumId, "day_skipped", dayId, { dayIndex: day.dayIndex, reason, shifted: laterPlanned.length });
+    const laterPlannedCount = planned.filter((d) => d.sequence > day.sequence).length;
+    recordCurriculumEvent(curriculumId, "day_skipped", dayId, { dayIndex: day.dayIndex, reason, shifted: laterPlannedCount });
   });
   tx();
 

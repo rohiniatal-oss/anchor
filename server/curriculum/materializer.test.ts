@@ -66,6 +66,25 @@ test("persist materialises consecutive planned dates and two-tier sources", asyn
   assert.equal(secondary.verificationStatus, "unverified");
 });
 
+test("persist preserves fractional daily hours", async () => {
+  const track = await h.storage.createCareerTrack({
+    slug: "fractional", name: "Fractional", description: "", targetRoleArchetype: "", priority: 10, status: "active", whyItFits: "", trackIntelligence: "",
+  } as any);
+  const composed = canned();
+  composed.hoursPerDay = 1.5;
+  composed.modules = composed.modules.map((mod) => ({
+    ...mod,
+    days: mod.days.map((day) => ({ ...day, hours: 1.5 })),
+  }));
+  const input: ComposeInput = { trackId: track.id, weeks: 2, hoursPerDay: 1.5, capstoneShape: "interview_ready", startDate: START };
+
+  const id = persistComposedCurriculum(track.id, input, composed);
+  const c = getCurriculum(id)!;
+  const days = c.modules.flatMap((m) => m.days);
+  assert.equal(c.hoursPerDay, 1.5);
+  assert.equal(days[0].hours, 1.5);
+});
+
 test("completing a day does not shift the schedule", async () => {
   const id = await seed();
   const before = getCurriculum(id)!;
@@ -86,13 +105,31 @@ test("skipping a day shifts every later planned day by one", async () => {
   const days = afterSkip.modules.flatMap((m) => m.days);
   assert.equal(days[1].status, "skipped");
   // After one skip, every later planned day is recomputed from its effective
-  // weekday index (dayIndex + cumulativeSkips), so it slides out by one weekday.
+  // weekday index (dayIndex + skips before that day), so it slides out by one weekday.
   assert.equal(days[2].plannedDate, nextWeekday(START, 3));
   assert.equal(days[5].plannedDate, nextWeekday(START, 6));
   // The remaining planned days stay contiguous weekdays.
   for (const d of [days[2], days[3], days[4], days[5]]) assert.ok(isWeekday(d.plannedDate));
   assert.equal(days[3].plannedDate, shiftWeekday(days[2].plannedDate, 1));
   assert.equal(days[4].plannedDate, shiftWeekday(days[3].plannedDate, 1));
+});
+
+test("out-of-order skips shift only days after each skipped sequence", async () => {
+  const id = await seedDays("2026-07-01", 8, 2);
+  let days = getCurriculum(id)!.modules.flatMap((m) => m.days);
+  skipDay(id, days[5].id);
+  skipDay(id, days[1].id);
+
+  days = getCurriculum(id)!.modules.flatMap((m) => m.days);
+  const planned = days.filter((d) => d.status === "planned");
+  for (const d of planned) assert.ok(isWeekday(d.plannedDate), `${d.plannedDate} not a weekday`);
+  for (let i = 1; i < planned.length; i++) {
+    assert.ok(planned[i].plannedDate > planned[i - 1].plannedDate);
+  }
+
+  assert.equal(days[2].plannedDate, nextWeekday("2026-07-01", 3));
+  assert.equal(days[4].plannedDate, nextWeekday("2026-07-01", 5));
+  assert.equal(days[6].plannedDate, nextWeekday("2026-07-01", 8));
 });
 
 test("three skips inside the 7-day window fire a slip intervention", async () => {

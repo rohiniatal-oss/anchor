@@ -4,8 +4,16 @@ import { makeHarness, type Harness } from "../spine.harness";
 import { persistComposedCurriculum, getCurriculum, getCurriculumEvents } from "./repository";
 import { completeDay, skipDay } from "./materializer";
 import { exportCurriculumMarkdown } from "./exporter";
-import { addDays } from "./dates";
+import { nextWeekday, shiftWeekday } from "./dates";
 import type { ComposedCurriculum, ComposeInput } from "./types";
+
+function utcDow(ymd: string): number {
+  return new Date(ymd + "T00:00:00Z").getUTCDay();
+}
+function isWeekday(ymd: string): boolean {
+  const d = utcDow(ymd);
+  return d >= 1 && d <= 5;
+}
 
 let h: Harness;
 const START = "2026-01-01";
@@ -48,8 +56,8 @@ test("persist materialises consecutive planned dates and two-tier sources", asyn
   const days = c.modules.flatMap((m) => m.days);
   assert.equal(days.length, 6);
   assert.equal(days[0].plannedDate, START);
-  assert.equal(days[1].plannedDate, addDays(START, 1));
-  assert.equal(days[5].plannedDate, addDays(START, 5));
+  assert.equal(days[1].plannedDate, nextWeekday(START, 1));
+  assert.equal(days[5].plannedDate, nextWeekday(START, 5));
 
   const sources = c.modules[0].sources;
   const spine = sources.find((s) => s.tier === "spine")!;
@@ -65,8 +73,8 @@ test("completing a day does not shift the schedule", async () => {
   const after = completeDay(id, day1.id);
   const days = after.modules.flatMap((m) => m.days);
   assert.equal(days[0].status, "completed");
-  assert.equal(days[1].plannedDate, addDays(START, 1));
-  assert.equal(days[5].plannedDate, addDays(START, 5));
+  assert.equal(days[1].plannedDate, nextWeekday(START, 1));
+  assert.equal(days[5].plannedDate, nextWeekday(START, 5));
 });
 
 test("skipping a day shifts every later planned day by one", async () => {
@@ -77,9 +85,14 @@ test("skipping a day shifts every later planned day by one", async () => {
   const afterSkip = skipDay(id, allDays[1].id);
   const days = afterSkip.modules.flatMap((m) => m.days);
   assert.equal(days[1].status, "skipped");
-  // days after the skipped one slide out by 1 calendar day
-  assert.equal(days[2].plannedDate, addDays(START, 3));
-  assert.equal(days[5].plannedDate, addDays(START, 6));
+  // After one skip, every later planned day is recomputed from its effective
+  // weekday index (dayIndex + cumulativeSkips), so it slides out by one weekday.
+  assert.equal(days[2].plannedDate, nextWeekday(START, 3));
+  assert.equal(days[5].plannedDate, nextWeekday(START, 6));
+  // The remaining planned days stay contiguous weekdays.
+  for (const d of [days[2], days[3], days[4], days[5]]) assert.ok(isWeekday(d.plannedDate));
+  assert.equal(days[3].plannedDate, shiftWeekday(days[2].plannedDate, 1));
+  assert.equal(days[4].plannedDate, shiftWeekday(days[3].plannedDate, 1));
 });
 
 test("three skips inside the 7-day window fire a slip intervention", async () => {
@@ -92,6 +105,65 @@ test("three skips inside the 7-day window fire a slip intervention", async () =>
   const interventions = getCurriculumEvents(id, "slip_intervention");
   assert.equal(interventions.length, 1);
   assert.equal((interventions[0].payload as any).skipsInWindow, 3);
+});
+
+function cannedDays(n: number, weeks: number): ComposedCurriculum {
+  const day = (i: number) => ({ title: `Day ${i}`, focus: "f", activity: `act ${i}`, doneWhen: "done", hours: 5 });
+  const perWeek = Math.ceil(n / weeks);
+  const modules = [];
+  let made = 0;
+  for (let w = 1; w <= weeks && made < n; w++) {
+    const days = [];
+    for (let k = 0; k < perWeek && made < n; k++) { made++; days.push(day(made)); }
+    modules.push({ weekNumber: w, title: `M${w}`, focus: "f", objective: "o", sources: [], days });
+  }
+  return {
+    theme: "Weekday theme", summary: "s", weeks, hoursPerDay: 5,
+    capstone: { shape: "interview_ready", title: "Cap", description: "d", doneWhen: "ready" },
+    modules,
+  };
+}
+
+async function seedDays(startDate: string, n: number, weeks: number): Promise<number> {
+  const track = await h.storage.createCareerTrack({
+    slug: "wd", name: "WD", description: "", targetRoleArchetype: "", priority: 10, status: "active", whyItFits: "", trackIntelligence: "",
+  } as any);
+  const input: ComposeInput = { trackId: track.id, weeks, hoursPerDay: 5, capstoneShape: "interview_ready", startDate };
+  return persistComposedCurriculum(track.id, input, cannedDays(n, weeks));
+}
+
+test("every planned day lands on a weekday when startDate is a Wednesday", async () => {
+  const id = await seedDays("2026-07-01", 10, 2); // 2026-07-01 is a Wednesday
+  const days = getCurriculum(id)!.modules.flatMap((m) => m.days);
+  assert.equal(days.length, 10);
+  for (const d of days) assert.ok(isWeekday(d.plannedDate), `${d.plannedDate} (dow ${utcDow(d.plannedDate)}) is not a weekday`);
+});
+
+test("a weekend startDate shifts Day 1 forward to Monday", async () => {
+  const id = await seedDays("2026-07-04", 5, 1); // 2026-07-04 is a Saturday
+  const days = getCurriculum(id)!.modules.flatMap((m) => m.days);
+  assert.equal(days[0].plannedDate, "2026-07-06"); // Monday
+  for (const d of days) assert.ok(isWeekday(d.plannedDate));
+});
+
+test("schedule stays weekday-clean after three consecutive skips", async () => {
+  const id = await seedDays("2026-07-01", 15, 3);
+  let days = getCurriculum(id)!.modules.flatMap((m) => m.days);
+  skipDay(id, days[1].id);
+  skipDay(id, days[2].id);
+  skipDay(id, days[3].id);
+  days = getCurriculum(id)!.modules.flatMap((m) => m.days);
+  const planned = days.filter((d) => d.status === "planned");
+  for (const d of planned) assert.ok(isWeekday(d.plannedDate), `${d.plannedDate} not a weekday`);
+  // Planned dates remain strictly increasing, and the contiguous tail (the days
+  // after the last skip) sits on consecutive weekdays.
+  for (let i = 1; i < planned.length; i++) {
+    assert.ok(planned[i].plannedDate > planned[i - 1].plannedDate);
+  }
+  const tail = days.filter((d) => d.status === "planned" && d.dayIndex >= 4);
+  for (let i = 1; i < tail.length; i++) {
+    assert.equal(tail[i].plannedDate, shiftWeekday(tail[i - 1].plannedDate, 1));
+  }
 });
 
 test("markdown export contains the expected study-plan structure", async () => {

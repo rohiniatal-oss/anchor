@@ -11,7 +11,7 @@
  */
 import { rawDb } from "../storage";
 import { ensureCurriculumSchema } from "./schema";
-import { addDays } from "./dates";
+import { nextWeekday } from "./dates";
 import {
   getCurriculum,
   getCurriculumEvents,
@@ -47,18 +47,27 @@ export function skipDay(curriculumId: number, dayId: number, reason = ""): Persi
   const day = getDay(curriculumId, dayId);
   if (!day) throw new CurriculumDayError(`Day ${dayId} not found in curriculum ${curriculumId}`);
 
+  const startDate = rawDb.prepare("SELECT start_date FROM curricula WHERE id = ?")
+    .get(curriculumId) as { start_date: string } | undefined;
+
   const tx = rawDb.transaction(() => {
     rawDb.prepare("UPDATE curriculum_days SET status = 'skipped', skipped_at = ?, completed_at = NULL WHERE id = ?")
       .run(Date.now(), dayId);
 
-    // Slide every still-planned later day out by one calendar day so the plan
-    // stays intact rather than dropping content.
+    // Recompute each still-planned later day's date from its effective day-index
+    // rather than incrementing the existing date. The schedule is then always
+    // derivable from (startDate, dayIndex, skipsBeforeThisDay) and stays
+    // weekday-clean even after many skips. cumulativeSkips counts every skip up to
+    // and including this one (all skipped days sit before the remaining planned
+    // days in sequence), and is computed once before the loop.
+    const cumulativeSkips = getCurriculumEvents(curriculumId, "day_skipped").length + 1;
+    const base = startDate?.start_date || "";
     const laterPlanned = rawDb.prepare(
-      "SELECT id, planned_date FROM curriculum_days WHERE curriculum_id = ? AND sequence > ? AND status = 'planned'",
-    ).all(curriculumId, day.sequence) as { id: number; planned_date: string }[];
+      "SELECT id, day_index FROM curriculum_days WHERE curriculum_id = ? AND sequence > ? AND status = 'planned'",
+    ).all(curriculumId, day.sequence) as { id: number; day_index: number }[];
     const shift = rawDb.prepare("UPDATE curriculum_days SET planned_date = ? WHERE id = ?");
     for (const d of laterPlanned) {
-      shift.run(addDays(d.planned_date, 1), d.id);
+      shift.run(nextWeekday(base, d.day_index + cumulativeSkips), d.id);
     }
     recordCurriculumEvent(curriculumId, "day_skipped", dayId, { dayIndex: day.dayIndex, reason, shifted: laterPlanned.length });
   });

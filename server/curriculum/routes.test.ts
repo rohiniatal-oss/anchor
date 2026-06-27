@@ -2,7 +2,7 @@ import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { makeHarness, api, type Harness } from "../spine.harness";
 import { __setCurriculumLlmForTest } from "./composer";
-import { addDays } from "./dates";
+import { nextWeekday } from "./dates";
 import type { ComposedCurriculum } from "./types";
 
 let h: Harness;
@@ -72,8 +72,8 @@ test("compose → fetch → complete → skip → slip intervention over HTTP", 
   assert.equal(s1.status, 200);
   const afterSkipDays = s1.json.modules.flatMap((m: any) => m.days);
   assert.equal(afterSkipDays[1].status, "skipped");
-  assert.equal(afterSkipDays[2].plannedDate, addDays(START, 3));
-  assert.equal(afterSkipDays[5].plannedDate, addDays(START, 6));
+  assert.equal(afterSkipDays[2].plannedDate, nextWeekday(START, 3));
+  assert.equal(afterSkipDays[5].plannedDate, nextWeekday(START, 6));
 
   // no intervention yet
   let events = await api(h.base, "GET", `/api/curricula/${curriculumId}/events`);

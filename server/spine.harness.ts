@@ -23,7 +23,7 @@ const TABLES = [
   "day_plans", "day_plan_items", "entity_links", "activity_log",
   "strategic_object_ownership", "ownership_resolution_feedback",
   "curricula", "curriculum_modules", "curriculum_days", "curriculum_sources",
-  "curriculum_capstone", "curriculum_events",
+  "curriculum_capstone", "curriculum_events", "curriculum_artifacts",
 ];
 
 // The suite shares one initialized harness/DB per process. Per-test isolation

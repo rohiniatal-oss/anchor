@@ -17,19 +17,35 @@ export const composedSourceSchema = z.object({
   why: z.string().max(400).optional().default(""),
 });
 
+// An artifact is the named, technique-driven output of a day's afternoon work.
+export const composedArtifactSchema = z.object({
+  techniqueKey: z.string().min(1).max(60),
+  title: z.string().min(1).max(200),
+  prompt: z.string().min(1).max(1200),
+  wordTarget: z.number().int().min(0).max(20000).optional(),
+  saveAs: z.string().min(1).max(160),
+});
+
 export const composedDaySchema = z.object({
   title: z.string().min(1).max(200),
   focus: z.string().max(280).optional().default(""),
   activity: z.string().max(800).optional().default(""),
   doneWhen: z.string().max(400).optional().default(""),
   hours: z.number().min(0).max(24).optional(),
+  // Most days carry exactly one artifact; some have none, rarely two.
+  artifacts: composedArtifactSchema.array().max(3).optional().default([]),
 });
 
 export const composedModuleSchema = z.object({
   weekNumber: z.number().int().min(1).max(104),
   title: z.string().min(1).max(200),
+  // Modules stay flat under the curriculum but carry a back-reference to which
+  // phase they belong to (Foundations → Deep-dive → Mastery → Capstone). This is
+  // the pragmatic alternative to a nested phases[] array (see composer prompt).
+  phaseTitle: z.string().max(120).optional().default(""),
   focus: z.string().max(400).optional().default(""),
   objective: z.string().max(600).optional().default(""),
+  rationale: z.string().max(300).optional().default(""),
   sources: z.array(composedSourceSchema).max(20).optional().default([]),
   days: z.array(composedDaySchema).min(1).max(14),
 });
@@ -46,10 +62,12 @@ export const composedCurriculumSchema = z.object({
   summary: z.string().max(2000).optional().default(""),
   weeks: z.number().int().min(1).max(104),
   hoursPerDay: z.number().min(0).max(24),
+  rationale: z.string().max(300).optional().default(""),
   capstone: composedCapstoneSchema,
   modules: z.array(composedModuleSchema).min(1).max(104),
 });
 
+export type ComposedArtifact = z.infer<typeof composedArtifactSchema>;
 export type ComposedSource = z.infer<typeof composedSourceSchema>;
 export type ComposedDay = z.infer<typeof composedDaySchema>;
 export type ComposedModule = z.infer<typeof composedModuleSchema>;
@@ -76,6 +94,22 @@ export type PersistedSource = {
   verified: boolean;
 };
 
+export type PersistedArtifact = {
+  id: number;
+  curriculumId: number;
+  dayId: number;
+  artifactNumber: number;
+  techniqueKey: string;
+  title: string;
+  prompt: string;
+  wordTarget: number | null;
+  saveAs: string;
+  status: string;
+  draft: string;
+  createdAt: number;
+  submittedAt: number | null;
+};
+
 export type PersistedDay = {
   id: number;
   moduleId: number;
@@ -90,6 +124,8 @@ export type PersistedDay = {
   sequence: number;
   completedAt: number | null;
   skippedAt: number | null;
+  dayPlanItemId: number | null;
+  artifacts: PersistedArtifact[];
 };
 
 export type PersistedModule = {

@@ -43,7 +43,23 @@ CREATE TABLE IF NOT EXISTS curriculum_days (
   sequence INTEGER NOT NULL DEFAULT 0,
   completed_at INTEGER,
   skipped_at INTEGER,
+  day_plan_item_id INTEGER,
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS curriculum_artifacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  curriculum_id INTEGER NOT NULL,
+  day_id INTEGER NOT NULL,
+  artifact_number INTEGER NOT NULL DEFAULT 0,
+  technique_key TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  prompt TEXT NOT NULL DEFAULT '',
+  word_target INTEGER,
+  save_as TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending',
+  draft TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  submitted_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS curriculum_sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,6 +95,9 @@ CREATE TABLE IF NOT EXISTS curriculum_events (
 CREATE INDEX IF NOT EXISTS idx_curriculum_modules_curriculum ON curriculum_modules(curriculum_id);
 CREATE INDEX IF NOT EXISTS idx_curriculum_days_curriculum ON curriculum_days(curriculum_id);
 CREATE INDEX IF NOT EXISTS idx_curriculum_days_module ON curriculum_days(module_id);
+CREATE INDEX IF NOT EXISTS idx_curriculum_days_plan_item ON curriculum_days(day_plan_item_id);
+CREATE INDEX IF NOT EXISTS idx_curriculum_artifacts_curriculum ON curriculum_artifacts(curriculum_id);
+CREATE INDEX IF NOT EXISTS idx_curriculum_artifacts_day ON curriculum_artifacts(day_id);
 CREATE INDEX IF NOT EXISTS idx_curriculum_sources_curriculum ON curriculum_sources(curriculum_id);
 CREATE INDEX IF NOT EXISTS idx_curriculum_capstone_curriculum ON curriculum_capstone(curriculum_id);
 CREATE INDEX IF NOT EXISTS idx_curriculum_events_curriculum ON curriculum_events(curriculum_id, created_at);

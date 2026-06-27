@@ -4,11 +4,12 @@
  */
 import { rawDb } from "../storage";
 import { ensureCurriculumSchema } from "./schema";
-import { addDays, todayYmd } from "./dates";
+import { nextWeekday, todayYmd } from "./dates";
 import type {
   ComposedCurriculum,
   ComposeInput,
   CurriculumEvent,
+  PersistedArtifact,
   PersistedCurriculum,
   PersistedDay,
   PersistedModule,
@@ -36,11 +37,16 @@ type ModuleRow = {
 type DayRow = {
   id: number; curriculum_id: number; module_id: number; day_index: number; planned_date: string;
   title: string; focus: string; activity: string; done_when: string; hours: number; status: string;
-  sequence: number; completed_at: number | null; skipped_at: number | null;
+  sequence: number; completed_at: number | null; skipped_at: number | null; day_plan_item_id: number | null;
 };
 type SourceRow = {
   id: number; curriculum_id: number; module_id: number; tier: string; title: string; author: string;
   url: string; why: string; verification_status: string; verified: number; sequence: number;
+};
+type ArtifactRow = {
+  id: number; curriculum_id: number; day_id: number; artifact_number: number; technique_key: string;
+  title: string; prompt: string; word_target: number | null; save_as: string; status: string;
+  draft: string; created_at: number; submitted_at: number | null;
 };
 type CapstoneRow = { shape: string; title: string; description: string; done_when: string };
 type EventRow = { id: number; curriculum_id: number; event_type: string; day_id: number | null; payload: string; created_at: number };
@@ -72,6 +78,10 @@ export function persistComposedCurriculum(
     INSERT INTO curriculum_days (curriculum_id, module_id, day_index, planned_date, title, focus, activity, done_when, hours, status, sequence, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?, ?)
   `);
+  const insertArtifact = rawDb.prepare(`
+    INSERT INTO curriculum_artifacts (curriculum_id, day_id, artifact_number, technique_key, title, prompt, word_target, save_as, status, draft, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', '', ?)
+  `);
   const insertSource = rawDb.prepare(`
     INSERT INTO curriculum_sources (curriculum_id, module_id, tier, title, author, url, why, verification_status, verified, sequence, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -97,6 +107,7 @@ export function persistComposedCurriculum(
     ).lastInsertRowid);
 
     let dayIndex = 0;
+    let artifactNumber = 0; // 1-indexed across the whole curriculum
     composed.modules.forEach((mod, modSeq) => {
       const moduleId = Number(insertModule.run(
         curriculumId, mod.weekNumber, mod.title, mod.focus || "", mod.objective || "", modSeq, now,
@@ -111,11 +122,18 @@ export function persistComposedCurriculum(
       });
 
       mod.days.forEach((day) => {
-        const plannedDate = addDays(startDate, dayIndex);
-        insertDay.run(
+        const plannedDate = nextWeekday(startDate, dayIndex);
+        const dayDbId = Number(insertDay.run(
           curriculumId, moduleId, dayIndex, plannedDate, day.title, day.focus || "",
           day.activity || "", day.doneWhen || "", Math.round(day.hours ?? composed.hoursPerDay), dayIndex, now,
-        );
+        ).lastInsertRowid);
+        (day.artifacts || []).forEach((art) => {
+          artifactNumber += 1;
+          insertArtifact.run(
+            curriculumId, dayDbId, artifactNumber, art.techniqueKey, art.title, art.prompt,
+            art.wordTarget ?? null, art.saveAs, now,
+          );
+        });
         dayIndex += 1;
       });
     });
@@ -138,6 +156,23 @@ function rowToSource(row: SourceRow): PersistedSource {
   };
 }
 
+function rowToArtifact(row: ArtifactRow): PersistedArtifact {
+  return {
+    id: row.id, curriculumId: row.curriculum_id, dayId: row.day_id, artifactNumber: row.artifact_number,
+    techniqueKey: row.technique_key, title: row.title, prompt: row.prompt,
+    wordTarget: row.word_target == null ? null : Number(row.word_target), saveAs: row.save_as,
+    status: row.status, draft: row.draft,
+    createdAt: Number(row.created_at), submittedAt: row.submitted_at == null ? null : Number(row.submitted_at),
+  };
+}
+
+function artifactsForDay(dayId: number): PersistedArtifact[] {
+  const rows = rawDb.prepare(
+    "SELECT * FROM curriculum_artifacts WHERE day_id = ? ORDER BY artifact_number, id",
+  ).all(dayId) as ArtifactRow[];
+  return rows.map(rowToArtifact);
+}
+
 function rowToDay(row: DayRow): PersistedDay {
   return {
     id: row.id, moduleId: row.module_id, dayIndex: row.day_index, plannedDate: row.planned_date,
@@ -145,6 +180,8 @@ function rowToDay(row: DayRow): PersistedDay {
     hours: row.hours, status: row.status as PersistedDay["status"], sequence: row.sequence,
     completedAt: row.completed_at == null ? null : Number(row.completed_at),
     skippedAt: row.skipped_at == null ? null : Number(row.skipped_at),
+    dayPlanItemId: row.day_plan_item_id == null ? null : Number(row.day_plan_item_id),
+    artifacts: artifactsForDay(row.id),
   };
 }
 
@@ -224,4 +261,51 @@ export function getCurriculumEvents(curriculumId: number, eventType?: string): C
 
 export function touchCurriculum(id: number): void {
   rawDb.prepare("UPDATE curricula SET updated_at = ? WHERE id = ?").run(Date.now(), id);
+}
+
+export type CurriculumAnchor = {
+  curriculumId: number;
+  theme: string;
+  totalDays: number;
+  dayNumber: number; // 1-indexed position of this day within the curriculum
+  day: { id: number; title: string; activity: string; doneWhen: string; dayIndex: number };
+};
+
+/**
+ * For every ACTIVE curriculum on an ACTIVE track, return the next still-planned
+ * day whose planned_date is on/before `today` (i.e. due or overdue). Paused and
+ * completed curricula are excluded. Capped at `limit` anchors so Today is not
+ * drowned when several curricula come due at once.
+ */
+export function getDueCurriculumAnchors(today: string, limit = 3): CurriculumAnchor[] {
+  ensureCurriculumSchema();
+  const curricula = rawDb.prepare(`
+    SELECT c.id AS id, c.theme AS theme
+    FROM curricula c
+    JOIN career_tracks t ON t.id = c.track_id
+    WHERE c.status = 'active' AND t.status = 'active'
+    ORDER BY c.created_at, c.id
+  `).all() as { id: number; theme: string }[];
+
+  const anchors: CurriculumAnchor[] = [];
+  for (const c of curricula) {
+    const next = rawDb.prepare(
+      "SELECT id, day_index, title, activity, done_when, planned_date FROM curriculum_days WHERE curriculum_id = ? AND status = 'planned' ORDER BY sequence, id LIMIT 1",
+    ).get(c.id) as { id: number; day_index: number; title: string; activity: string; done_when: string; planned_date: string } | undefined;
+    if (!next || next.planned_date > today) continue;
+    const total = rawDb.prepare("SELECT COUNT(*) AS n FROM curriculum_days WHERE curriculum_id = ?").get(c.id) as { n: number };
+    anchors.push({
+      curriculumId: c.id,
+      theme: c.theme,
+      totalDays: Number(total.n),
+      dayNumber: next.day_index + 1,
+      day: { id: next.id, title: next.title, activity: next.activity, doneWhen: next.done_when, dayIndex: next.day_index },
+    });
+    if (anchors.length >= limit) break;
+  }
+  return anchors;
+}
+
+export function linkDayToPlanItem(dayId: number, planItemId: number): void {
+  rawDb.prepare("UPDATE curriculum_days SET day_plan_item_id = ? WHERE id = ?").run(planItemId, dayId);
 }

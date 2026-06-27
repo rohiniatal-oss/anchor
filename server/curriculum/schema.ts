@@ -10,6 +10,14 @@ let curriculumSchemaReady = false;
 export function ensureCurriculumSchema(): void {
   if (curriculumSchemaReady) return;
   rawDb.exec(CURRICULUM_DDL);
+  // Additive migration for DBs created before the day↔plan-item link existed.
+  // CREATE TABLE IF NOT EXISTS will not add a column to an existing table, so add
+  // it idempotently (sqlite has no ADD COLUMN IF NOT EXISTS).
+  try {
+    rawDb.exec("ALTER TABLE curriculum_days ADD COLUMN day_plan_item_id INTEGER");
+  } catch {
+    // Column already exists — expected on every boot after the first.
+  }
   curriculumSchemaReady = true;
 }
 

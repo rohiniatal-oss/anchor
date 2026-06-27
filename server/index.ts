@@ -21,6 +21,7 @@ import { registerExplorationQueueRoutes } from "./explorationQueue";
 import { registerAnchorTodayRoutes } from "./anchorToday";
 import { registerStrategyBuilderRoutes } from "./strategyBuilderRoutes";
 import { registerMarketabilityRoutes } from "./marketabilityRoutes";
+import { registerCompetenceEcosystemRoutes } from "./competenceEcosystemRoutes";
 import { registerTrackSpineRoutes } from "./trackSpineRoutes";
 import { registerBrainSpineRoutes } from "./brainSpineRoutes";
 import { registerTaskBreakdownRoutes } from "./taskBreakdownRoutes";
@@ -122,6 +123,11 @@ app.use((req, res, next) => {
   // then separates project decomposition from task-level action breakdown.
   registerWorkRoutes(app);
   registerObjectOwnershipRoutes(app);
+
+  // Competence ecosystems are read-only career-development snapshots. They sit
+  // before task generation so future planners can reason from capability systems,
+  // not isolated learning tasks.
+  registerCompetenceEcosystemRoutes(app);
 
   // These boundaries are intentionally first. Existing URLs remain compatible,
   // while reads become pure and all task transitions share one lifecycle.

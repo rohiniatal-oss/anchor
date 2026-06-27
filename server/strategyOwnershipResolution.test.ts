@@ -5,11 +5,12 @@ import { makeHarness, type Harness } from "./spine.harness";
 let h: Harness;
 let getUnlinkedItems: typeof import("./strategy").getUnlinkedItems;
 let resolveStrategicObjectOwnership: typeof import("./objectOwnership").resolveStrategicObjectOwnership;
+let getOwnershipFeedback: typeof import("./objectOwnership").getOwnershipFeedback;
 
 before(async () => {
   h = await makeHarness();
   ({ getUnlinkedItems } = await import("./strategy"));
-  ({ resolveStrategicObjectOwnership } = await import("./objectOwnership"));
+  ({ resolveStrategicObjectOwnership, getOwnershipFeedback } = await import("./objectOwnership"));
 });
 
 after(async () => {
@@ -194,6 +195,76 @@ test("contact suggestions become later when an active contact path already exist
   assert.equal(item.suggestion.priority, "later");
   assert.match(item.suggestion.priorityReason, /already has live work/i);
   assert.match(item.suggestion.nextAction, /saved context/i);
+});
+
+test("ownership overrides are stored as recommendation feedback", async () => {
+  const track = await createTrack("AI governance");
+  const job = await h.storage.createJob({
+    title: "AI Governance Lead",
+    company: "Example Org",
+    status: "wishlist",
+  } as any);
+  const item = unlinkedItem(await getUnlinkedItems(), "jobs", job.id);
+
+  assert.ok(item);
+  assert.equal(item.suggestion.trackId, track.id);
+  await resolveStrategicObjectOwnership({
+    objectType: "job",
+    objectId: job.id,
+    action: "park",
+    reason: "User corrected Anchor during Strategy cleanup.",
+    recommendation: item.suggestion,
+  });
+
+  const feedback = getOwnershipFeedback();
+  assert.equal(feedback.length, 1);
+  assert.equal(feedback[0].objectType, "job");
+  assert.equal(feedback[0].objectId, job.id);
+  assert.equal(feedback[0].recommendedAction, "assign_to_track");
+  assert.equal(feedback[0].recommendedTrackId, track.id);
+  assert.equal(feedback[0].chosenAction, "park");
+  assert.equal(feedback[0].chosenTrackId, null);
+  assert.match(feedback[0].reason, /User corrected Anchor/i);
+});
+
+test("track override feedback shifts future close ownership suggestions", async () => {
+  const governance = await createTrack("AI governance");
+  const operations = await createTrack("Policy operations", {
+    trackIntelligence: JSON.stringify({
+      roleFamilies: ["AI governance operations"],
+      capabilityDomains: ["operations"],
+    }),
+  });
+  const firstJob = await h.storage.createJob({
+    title: "AI Governance Operations Lead",
+    company: "Example Org",
+    status: "wishlist",
+  } as any);
+  const firstItem = unlinkedItem(await getUnlinkedItems(), "jobs", firstJob.id);
+
+  assert.ok(firstItem);
+  assert.equal(firstItem.suggestion.trackId, governance.id);
+  await resolveStrategicObjectOwnership({
+    objectType: "job",
+    objectId: firstJob.id,
+    action: "assign_to_track",
+    trackId: operations.id,
+    reason: "This is actually the operations track.",
+    recommendation: firstItem.suggestion,
+  });
+
+  const nextJob = await h.storage.createJob({
+    title: "AI Governance Operations Manager",
+    company: "Another Org",
+    status: "wishlist",
+  } as any);
+  const nextItem = unlinkedItem(await getUnlinkedItems(), "jobs", nextJob.id);
+
+  assert.ok(nextItem);
+  assert.equal(nextItem.suggestion.action, "assign_to_track");
+  assert.equal(nextItem.suggestion.trackId, operations.id);
+  assert.equal(nextItem.suggestion.trackName, "Policy operations");
+  assert.match(nextItem.suggestion.reason, /prior cleanup feedback/i);
 });
 
 test("inactive tracks can match but stay later instead of entering execution", async () => {

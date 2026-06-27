@@ -46,9 +46,11 @@ function moduleSection(mod: PersistedModule): string {
   const lines: string[] = [];
   lines.push(`## Week ${mod.weekNumber} — ${mod.title}`);
   lines.push("");
+  if (mod.phaseTitle) lines.push(`**Phase:** ${mod.phaseTitle}`);
   if (mod.focus) lines.push(`**Focus:** ${mod.focus}`);
   if (mod.objective) lines.push(`**Objective:** ${mod.objective}`);
-  if (mod.focus || mod.objective) lines.push("");
+  if (mod.rationale) lines.push(`**Rationale:** ${mod.rationale}`);
+  if (mod.phaseTitle || mod.focus || mod.objective || mod.rationale) lines.push("");
 
   const spine = mod.sources.filter((s) => s.tier === "spine");
   const secondary = mod.sources.filter((s) => s.tier === "secondary");

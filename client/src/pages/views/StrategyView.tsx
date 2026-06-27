@@ -291,7 +291,6 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     const needsContactPath = t.bottleneck === "warmth" && t.counts.contacts === 0;
     const needsContactFollowThrough = t.bottleneck === "warmth" && t.counts.contacts > 0;
 
-    // Use a saved recommendation when one exists for this gap — avoids a blank form.
     const savedLearningRec = needsPrepItem
       ? (visibleRecommendations.find((r) =>
           r.linkedTrackId === t.id &&
@@ -407,12 +406,29 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
     if (suggestion.action === "park") return "Anchor recommends parking this outside active execution.";
     return "Anchor recommends stopping this as active strategic work.";
   }
+  function ownershipRecommendationPayload(suggestion?: OwnershipSuggestion) {
+    if (!suggestion) return undefined;
+    return {
+      action: suggestion.action,
+      trackId: suggestion.trackId,
+      trackName: suggestion.trackName,
+      confidence: suggestion.confidence,
+      priority: suggestion.priority,
+      reason: suggestion.reason,
+      priorityReason: suggestion.priorityReason,
+      nextAction: suggestion.nextAction,
+    };
+  }
   async function resolveOwnership(it: UnlinkedItem, action: OwnershipAction, trackId?: number | null) {
     if (action === "stop" && typeof window !== "undefined" && !window.confirm("Stop this item? Anchor will no longer treat it as active strategic work.")) return;
     const key = ownershipKey(it);
     if (busyOwnershipKey) return;
     setBusyOwnershipKey(key);
     const suggestedReason = [it.suggestion?.reason, it.suggestion?.priorityReason].filter(Boolean).join(" ");
+    const chosenTrackId = trackId ?? null;
+    const recommendationOverridden = !!it.suggestion && (
+      it.suggestion.action !== action || (action === "assign_to_track" && it.suggestion.trackId !== chosenTrackId)
+    );
     try {
       await mutateAndInvalidate(
         "POST",
@@ -422,7 +438,10 @@ export function StrategyView({ onOpenTab }: { onOpenTab: (t: Tab) => void }) {
           objectId: it.id,
           action,
           ...(trackId ? { trackId } : {}),
-          reason: suggestedReason ? `Resolved from Strategy cleanup: ${suggestedReason}` : "Resolved from Strategy cleanup.",
+          ...(it.suggestion ? { recommendation: ownershipRecommendationPayload(it.suggestion) } : {}),
+          reason: suggestedReason
+            ? `Resolved from Strategy cleanup${recommendationOverridden ? " override" : ""}: ${suggestedReason}`
+            : `Resolved from Strategy cleanup${recommendationOverridden ? " override" : ""}.`,
         },
         [`/api/${it.entity}`, ...OWNERSHIP_INVALIDATE_KEYS],
       );

@@ -27,6 +27,19 @@ export async function syncGapRecommendations(): Promise<void> {
   const ctxHash = contextFingerprint(userCtx);
 
   const activeTrackIds = new Set(tracks.filter((t) => t.status === "active").map((t) => t.id));
+  const existingTrackIds = new Set(tracks.map((t) => t.id));
+
+  // Detach orphaned track links: a recommendation can point at a track that has
+  // since been deleted (accepted or manually-created recs slip past the stale
+  // pass below, which only touches live system recs). Leaving the dangling
+  // linkedTrackId in place corrupts every downstream per-track rollup, so null it
+  // out here before anything reads track membership.
+  for (const rec of recs) {
+    if (rec.linkedTrackId != null && !existingTrackIds.has(rec.linkedTrackId)) {
+      await storage.updateRecommendation(rec.id, { linkedTrackId: null });
+      rec.linkedTrackId = null;
+    }
+  }
 
   const contactsByTrack = new Map<number, number>();
   for (const c of contacts) {

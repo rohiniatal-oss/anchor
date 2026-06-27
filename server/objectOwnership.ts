@@ -188,8 +188,17 @@ function ownershipKey(type: StrategicObjectType, id: number) {
   return `${type}:${id}`;
 }
 
+// Module-level "already ensured" guard. Without it, every read path that calls
+// ensureObjectOwnershipSchema() (e.g. getPersistedOwnership via the GET
+// /api/ownership/strategic-objects snapshot) re-executes DDL, which the
+// read-purity guard rejects with a 405. Boot (index.ts) ensures the schema once
+// before the guard is installed, so subsequent pure reads are no-ops.
+let ownershipSchemaReady = false;
+
 export function ensureObjectOwnershipSchema() {
+  if (ownershipSchemaReady) return;
   rawDb.exec(OWNERSHIP_DDL);
+  ownershipSchemaReady = true;
 }
 
 function ownershipFromTrackLink(

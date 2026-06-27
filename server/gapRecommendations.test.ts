@@ -240,3 +240,36 @@ test("accepted or rejected recs are never staled by the sync", async () => {
   );
   assert.ok(newRec, "a fresh geo rec should be created alongside the rejected one");
 });
+
+test("sync detaches recommendations whose linked track no longer exists", async () => {
+  // A recommendation can be left pointing at a deleted track (e.g. an accepted or
+  // manually-created rec). Sync must null the dangling link so per-track rollups
+  // do not count a ghost direction.
+  const orphan = await h.storage.createRecommendation({
+    collection: "learning-corpus",
+    kind: "learning-theme",
+    status: "accepted",
+    source: "user",
+    title: "Orphaned rec",
+    whySuggested: "",
+    linkedTrackId: 999999,
+    linkedGapKey: "geo",
+    linkedCombination: "",
+    freshnessLabel: "",
+    sourceLabel: "",
+    sourceUrl: "",
+    rankScore: 0,
+    rankReason: "",
+    executionShape: "single-step",
+    acceptanceEntityType: "learn",
+    acceptanceDraft: "{}",
+    confidenceScore: null,
+    duplicateOfId: null,
+    contextHash: null,
+  } as any);
+
+  const after = await syncRecommendations();
+  const reloaded = (after.json as any[]).find((r) => r.id === orphan.id);
+  assert.ok(reloaded, "orphan rec should still exist");
+  assert.equal(reloaded.linkedTrackId, null, "dangling track link should be detached");
+});

@@ -21,6 +21,7 @@ import { registerExplorationQueueRoutes } from "./explorationQueue";
 import { registerAnchorTodayRoutes } from "./anchorToday";
 import { registerStrategyBuilderRoutes } from "./strategyBuilderRoutes";
 import { registerMarketabilityRoutes } from "./marketabilityRoutes";
+import { registerCompetenceEcosystemRoutes } from "./competenceEcosystemRoutes";
 import { registerTrackSpineRoutes } from "./trackSpineRoutes";
 import { registerBrainSpineRoutes } from "./brainSpineRoutes";
 import { registerTaskBreakdownRoutes } from "./taskBreakdownRoutes";
@@ -123,6 +124,11 @@ app.use((req, res, next) => {
   registerWorkRoutes(app);
   registerObjectOwnershipRoutes(app);
 
+  // Competence ecosystems are read-only career-development snapshots. They sit
+  // before task generation so future planners can reason from capability systems,
+  // not isolated learning tasks.
+  registerCompetenceEcosystemRoutes(app);
+
   // These boundaries are intentionally first. Existing URLs remain compatible,
   // while reads become pure and all task transitions share one lifecycle.
   registerTrustBoundaryRoutes(app);
@@ -178,20 +184,3 @@ app.use((req, res, next) => {
   } else {
     const { setupVite } = await import("./vite");
     await setupVite(httpServer, app);
-  }
-
-  // ALWAYS serve the app on the port specified in the environment variable PORT
-  // Other ports are firewalled. Default to 5000 if not specified.
-  // this serves both the API and the client.
-  const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
-})();

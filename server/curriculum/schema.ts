@@ -7,18 +7,24 @@ import { CURRICULUM_DDL } from "./ddl";
 // guard would otherwise reject with a 405. Mirrors the ownership-schema fix.
 let curriculumSchemaReady = false;
 
-export function ensureCurriculumSchema(): void {
-  if (curriculumSchemaReady) return;
-  rawDb.exec(CURRICULUM_DDL);
-  // Additive migration for DBs created before the day↔plan-item link existed.
-  // CREATE TABLE IF NOT EXISTS will not add a column to an existing table, so add
-  // it idempotently (sqlite has no ADD COLUMN IF NOT EXISTS).
+function addColumnIfMissing(table: string, column: string, definition: string): void {
   try {
-    rawDb.exec("ALTER TABLE curriculum_days ADD COLUMN day_plan_item_id INTEGER");
+    rawDb.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   } catch (err) {
     const message = String((err as Error)?.message || err);
     if (!/duplicate column name/i.test(message)) throw err;
   }
+}
+
+export function ensureCurriculumSchema(): void {
+  if (curriculumSchemaReady) return;
+  rawDb.exec(CURRICULUM_DDL);
+  // Additive migrations for DBs created before later prototype fields existed.
+  // CREATE TABLE IF NOT EXISTS will not add columns to existing tables, and sqlite
+  // has no ADD COLUMN IF NOT EXISTS.
+  addColumnIfMissing("curriculum_days", "day_plan_item_id", "INTEGER");
+  addColumnIfMissing("curriculum_modules", "phase_title", "TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing("curriculum_modules", "rationale", "TEXT NOT NULL DEFAULT ''");
   curriculumSchemaReady = true;
 }
 

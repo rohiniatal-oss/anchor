@@ -7,6 +7,9 @@ import { ensureCurriculumSchema } from "./schema";
 import { nextWeekday, todayYmd } from "./dates";
 import type {
   ComposedCurriculum,
+  ComposedDayBlock,
+  ComposedMilestone,
+  ComposedStandingObligation,
   ComposeInput,
   CurriculumEvent,
   PersistedArtifact,
@@ -28,7 +31,9 @@ function verificationFor(tier: string): { status: string; verified: number } {
 type CurriculumRow = {
   id: number; track_id: number; theme: string; summary: string; weeks: number;
   hours_per_day: number; capstone_shape: string; status: string; start_date: string;
-  composed_json: string; model: string; created_at: number; updated_at: number;
+  composed_json: string; model: string;
+  standing_obligations_json: string; milestones_json: string;
+  created_at: number; updated_at: number;
 };
 type ModuleRow = {
   id: number; curriculum_id: number; week_number: number; title: string; focus: string;
@@ -38,6 +43,7 @@ type DayRow = {
   id: number; curriculum_id: number; module_id: number; day_index: number; planned_date: string;
   title: string; focus: string; activity: string; done_when: string; hours: number; status: string;
   sequence: number; completed_at: number | null; skipped_at: number | null; day_plan_item_id: number | null;
+  morning_json: string; afternoon_json: string;
 };
 type SourceRow = {
   id: number; curriculum_id: number; module_id: number; tier: string; title: string; author: string;
@@ -67,16 +73,16 @@ export function persistComposedCurriculum(
   const startDate = input.startDate || todayYmd();
 
   const insertCurriculum = rawDb.prepare(`
-    INSERT INTO curricula (track_id, theme, summary, weeks, hours_per_day, capstone_shape, status, start_date, composed_json, model, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
+    INSERT INTO curricula (track_id, theme, summary, weeks, hours_per_day, capstone_shape, status, start_date, composed_json, model, standing_obligations_json, milestones_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertModule = rawDb.prepare(`
     INSERT INTO curriculum_modules (curriculum_id, week_number, title, focus, objective, sequence, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   const insertDay = rawDb.prepare(`
-    INSERT INTO curriculum_days (curriculum_id, module_id, day_index, planned_date, title, focus, activity, done_when, hours, status, sequence, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?, ?)
+    INSERT INTO curriculum_days (curriculum_id, module_id, day_index, planned_date, title, focus, activity, done_when, hours, morning_json, afternoon_json, status, sequence, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?, ?)
   `);
   const insertArtifact = rawDb.prepare(`
     INSERT INTO curriculum_artifacts (curriculum_id, day_id, artifact_number, technique_key, title, prompt, word_target, save_as, status, draft, created_at)
@@ -102,6 +108,8 @@ export function persistComposedCurriculum(
       startDate,
       JSON.stringify(composed),
       model,
+      JSON.stringify(composed.standingObligations || []),
+      JSON.stringify(composed.milestones || []),
       now,
       now,
     ).lastInsertRowid);
@@ -123,9 +131,12 @@ export function persistComposedCurriculum(
 
       mod.days.forEach((day) => {
         const plannedDate = nextWeekday(startDate, dayIndex);
+        const morningJson = day.morning ? JSON.stringify(day.morning) : 'null';
+        const afternoonJson = day.afternoon ? JSON.stringify(day.afternoon) : 'null';
         const dayDbId = Number(insertDay.run(
           curriculumId, moduleId, dayIndex, plannedDate, day.title, day.focus || "",
-          day.activity || "", day.doneWhen || "", Math.round(day.hours ?? composed.hoursPerDay), dayIndex, now,
+          day.activity || "", day.doneWhen || "", Math.round(day.hours ?? composed.hoursPerDay),
+          morningJson, afternoonJson, dayIndex, now,
         ).lastInsertRowid);
         (day.artifacts || []).forEach((art) => {
           artifactNumber += 1;
@@ -173,6 +184,16 @@ function artifactsForDay(dayId: number): PersistedArtifact[] {
   return rows.map(rowToArtifact);
 }
 
+function parseBlockJson(raw: string | null | undefined): ComposedDayBlock | null {
+  if (!raw || raw === 'null' || raw === '') return null;
+  try { return JSON.parse(raw) as ComposedDayBlock; } catch { return null; }
+}
+
+function parseJsonArray<T = any>(raw: string | null | undefined): T[] {
+  if (!raw || raw === '') return [];
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? (v as T[]) : []; } catch { return []; }
+}
+
 function rowToDay(row: DayRow): PersistedDay {
   return {
     id: row.id, moduleId: row.module_id, dayIndex: row.day_index, plannedDate: row.planned_date,
@@ -181,6 +202,8 @@ function rowToDay(row: DayRow): PersistedDay {
     completedAt: row.completed_at == null ? null : Number(row.completed_at),
     skippedAt: row.skipped_at == null ? null : Number(row.skipped_at),
     dayPlanItemId: row.day_plan_item_id == null ? null : Number(row.day_plan_item_id),
+    morning: parseBlockJson(row.morning_json),
+    afternoon: parseBlockJson(row.afternoon_json),
     artifacts: artifactsForDay(row.id),
   };
 }
@@ -221,6 +244,8 @@ export function getCurriculum(id: number): PersistedCurriculum | null {
       ? { shape: capstone.shape, title: capstone.title, description: capstone.description, doneWhen: capstone.done_when }
       : null,
     modules: hydratedModules,
+    standingObligations: parseJsonArray<ComposedStandingObligation>(row.standing_obligations_json),
+    milestones: parseJsonArray<ComposedMilestone>(row.milestones_json),
   };
 }
 

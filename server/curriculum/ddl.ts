@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS curricula (
   start_date TEXT NOT NULL DEFAULT '',
   composed_json TEXT NOT NULL DEFAULT '{}',
   model TEXT NOT NULL DEFAULT '',
+  standing_obligations_json TEXT NOT NULL DEFAULT '[]',
+  milestones_json TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -39,6 +41,8 @@ CREATE TABLE IF NOT EXISTS curriculum_days (
   activity TEXT NOT NULL DEFAULT '',
   done_when TEXT NOT NULL DEFAULT '',
   hours INTEGER NOT NULL DEFAULT 0,
+  morning_json TEXT NOT NULL DEFAULT 'null',
+  afternoon_json TEXT NOT NULL DEFAULT 'null',
   status TEXT NOT NULL DEFAULT 'planned',
   sequence INTEGER NOT NULL DEFAULT 0,
   completed_at INTEGER,

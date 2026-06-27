@@ -8,6 +8,8 @@ export const SOURCE_TIERS = ["spine", "secondary"] as const;
 export const CAPSTONE_SHAPES = ["interview_ready", "published_artifact", "decision_memo", "portfolio_piece"] as const;
 export const DAY_STATUSES = ["planned", "completed", "skipped"] as const;
 export const MILESTONE_TYPES = ["content", "synthesis", "artifact"] as const;
+export const STANDING_OBLIGATION_CADENCES = ["weekly_friday", "weekly_monday", "monthly_first_monday"] as const;
+export type StandingObligationCadence = (typeof STANDING_OBLIGATION_CADENCES)[number];
 
 export const composedSourceSchema = z.object({
   tier: z.enum(SOURCE_TIERS).default("secondary"),
@@ -15,6 +17,14 @@ export const composedSourceSchema = z.object({
   author: z.string().max(160).optional().default(""),
   url: z.string().max(600).optional().default(""),
   why: z.string().max(400).optional().default(""),
+});
+
+// A day-block is either morning (reading) or afternoon (writing/technique). The
+// shape is the same; the role is implied by which slot it occupies on the day.
+export const composedDayBlockSchema = z.object({
+  hours: z.number().min(0).max(24).optional(),
+  focus: z.string().max(280).optional().default(""),
+  items: z.array(z.string().min(1).max(400)).max(12).optional().default([]),
 });
 
 // An artifact is the named, technique-driven output of a day's afternoon work.
@@ -34,6 +44,11 @@ export const composedDaySchema = z.object({
   hours: z.number().min(0).max(24).optional(),
   // Most days carry exactly one artifact; some have none, rarely two.
   artifacts: composedArtifactSchema.array().max(3).optional().default([]),
+  // Optional morning + afternoon blocks. When present, these are the source of
+  // truth and `activity` is a one-sentence summary. When absent (legacy canned
+  // responses in tests), `activity` remains the source of truth.
+  morning: composedDayBlockSchema.optional(),
+  afternoon: composedDayBlockSchema.optional(),
 });
 
 export const composedModuleSchema = z.object({
@@ -57,6 +72,18 @@ export const composedCapstoneSchema = z.object({
   doneWhen: z.string().max(600).optional().default(""),
 });
 
+export const composedStandingObligationSchema = z.object({
+  cadence: z.enum(STANDING_OBLIGATION_CADENCES),
+  title: z.string().min(1).max(200),
+  doneWhen: z.string().max(400).optional().default(""),
+});
+
+export const composedMilestoneSchema = z.object({
+  atDayIndex: z.number().int().min(1).max(2000),
+  label: z.string().min(1).max(200),
+  whatGoodLooksLike: z.string().min(1).max(600),
+});
+
 export const composedCurriculumSchema = z.object({
   theme: z.string().min(1).max(200),
   summary: z.string().max(2000).optional().default(""),
@@ -65,6 +92,8 @@ export const composedCurriculumSchema = z.object({
   rationale: z.string().max(300).optional().default(""),
   capstone: composedCapstoneSchema,
   modules: z.array(composedModuleSchema).min(1).max(104),
+  standingObligations: z.array(composedStandingObligationSchema).max(8).optional().default([]),
+  milestones: z.array(composedMilestoneSchema).max(12).optional().default([]),
 });
 
 export type ComposedArtifact = z.infer<typeof composedArtifactSchema>;
@@ -73,6 +102,9 @@ export type ComposedDay = z.infer<typeof composedDaySchema>;
 export type ComposedModule = z.infer<typeof composedModuleSchema>;
 export type ComposedCapstone = z.infer<typeof composedCapstoneSchema>;
 export type ComposedCurriculum = z.infer<typeof composedCurriculumSchema>;
+export type ComposedDayBlock = z.infer<typeof composedDayBlockSchema>;
+export type ComposedStandingObligation = z.infer<typeof composedStandingObligationSchema>;
+export type ComposedMilestone = z.infer<typeof composedMilestoneSchema>;
 
 export type ComposeInput = {
   trackId: number;
@@ -125,6 +157,8 @@ export type PersistedDay = {
   completedAt: number | null;
   skippedAt: number | null;
   dayPlanItemId: number | null;
+  morning: ComposedDayBlock | null;
+  afternoon: ComposedDayBlock | null;
   artifacts: PersistedArtifact[];
 };
 
@@ -154,6 +188,8 @@ export type PersistedCurriculum = {
   updatedAt: number;
   capstone: { shape: string; title: string; description: string; doneWhen: string } | null;
   modules: PersistedModule[];
+  standingObligations: ComposedStandingObligation[];
+  milestones: ComposedMilestone[];
 };
 
 export type CurriculumEvent = {

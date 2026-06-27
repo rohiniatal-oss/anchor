@@ -103,7 +103,7 @@ export function persistComposedCurriculum(
       composed.theme,
       composed.summary || "",
       composed.weeks,
-      Math.round(composed.hoursPerDay),
+      composed.hoursPerDay,
       composed.capstone.shape,
       startDate,
       JSON.stringify(composed),
@@ -135,7 +135,7 @@ export function persistComposedCurriculum(
         const afternoonJson = day.afternoon ? JSON.stringify(day.afternoon) : 'null';
         const dayDbId = Number(insertDay.run(
           curriculumId, moduleId, dayIndex, plannedDate, day.title, day.focus || "",
-          day.activity || "", day.doneWhen || "", Math.round(day.hours ?? composed.hoursPerDay),
+          day.activity || "", day.doneWhen || "", day.hours ?? composed.hoursPerDay,
           morningJson, afternoonJson, dayIndex, now,
         ).lastInsertRowid);
         (day.artifacts || []).forEach((art) => {
@@ -177,6 +177,19 @@ function rowToArtifact(row: ArtifactRow): PersistedArtifact {
   };
 }
 
+function artifactsByDayForCurriculum(curriculumId: number): Map<number, PersistedArtifact[]> {
+  const rows = rawDb.prepare(
+    "SELECT * FROM curriculum_artifacts WHERE curriculum_id = ? ORDER BY day_id, artifact_number, id",
+  ).all(curriculumId) as ArtifactRow[];
+  const byDay = new Map<number, PersistedArtifact[]>();
+  for (const row of rows) {
+    const list = byDay.get(row.day_id) || [];
+    list.push(rowToArtifact(row));
+    byDay.set(row.day_id, list);
+  }
+  return byDay;
+}
+
 function artifactsForDay(dayId: number): PersistedArtifact[] {
   const rows = rawDb.prepare(
     "SELECT * FROM curriculum_artifacts WHERE day_id = ? ORDER BY artifact_number, id",
@@ -194,7 +207,7 @@ function parseJsonArray<T = any>(raw: string | null | undefined): T[] {
   try { const v = JSON.parse(raw); return Array.isArray(v) ? (v as T[]) : []; } catch { return []; }
 }
 
-function rowToDay(row: DayRow): PersistedDay {
+function rowToDay(row: DayRow, artifacts: PersistedArtifact[] = artifactsForDay(row.id)): PersistedDay {
   return {
     id: row.id, moduleId: row.module_id, dayIndex: row.day_index, plannedDate: row.planned_date,
     title: row.title, focus: row.focus, activity: row.activity, doneWhen: row.done_when,
@@ -204,7 +217,7 @@ function rowToDay(row: DayRow): PersistedDay {
     dayPlanItemId: row.day_plan_item_id == null ? null : Number(row.day_plan_item_id),
     morning: parseBlockJson(row.morning_json),
     afternoon: parseBlockJson(row.afternoon_json),
-    artifacts: artifactsForDay(row.id),
+    artifacts,
   };
 }
 
@@ -217,11 +230,12 @@ export function getCurriculum(id: number): PersistedCurriculum | null {
   const days = rawDb.prepare("SELECT * FROM curriculum_days WHERE curriculum_id = ? ORDER BY sequence, id").all(id) as DayRow[];
   const sources = rawDb.prepare("SELECT * FROM curriculum_sources WHERE curriculum_id = ? ORDER BY sequence, id").all(id) as SourceRow[];
   const capstone = rawDb.prepare("SELECT shape, title, description, done_when FROM curriculum_capstone WHERE curriculum_id = ? ORDER BY id LIMIT 1").get(id) as CapstoneRow | undefined;
+  const artifactsByDay = artifactsByDayForCurriculum(id);
 
   const daysByModule = new Map<number, PersistedDay[]>();
   for (const d of days) {
     const list = daysByModule.get(d.module_id) || [];
-    list.push(rowToDay(d));
+    list.push(rowToDay(d, artifactsByDay.get(d.id) || []));
     daysByModule.set(d.module_id, list);
   }
   const sourcesByModule = new Map<number, PersistedSource[]>();

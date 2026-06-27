@@ -5,6 +5,7 @@ import { createNextTask } from "./nextTask";
 import { deterministicUnstickStep, prependStep } from "./planningFeedback";
 import { buildDeterministicTaskBreakdown, normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { completeRecommendationMilestone, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
+import { completeDayById, skipDayById } from "./curriculum/materializer";
 import { storage } from "./storage";
 import { insertEventSchema, type InsertActivityLog, type InsertDayPlanItem } from "@shared/schema";
 
@@ -176,6 +177,7 @@ export function categoryForPlanItem(item: {
   if (item.sourceType === "learn") return "learning";
   if (item.sourceType === "hustle") return "hustle";
   if (item.sourceType === "contact") return "admin";
+  if (item.sourceType === "curriculum_day") return "learning";
   if (item.sourceType === "goal") {
     const sourceStatus = String(item.sourceStatus || "").toLowerCase();
     if (sourceStatus === "broad_parallel_pursuit_network_support") return "admin";
@@ -189,6 +191,7 @@ export function categoryForPlanItem(item: {
 }
 
 function inferWinCategory(task: { category?: string | null; sourceType?: string | null; title: string }): string {
+  if (task.sourceType === "curriculum_day") return "learning";
   if (task.category === "job" || task.category === "interview") return "job_progress";
   if (task.category === "learning") return "learning";
   if (task.category === "substack" || task.category === "hustle" || task.category === "afterline") return "proof_asset";
@@ -227,6 +230,8 @@ async function updateSourceEntityOnComplete(task: { sourceType?: string | null; 
           lastContactedAt: new Date().toISOString(),
         } as any);
       }
+    } else if (task.sourceType === "curriculum_day") {
+      completeDayById(task.sourceId, task.title);
     }
   } catch {}
 }
@@ -523,6 +528,9 @@ export function registerPlanningRoutes(app: Express) {
     if (replacement) patch.title = replacement;
     const updated = await storage.updateTask(id, patch);
     await syncPlanItem(day, task, { status: "skipped", skippedAt: Date.now() });
+    if (task.sourceType === "curriculum_day" && task.sourceId != null) {
+      try { skipDayById(task.sourceId, String(req.body?.reason || "")); } catch {}
+    }
     const activity: InsertActivityLog = {
       eventType: "skipped",
       sourceType: task.sourceType || "task",

@@ -3,7 +3,6 @@
 // has the full current schema without invoking drizzle-kit push (interactive).
 // CREATE TABLE IF NOT EXISTS makes this safe to run on an already-pushed DB.
 // Kept as one place so a schema change here is obvious and shared everywhere.
-import { CURRICULUM_DDL } from "./curriculum/ddl";
 
 export const SPINE_DDL = `
 CREATE TABLE IF NOT EXISTS tasks (
@@ -187,6 +186,7 @@ CREATE TABLE IF NOT EXISTS career_tracks (
   priority INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
   why_it_fits TEXT NOT NULL DEFAULT '',
+  aspiration TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS day_plans (
@@ -358,7 +358,54 @@ CREATE INDEX IF NOT EXISTS idx_contact_interactions_contact ON contact_interacti
 CREATE INDEX IF NOT EXISTS idx_network_gaps_track ON network_gaps(track_id);
 CREATE INDEX IF NOT EXISTS idx_recommendation_milestones_rec ON recommendation_milestones(recommendation_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
-${CURRICULUM_DDL}
+CREATE TABLE IF NOT EXISTS upskill_checkins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at INTEGER NOT NULL,
+  track_id INTEGER,
+  whats_working TEXT NOT NULL DEFAULT '',
+  whats_not TEXT NOT NULL DEFAULT '',
+  want_to_drop TEXT NOT NULL DEFAULT '',
+  want_to_add TEXT NOT NULL DEFAULT '',
+  energy TEXT NOT NULL DEFAULT 'normal',
+  raw_note TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS upskill_plan_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  track_id INTEGER NOT NULL,
+  sequence INTEGER NOT NULL,
+  phase_label TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL,
+  activity TEXT NOT NULL,
+  done_when TEXT NOT NULL,
+  morning_block TEXT NOT NULL DEFAULT '{}',
+  afternoon_block TEXT NOT NULL DEFAULT '{}',
+  sources TEXT NOT NULL DEFAULT '[]',
+  artifact TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'queued',
+  planned_for TEXT,
+  linked_plan_item_id INTEGER,
+  rationale TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  skipped_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_upskill_plan_items_track ON upskill_plan_items(track_id, status);
+CREATE INDEX IF NOT EXISTS idx_upskill_plan_items_status ON upskill_plan_items(status, sequence);
+CREATE INDEX IF NOT EXISTS idx_upskill_checkins_track ON upskill_checkins(track_id, created_at);
+`;
+
+// One-shot teardown of PR #144's curriculum subsystem. There is no migrations
+// framework, so existing deployed SQLite DBs would otherwise keep these 7 orphan
+// tables forever once the DDL that created them is gone. DROP IF EXISTS is a
+// no-op on fresh DBs that never had them.
+export const CURRICULUM_DROP_DDL = `
+DROP TABLE IF EXISTS curriculum_events;
+DROP TABLE IF EXISTS curriculum_artifacts;
+DROP TABLE IF EXISTS curriculum_sources;
+DROP TABLE IF EXISTS curriculum_capstone;
+DROP TABLE IF EXISTS curriculum_days;
+DROP TABLE IF EXISTS curriculum_modules;
+DROP TABLE IF EXISTS curricula;
 `;
 
 // Migrations for columns added to existing tables after initial release.
@@ -394,4 +441,5 @@ export const SPINE_MIGRATIONS = [
   `ALTER TABLE day_plan_items ADD COLUMN source_status TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE jobs ADD COLUMN role_model TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE career_tracks ADD COLUMN track_intelligence TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE career_tracks ADD COLUMN aspiration TEXT NOT NULL DEFAULT ''`,
 ];

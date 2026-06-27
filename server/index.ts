@@ -34,7 +34,6 @@ import { registerTrustBoundaryRoutes } from "./trustBoundaryRoutes";
 import { registerWorkRoutes } from "./workRoutes";
 import { ensureWorkSchema } from "./workRepository";
 import { ensureObjectOwnershipSchema } from "./objectOwnership";
-import { ensureCurriculumSchema } from "./curriculum/schema";
 import { registerObjectOwnershipRoutes } from "./objectOwnershipRoutes";
 import { serveStatic } from "./static";
 import { initStorage, getStorageRuntime } from "./storage";
@@ -64,7 +63,6 @@ const runtime = initStorage();
 // GET routes can remain pure reads while still working against old databases.
 ensureWorkSchema();
 ensureObjectOwnershipSchema();
-ensureCurriculumSchema();
 installReadPurityGuard(app, runtime.storage, runtime.rawDb);
 warnIfUsingDefaultDbPath();
 seedInitialData().catch((e) => console.error("Seed failed:", e));

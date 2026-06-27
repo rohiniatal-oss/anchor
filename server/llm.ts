@@ -88,3 +88,88 @@ export async function llmJSON<T = any>(input: string, opts: LlmOptions = {}): Pr
     return null;
   }
 }
+
+export type LlmJSONLargeOptions = LlmOptions & {
+  // Forwarded straight to client.responses.create. The default ~4k cap was the
+  // root cause of empty/truncated model output for large structured responses.
+  maxOutputTokens?: number;
+};
+
+export type LlmJSONLargeResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: string; rawHead: string; rawTail: string };
+
+// Extract the JSON object substring from a raw model response, tolerating code
+// fences or prose on either side: take from the first "{" to the last "}".
+// Returns null when no plausible object span exists.
+export function extractFirstJsonObject(raw: string): string | null {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return raw.slice(start, end + 1);
+}
+
+// Robust large-JSON call for structured generation (e.g. a 10-item upskill
+// horizon). Unlike llmJSON it (a) raises the output-token ceiling, (b) extracts
+// the JSON object from anywhere in the response (first "{" .. last "}"), and
+// (c) returns a discriminated result so callers can surface real failures
+// instead of a silent null.
+export async function llmJSONLarge<T = any>(
+  input: string,
+  opts: LlmJSONLargeOptions = {},
+): Promise<LlmJSONLargeResult<T>> {
+  const model = opts.model || DEFAULT_MODEL;
+  const retries = Math.max(0, opts.retries ?? MAX_RETRIES);
+  const client = getClient();
+
+  let raw = "";
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    _totalCalls++;
+    try {
+      const r = await client.responses.create({
+        model,
+        input,
+        ...(opts.tools?.length ? { tools: opts.tools } : {}),
+        ...(opts.maxOutputTokens ? { max_output_tokens: opts.maxOutputTokens } : {}),
+      });
+      if (r.usage) {
+        _totalInputTokens += r.usage.input_tokens || 0;
+        _totalOutputTokens += r.usage.output_tokens || 0;
+      }
+      raw = (r.output_text || "").trim();
+      lastError = null;
+      break;
+    } catch (e) {
+      lastError = e;
+      if (attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, BASE_DELAY_MS * 2 ** attempt));
+      }
+    }
+  }
+
+  if (lastError) {
+    return { ok: false, reason: `llm_call_failed: ${(lastError as Error)?.message || lastError}`, rawHead: "", rawTail: "" };
+  }
+
+  const head = raw.slice(0, 200);
+  const tail = raw.slice(-200);
+  if (!raw) {
+    console.error(`[llmJSONLarge] parse failed model=${model} len=0 head="" tail=""`);
+    return { ok: false, reason: "empty_model_output", rawHead: head, rawTail: tail };
+  }
+
+  const slice = extractFirstJsonObject(raw);
+  if (slice == null) {
+    console.error(`[llmJSONLarge] parse failed model=${model} len=${raw.length} head=${JSON.stringify(head)} tail=${JSON.stringify(tail)}`);
+    return { ok: false, reason: "no_json_object_found", rawHead: head, rawTail: tail };
+  }
+
+  try {
+    const value = JSON.parse(slice) as T;
+    return { ok: true, value };
+  } catch (e) {
+    console.error(`[llmJSONLarge] parse failed model=${model} len=${raw.length} head=${JSON.stringify(head)} tail=${JSON.stringify(tail)}`);
+    return { ok: false, reason: `json_parse_error: ${(e as Error)?.message || e}`, rawHead: head, rawTail: tail };
+  }
+}

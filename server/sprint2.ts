@@ -14,33 +14,33 @@ import {
 import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 import { buildTaskIntakeDefaults, contextualizeTask, intakeWords, llmEnrichTask } from "./taskIntakeInference";
-import { getDueCurriculumAnchors, linkDayToPlanItem } from "./curriculum/repository";
+import { getDueUpskillAnchors, linkUpskillItemToPlanItem } from "./upskill/materializer";
 
-// Plan-item sourceType for an injected curriculum day (the daily anchor).
-const CURRICULUM_DAY_SOURCE = "curriculum_day";
+// Plan-item sourceType for an injected upskill plan item (the daily anchor).
+const UPSKILL_SOURCE = "upskill";
 
-// Build the "now"-slot anchor items for any curriculum days that are due today.
-// Each due active curriculum contributes one item; they outrank synthesised
-// coverage prompts, which get demoted from "now" to "next".
-function curriculumAnchorItems(day: string) {
-  return getDueCurriculumAnchors(day).map((a) => ({
+// Build the "now"-slot anchor items for the next queued upskill item on each
+// active track. They outrank synthesised coverage prompts, which get demoted
+// from "now" to "next". Users with no active upskill horizon see Today unchanged.
+function upskillAnchorItems(day: string) {
+  return getDueUpskillAnchors(day).map((a) => ({
     slot: "now",
     isMVD: false,
-    why: `Today's anchor from your ${a.theme} curriculum`,
+    why: a.rationale || `Today's upskill move: ${a.title}`,
     explanation: {
-      summary: `Today's anchor from your ${a.theme} curriculum`,
-      whyNow: `This is day ${a.dayNumber} of ${a.totalDays} of your ${a.theme} curriculum.`,
-      whyThis: `It is the next scheduled day in your ${a.theme} curriculum.`,
+      summary: a.rationale || `Today's upskill move: ${a.title}`,
+      whyNow: a.phaseLabel ? `Phase: ${a.phaseLabel}.` : "It is the next queued step in your upskill plan.",
+      whyThis: a.rationale || `It is the next queued step in your upskill plan.`,
       supportingReasons: [] as string[],
-      firstStep: a.day.activity,
-      stopRule: a.day.doneWhen,
+      firstStep: a.activity,
+      stopRule: a.doneWhen,
     },
     candidate: {
-      source: CURRICULUM_DAY_SOURCE,
-      sourceId: a.day.id,
+      source: UPSKILL_SOURCE,
+      sourceId: a.id,
       taskId: null,
-      title: a.day.title,
-      doneWhen: a.day.doneWhen,
+      title: a.title,
+      doneWhen: a.doneWhen,
       sourceNote: "",
       sourceStatus: "",
     },
@@ -323,14 +323,15 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
     : result.note;
   const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, plannerNote].filter(Boolean).join(" ");
 
-  // Inject due curriculum days as the day's anchors. They sit ahead of the
-  // synthesised coverage prompts (demoted from "now" to "next") so the curriculum
-  // drives Today. Users with no active curriculum see the plan unchanged.
-  const anchorItems = curriculumAnchorItems(day);
+  // Inject the next queued upskill item per active track as the day's anchors.
+  // They sit ahead of the synthesised coverage prompts (demoted from "now" to
+  // "next") so the upskill plan drives Today. Users with no active upskill
+  // horizon see the plan unchanged.
+  const anchorItems = upskillAnchorItems(day);
   const finalPlan = anchorItems.length
     ? [...anchorItems, ...correctedPlan.map((it) => (it.slot === "now" ? { ...it, slot: "next" } : it))]
     : correctedPlan;
-  const curriculumLinks: { dayId: number; planItemId: number }[] = [];
+  const upskillLinks: { itemId: number; planItemId: number }[] = [];
 
   const plan = db.transaction((tx) => {
     const now = Date.now();
@@ -391,8 +392,8 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         createdAt: now,
       } as any).returning().get();
       if (item.isMVD || sequence === 1) minimumViableItemId = created.id;
-      if (c.source === CURRICULUM_DAY_SOURCE && c.sourceId != null) {
-        curriculumLinks.push({ dayId: c.sourceId, planItemId: created.id });
+      if (c.source === UPSKILL_SOURCE && c.sourceId != null) {
+        upskillLinks.push({ itemId: c.sourceId, planItemId: created.id });
       }
     }
 
@@ -403,8 +404,9 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
     return current;
   });
 
-  // Bidirectional link: record which day_plan_item each curriculum day produced.
-  for (const link of curriculumLinks) linkDayToPlanItem(link.dayId, link.planItemId);
+  // Bidirectional link: record which day_plan_item each upskill item produced,
+  // and mark the upskill item active now that it is on Today.
+  for (const link of upskillLinks) linkUpskillItemToPlanItem(link.itemId, link.planItemId);
 
   const items = (await storage.getPlanItems(plan.id)).map((item) => ({
     ...item,

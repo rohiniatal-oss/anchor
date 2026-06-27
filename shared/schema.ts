@@ -331,8 +331,49 @@ export const careerTracks = sqliteTable("career_tracks", {
   priority: integer("priority").notNull().default(0), // higher = more focus
   status: text("status").notNull().default("active"), // active|watch|paused
   whyItFits: text("why_it_fits").notNull().default(""),
+  // Free-text "what I'm reaching for in this track over the next 6-12 months".
+  // Distinct from whyItFits (rationale) and targetRoleArchetype (destination).
+  aspiration: text("aspiration").notNull().default(""),
   trackIntelligence: text("track_intelligence").notNull().default(""), // JSON: aggregated track model
   createdAt: integer("created_at").notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// UPSKILL PLAN — the ongoing, multi-track, no-fixed-end upskill subsystem.
+// A thin orchestration layer over tracks/profile/learn/activity. Owns only the
+// rolling horizon of plan items and the periodic check-in records.
+// ─────────────────────────────────────────────────────────────────────────
+export const upskillCheckins = sqliteTable("upskill_checkins", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  createdAt: integer("created_at").notNull(),
+  trackId: integer("track_id"), // nullable: cross-track check-in allowed
+  whatsWorking: text("whats_working").notNull().default(""),
+  whatsNot: text("whats_not").notNull().default(""),
+  wantToDrop: text("want_to_drop").notNull().default(""),
+  wantToAdd: text("want_to_add").notNull().default(""),
+  energy: text("energy").notNull().default("normal"), // low|normal|high
+  rawNote: text("raw_note").notNull().default(""),
+});
+
+export const upskillPlanItems = sqliteTable("upskill_plan_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  trackId: integer("track_id").notNull(), // which track this advances
+  sequence: integer("sequence").notNull(), // global ordering across horizon
+  phaseLabel: text("phase_label").notNull().default(""), // e.g. "Foundations: regulatory surface"
+  title: text("title").notNull(),
+  activity: text("activity").notNull(), // one-sentence what-to-do
+  doneWhen: text("done_when").notNull(),
+  morningBlock: text("morning_block").notNull().default("{}"), // JSON {hours, focus, items[]}
+  afternoonBlock: text("afternoon_block").notNull().default("{}"),
+  sources: text("sources").notNull().default("[]"), // JSON [{title, author, url, why}]
+  artifact: text("artifact").notNull().default("{}"), // JSON {techniqueKey?, title?, prompt?, wordTarget?, saveAs?}
+  status: text("status").notNull().default("queued"), // queued|active|completed|skipped|stale
+  plannedFor: text("planned_for"), // YYYY-MM-DD if scheduled, else null
+  linkedPlanItemId: integer("linked_plan_item_id"), // -> day_plan_items.id when materialized
+  rationale: text("rationale").notNull().default(""), // why this item, why here
+  createdAt: integer("created_at").notNull(),
+  completedAt: integer("completed_at"),
+  skippedAt: integer("skipped_at"),
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -456,6 +497,8 @@ export const insertRecommendationSubdivisionSchema = createInsertSchema(recommen
 export const insertRecommendationMilestoneSchema = createInsertSchema(recommendationMilestones).omit({ id: true, createdAt: true, completedAt: true });
 export const insertDayPlanSchema = createInsertSchema(dayPlans).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertDayPlanItemSchema = createInsertSchema(dayPlanItems).omit({ id: true, createdAt: true });
+export const insertUpskillCheckinSchema = createInsertSchema(upskillCheckins).omit({ id: true, createdAt: true });
+export const insertUpskillPlanItemSchema = createInsertSchema(upskillPlanItems).omit({ id: true, createdAt: true, completedAt: true, skippedAt: true });
 export const insertEntityLinkSchema = createInsertSchema(entityLinks).omit({ id: true, createdAt: true });
 export const insertActivityLogSchema = createInsertSchema(activityLog).omit({ id: true, timestamp: true });
 export const insertNetworkGapSchema = createInsertSchema(networkGaps).omit({ id: true, createdAt: true });
@@ -489,6 +532,10 @@ export type InsertDiscoverySession = z.infer<typeof insertDiscoverySessionSchema
 export type DiscoverySession = typeof discoverySessions.$inferSelect;
 export type InsertDayPlanItem = z.infer<typeof insertDayPlanItemSchema>;
 export type DayPlanItem = typeof dayPlanItems.$inferSelect;
+export type InsertUpskillCheckin = z.infer<typeof insertUpskillCheckinSchema>;
+export type UpskillCheckin = typeof upskillCheckins.$inferSelect;
+export type InsertUpskillPlanItem = z.infer<typeof insertUpskillPlanItemSchema>;
+export type UpskillPlanItem = typeof upskillPlanItems.$inferSelect;
 export type InsertEntityLink = z.infer<typeof insertEntityLinkSchema>;
 export type EntityLink = typeof entityLinks.$inferSelect;
 export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;

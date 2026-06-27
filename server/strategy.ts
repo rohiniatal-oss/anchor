@@ -9,7 +9,7 @@ import type { Job, Learn, Contact, Hustle, Task, CareerTrack, JobPipelineStep, P
 import { computeEvidence, type TrackEvidence, type EvidenceResult } from "./evidence";
 import { computeLearningGaps, topLearningGapSignal, type TrackLearningGap, type LearningGapSignal } from "./learningStrategy";
 import { buildUserContext, contextFingerprint } from "./userContext";
-import { getPersistedOwnership, type StrategicObjectType } from "./objectOwnership";
+import { getPersistedOwnership, getOwnershipFeedback, type StrategicObjectType, type OwnershipFeedback } from "./objectOwnership";
 
 // ─────────────────────────────────────────────────────────────────────────
 // STRATEGY DIAGNOSTICS — per-track health, the bottleneck types, and a
@@ -30,45 +30,36 @@ export type TrackDiagnostic = {
   signals: {
     directionGap: number;
     readinessGap: number;
-    proofGap: number;      // count of active proof-support assets that are stalled; absence alone is not a gap
+    proofGap: number;
     warmthGap: number;
     executionGap: number;
-    learningGap: number;   // P5 — count of REQUIRED capability domains not yet evidenced; structural, ranks below readiness/warmth/execution and above the calm nudges
-    learnProofGap: number; // P4.4 — opt-in, lowest priority; never the sole bottleneck driver
-    evidenceGap: number;   // P4.5 — soft "no evidence shipping" signal; lowest priority, never the loud primary
+    learningGap: number;
+    learnProofGap: number;
+    evidenceGap: number;
   };
-  // P4.5 — compact, read-mostly evidence read for the per-track Strategy view.
-  // Evidence is a HEALTH input + tiebreaker; it never becomes the loud primary
-  // bottleneck on its own (stays below readiness/learning/warmth).
   evidence: {
-    count: number;                 // wins in the rolling window attributed to the track
+    count: number;
     topCategory: WinCategory | null;
     producingVsPlanning: TrackEvidence["producingVsPlanning"];
     executionRatio: number | null;
     lastEvidenceAt: number | null;
   };
-  // P5 — compact, read-mostly capability-gap read for the per-track Strategy view.
-  // A STRUCTURAL signal (a track missing a required capability), but it ranks below
-  // readiness/learning/warmth and never inflates them. Null when the track has no
-  // capability profile (no false alarms).
   learningGap: {
     requiredCount: number;
     evidencedCount: number;
     gapCount: number;
     topGapDomain: string | null;
-    topGapLabel: string | null;     // highest-ranked unmet domain, null if none
-    topGapHasResource: boolean;     // a live Learn item already addresses the top gap
-    recommendedMove: string | null; // deterministic move, null when no gap
+    topGapLabel: string | null;
+    topGapHasResource: boolean;
+    recommendedMove: string | null;
   } | null;
   bottleneck: BottleneckType;
   bottleneckLabel: string;
   recommendedMove: string;
 };
 
-const LOW_WARMTH = 40; // warmPathScore threshold
+const LOW_WARMTH = 40;
 
-// A contact is "overdue for follow-up" when its nextFollowUpDate is a valid
-// past date. Stale warm paths erode warmth, so this feeds the warmth gap.
 function isContactOverdue(c: Contact): boolean {
   const raw = (c.nextFollowUpDate || "").trim();
   if (!raw) return false;
@@ -87,26 +78,16 @@ export function diagnoseTrack(
   lg: TrackLearningGap | undefined,
 ): TrackDiagnostic {
   const tJobs = jobs.filter((j) => getTrackId("jobs", j) === track.id);
-  // Window-aware "live": a watch/closed fellowship (or any closed-window job) is
-  // MONITORED, not a live application, so it must not inflate readiness/warmth.
   const tLiveJobs = tJobs.filter(isOpportunityActionable);
   const tLearn = learn.filter((l) => getTrackId("learn", l) === track.id && !isLearnDone(l) && getLearnStatus(l) !== "closed");
   const tContacts = contacts.filter((c) => getTrackId("contacts", c) === track.id);
   const tHustles = hustles.filter((h) => getTrackId("hustles", h) === track.id);
   const tTasks = tasks.filter((t) => t.relatedTrackId === track.id);
 
-  // ── Signal counts (one per bottleneck type) ──
-  // direction gap: too few active objects on the track (nothing live to pull on)
   const liveObjects = tLiveJobs.length + tLearn.filter(isLearnActive).length + tHustles.filter(isProofLive).length;
   const directionGap = liveObjects === 0 ? 1 : 0;
-
-  // readiness gap: jobs with low readiness; tasks needing info or blocked
   const lowReadinessJobs = tLiveJobs.filter((j) => getJobReadiness(j) === "none" || getJobReadiness(j) === "cv").length;
   const stuckTasks = tTasks.filter((t) => !isTaskDone(t) && (getTaskReadiness(t) === "needs_info" || getTaskReadiness(t) === "blocked")).length;
-  // P4.1/4.2: a job's pipeline rail feeds the readiness gap so it isn't ornamental —
-  // a live job with steps but little done, or with blocked steps, signals work
-  // left to ready the application. Blocked steps now carry their own status
-  // "blocked" (P4.2 fold-in); "skipped" is a separate resolved state, not a stall.
   const stallSteps = tLiveJobs.reduce((acc, j) => {
     const steps = stepsByJob.get(j.id) || [];
     if (steps.length === 0) return acc;
@@ -117,9 +98,6 @@ export function diagnoseTrack(
   }, 0);
   const readinessGap = lowReadinessJobs + stuckTasks + stallSteps;
 
-  // proof gap: ONLY active proof-support assets that are already in motion but
-  // stalled. Proof is an optional compounding lane; simply lacking a proof asset
-  // is not a frontline gap for this track.
   const liveProof = tHustles.filter(isProofLive).length;
   const proofStall = tHustles.reduce((acc, h) => {
     const steps = proofStepsByHustle.get(h.id) || [];
@@ -129,51 +107,23 @@ export function diagnoseTrack(
     const fewDone = done < Math.ceil(steps.length / 2) ? 1 : 0;
     return acc + fewDone + blocked;
   }, 0);
-  // P4.4 — learn-proof signal (GENTLE, LOW PRIORITY, OPT-IN ONLY): count learn
-  // items the user has opted into the proof-building lane (track-linked here, so
-  // already opted-in) that are still "producing" — i.e. no output evidence yet.
-  // Pure-consumption / reference items are NEVER counted and never reduce proof
-  // health. This signal is reported separately and DELIBERATELY excluded from the
-  // primary proofGap math so it can never become the bottleneck on its own.
   const learnNoOutput = tLearn.filter((l) => getLearnOutputState(l) === "producing").length;
   const proofGap = proofStall;
 
-  // warmth gap: live jobs with low warmPathScore; cold / absent contacts; AND
-  // contacts overdue for follow-up (P4.2) — a stale warm path is a warmth gap too.
   const lowWarmJobs = tLiveJobs.filter((j) => (j.warmPathScore ?? 0) < LOW_WARMTH).length;
   const noWarmContacts = tContacts.filter(isContactWarm).length === 0 ? 1 : 0;
   const overdueContacts = tContacts.filter(isContactOverdue).length;
   const warmthGap = (tLiveJobs.length > 0 ? lowWarmJobs : 0) + (tContacts.length === 0 ? 1 : noWarmContacts) + overdueContacts;
 
-  // execution gap: many ready tasks vs few done
   const readyTasks = tTasks.filter((t) => !isTaskDone(t) && getTaskReadiness(t) === "ready").length;
   const doneTasks = tTasks.filter(isTaskDone).length;
   const executionGap = readyTasks >= 3 && doneTasks === 0 ? readyTasks : 0;
-
-  // learnProofGap is reported alongside the others but is INTENTIONALLY the lowest
-  // priority — it can only surface as the recommended move once every structural
-  // gap (direction/warmth/readiness/execution/learning) is clear. Opt-in only.
   const learnProofGap = learnNoOutput;
-
-  // P4.5 — evidence gap (SOFT, LOW PRIORITY): a track that has live work in
-  // motion (live jobs / active learn / live proof) but ZERO recent wins is
-  // "generating plans, not producing evidence". This is a track-HEALTH input and
-  // a tiebreaker — DELIBERATELY computed last and gated so it can only surface as
-  // the recommended move once every structural gap is clear. It is NOT folded
-  // into any other gap's math, so it can never become the loud primary blocker.
   const hasLiveWork = tLearn.some(isLearnActive) || tHustles.some(isProofLive) || tTasks.some((t) => !isTaskDone(t));
   const evidenceGap = (hasLiveWork && ev.evidenceCount === 0) ? 1 : 0;
-
-  // P5 — learning gap: count of REQUIRED capability domains for this track not yet
-  // evidenced. STRUCTURAL (a real capability hole), but it ranks BELOW
-  // readiness/warmth/execution and ABOVE the calm learn-proof / evidence nudges, so it
-  // never overrides a more urgent structural blocker. Zero when the track has no
-  // capability profile — no false alarms (Afterline: gaps are CAPABILITY coverage,
-  // never a demand to put AI content on the geopolitics proof asset).
   const learningGap = lg ? lg.gapDomains.length : 0;
   const signals = { directionGap, readinessGap, proofGap, warmthGap, executionGap, learningGap, learnProofGap, evidenceGap };
 
-  // ── Primary bottleneck (deterministic priority order) + recommended move ──
   let bottleneck: BottleneckType = "none";
   let bottleneckLabel = "Moving well - keep going";
   let recommendedMove = "Advance the next live item on this track";
@@ -202,9 +152,6 @@ export function diagnoseTrack(
     bottleneckLabel = `${executionGap} task${executionGap > 1 ? "s" : ""} ready to go — none started yet`;
     recommendedMove = "Pick the top ready task and get one done today";
   } else if (learningGap > 0 && lg) {
-    // P5 — STRUCTURAL capability gap, reached only when no readiness/warmth/
-    // execution blocker is louder. Names the top unmet domain and points at the
-    // sequenced Learn item if one exists, else flags the unfilled-gap slot.
     const topGap = lg.rankedGaps[0];
     const step = lg.sequence.find((s) => s.gapDomain === topGap.domain && s.learnId !== null);
     bottleneck = "learning";
@@ -215,24 +162,16 @@ export function diagnoseTrack(
       ? `Build ${topGap.label}: do the next step on "${step.title}"`
       : learningGapRecommendedMove(topGap.domain, topGap.label);
   } else if (proofGap > 0 && liveProof > 0) {
-    // Optional, low-priority capability support: only surfaces once the main
-    // conversion blockers are quiet, and only for proof assets the user already
-    // chose to keep live.
     bottleneck = "proof";
     bottleneckLabel = "A project you started has stalled";
     recommendedMove = "Move the active project one concrete step forward";
   } else if (learnProofGap > 0) {
-    // LOWEST-PRIORITY, OPT-IN nudge: only reached when nothing structural is the
-    // bottleneck. Stays "proof"-typed but is gentle — never the primary blocker.
     bottleneck = "proof";
     bottleneckLabel = learnProofGap === 1
       ? "A study item could produce something concrete — it hasn't yet"
       : `${learnProofGap} study items could each produce something concrete — none have yet`;
     recommendedMove = "If it would help, turn one study item into a note or brief you could reuse later";
   } else if (evidenceGap > 0) {
-    // P4.5 — SOFTEST nudge, reached only when every structural gap is clear: the
-    // track has live work but nothing has shipped as evidence lately. Stays
-    // "execution"-typed and calm — a gentle "log/ship one win", never an alarm.
     bottleneck = "execution";
     bottleneckLabel = "In motion, but no wins logged recently";
     recommendedMove = liveProof > 0
@@ -255,8 +194,6 @@ export function diagnoseTrack(
   };
 }
 
-// P5 — the compact per-track capability read for the Strategy view. Null when the
-// track has no capability profile (requiredDomains empty) so the UI shows nothing.
 function buildLearningGapRead(lg: TrackLearningGap | undefined): TrackDiagnostic["learningGap"] {
   if (!lg || lg.requiredDomains.length === 0) return null;
   const topGap = lg.rankedGaps[0] ?? null;
@@ -284,14 +221,12 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
   const [tracks, jobs, learn, contacts, hustles, tasks, evidence] = await Promise.all([
     storage.getCareerTracks(), storage.getJobs(), storage.getLearn(),
     storage.getContacts(), storage.getHustles(), storage.getTasks(),
-    computeEvidence(), // P4.5 — shared evidence layer, attribution lives in evidence.ts
+    computeEvidence(),
   ]);
-  // Pull each live job's pipeline steps so the rail feeds the readiness gap.
   const liveJobs = jobs.filter(isJobLive);
   const stepLists = await Promise.all(liveJobs.map((j) => storage.getJobSteps(j.id)));
   const stepsByJob = new Map<number, JobPipelineStep[]>();
   liveJobs.forEach((j, i) => stepsByJob.set(j.id, stepLists[i]));
-  // P4.3: pull each proof asset's production rail so a stalled asset feeds the proof gap.
   const proofStepLists = await Promise.all(hustles.map((h) => storage.getProofAssetSteps(h.id)));
   const proofStepsByHustle = new Map<number, ProofAssetStep[]>();
   hustles.forEach((h, i) => proofStepsByHustle.set(h.id, proofStepLists[i]));
@@ -301,7 +236,6 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
     topCategory: null, lastEvidenceAt: null, executionRatio: null, executionEvents: 0,
     openTasks: 0, producingVsPlanning: "idle",
   });
-  // P5 — per-track capability gaps (data-driven targets vs evidenced domains).
   const learningGaps = await computeLearningGaps();
   const lgByTrack = new Map<number, TrackLearningGap>();
   for (const g of learningGaps.tracks) lgByTrack.set(g.trackId, g);
@@ -309,27 +243,16 @@ export async function getTrackDiagnostics(): Promise<TrackDiagnostic[]> {
     diagnoseTrack(t, jobs, learn, contacts, hustles, tasks, stepsByJob, proofStepsByHustle,
       evidence.byTrack.get(t.id) ?? emptyEv(t.id), lgByTrack.get(t.id)));
 
-  // P4.5 — evidence is a TIEBREAKER for the per-track ranking, applied AFTER the
-  // existing priority order (track.priority, then bottleneck severity). It only
-  // separates tracks that are otherwise tied: a track with live work and no
-  // recent evidence sorts ahead of an equally-ranked one that's shipping. This
-  // nudges attention without overriding readiness/learning/warmth.
-  // Severity is the cross-track tiebreaker (applied after track.priority). The
-  // learning gap is STRUCTURAL but ranks below the readiness/warmth/execution
-  // blockers. Proof support is lower still: useful, but not a frontline gate.
   const severity: Record<BottleneckType, number> = {
     direction: 6, warmth: 5, readiness: 4, execution: 3, learning: 2, proof: 1, none: 0,
   };
   return diagnostics.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
     if (severity[b.bottleneck] !== severity[a.bottleneck]) return severity[b.bottleneck] - severity[a.bottleneck];
-    // tiebreaker: surface the evidence-starved track first
     return (a.evidence.count) - (b.evidence.count);
   });
 }
 
-// P4.5 — read-only per-track + untracked evidence metrics, exposed for the
-// Strategy dashboard. Reuses the single shared evidence layer (evidence.ts).
 export type EvidencePayload = {
   windowDays: number;
   tracks: (TrackEvidence & { name?: string; slug?: string })[];
@@ -348,14 +271,6 @@ export async function getEvidencePayload(): Promise<EvidencePayload> {
   return { windowDays: evidence.windowDays, tracks: trackRows, untracked };
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// P4.6a #5 — UNIFIED STRATEGY FRONT DOOR. getTrackDiagnostics is the ONE engine;
-// this wraps it once to produce everything the Strategy view needs in a single
-// payload: ranked tracks, the topThree focus set, cross-cutting insights derived
-// FROM the diagnostics (not a parallel computation), the unlinked bucket, and the
-// evidence payload. Legacy /api/strategy delegates here so there is no second
-// source of truth.
-// ─────────────────────────────────────────────────────────────────────────
 export type StrategyInsight = { kind: string; text: string };
 export type StrategyFrontDoor = {
   tracks: TrackDiagnostic[];
@@ -363,15 +278,11 @@ export type StrategyFrontDoor = {
   insights: StrategyInsight[];
   unlinked: { items: UnlinkedItem[]; counts: Record<string, number> };
   evidence: EvidencePayload;
-  // P5 — the single highest-priority active track with an open capability gap +
-  // its recommended move. Null when no active track has a gap. Read-only.
   learningGap: LearningGapSignal | null;
   staleRecommendations?: number;
   contextHash?: string;
 };
 
-// Cross-cutting insights READ OFF the diagnostics (single engine). Highest-signal
-// first, capped at 3, calm and never fabricated.
 export function deriveInsights(tracks: TrackDiagnostic[], activitySignal?: string, rejectedJobs?: Job[]): StrategyInsight[] {
   const out: StrategyInsight[] = [];
   const active = tracks.filter((t) => t.status === "active");
@@ -395,7 +306,6 @@ export function deriveInsights(tracks: TrackDiagnostic[], activitySignal?: strin
   if (proofTrack)
     out.push({ kind: "proof", text: `${proofTrack.name}: ${proofTrack.bottleneckLabel.toLowerCase()}. Only do this if it would genuinely help you learn, explain your fit, or build your brand.` });
 
-  // P5 — structural capability gap, surfaced calmly and ranked below the above.
   const learningTrack = active.find((t) => t.bottleneck === "learning" && t.learningGap);
   if (learningTrack && learningTrack.learningGap?.recommendedMove)
     out.push({ kind: "learning", text: `${learningTrack.name}: ${learningTrack.learningGap.recommendedMove}.` });
@@ -508,6 +418,14 @@ type TrackOwnershipContext = {
   liveProof: number;
   liveObjects: number;
 };
+
+type OwnershipFeedbackAdjustment = {
+  delta: number;
+  positive: number;
+  negative: number;
+};
+
+type OwnershipFeedbackModel = Map<string, OwnershipFeedbackAdjustment>;
 
 const UNLINKED_OBJECT_TYPE: Record<UnlinkedItem["entity"], StrategicObjectType> = {
   jobs: "job",
@@ -644,6 +562,46 @@ function trackMatchScore(track: CareerTrack, evidence: OwnershipEvidence): Owner
   return { score, objectScore, sourceScore };
 }
 
+function feedbackKey(objectType: StrategicObjectType, trackId: number) {
+  return `${objectType}:${trackId}`;
+}
+
+function addFeedbackAdjustment(model: OwnershipFeedbackModel, objectType: StrategicObjectType, trackId: number | null, amount: number) {
+  if (!trackId) return;
+  const key = feedbackKey(objectType, trackId);
+  const current = model.get(key) || { delta: 0, positive: 0, negative: 0 };
+  current.delta += amount;
+  if (amount > 0) current.positive += amount;
+  if (amount < 0) current.negative += Math.abs(amount);
+  model.set(key, current);
+}
+
+function buildOwnershipFeedbackModel(feedback: OwnershipFeedback[]): OwnershipFeedbackModel {
+  const model: OwnershipFeedbackModel = new Map();
+  for (const row of feedback) {
+    if (row.recommendedAction === "assign_to_track" && row.recommendedTrackId) {
+      if (row.chosenAction === "assign_to_track" && row.chosenTrackId && row.chosenTrackId !== row.recommendedTrackId) {
+        addFeedbackAdjustment(model, row.objectType, row.recommendedTrackId, -2);
+        addFeedbackAdjustment(model, row.objectType, row.chosenTrackId, 2);
+      } else if (row.chosenAction === "park" || row.chosenAction === "stop") {
+        addFeedbackAdjustment(model, row.objectType, row.recommendedTrackId, -2);
+      }
+    } else if (row.recommendedAction === "park" && row.chosenAction === "assign_to_track" && row.chosenTrackId) {
+      addFeedbackAdjustment(model, row.objectType, row.chosenTrackId, 2);
+    }
+  }
+  return model;
+}
+
+function feedbackAdjustmentForTrack(entity: UnlinkedItem["entity"], track: CareerTrack, feedbackModel: OwnershipFeedbackModel): { delta: number; note: string } {
+  const adjustment = feedbackModel.get(feedbackKey(UNLINKED_OBJECT_TYPE[entity], track.id));
+  if (!adjustment) return { delta: 0, note: "" };
+  const delta = Math.max(-2, Math.min(2, adjustment.delta));
+  if (delta > 0) return { delta, note: `previous cleanup corrections moved similar ${entity} toward ${track.name}` };
+  if (delta < 0) return { delta, note: `previous cleanup corrections moved similar ${entity} away from ${track.name}` };
+  return { delta: 0, note: "" };
+}
+
 function buildTrackOwnershipContexts(
   tracks: CareerTrack[],
   jobs: Job[],
@@ -714,6 +672,12 @@ function priorityForAssignment(entity: UnlinkedItem["entity"], track: CareerTrac
   };
 }
 
+function assignmentReason(params: { basis: string; trackName: string; direct: boolean; feedbackNote: string }) {
+  const verb = params.direct && !params.feedbackNote ? "directly matches" : "overlaps most with";
+  const learned = params.feedbackNote ? ` Prior cleanup feedback also points here: ${params.feedbackNote}.` : "";
+  return `The ${params.basis} ${verb} ${params.trackName}.${learned}`;
+}
+
 function parkedSuggestion(reason: string, nextAction = "Leave it parked; revisit only when a matching active direction exists."): OwnershipSuggestion {
   return {
     action: "park",
@@ -733,6 +697,7 @@ function suggestOwnership(
   evidence: OwnershipEvidence,
   tracks: CareerTrack[],
   trackContexts: Map<number, TrackOwnershipContext>,
+  feedbackModel: OwnershipFeedbackModel,
 ): OwnershipSuggestion {
   const canonicalStatus = normalized(status);
   if (entity === "contacts" && canonicalStatus && !["to contact", "messaged", "replied"].includes(canonicalStatus)) {
@@ -756,30 +721,39 @@ function suggestOwnership(
   }
 
   const ranked = tracks
-    .map((track) => ({ track, match: trackMatchScore(track, evidence) }))
+    .map((track) => {
+      const baseMatch = trackMatchScore(track, evidence);
+      const feedback = baseMatch.score > 0 ? feedbackAdjustmentForTrack(entity, track, feedbackModel) : { delta: 0, note: "" };
+      return {
+        track,
+        baseScore: baseMatch.score,
+        feedbackNote: feedback.delta > 0 ? feedback.note : "",
+        match: { ...baseMatch, score: Math.max(0, baseMatch.score + feedback.delta) },
+      };
+    })
     .sort((a, b) => b.match.score - a.match.score);
   const best = ranked[0];
   const second = ranked[1];
   const secondScore = second?.match.score || 0;
   const basis = best && best.match.sourceScore >= Math.max(2, best.match.objectScore) ? "saved source evidence" : "item context";
 
-  if (best && best.match.score >= 4 && best.match.score > secondScore) {
+  if (best && best.baseScore >= 2 && best.match.score >= 4 && best.match.score > secondScore) {
     return {
       action: "assign_to_track",
       trackId: best.track.id,
       trackName: best.track.name,
       confidence: "high",
-      reason: `The ${basis} directly matches ${best.track.name}.`,
+      reason: assignmentReason({ basis, trackName: best.track.name, direct: best.baseScore >= 4, feedbackNote: best.feedbackNote }),
       ...priorityForAssignment(entity, best.track, trackContexts.get(best.track.id)),
     };
   }
-  if (best && best.match.score >= 2 && best.match.score > secondScore) {
+  if (best && best.baseScore >= 1 && best.match.score >= 2 && best.match.score > secondScore) {
     return {
       action: "assign_to_track",
       trackId: best.track.id,
       trackName: best.track.name,
       confidence: "medium",
-      reason: `The ${basis} overlaps most with ${best.track.name}.`,
+      reason: assignmentReason({ basis, trackName: best.track.name, direct: false, feedbackNote: best.feedbackNote }),
       ...priorityForAssignment(entity, best.track, trackContexts.get(best.track.id)),
     };
   }
@@ -797,19 +771,20 @@ function withSuggestion(
   evidence: OwnershipEvidence,
   tracks: CareerTrack[],
   trackContexts: Map<number, TrackOwnershipContext>,
+  feedbackModel: OwnershipFeedbackModel,
 ): UnlinkedItem {
   return {
     ...item,
-    suggestion: suggestOwnership(item.entity, item.status, evidence, tracks, trackContexts),
+    suggestion: suggestOwnership(item.entity, item.status, evidence, tracks, trackContexts, feedbackModel),
   };
 }
 
-// Source items with no track link (trackId null/0) — orphans that should be resolved.
 export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; counts: Record<string, number> }> {
   const [jobs, learn, contacts, hustles, tracks] = await Promise.all([
     storage.getJobs(), storage.getLearn(), storage.getContacts(), storage.getHustles(), storage.getCareerTracks(),
   ]);
   const persistedOwnership = getPersistedOwnership();
+  const feedbackModel = buildOwnershipFeedbackModel(getOwnershipFeedback());
   const trackContexts = buildTrackOwnershipContexts(tracks, jobs, learn, contacts, hustles);
   const items: UnlinkedItem[] = [];
 
@@ -820,6 +795,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
         jobOwnershipEvidence(j),
         tracks,
         trackContexts,
+        feedbackModel,
       ));
     }
   }
@@ -830,6 +806,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
         learnOwnershipEvidence(l),
         tracks,
         trackContexts,
+        feedbackModel,
       ));
     }
   }
@@ -840,6 +817,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
         contactOwnershipEvidence(c),
         tracks,
         trackContexts,
+        feedbackModel,
       ));
     }
   }
@@ -850,6 +828,7 @@ export async function getUnlinkedItems(): Promise<{ items: UnlinkedItem[]; count
         hustleOwnershipEvidence(h),
         tracks,
         trackContexts,
+        feedbackModel,
       ));
     }
   }

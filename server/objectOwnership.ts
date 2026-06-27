@@ -20,12 +20,39 @@ export type StrategicObjectOwnership = {
   updatedAt: number | null;
 };
 
+export type OwnershipRecommendationSnapshot = {
+  action: OwnershipResolutionAction;
+  trackId?: number | null;
+  trackName?: string | null;
+  confidence?: OwnershipConfidence | string;
+  priority?: string;
+  reason?: string;
+  priorityReason?: string;
+  nextAction?: string;
+};
+
+export type OwnershipFeedback = {
+  id: number;
+  objectType: StrategicObjectType;
+  objectId: number;
+  objectTitle: string;
+  recommendedAction: OwnershipResolutionAction;
+  recommendedTrackId: number | null;
+  recommendedPriority: string;
+  recommendedConfidence: string;
+  chosenAction: OwnershipResolutionAction;
+  chosenTrackId: number | null;
+  reason: string;
+  createdAt: number;
+};
+
 export type ResolveStrategicObjectOwnershipInput = {
   objectType: StrategicObjectType;
   objectId: number;
   action: OwnershipResolutionAction;
   trackId?: number | null;
   reason?: string;
+  recommendation?: OwnershipRecommendationSnapshot | null;
 };
 
 export type ResolveStrategicObjectOwnershipResult = {
@@ -46,6 +73,21 @@ type PersistedOwnershipRow = {
   updated_at: number;
 };
 
+type OwnershipFeedbackRow = {
+  id: number;
+  object_type: StrategicObjectType;
+  object_id: number;
+  object_title: string;
+  recommended_action: OwnershipResolutionAction;
+  recommended_track_id: number | null;
+  recommended_priority: string;
+  recommended_confidence: string;
+  chosen_action: OwnershipResolutionAction;
+  chosen_track_id: number | null;
+  reason: string;
+  created_at: number;
+};
+
 const OWNERSHIP_DDL = `
 CREATE TABLE IF NOT EXISTS strategic_object_ownership (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +105,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_strategic_object_ownership_object
   ON strategic_object_ownership(object_type, object_id);
 CREATE INDEX IF NOT EXISTS idx_strategic_object_ownership_state
   ON strategic_object_ownership(ownership_state, track_id);
+CREATE TABLE IF NOT EXISTS ownership_resolution_feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  object_type TEXT NOT NULL,
+  object_id INTEGER NOT NULL,
+  object_title TEXT NOT NULL DEFAULT '',
+  recommended_action TEXT NOT NULL,
+  recommended_track_id INTEGER,
+  recommended_priority TEXT NOT NULL DEFAULT '',
+  recommended_confidence TEXT NOT NULL DEFAULT '',
+  chosen_action TEXT NOT NULL,
+  chosen_track_id INTEGER,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ownership_feedback_recommendation
+  ON ownership_resolution_feedback(object_type, recommended_action, recommended_track_id, chosen_action, chosen_track_id);
+CREATE INDEX IF NOT EXISTS idx_ownership_feedback_object
+  ON ownership_resolution_feedback(object_type, object_id);
 `;
 
 const STRATEGIC_OBJECT_TYPES = new Set<StrategicObjectType>(["task", "job", "learn", "contact", "hustle"]);
@@ -95,6 +155,23 @@ function resolutionActionFor(value: unknown): OwnershipResolutionAction {
   const action = compact(value) as OwnershipResolutionAction;
   if (OWNERSHIP_RESOLUTION_ACTIONS.has(action)) return action;
   throw new Error("Unsupported ownership resolution action");
+}
+
+function recommendationSnapshotFor(value: unknown): OwnershipRecommendationSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const action = compact(raw.action) as OwnershipResolutionAction;
+  if (!OWNERSHIP_RESOLUTION_ACTIONS.has(action)) return null;
+  return {
+    action,
+    trackId: numberOrNull(raw.trackId),
+    trackName: compact(raw.trackName),
+    confidence: compact(raw.confidence),
+    priority: compact(raw.priority),
+    reason: compact(raw.reason).slice(0, 500),
+    priorityReason: compact(raw.priorityReason).slice(0, 500),
+    nextAction: compact(raw.nextAction).slice(0, 500),
+  };
 }
 
 function numberOrNull(value: unknown): number | null {
@@ -259,6 +336,23 @@ function rowToOwnership(row: PersistedOwnershipRow): StrategicObjectOwnership {
   };
 }
 
+function rowToFeedback(row: OwnershipFeedbackRow): OwnershipFeedback {
+  return {
+    id: Number(row.id),
+    objectType: row.object_type,
+    objectId: Number(row.object_id),
+    objectTitle: compact(row.object_title),
+    recommendedAction: row.recommended_action,
+    recommendedTrackId: row.recommended_track_id == null ? null : Number(row.recommended_track_id),
+    recommendedPriority: compact(row.recommended_priority),
+    recommendedConfidence: compact(row.recommended_confidence),
+    chosenAction: row.chosen_action,
+    chosenTrackId: row.chosen_track_id == null ? null : Number(row.chosen_track_id),
+    reason: compact(row.reason),
+    createdAt: Number(row.created_at || 0),
+  };
+}
+
 function persistManualOwnership(input: {
   objectType: StrategicObjectType;
   objectId: number;
@@ -302,6 +396,56 @@ function persistManualOwnership(input: {
     persisted: true,
     updatedAt: now,
   };
+}
+
+function titleForObject(objectType: StrategicObjectType, object: StrategicObject): string {
+  if (objectType === "task") return compact((object as Task).title);
+  if (objectType === "job") return compact((object as Job).title,);
+  if (objectType === "learn") return compact((object as Learn).title);
+  if (objectType === "contact") return compact((object as Contact).who || (object as Contact).name);
+  return compact((object as Hustle).title);
+}
+
+function recommendationWasOverridden(
+  recommendation: OwnershipRecommendationSnapshot | null,
+  action: OwnershipResolutionAction,
+  chosenTrackId: number | null,
+): recommendation is OwnershipRecommendationSnapshot {
+  if (!recommendation) return false;
+  if (recommendation.action !== action) return true;
+  if (action === "assign_to_track") return numberOrNull(recommendation.trackId) !== chosenTrackId;
+  return false;
+}
+
+function recordOwnershipFeedback(input: {
+  objectType: StrategicObjectType;
+  objectId: number;
+  objectTitle: string;
+  recommendation: OwnershipRecommendationSnapshot;
+  action: OwnershipResolutionAction;
+  chosenTrackId: number | null;
+  reason: string;
+}) {
+  ensureObjectOwnershipSchema();
+  rawDb.prepare(`
+    INSERT INTO ownership_resolution_feedback (
+      object_type, object_id, object_title, recommended_action, recommended_track_id,
+      recommended_priority, recommended_confidence, chosen_action, chosen_track_id,
+      reason, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.objectType,
+    input.objectId,
+    input.objectTitle,
+    input.recommendation.action,
+    numberOrNull(input.recommendation.trackId),
+    compact(input.recommendation.priority),
+    compact(input.recommendation.confidence),
+    input.action,
+    input.chosenTrackId,
+    compact(input.reason),
+    Date.now(),
+  );
 }
 
 async function readStrategicObject(objectType: StrategicObjectType, objectId: number): Promise<StrategicObject | null> {
@@ -375,6 +519,12 @@ export function getPersistedOwnership(): Map<string, StrategicObjectOwnership> {
   ensureObjectOwnershipSchema();
   const rows = rawDb.prepare("SELECT * FROM strategic_object_ownership").all() as PersistedOwnershipRow[];
   return new Map(rows.map((row) => [ownershipKey(row.object_type, Number(row.object_id)), rowToOwnership(row)]));
+}
+
+export function getOwnershipFeedback(): OwnershipFeedback[] {
+  ensureObjectOwnershipSchema();
+  const rows = rawDb.prepare("SELECT * FROM ownership_resolution_feedback ORDER BY created_at DESC, id DESC").all() as OwnershipFeedbackRow[];
+  return rows.map(rowToFeedback);
 }
 
 function mergePersisted(derived: StrategicObjectOwnership, persisted: Map<string, StrategicObjectOwnership>) {
@@ -473,6 +623,7 @@ export async function resolveStrategicObjectOwnership(
   const objectType = objectTypeFor(input.objectType);
   const objectId = positiveInteger(input.objectId, "objectId");
   const action = resolutionActionFor(input.action);
+  const recommendation = recommendationSnapshotFor(input.recommendation);
   let object: StrategicObject | null = null;
   let ownershipState: OwnershipState = "unclassified_capture";
   let trackId: number | null = null;
@@ -503,12 +654,24 @@ export async function resolveStrategicObjectOwnership(
   }
 
   const ownership = persistManualOwnership({ objectType, objectId, ownershipState, trackId, reason, confidence });
+  const recommendationOverridden = recommendationWasOverridden(recommendation, action, trackId);
+  if (recommendationOverridden) {
+    recordOwnershipFeedback({
+      objectType,
+      objectId,
+      objectTitle: titleForObject(objectType, object),
+      recommendation,
+      action,
+      chosenTrackId: trackId,
+      reason,
+    });
+  }
   await storage.logActivity({
     eventType: "strategic_object_ownership_resolved",
     sourceType: objectType,
     sourceId: objectId,
     taskId: objectType === "task" ? objectId : undefined,
-    metadata: JSON.stringify({ action, ownershipState, trackId, reason }),
+    metadata: JSON.stringify({ action, ownershipState, trackId, reason, recommendationOverridden }),
   } as any);
   return {
     action,

@@ -15,8 +15,9 @@ export function ensureCurriculumSchema(): void {
   // it idempotently (sqlite has no ADD COLUMN IF NOT EXISTS).
   try {
     rawDb.exec("ALTER TABLE curriculum_days ADD COLUMN day_plan_item_id INTEGER");
-  } catch {
-    // Column already exists — expected on every boot after the first.
+  } catch (err) {
+    const message = String((err as Error)?.message || err);
+    if (!/duplicate column name/i.test(message)) throw err;
   }
   curriculumSchemaReady = true;
 }

@@ -165,9 +165,11 @@ export type PersistedDay = {
 export type PersistedModule = {
   id: number;
   weekNumber: number;
+  phaseTitle: string;
   title: string;
   focus: string;
   objective: string;
+  rationale: string;
   sequence: number;
   sources: PersistedSource[];
   days: PersistedDay[];

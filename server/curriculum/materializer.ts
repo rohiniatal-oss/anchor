@@ -30,6 +30,22 @@ export class CurriculumDayError extends Error {
   code = "curriculum_day_not_found";
 }
 
+function curriculumIdForDay(dayId: number): number {
+  ensureCurriculumSchema();
+  const row = rawDb.prepare("SELECT curriculum_id FROM curriculum_days WHERE id = ?")
+    .get(dayId) as { curriculum_id: number } | undefined;
+  if (!row) throw new CurriculumDayError(`Curriculum day ${dayId} not found`);
+  return row.curriculum_id;
+}
+
+export function completeDayById(dayId: number, note = ""): PersistedCurriculum {
+  return completeDay(curriculumIdForDay(dayId), dayId, note);
+}
+
+export function skipDayById(dayId: number, reason = ""): PersistedCurriculum {
+  return skipDay(curriculumIdForDay(dayId), dayId, reason);
+}
+
 export function completeDay(curriculumId: number, dayId: number, note = ""): PersistedCurriculum {
   ensureCurriculumSchema();
   const day = getDay(curriculumId, dayId);

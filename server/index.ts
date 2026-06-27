@@ -27,6 +27,7 @@ import { registerTaskBreakdownRoutes } from "./taskBreakdownRoutes";
 import { registerProfileRoutes } from "./profileRoutes";
 import { registerNetworkStrategyRoutes } from "./networkStrategyRoutes";
 import { registerOptionalBasicAuth, registerPersistenceAdminRoutes, startOptionalSqliteBackups, warnIfUsingDefaultDbPath } from "./guardrails";
+import { registerOpenAIDiagRoute } from "./openaiDiag";
 import { installReadPurityGuard } from "./requestMutationGuard";
 import { registerTaskLifecycleRoutes } from "./taskLifecycleRoutes";
 import { registerTrustBoundaryRoutes } from "./trustBoundaryRoutes";
@@ -131,6 +132,7 @@ app.use((req, res, next) => {
   // interceptor is registered before the legacy router so career-direction
   // research can never reach the old domain-brief materializer.
   registerPersistenceAdminRoutes(app);
+  registerOpenAIDiagRoute(app);
   registerTrackResearchRoutes(app);
   registerTrackResearchCoverageRoutes(app);
   registerTrackResearchDevelopmentRoutes(app);

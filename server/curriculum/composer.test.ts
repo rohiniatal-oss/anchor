@@ -19,6 +19,14 @@ const TRACK = {
 const INPUT: ComposeInput = { trackId: 1, weeks: 2, hoursPerDay: 5, capstoneShape: "interview_ready" };
 
 function cannedCurriculum(): ComposedCurriculum {
+  const days = Array.from({ length: 10 }, (_, index) => ({
+    title: `Day ${index + 1}`,
+    focus: "law",
+    activity: `Study topic ${index + 1}`,
+    doneWhen: "Can summarise",
+    hours: 5,
+    artifacts: [],
+  }));
   return {
     theme: "AI strategy, governance, and policy",
     summary: "A two-week sprint to interview-readiness.",
@@ -32,7 +40,7 @@ function cannedCurriculum(): ComposedCurriculum {
         focus: "Vocabulary",
         objective: "Speak the language",
         sources: [{ tier: "spine", title: "EU AI Act", author: "EU", url: "", why: "core text" }],
-        days: [{ title: "Read the Act", focus: "law", activity: "Read titles I-III", doneWhen: "Can summarise", hours: 5 }],
+        days,
       },
     ],
   };
@@ -56,6 +64,23 @@ test("composeCurriculum throws on null model output (no usable JSON)", async () 
 
 test("composeCurriculum throws on schema-invalid model output", async () => {
   const mock = async () => ({ theme: "x", weeks: 2, hoursPerDay: 5 }); // missing capstone + modules
+  await assert.rejects(
+    () => composeCurriculum(TRACK, INPUT, mock as any),
+    (err: unknown) => err instanceof CurriculumComposeError && (err as CurriculumComposeError).code === "invalid_model_output",
+  );
+});
+
+test("composeCurriculum throws on schema-valid output that violates the request contract", async () => {
+  const invalid = cannedCurriculum();
+  invalid.modules[0].days[0].artifacts = [{
+    techniqueKey: "not_a_real_technique",
+    title: "Artifact 1: Invalid taxonomy",
+    prompt: "Use a non-canonical technique key.",
+    wordTarget: 300,
+    saveAs: "bad-technique.md",
+  }];
+  const mock = async () => invalid;
+
   await assert.rejects(
     () => composeCurriculum(TRACK, INPUT, mock as any),
     (err: unknown) => err instanceof CurriculumComposeError && (err as CurriculumComposeError).code === "invalid_model_output",

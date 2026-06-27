@@ -36,8 +36,8 @@ type CurriculumRow = {
   created_at: number; updated_at: number;
 };
 type ModuleRow = {
-  id: number; curriculum_id: number; week_number: number; title: string; focus: string;
-  objective: string; sequence: number;
+  id: number; curriculum_id: number; week_number: number; phase_title: string; title: string; focus: string;
+  objective: string; rationale: string; sequence: number;
 };
 type DayRow = {
   id: number; curriculum_id: number; module_id: number; day_index: number; planned_date: string;
@@ -77,8 +77,8 @@ export function persistComposedCurriculum(
     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertModule = rawDb.prepare(`
-    INSERT INTO curriculum_modules (curriculum_id, week_number, title, focus, objective, sequence, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO curriculum_modules (curriculum_id, week_number, phase_title, title, focus, objective, rationale, sequence, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const insertDay = rawDb.prepare(`
     INSERT INTO curriculum_days (curriculum_id, module_id, day_index, planned_date, title, focus, activity, done_when, hours, morning_json, afternoon_json, status, sequence, created_at)
@@ -118,7 +118,7 @@ export function persistComposedCurriculum(
     let artifactNumber = 0; // 1-indexed across the whole curriculum
     composed.modules.forEach((mod, modSeq) => {
       const moduleId = Number(insertModule.run(
-        curriculumId, mod.weekNumber, mod.title, mod.focus || "", mod.objective || "", modSeq, now,
+        curriculumId, mod.weekNumber, mod.phaseTitle || "", mod.title, mod.focus || "", mod.objective || "", mod.rationale || "", modSeq, now,
       ).lastInsertRowid);
 
       (mod.sources || []).forEach((src, srcSeq) => {
@@ -246,8 +246,8 @@ export function getCurriculum(id: number): PersistedCurriculum | null {
   }
 
   const hydratedModules: PersistedModule[] = modules.map((m) => ({
-    id: m.id, weekNumber: m.week_number, title: m.title, focus: m.focus, objective: m.objective,
-    sequence: m.sequence, sources: sourcesByModule.get(m.id) || [], days: daysByModule.get(m.id) || [],
+    id: m.id, weekNumber: m.week_number, phaseTitle: m.phase_title || "", title: m.title, focus: m.focus, objective: m.objective,
+    rationale: m.rationale || "", sequence: m.sequence, sources: sourcesByModule.get(m.id) || [], days: daysByModule.get(m.id) || [],
   }));
 
   return {

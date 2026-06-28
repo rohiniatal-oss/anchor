@@ -42,10 +42,6 @@ function sourceStatusFor(sprint: CompetenceDevelopmentSprint, experienceIndex: n
   return `competence_sprint:${sprint.targetCompetencyKey}:experience_${experienceIndex + 1}:task_${taskIndex + 1}`;
 }
 
-function sourceStatusPrefix(sprint: CompetenceDevelopmentSprint) {
-  return `competence_sprint:${sprint.targetCompetencyKey}:`;
-}
-
 function sourceNoteFor(sprint: CompetenceDevelopmentSprint, experience: SprintExperience, taskBlueprint: SprintTaskBlueprint) {
   return JSON.stringify({
     sprint: {
@@ -78,15 +74,13 @@ function sourceNoteFor(sprint: CompetenceDevelopmentSprint, experience: SprintEx
   });
 }
 
-async function findExistingTask(trackId: number, sprint: CompetenceDevelopmentSprint) {
+async function findExistingTask(trackId: number) {
   const tasks = await storage.getTasks();
-  const prefix = sourceStatusPrefix(sprint);
   return tasks.find((task) =>
     !task.done
     && task.sourceType === "competence_development_sprint"
     && task.relatedTrackId === trackId
-    && task.sourceStepType === "first_experience_task"
-    && task.sourceStatus.startsWith(prefix),
+    && task.sourceStatus.startsWith("competence_sprint:"),
   ) || null;
 }
 
@@ -112,7 +106,7 @@ export async function approveCompetenceSprintFirstTask(input: {
   }
 
   const sourceStatus = sourceStatusFor(sprint, 0, 0);
-  const existing = await findExistingTask(trackId, sprint);
+  const existing = await findExistingTask(trackId);
   if (existing) {
     return {
       approved: true,

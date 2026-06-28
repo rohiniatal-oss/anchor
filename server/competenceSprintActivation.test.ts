@@ -79,6 +79,8 @@ test("approving a competence development sprint creates exactly one first task w
   assert.match(sourceNote.experience.title, /Apply one AI Governance framework/i);
   assert.ok(sourceNote.experience.assessmentRubric.weak);
   assert.equal(sourceNote.taskBlueprint.createsLiveTask, false);
+  assert.equal(sourceNote.taskBlueprint.completionContract.contract, "capture");
+  assert.equal(sourceNote.taskBlueprint.completionContract.requiresArtifact, false);
   assert.equal(sourceNote.experience.taskBlueprints.length, 3);
 });
 
@@ -124,6 +126,28 @@ test("approving a missing or inactive sprint returns a clear not found response"
   assert.equal((await h.storage.getTasks()).length, 0);
 });
 
+test("completion outcome assesses a no-output capture task and unlocks the next blueprint", async () => {
+  const { task } = await approveFirstSprintTask("inbox");
+  await h.storage.updateTask(task.id, { done: true, status: "done" } as any);
+
+  const response = await api(h.base, "POST", `/api/competence/development-sprints/tasks/${task.id}/assess`, {
+    outcome: "captured",
+    note: "Selected one case and one framework.",
+    list: "inbox",
+  });
+  const sprintTasks = (await h.storage.getTasks()).filter((item) => item.sourceType === "competence_development_sprint");
+
+  assert.equal(response.status, 201);
+  assert.equal(response.json.rating, null);
+  assert.equal(response.json.outcome, "captured");
+  assert.equal(response.json.contractSatisfied, true);
+  assert.equal(response.json.completionContract.contract, "capture");
+  assert.equal(response.json.completionContract.requiresArtifact, false);
+  assert.equal(response.json.nextTaskCreated, 1);
+  assert.match(response.json.nextTask.sourceStatus, /task_2/);
+  assert.equal(sprintTasks.length, 2);
+});
+
 test("adequate assessment records evidence and unlocks only the next sprint blueprint", async () => {
   const { task } = await approveFirstSprintTask("inbox");
   await h.storage.updateTask(task.id, { done: true, status: "done" } as any);
@@ -139,6 +163,7 @@ test("adequate assessment records evidence and unlocks only the next sprint blue
   assert.equal(response.status, 201);
   assert.equal(response.json.assessed, true);
   assert.equal(response.json.rating, "adequate");
+  assert.equal(response.json.contractSatisfied, true);
   assert.equal(response.json.nextTaskCreated, 1);
   assert.equal(response.json.reusedNextTask, false);
   assert.match(response.json.nextTask.sourceStatus, /task_2/);
@@ -164,10 +189,28 @@ test("weak assessment records evidence but does not unlock the next sprint task"
   const sprintTasks = (await h.storage.getTasks()).filter((item) => item.sourceType === "competence_development_sprint");
 
   assert.equal(response.status, 200);
+  assert.equal(response.json.contractSatisfied, false);
   assert.equal(response.json.nextTaskCreated, 0);
   assert.equal(response.json.nextTask, null);
   assert.match(response.json.nextAction, /Do not unlock/i);
   assert.equal(sprintTasks.length, 1);
+});
+
+test("contract stop outcome records evidence but does not unlock the next sprint task", async () => {
+  const { task } = await approveFirstSprintTask("inbox");
+  await h.storage.updateTask(task.id, { done: true, status: "done" } as any);
+
+  const response = await api(h.base, "POST", `/api/competence/development-sprints/tasks/${task.id}/assess`, {
+    outcome: "stop",
+    note: "This input is not useful enough to continue.",
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.json.rating, null);
+  assert.equal(response.json.outcome, "stop");
+  assert.equal(response.json.contractSatisfied, false);
+  assert.equal(response.json.nextTaskCreated, 0);
+  assert.equal((await h.storage.getTasks()).filter((item) => item.sourceType === "competence_development_sprint").length, 1);
 });
 
 test("assessment before completion is blocked", async () => {

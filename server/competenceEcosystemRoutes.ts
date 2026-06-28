@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { buildCompetenceDevelopmentSprintsFromStorage } from "./competenceDevelopmentSprint";
 import { buildCompetenceEcosystemsFromStorage } from "./competenceEcosystem";
 
 /**
@@ -9,5 +10,9 @@ import { buildCompetenceEcosystemsFromStorage } from "./competenceEcosystem";
 export function registerCompetenceEcosystemRoutes(app: Express) {
   app.get("/api/competence/ecosystems", async (_req, res) => {
     res.json(await buildCompetenceEcosystemsFromStorage());
+  });
+
+  app.get("/api/competence/development-sprints", async (_req, res) => {
+    res.json(await buildCompetenceDevelopmentSprintsFromStorage());
   });
 }

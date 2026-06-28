@@ -62,6 +62,59 @@ test("when knowledge exists but practice is absent the next slice moves into app
   assert.match(ecosystem.programSlice?.experiences[0].title || "", /Apply one AI Governance framework/i);
 });
 
+test("role competency profile adds target standards evidence gaps and estimate confidence", () => {
+  const payload = buildCompetenceEcosystems({
+    ...emptyInput,
+    tracks: [track()],
+    learn: [
+      { id: 1, title: "AI governance primer", learnStatus: "open", done: false, relatedTrackId: 1, requiredOutput: "terrain map", type: "resource" } as any,
+    ],
+  });
+  const ecosystem = payload.ecosystems[0];
+  const profile = ecosystem.roleProfile;
+  const domain = profile.requiredCompetencies.find((item) => item.key === "domain_judgement")!;
+
+  assert.equal(profile.profileType, "ai_governance");
+  assert.match(profile.targetStandard, /AI governance strategy roles/i);
+  assert.equal(domain.importance, "critical");
+  assert.equal(domain.targetLevel, "strong");
+  assert.equal(domain.currentLevel, "none", "knowledge without practice or reflection should not yet count as domain judgement maturity");
+  assert.equal(domain.confidence, "low", "missing practice/reflection should keep estimate confidence low");
+  assert.match(domain.evidenceGap, /Practice|Reflection|Missing/i);
+  assert.ok(domain.evidenceRequired.includes("applied case note"));
+  assert.ok(domain.subdomains.includes("risk frameworks"));
+  assert.match(ecosystem.programSlice?.thesis || "", /domain judgement|practice/i);
+  assert.equal(ecosystem.programSlice?.targetCompetencyKey, "domain_judgement");
+});
+
+test("passive learning does not count as visible evidence but output evidence does", () => {
+  const passive = buildCompetenceEcosystems({
+    ...emptyInput,
+    tracks: [track()],
+    learn: [
+      { id: 1, title: "AI governance reading list", learnStatus: "open", done: false, relatedTrackId: 1, type: "resource" } as any,
+      { id: 2, title: "Responsible AI podcast", learnStatus: "open", done: false, relatedTrackId: 1, type: "podcast" } as any,
+    ],
+  }).ecosystems[0];
+  const applied = buildCompetenceEcosystems({
+    ...emptyInput,
+    tracks: [track()],
+    learn: [
+      { id: 3, title: "AI governance case analysis", learnStatus: "done", done: true, relatedTrackId: 1, type: "practice", outputTitle: "AI governance case note", outputEvidenceUrl: "https://example.com/case-note" } as any,
+    ],
+  }).ecosystems[0];
+
+  const passiveKnowledge = passive.contributors.find((item) => item.key === "knowledge")!;
+  const passiveEvidence = passive.contributors.find((item) => item.key === "evidence")!;
+  const appliedEvidence = applied.contributors.find((item) => item.key === "evidence")!;
+
+  assert.notEqual(passiveKnowledge.state, "empty");
+  assert.equal(passiveEvidence.state, "empty", "reading alone should not create market evidence");
+  assert.notEqual(appliedEvidence.state, "empty");
+  assert.ok(appliedEvidence.evidenceScore > passiveEvidence.evidenceScore);
+  assert.equal(appliedEvidence.evidenceSignals[0].evidenceType, "published");
+});
+
 test("professional tracks infer professional operating capability instead of domain-only learning", () => {
   const payload = buildCompetenceEcosystems({
     ...emptyInput,
@@ -77,9 +130,13 @@ test("professional tracks infer professional operating capability instead of dom
   });
 
   const professional = payload.ecosystems[0].competenceAreas.find((area) => area.kind === "professional");
+  const professionalRequirement = payload.ecosystems[0].roleProfile.requiredCompetencies.find((item) => item.key === "professional_operating_capability");
   assert.ok(professional);
   assert.match(professional.name, /executive communication|decision support/i);
   assert.deepEqual(professional.requiredContributors, ["practice", "feedback", "experience", "reflection"]);
+  assert.equal(professionalRequirement?.importance, "critical");
+  assert.equal(professionalRequirement?.targetLevel, "strong");
+  assert.match(professionalRequirement?.subdomains.join(" ") || "", /executive communication|decision support|prioritisation/i);
 });
 
 test("evidence feedback and network signals change contributor states", () => {
@@ -102,6 +159,7 @@ test("evidence feedback and network signals change contributor states", () => {
   assert.notEqual(contributors.get("feedback")?.state, "empty");
   assert.notEqual(contributors.get("evidence")?.state, "empty");
   assert.notEqual(contributors.get("reflection")?.state, "empty");
+  assert.ok((contributors.get("feedback")?.evidenceScore || 0) >= 4, "replied practitioner contact should carry more weight than a saved name");
 });
 
 test("inactive tracks are excluded from the active competence snapshot", () => {

@@ -95,7 +95,8 @@ function contributorForTarget(ecosystem: CompetenceEcosystem, target: RequiredCo
 function developmentObjective(target: RequiredCompetency, focus: ContributorKey): DevelopmentObjective {
   if (target.kind === "evidence" || focus === "evidence") return "create_signal";
   if (target.kind === "experience" || focus === "network") return target.confidence === "low" ? "reduce_uncertainty" : "test_fit";
-  if (target.kind === "professional") return "build_competence";
+  if (["practice", "feedback", "reflection"].includes(focus)) return "build_competence";
+  if (target.kind === "professional" || target.kind === "domain") return "build_competence";
   if (target.confidence === "low" && ["none", "emerging"].includes(target.currentLevel)) return "reduce_uncertainty";
   return "build_competence";
 }

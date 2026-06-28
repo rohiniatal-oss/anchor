@@ -29,6 +29,21 @@ async function createAiGovernanceTrack() {
   } as any);
 }
 
+async function approveFirstSprintTask(list: "inbox" | "today" = "inbox") {
+  const track = await createAiGovernanceTrack();
+  await h.storage.createLearn({
+    title: "AI governance primer",
+    learnStatus: "open",
+    done: false,
+    relatedTrackId: track.id,
+    requiredOutput: "terrain map",
+    type: "resource",
+  } as any);
+  const response = await api(h.base, "POST", `/api/competence/development-sprints/${track.id}/approve`, { list });
+  assert.ok([200, 201].includes(response.status), JSON.stringify(response.json));
+  return { track, response, task: response.json.task };
+}
+
 test("approving a competence development sprint creates exactly one first task with sprint context", async () => {
   const track = await createAiGovernanceTrack();
   await h.storage.createLearn({
@@ -64,6 +79,7 @@ test("approving a competence development sprint creates exactly one first task w
   assert.match(sourceNote.experience.title, /Apply one AI Governance framework/i);
   assert.ok(sourceNote.experience.assessmentRubric.weak);
   assert.equal(sourceNote.taskBlueprint.createsLiveTask, false);
+  assert.equal(sourceNote.experience.taskBlueprints.length, 3);
 });
 
 test("approving the same sprint twice reuses the existing first task", async () => {
@@ -106,4 +122,98 @@ test("approving a missing or inactive sprint returns a clear not found response"
   assert.equal(response.status, 404);
   assert.equal(response.json.code, "sprint_not_found");
   assert.equal((await h.storage.getTasks()).length, 0);
+});
+
+test("adequate assessment records evidence and unlocks only the next sprint blueprint", async () => {
+  const { task } = await approveFirstSprintTask("inbox");
+  await h.storage.updateTask(task.id, { done: true, status: "done" } as any);
+
+  const response = await api(h.base, "POST", `/api/competence/development-sprints/tasks/${task.id}/assess`, {
+    rating: "adequate",
+    note: "Applied the framework and found the key uncertainty.",
+    list: "inbox",
+  });
+  const sprintTasks = (await h.storage.getTasks()).filter((item) => item.sourceType === "competence_development_sprint");
+  const wins = await h.storage.getWins();
+
+  assert.equal(response.status, 201);
+  assert.equal(response.json.assessed, true);
+  assert.equal(response.json.rating, "adequate");
+  assert.equal(response.json.nextTaskCreated, 1);
+  assert.equal(response.json.reusedNextTask, false);
+  assert.match(response.json.nextTask.sourceStatus, /task_2/);
+  assert.equal(sprintTasks.length, 2, "assessment should unlock one next task, not the whole sprint");
+  assert.equal(sprintTasks.filter((item) => !item.done).length, 1);
+  assert.match(wins[0].takeaway, /adequate/i);
+  assert.match(wins[0].takeaway, /key uncertainty/i);
+
+  const assessed = (await h.storage.getTasks()).find((item) => item.id === task.id)!;
+  assert.match(assessed.sourceStatus, /assessed_adequate/);
+  const sourceNote = JSON.parse(assessed.sourceNote || "{}");
+  assert.equal(sourceNote.assessment.rating, "adequate");
+});
+
+test("weak assessment records evidence but does not unlock the next sprint task", async () => {
+  const { task } = await approveFirstSprintTask("inbox");
+  await h.storage.updateTask(task.id, { done: true, status: "done" } as any);
+
+  const response = await api(h.base, "POST", `/api/competence/development-sprints/tasks/${task.id}/assess`, {
+    rating: "weak",
+    note: "Only summarized the source.",
+  });
+  const sprintTasks = (await h.storage.getTasks()).filter((item) => item.sourceType === "competence_development_sprint");
+
+  assert.equal(response.status, 200);
+  assert.equal(response.json.nextTaskCreated, 0);
+  assert.equal(response.json.nextTask, null);
+  assert.match(response.json.nextAction, /Do not unlock/i);
+  assert.equal(sprintTasks.length, 1);
+});
+
+test("assessment before completion is blocked", async () => {
+  const { task } = await approveFirstSprintTask("inbox");
+
+  const response = await api(h.base, "POST", `/api/competence/development-sprints/tasks/${task.id}/assess`, {
+    rating: "adequate",
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.json.code, "task_not_complete");
+  assert.equal((await h.storage.getTasks()).filter((item) => item.sourceType === "competence_development_sprint").length, 1);
+});
+
+test("repeated adequate assessment reuses the unlocked next task", async () => {
+  const { task } = await approveFirstSprintTask("inbox");
+  await h.storage.updateTask(task.id, { done: true, status: "done" } as any);
+
+  const first = await api(h.base, "POST", `/api/competence/development-sprints/tasks/${task.id}/assess`, { rating: "adequate" });
+  const second = await api(h.base, "POST", `/api/competence/development-sprints/tasks/${task.id}/assess`, { rating: "adequate" });
+  const sprintTasks = (await h.storage.getTasks()).filter((item) => item.sourceType === "competence_development_sprint");
+
+  assert.equal(first.status, 201);
+  assert.equal(second.status, 200);
+  assert.equal(second.json.nextTaskCreated, 0);
+  assert.equal(second.json.reusedNextTask, true);
+  assert.equal(second.json.nextTask.id, first.json.nextTask.id);
+  assert.equal(sprintTasks.length, 2);
+});
+
+test("background sprint assessment is blocked before evidence or next-task creation", async () => {
+  const { task } = await approveFirstSprintTask("inbox");
+  await h.storage.updateTask(task.id, { done: true, status: "done" } as any);
+
+  const response = await fetch(`${h.base}/api/competence/development-sprints/tasks/${task.id}/assess`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Anchor-User-Intent": "background",
+    },
+    body: JSON.stringify({ rating: "adequate" }),
+  });
+  const json = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(json.code, "explicit_user_intent_required");
+  assert.equal((await h.storage.getWins()).length, 0);
+  assert.equal((await h.storage.getTasks()).filter((item) => item.sourceType === "competence_development_sprint").length, 1);
 });

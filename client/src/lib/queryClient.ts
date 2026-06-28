@@ -10,6 +10,7 @@ const PROTECTED_MUTATIONS = [
   /^\/api\/capture\/\d+\/discovery-options\/activate$/,
   /^\/api\/ownership\/strategic-objects\/resolve$/,
   /^\/api\/competence\/development-sprints\/\d+\/approve$/,
+  /^\/api\/competence\/development-sprints\/tasks\/\d+\/assess$/,
   /^\/api\/projects\/\d+\/activate-next$/,
   /^\/api\/projects\/\d+\/milestones\/\d+\/complete$/,
 ];

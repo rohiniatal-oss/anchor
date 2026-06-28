@@ -78,7 +78,7 @@ test("role competency profile adds target standards evidence gaps and estimate c
   assert.match(profile.targetStandard, /AI governance strategy roles/i);
   assert.equal(domain.importance, "critical");
   assert.equal(domain.targetLevel, "strong");
-  assert.equal(domain.currentLevel, "emerging");
+  assert.equal(domain.currentLevel, "none", "knowledge without practice or reflection should not yet count as domain judgement maturity");
   assert.equal(domain.confidence, "low", "missing practice/reflection should keep estimate confidence low");
   assert.match(domain.evidenceGap, /Practice|Reflection|Missing/i);
   assert.ok(domain.evidenceRequired.includes("applied case note"));

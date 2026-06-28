@@ -66,7 +66,31 @@ test("each sprint experience has an assessment rubric and task blueprints that d
     assert.ok(experience.assessmentRubric.evidenceRequired.length >= 1);
     assert.equal(experience.taskBlueprints.length, 3);
     assert.equal(experience.taskBlueprints.every((task) => task.createsLiveTask === false), true);
+    for (const task of experience.taskBlueprints) {
+      assert.ok(task.completionContract.intent);
+      assert.ok(task.completionContract.contract);
+      assert.ok(task.completionContract.residueLevel);
+      assert.ok(task.completionContract.completionPrompt);
+      assert.ok(task.completionContract.afterActionOptions.length >= 1);
+    }
   }
+});
+
+test("sprint task contracts separate low-residue preparation from rubric-assessed output", () => {
+  const sprint = buildCompetenceDevelopmentSprints(ecosystemsFor({ tracks: [track()] })).sprints[0];
+  const [prepare, produce, assess] = sprint.experiences[0].taskBlueprints;
+
+  assert.equal(prepare.completionContract.contract, "capture");
+  assert.equal(prepare.completionContract.residueLevel, "decision");
+  assert.equal(prepare.completionContract.requiresArtifact, false);
+  assert.equal(prepare.completionContract.assessmentMode, "choice");
+
+  assert.equal(produce.completionContract.contract, "application");
+  assert.equal(produce.completionContract.residueLevel, "note");
+  assert.equal(produce.completionContract.assessmentMode, "rubric");
+
+  assert.equal(assess.completionContract.contract, "reflection");
+  assert.equal(assess.completionContract.residueLevel, "rubric_score");
 });
 
 test("evidence gaps generate create-signal sprints when competence exists but proof is weak", () => {

@@ -57,6 +57,7 @@ export function registerCompetenceEcosystemRoutes(app: Express) {
       const result = await assessCompetenceSprintTask({
         taskId: Number(req.params.taskId),
         rating: req.body?.rating,
+        outcome: req.body?.outcome,
         note: String(req.body?.note || ""),
         activateNext: req.body?.activateNext !== false,
         list: listFor(req.body?.list),

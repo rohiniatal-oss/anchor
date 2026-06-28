@@ -69,6 +69,7 @@ function sourceNoteFor(sprint: CompetenceDevelopmentSprint, experience: SprintEx
       outputs: experience.outputs,
       whyThis: experience.whyThis,
       assessmentRubric: experience.assessmentRubric,
+      taskBlueprints: experience.taskBlueprints,
     },
     taskBlueprint,
   });

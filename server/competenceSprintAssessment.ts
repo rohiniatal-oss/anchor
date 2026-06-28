@@ -1,12 +1,27 @@
 import type { Task, Win } from "@shared/schema";
-import type { SprintTaskBlueprint } from "./competenceDevelopmentSprint";
+import type { CompletionContract, SprintTaskBlueprint } from "./competenceDevelopmentSprint";
 import { storage } from "./storage";
 
 export type CompetenceSprintAssessmentRating = "weak" | "adequate" | "strong";
+export type CompetenceSprintAssessmentOutcome =
+  | "completed"
+  | "captured"
+  | "understood"
+  | "continued"
+  | "useful_signal"
+  | "clearer"
+  | "saved_for_later"
+  | "needs_more_input"
+  | "needs_feedback"
+  | "not_useful"
+  | "stop";
 
 export type CompetenceSprintAssessmentResult = {
   assessed: true;
-  rating: CompetenceSprintAssessmentRating;
+  rating: CompetenceSprintAssessmentRating | null;
+  outcome: CompetenceSprintAssessmentOutcome | string;
+  contractSatisfied: boolean;
+  completionContract: CompletionContract | null;
   task: Task;
   win: Win;
   nextTaskCreated: 0 | 1;
@@ -44,10 +59,20 @@ function parseSourceNote(task: Task): Record<string, any> {
   }
 }
 
-function ratingFor(value: unknown): CompetenceSprintAssessmentRating {
-  const rating = String(value || "").toLowerCase();
-  if (["weak", "adequate", "strong"].includes(rating)) return rating as CompetenceSprintAssessmentRating;
+function ratingFor(value: unknown): CompetenceSprintAssessmentRating | null {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (["weak", "adequate", "strong"].includes(raw)) return raw as CompetenceSprintAssessmentRating;
   throw new CompetenceSprintAssessmentError(400, "bad_assessment_rating", "Assessment rating must be weak, adequate, or strong.");
+}
+
+function outcomeFor(value: unknown, contract: CompletionContract | null): CompetenceSprintAssessmentOutcome | string {
+  const raw = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+  if (raw) return raw;
+  if (contract?.assessmentMode === "choice" && contract.afterActionOptions.includes("captured")) return "captured";
+  if (contract?.assessmentMode === "self_rating") return "understood";
+  if (contract?.assessmentMode === "binary") return "completed";
+  return "completed";
 }
 
 function winCategoryFor(task: Task) {
@@ -67,6 +92,17 @@ function taskBlueprints(note: Record<string, any>): SprintTaskBlueprint[] {
   return Array.isArray(items) ? items.filter((item) => item?.title && item?.doneWhen) : [];
 }
 
+function currentBlueprint(note: Record<string, any>): SprintTaskBlueprint | null {
+  const blueprint = note?.taskBlueprint;
+  return blueprint && blueprint.title && blueprint.doneWhen ? blueprint as SprintTaskBlueprint : null;
+}
+
+function completionContractFor(note: Record<string, any>): CompletionContract | null {
+  const contract = currentBlueprint(note)?.completionContract;
+  if (!contract || typeof contract !== "object") return null;
+  return contract as CompletionContract;
+}
+
 function sourceStatusFor(note: Record<string, any>, nextIndex: number) {
   const target = compact(note?.sprint?.targetCompetencyKey || "competency", 120).replace(/[^a-zA-Z0-9_:-]+/g, "_");
   return `competence_sprint:${target}:experience_1:task_${nextIndex + 1}`;
@@ -81,6 +117,15 @@ function sourceNoteForNext(note: Record<string, any>, nextBlueprint: SprintTaskB
   });
 }
 
+function assessmentLabel(rating: CompetenceSprintAssessmentRating | null, outcome: string) {
+  return rating || outcome || "completed";
+}
+
+function contractSatisfied(rating: CompetenceSprintAssessmentRating | null, outcome: string) {
+  if (rating) return rating !== "weak";
+  return !["stop", "not_useful", "needs_more_input", "not_done", "incomplete"].includes(outcome);
+}
+
 async function currentTask(taskId: number): Promise<Task> {
   const task = (await storage.getTasks()).find((item) => item.id === taskId);
   if (!task) throw new CompetenceSprintAssessmentError(404, "task_not_found", "Task not found.");
@@ -93,8 +138,8 @@ async function currentTask(taskId: number): Promise<Task> {
   return task;
 }
 
-async function upsertAssessmentWin(task: Task, rating: CompetenceSprintAssessmentRating, note: string): Promise<Win> {
-  const text = `Competence sprint assessment: ${rating}${note ? `. ${note}` : ""}`;
+async function upsertAssessmentWin(task: Task, label: string, note: string): Promise<Win> {
+  const text = `Competence sprint assessment: ${label}${note ? `. ${note}` : ""}`;
   const existing = (await storage.getWins()).find((win) => win.sourceEntityType === "task" && win.sourceEntityId === task.id);
   if (existing) {
     return (await storage.updateWin(existing.id, {
@@ -169,7 +214,8 @@ async function createNextTask(input: {
 
 export async function assessCompetenceSprintTask(input: {
   taskId: number;
-  rating: unknown;
+  rating?: unknown;
+  outcome?: unknown;
   note?: string;
   activateNext?: boolean;
   list?: "inbox" | "today";
@@ -178,11 +224,21 @@ export async function assessCompetenceSprintTask(input: {
   if (!Number.isFinite(taskId) || taskId <= 0) {
     throw new CompetenceSprintAssessmentError(400, "bad_task_id", "A valid sprint task is required.");
   }
-  const rating = ratingFor(input.rating);
   const completed = await currentTask(taskId);
   const source = parseSourceNote(completed);
+  const completionContract = completionContractFor(source);
+  const rating = ratingFor(input.rating);
+  if (!rating && completionContract?.assessmentMode === "rubric") {
+    throw new CompetenceSprintAssessmentError(400, "bad_assessment_rating", "Rubric-assessed tasks need a weak, adequate, or strong rating.");
+  }
+  const outcome = outcomeFor(input.outcome, completionContract);
+  const label = assessmentLabel(rating, outcome);
+  const satisfied = contractSatisfied(rating, outcome);
   const assessment = {
     rating,
+    outcome,
+    contractSatisfied: satisfied,
+    completionContract,
     note: compact(input.note || "", 1000),
     assessedAt: Date.now(),
     assessedTaskId: completed.id,
@@ -190,14 +246,14 @@ export async function assessCompetenceSprintTask(input: {
   };
 
   const task = (await storage.updateTask(completed.id, {
-    sourceStatus: `${completed.sourceStatus}:assessed_${rating}`,
+    sourceStatus: `${completed.sourceStatus}:assessed_${label}`,
     sourceNote: JSON.stringify({
       ...source,
       assessment,
       assessmentHistory: [...(Array.isArray(source.assessmentHistory) ? source.assessmentHistory : []), assessment],
     }),
   } as any)) as Task;
-  const win = await upsertAssessmentWin(task, rating, assessment.note);
+  const win = await upsertAssessmentWin(task, label, assessment.note);
 
   let nextTask: Task | null = null;
   let nextTaskCreated: 0 | 1 = 0;
@@ -205,7 +261,7 @@ export async function assessCompetenceSprintTask(input: {
   const blueprints = taskBlueprints(source);
   const nextIndex = taskIndex(completed) + 1;
   const nextBlueprint = blueprints[nextIndex];
-  if (rating !== "weak" && input.activateNext !== false && nextBlueprint) {
+  if (satisfied && input.activateNext !== false && nextBlueprint) {
     const result = await createNextTask({ current: task, note: source, assessment, nextBlueprint, nextIndex, list: input.list });
     nextTask = result.task;
     nextTaskCreated = result.created ? 1 : 0;
@@ -219,7 +275,10 @@ export async function assessCompetenceSprintTask(input: {
     taskId: task.id,
     metadata: JSON.stringify({
       rating,
+      outcome,
+      contractSatisfied: satisfied,
       note: assessment.note,
+      completionContract: completionContract?.contract || "legacy_rubric",
       nextTaskId: nextTask?.id ?? null,
       nextTaskCreated,
       targetCompetencyKey: source?.sprint?.targetCompetencyKey || "",
@@ -227,11 +286,11 @@ export async function assessCompetenceSprintTask(input: {
     }),
   } as any);
 
-  const nextAction = rating === "weak"
-    ? "Do not unlock the next sprint task yet. Repeat or narrow the experience using the rubric."
+  const nextAction = !satisfied
+    ? "Do not unlock the next sprint task yet. Repeat, narrow, or stop according to the completion contract."
     : nextTask
       ? "Continue with the next unlocked sprint task, then assess it before progressing."
       : "Assessment recorded. No further task blueprint exists for this experience.";
 
-  return { assessed: true, rating, task, win, nextTaskCreated, nextTask, reusedNextTask, nextAction };
+  return { assessed: true, rating, outcome, contractSatisfied: satisfied, completionContract, task, win, nextTaskCreated, nextTask, reusedNextTask, nextAction };
 }

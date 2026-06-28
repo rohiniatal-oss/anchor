@@ -10,6 +10,20 @@ import {
 } from "./competenceEcosystem";
 
 export type DevelopmentObjective = "build_competence" | "reduce_uncertainty" | "create_signal" | "prepare_for_opportunity" | "test_fit";
+export type TaskIntent = "learn" | "explore" | "decide" | "practice" | "produce" | "maintain" | "recover" | "connect" | "apply" | "verify" | "assess";
+export type CompletionContractKind = "exposure" | "capture" | "comprehension" | "application" | "decision" | "practice" | "deliverable" | "conversation" | "maintenance" | "recovery" | "reflection";
+export type ResidueLevel = "none" | "marker" | "one_line" | "question" | "decision" | "note" | "artifact" | "external_signal" | "rubric_score";
+export type AssessmentMode = "none" | "binary" | "choice" | "self_rating" | "rubric";
+
+export type CompletionContract = {
+  intent: TaskIntent;
+  contract: CompletionContractKind;
+  residueLevel: ResidueLevel;
+  requiresArtifact: boolean;
+  assessmentMode: AssessmentMode;
+  completionPrompt: string;
+  afterActionOptions: string[];
+};
 
 export type AssessmentRubric = {
   weak: string;
@@ -26,6 +40,7 @@ export type SprintTaskBlueprint = {
   estimatedMinutes: number;
   sourceExperienceTitle: string;
   createsLiveTask: false;
+  completionContract: CompletionContract;
 };
 
 export type SprintExperience = DevelopmentExperience & {
@@ -177,6 +192,66 @@ function rubricFor(experience: DevelopmentExperience, target: RequiredCompetency
   };
 }
 
+function completionContract(input: CompletionContract): CompletionContract {
+  return input;
+}
+
+function primaryCompletionContract(experience: DevelopmentExperience): CompletionContract {
+  if (experience.contributor === "knowledge") {
+    return completionContract({
+      intent: "learn",
+      contract: "comprehension",
+      residueLevel: "one_line",
+      requiresArtifact: false,
+      assessmentMode: "self_rating",
+      completionPrompt: "Can you explain the main idea simply enough to decide whether to continue?",
+      afterActionOptions: ["continue", "stop", "save_for_later", "turn_into_application"],
+    });
+  }
+  if (experience.contributor === "network" || experience.contributor === "feedback") {
+    return completionContract({
+      intent: experience.contributor === "network" ? "connect" : "verify",
+      contract: "conversation",
+      residueLevel: "external_signal",
+      requiresArtifact: false,
+      assessmentMode: "choice",
+      completionPrompt: "What signal did the conversation or feedback create?",
+      afterActionOptions: ["useful_signal", "needs_follow_up", "not_useful", "revise_ask"],
+    });
+  }
+  if (experience.contributor === "reflection") {
+    return completionContract({
+      intent: "assess",
+      contract: "reflection",
+      residueLevel: "note",
+      requiresArtifact: false,
+      assessmentMode: "self_rating",
+      completionPrompt: "What changed in your judgement, confidence, or uncertainty?",
+      afterActionOptions: ["clearer", "still_unclear", "needs_feedback", "turn_into_output"],
+    });
+  }
+  if (experience.contributor === "evidence") {
+    return completionContract({
+      intent: "produce",
+      contract: "deliverable",
+      residueLevel: "artifact",
+      requiresArtifact: true,
+      assessmentMode: "rubric",
+      completionPrompt: "Does the artifact demonstrate a specific claim, judgement, or reusable proof point?",
+      afterActionOptions: ["share", "revise", "save_as_proof", "get_feedback"],
+    });
+  }
+  return completionContract({
+    intent: "apply",
+    contract: "application",
+    residueLevel: "note",
+    requiresArtifact: false,
+    assessmentMode: "rubric",
+    completionPrompt: "Did you apply the idea to a real or simulated context and make a judgement?",
+    afterActionOptions: ["adequate", "needs_feedback", "repeat_narrower", "turn_into_proof"],
+  });
+}
+
 function taskBlueprintsFor(experience: DevelopmentExperience): SprintTaskBlueprint[] {
   const output = outputName(experience);
   return [
@@ -186,6 +261,15 @@ function taskBlueprintsFor(experience: DevelopmentExperience): SprintTaskBluepri
       estimatedMinutes: 25,
       sourceExperienceTitle: experience.title,
       createsLiveTask: false,
+      completionContract: completionContract({
+        intent: "decide",
+        contract: "capture",
+        residueLevel: "decision",
+        requiresArtifact: false,
+        assessmentMode: "choice",
+        completionPrompt: "What did you select, and is it enough to proceed?",
+        afterActionOptions: ["captured", "needs_more_input", "stop", "save_for_later"],
+      }),
     },
     {
       title: `Produce the ${output}`,
@@ -193,13 +277,23 @@ function taskBlueprintsFor(experience: DevelopmentExperience): SprintTaskBluepri
       estimatedMinutes: 60,
       sourceExperienceTitle: experience.title,
       createsLiveTask: false,
+      completionContract: primaryCompletionContract(experience),
     },
     {
       title: `Assess the ${output}`,
-      doneWhen: "Weak, adequate, or strong is recorded using the sprint rubric, with one next implication.",
+      doneWhen: "The output is assessed using the right contract, with one next implication recorded.",
       estimatedMinutes: 20,
       sourceExperienceTitle: experience.title,
       createsLiveTask: false,
+      completionContract: completionContract({
+        intent: "assess",
+        contract: "reflection",
+        residueLevel: "rubric_score",
+        requiresArtifact: false,
+        assessmentMode: "rubric",
+        completionPrompt: "Was the output weak, adequate, or strong against the sprint rubric?",
+        afterActionOptions: ["weak", "adequate", "strong", "repeat_narrower"],
+      }),
     },
   ];
 }

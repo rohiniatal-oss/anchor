@@ -53,13 +53,39 @@ export type AnchorBrainInput = {
 
 const DEADLINE_HORIZON_DAYS = 5;
 const EXISTING_TASK_EXECUTION_BONUS = 6;
+const EXACT_REUSE_BONUS = 8;
 
 function compact(value: unknown, max = 240) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
 }
 
+function normalized(value: unknown) {
+  return compact(value, 500).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 function activeTasks(tasks: Task[]) {
   return tasks.filter((task) => !task.done && ["today", "this_week", "later", "inbox"].includes(task.list));
+}
+
+function taskFirstStep(task: Task) {
+  try {
+    const parsed = JSON.parse(task.steps || "[]");
+    const step = Array.isArray(parsed) ? parsed.find((item) => item && typeof item.text === "string" && !item.done) : null;
+    if (step?.text) return compact(step.text, 240);
+  } catch {}
+  return task.doneWhen || task.minimumOutcome || `Open ${task.title} and do the smallest concrete step.`;
+}
+
+function materiallyMatchesMove(task: Task, move: { title: string; lane: string; trackId?: number }) {
+  const taskText = normalized([task.title, task.category, task.doneWhen, task.minimumOutcome].join(" "));
+  const moveTitle = normalized(move.title);
+  if (!taskText || !moveTitle) return false;
+  if (taskText === moveTitle || taskText.includes(moveTitle) || moveTitle.includes(taskText)) return true;
+  if (move.trackId && task.relatedTrackId === move.trackId && task.category === move.lane) return true;
+
+  const moveWords = moveTitle.split(" ").filter((word) => word.length > 4);
+  const overlap = moveWords.filter((word) => taskText.includes(word)).length;
+  return overlap >= Math.min(3, Math.max(2, moveWords.length));
 }
 
 function urgencySignals(input: AnchorBrainInput): BrainSignal[] {
@@ -194,6 +220,7 @@ function buildCandidates(input: AnchorBrainInput, signals: BrainSignal[]): Brain
   const spine = buildTrackSpine(input);
   const assessed = assessExistingTasks(input.tasks, { title: spine.bestMove.title, lane: spine.bestMove.lane });
   const taskById = new Map(input.tasks.map((task) => [task.id, task]));
+  const spineMove = spineCandidate(input);
   const existing = assessed
     .filter((item) => item.action === "use" || item.action === "shrink")
     .slice(0, 5)
@@ -201,18 +228,32 @@ function buildCandidates(input: AnchorBrainInput, signals: BrainSignal[]): Brain
       const task = taskById.get(item.taskId);
       if (!task) return null;
       const signalBoost = signals.filter((signal) => signal.sourceType === "task" && signal.sourceId === task.id).reduce((sum, signal) => sum + signal.weight, 0);
-      return taskCandidate(task, item.score + EXISTING_TASK_EXECUTION_BONUS + signalBoost, item.reason, item.firstStep);
+      const reuseBoost = materiallyMatchesMove(task, spine.bestMove) ? EXACT_REUSE_BONUS : 0;
+      const reason = reuseBoost
+        ? `${item.reason} Reusing the existing task avoids creating a duplicate abstract recommendation.`
+        : item.reason;
+      return taskCandidate(task, item.score + EXISTING_TASK_EXECUTION_BONUS + signalBoost + reuseBoost, reason, item.firstStep);
     })
     .filter((item): item is BrainCandidate => Boolean(item));
 
-  const spineMove = spineCandidate(input);
+  const existingIds = new Set(existing.map((candidate) => candidate.sourceId));
+  const directReuse = activeTasks(input.tasks)
+    .filter((task) => !existingIds.has(task.id) && materiallyMatchesMove(task, spine.bestMove))
+    .slice(0, 3)
+    .map((task) => taskCandidate(
+      task,
+      spineMove.score + EXACT_REUSE_BONUS,
+      "This existing task materially matches the strategic spine move, so reusing it avoids duplicate planning.",
+      taskFirstStep(task),
+    ));
+
   const urgentTaskIds = new Set(signals.filter((signal) => signal.sourceType === "task").map((signal) => signal.sourceId));
   const urgentExisting = activeTasks(input.tasks)
-    .filter((task) => urgentTaskIds.has(task.id) && !existing.some((candidate) => candidate.sourceId === task.id))
+    .filter((task) => urgentTaskIds.has(task.id) && !existing.some((candidate) => candidate.sourceId === task.id) && !directReuse.some((candidate) => candidate.sourceId === task.id))
     .slice(0, 3)
     .map((task) => taskCandidate(task, 6, "Urgent existing work is visible in the current system state.", task.doneWhen || "Do the smallest unblock step."));
 
-  return [...existing, spineMove, ...urgentExisting]
+  return [...existing, ...directReuse, spineMove, ...urgentExisting]
     .sort((a, b) => b.score - a.score || a.title.localeCompare(b.title))
     .slice(0, 6);
 }

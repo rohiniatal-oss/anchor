@@ -11,9 +11,12 @@ import {
   type Task,
   type Win,
 } from "@shared/schema";
+import { completionContractForTask, type CompletionContract } from "@shared/completionContracts";
 import { db } from "./storage";
 
 export type TaskLifecycleAction = "start" | "complete" | "reopen" | "skip" | "park" | "block" | "move_later";
+
+export type TaskCompletionRating = "weak" | "adequate" | "strong";
 
 export type TaskLifecycleInput = {
   taskId: number;
@@ -23,6 +26,9 @@ export type TaskLifecycleInput = {
   reason?: string;
   idempotencyKey?: string;
   patch?: Record<string, unknown>;
+  completionOutcome?: string;
+  completionRating?: TaskCompletionRating | string;
+  completionNote?: string;
 };
 
 export type TaskLifecycleResult = {
@@ -35,6 +41,10 @@ export type TaskLifecycleResult = {
   completedMilestoneId: number | null;
   nextMilestoneHint: string | null;
   idempotent: boolean;
+  completionContract?: CompletionContract | null;
+  completionOutcome?: string;
+  completionRating?: string;
+  completionNote?: string;
 };
 
 export class TaskLifecycleError extends Error {
@@ -68,6 +78,22 @@ function parseMetadata(raw: string | null | undefined): Record<string, any> {
 
 function normalizeKey(value: unknown): string {
   return String(value || "").trim().slice(0, 160);
+}
+
+function normalizeCompletionValue(value: unknown, max = 120): string {
+  return String(value || "").trim().replace(/\s+/g, "_").toLowerCase().slice(0, max);
+}
+
+function normalizeCompletionNote(value: unknown): string {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 1000);
+}
+
+function completionInfo(task: Task, input: TaskLifecycleInput) {
+  const contract = completionContractForTask(task);
+  const rating = normalizeCompletionValue(input.completionRating);
+  const outcome = normalizeCompletionValue(input.completionOutcome);
+  const note = normalizeCompletionNote(input.completionNote);
+  return { contract, rating, outcome, note };
 }
 
 function winCategoryForTask(task: Pick<Task, "category" | "sourceType" | "title">): string {
@@ -104,6 +130,7 @@ function idempotencyAlreadyApplied(tx: any, taskId: number, action: TaskLifecycl
 }
 
 function recordActivity(tx: any, task: Task, action: TaskLifecycleAction, now: number, input: TaskLifecycleInput) {
+  const completion = action === "complete" ? completionInfo(task, input) : null;
   tx.insert(activityLog).values({
     eventType: activityEvent(action),
     sourceType: task.sourceType || "task",
@@ -114,6 +141,15 @@ function recordActivity(tx: any, task: Task, action: TaskLifecycleAction, now: n
       lifecycleAction: action,
       idempotencyKey: normalizeKey(input.idempotencyKey),
       reason: String(input.reason || "").slice(0, 300),
+      ...(completion ? {
+        completionContract: completion.contract.contract,
+        completionResidueLevel: completion.contract.residueLevel,
+        completionAssessmentMode: completion.contract.assessmentMode,
+        completionRequiresArtifact: completion.contract.requiresArtifact,
+        completionOutcome: completion.outcome,
+        completionRating: completion.rating,
+        completionNote: completion.note,
+      } : {}),
     }),
     timestamp: now,
   }).run();
@@ -211,7 +247,9 @@ function lifecycleResult(
   win: Win | null,
   milestone: { completedMilestoneId: number | null; nextMilestoneHint: string | null },
   idempotent: boolean,
+  input?: TaskLifecycleInput,
 ): TaskLifecycleResult {
+  const completion = action === "complete" ? completionInfo(task, input || { taskId: task.id }) : null;
   return {
     ok: true,
     action,
@@ -222,6 +260,12 @@ function lifecycleResult(
     completedMilestoneId: milestone.completedMilestoneId,
     nextMilestoneHint: milestone.nextMilestoneHint,
     idempotent,
+    ...(completion ? {
+      completionContract: completion.contract,
+      completionOutcome: completion.outcome,
+      completionRating: completion.rating,
+      completionNote: completion.note,
+    } : {}),
   };
 }
 
@@ -261,7 +305,7 @@ export function completeTask(input: TaskLifecycleInput): TaskLifecycleResult {
     const key = normalizeKey(input.idempotencyKey);
     const existingWin = findTaskWin(tx, before.id);
     if (idempotencyAlreadyApplied(tx, before.id, "complete", key) || before.done || before.status === "done") {
-      return lifecycleResult("complete", before, existingWin, { completedMilestoneId: before.sourceStepType === "recommendation_milestone" ? before.sourceStepId : null, nextMilestoneHint: null }, true);
+      return lifecycleResult("complete", before, existingWin, { completedMilestoneId: before.sourceStepType === "recommendation_milestone" ? before.sourceStepId : null, nextMilestoneHint: null }, true, input);
     }
 
     const now = Date.now();
@@ -276,6 +320,13 @@ export function completeTask(input: TaskLifecycleInput): TaskLifecycleResult {
     updateSourceOnComplete(tx, updated);
     const milestone = completeLinkedMilestone(tx, updated, now);
     const winCategory = winCategoryForTask(updated);
+    const completion = completionInfo(updated, input);
+    const completionLabel = completion.rating || completion.outcome;
+    const completionTakeaway = [
+      completion.contract.contract ? `Contract: ${completion.contract.contract}` : "",
+      completionLabel ? `Result: ${completionLabel}` : "",
+      completion.note,
+    ].filter(Boolean).join(". ");
     const win = existingWin || tx.insert(wins).values({
       text: updated.title,
       kind: "planned",
@@ -283,11 +334,14 @@ export function completeTask(input: TaskLifecycleInput): TaskLifecycleResult {
       trackId: updated.relatedTrackId ?? null,
       sourceEntityType: "task",
       sourceEntityId: updated.id,
-      takeaway: "",
+      takeaway: completionTakeaway,
       createdAt: now,
     }).returning().get() as Win;
+    if (existingWin && completionTakeaway) {
+      tx.update(wins).set({ takeaway: completionTakeaway }).where(eq(wins.id, existingWin.id)).run();
+    }
     recordActivity(tx, updated, "complete", now, input);
-    return lifecycleResult("complete", updated, win, milestone, false);
+    return lifecycleResult("complete", updated, win, milestone, false, input);
   });
 }
 

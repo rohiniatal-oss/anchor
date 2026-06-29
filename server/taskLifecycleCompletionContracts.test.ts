@@ -91,7 +91,13 @@ test("application completion records rubric rating without forcing a proof artif
 });
 
 test("completion without user-supplied outcome still returns the inferred contract", async () => {
-  const task = await createTask({ title: "Draft AI governance memo", category: "substack", doneWhen: "Draft exists" });
+  const task = await createTask({
+    title: "Publish proof artifact",
+    category: "hustle",
+    sourceType: "hustle",
+    doneWhen: "The artifact exists",
+    minimumOutcome: "The proof artifact exists",
+  });
 
   const result = completeTask({ taskId: task.id, day: new Date().toISOString().slice(0, 10) });
 

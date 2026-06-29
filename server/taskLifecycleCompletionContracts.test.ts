@@ -1,6 +1,7 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { api, makeHarness, type Harness } from "./spine.harness";
+import { makeHarness, type Harness } from "./spine.harness";
+import { completeTask } from "./taskLifecycleService";
 
 let h: Harness;
 
@@ -43,17 +44,18 @@ async function createTask(overrides: Record<string, unknown> = {}) {
 test("task completion returns inferred contract and records outcome in win takeaway", async () => {
   const task = await createTask();
 
-  const response = await api(h.base, "POST", `/api/tasks/${task.id}/complete`, {
-    outcome: "continue",
-    note: "Useful background; keep reading tomorrow.",
+  const result = completeTask({
+    taskId: task.id,
+    day: new Date().toISOString().slice(0, 10),
+    completionOutcome: "continue",
+    completionNote: "Useful background; keep reading tomorrow.",
   });
 
-  assert.equal(response.status, 200);
-  assert.equal(response.json.ok, true);
-  assert.equal(response.json.completionContract.contract, "exposure");
-  assert.equal(response.json.completionContract.requiresArtifact, false);
-  assert.equal(response.json.completionOutcome, "continue");
-  assert.equal(response.json.completionNote, "Useful background; keep reading tomorrow.");
+  assert.equal(result.ok, true);
+  assert.equal(result.completionContract?.contract, "exposure");
+  assert.equal(result.completionContract?.requiresArtifact, false);
+  assert.equal(result.completionOutcome, "continue");
+  assert.equal(result.completionNote, "Useful background; keep reading tomorrow.");
 
   const wins = await h.storage.getWins();
   assert.equal(wins.length, 1);
@@ -69,16 +71,17 @@ test("application completion records rubric rating without forcing a proof artif
     minimumOutcome: "A short case note exists",
   });
 
-  const response = await api(h.base, "POST", `/api/tasks/${task.id}/complete`, {
-    rating: "adequate",
-    note: "Applied the framework and identified the key uncertainty.",
+  const result = completeTask({
+    taskId: task.id,
+    day: new Date().toISOString().slice(0, 10),
+    completionRating: "adequate",
+    completionNote: "Applied the framework and identified the key uncertainty.",
   });
 
-  assert.equal(response.status, 200);
-  assert.equal(response.json.completionContract.contract, "application");
-  assert.equal(response.json.completionContract.assessmentMode, "rubric");
-  assert.equal(response.json.completionContract.requiresArtifact, false);
-  assert.equal(response.json.completionRating, "adequate");
+  assert.equal(result.completionContract?.contract, "application");
+  assert.equal(result.completionContract?.assessmentMode, "rubric");
+  assert.equal(result.completionContract?.requiresArtifact, false);
+  assert.equal(result.completionRating, "adequate");
 
   const activity = h.sqlite.prepare("SELECT metadata FROM activity_log WHERE task_id = ? AND event_type = 'completed'").get(task.id) as any;
   const metadata = JSON.parse(activity.metadata);
@@ -90,11 +93,10 @@ test("application completion records rubric rating without forcing a proof artif
 test("completion without user-supplied outcome still returns the inferred contract", async () => {
   const task = await createTask({ title: "Draft AI governance memo", category: "substack", doneWhen: "Draft exists" });
 
-  const response = await api(h.base, "POST", `/api/tasks/${task.id}/complete`, {});
+  const result = completeTask({ taskId: task.id, day: new Date().toISOString().slice(0, 10) });
 
-  assert.equal(response.status, 200);
-  assert.equal(response.json.completionContract.contract, "deliverable");
-  assert.equal(response.json.completionContract.requiresArtifact, true);
-  assert.equal(response.json.completionOutcome, "");
-  assert.equal(response.json.completionRating, "");
+  assert.equal(result.completionContract?.contract, "deliverable");
+  assert.equal(result.completionContract?.requiresArtifact, true);
+  assert.equal(result.completionOutcome, "");
+  assert.equal(result.completionRating, "");
 });

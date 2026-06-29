@@ -19,6 +19,7 @@ import { registerDiscoveryRoutes } from "./discovery";
 import { registerGoalStateRoutes } from "./goalState";
 import { registerExplorationQueueRoutes } from "./explorationQueue";
 import { registerAnchorTodayRoutes } from "./anchorToday";
+import { registerAnchorBrainRoutes } from "./anchorBrain";
 import { registerStrategyBuilderRoutes } from "./strategyBuilderRoutes";
 import { registerMarketabilityRoutes } from "./marketabilityRoutes";
 import { registerCompetenceEcosystemRoutes } from "./competenceEcosystemRoutes";
@@ -133,6 +134,10 @@ app.use((req, res, next) => {
   // Completion contracts are read-only and app-wide. They tell Today/Learn what
   // kind of completion a task needs without creating another workflow engine.
   registerCompletionContractRoutes(app);
+
+  // The Anchor Brain is the read-only decision layer above Today. It compares
+  // strategic spine moves, existing tasks, urgency and completion contracts.
+  registerAnchorBrainRoutes(app);
 
   // These boundaries are intentionally first. Existing URLs remain compatible,
   // while reads become pure and all task transitions share one lifecycle.

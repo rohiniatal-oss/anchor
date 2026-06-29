@@ -22,8 +22,7 @@ const TABLES = [
   "discovery_sessions", "recommendations", "recommendation_subdivisions", "recommendation_milestones",
   "day_plans", "day_plan_items", "entity_links", "activity_log",
   "strategic_object_ownership", "ownership_resolution_feedback",
-  "curricula", "curriculum_modules", "curriculum_days", "curriculum_sources",
-  "curriculum_capstone", "curriculum_events", "curriculum_artifacts",
+  "upskill_plan_items", "upskill_checkins",
 ];
 
 // The suite shares one initialized harness/DB per process. Per-test isolation

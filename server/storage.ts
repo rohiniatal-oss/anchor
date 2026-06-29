@@ -30,7 +30,7 @@ import Database from "better-sqlite3";
 import { eq, asc, desc, inArray, and, or, inArray as inArr } from "drizzle-orm";
 import { templateForArchetype } from "@shared/jobTemplates";
 import { templateForProofAsset } from "@shared/proofAssetTemplates";
-import { SPINE_DDL, SPINE_MIGRATIONS } from "./spine.schema.sql";
+import { SPINE_DDL, SPINE_MIGRATIONS, CURRICULUM_DROP_DDL } from "./spine.schema.sql";
 
 // Re-export EntityLink type for use in goalState and planItemEnrichment.
 export type EntityLink = typeof entityLinks.$inferSelect;
@@ -61,6 +61,9 @@ function openStorageRuntime(dbPath: string): StorageRuntime {
   for (const migration of SPINE_MIGRATIONS) {
     try { sqlite.exec(migration); } catch { /* already applied */ }
   }
+  // One-shot teardown of PR #144's curriculum tables on existing deployed DBs.
+  // No-op on fresh DBs. Wrapped so a drop failure never blocks startup.
+  try { sqlite.exec(CURRICULUM_DROP_DDL); } catch { /* nothing to drop */ }
   return {
     db: drizzle(sqlite),
     rawDb: sqlite,

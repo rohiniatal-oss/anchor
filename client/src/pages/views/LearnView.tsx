@@ -544,7 +544,6 @@ function LearnCard({ l, tracks, tasks, onToggle, onToggleActive, onRemove }: { l
                 type="button"
                 onClick={() => setShowCurriculum((value) => !value)}
                 className="flex w-full items-center justify-between gap-2 text-left"
-                data-testid={`button-toggle-learn-curriculum-${l.id}`}
               >
                 <div className="min-w-0">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Theme plan</p>

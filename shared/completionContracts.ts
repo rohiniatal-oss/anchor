@@ -143,7 +143,7 @@ export function completionContractForLearn(item: Pick<Learn, "title" | "type" | 
   if (item.outputEvidenceUrl || item.outputTitle || item.outputStatus === "published" || item.proofIntent) return COMPLETION_CONTRACTS.deliverable;
   if (item.requiredOutput || /memo|brief|artifact|publish|post|portfolio|case note|write|draft|produce/.test(text)) return COMPLETION_CONTRACTS.deliverable;
   if (item.type === "practice" || /apply|practice|case|exercise|simulate|compare|framework|model/.test(text)) return COMPLETION_CONTRACTS.application;
-  if (/understand|explain|concept|primer|foundation|basics|course/.test(text)) return COMPLETION_CONTRACTS.comprehension;
+  if (/understand|explain|concept|foundation|course/.test(text)) return COMPLETION_CONTRACTS.comprehension;
   return COMPLETION_CONTRACTS.exposure;
 }
 
@@ -157,7 +157,7 @@ export function completionContractForTask(task: Pick<Task, "title" | "category" 
   if (/decide|choose|select|pick|triage|prioriti[sz]e|capture|save|shortlist/.test(text)) return COMPLETION_CONTRACTS.capture;
   if (task.category === "learning" || task.sourceType === "learn" || /read|learn|study|course|book|podcast|article|watch|listen/.test(text)) {
     if (/apply|case|framework|compare|practice|memo|brief|synthesis|write/.test(text)) return COMPLETION_CONTRACTS.application;
-    if (/understand|explain|concept|primer|foundation|basics/.test(text)) return COMPLETION_CONTRACTS.comprehension;
+    if (/understand|explain|concept|foundation/.test(text)) return COMPLETION_CONTRACTS.comprehension;
     return COMPLETION_CONTRACTS.exposure;
   }
   if (["substack", "hustle", "afterline"].includes(task.category) || task.sourceType === "hustle" || /publish|artifact|proof|portfolio|memo|brief|draft|write|post|build|create/.test(text)) return COMPLETION_CONTRACTS.deliverable;

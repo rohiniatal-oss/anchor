@@ -81,6 +81,7 @@ function materiallyMatchesMove(task: Task, move: { title: string; lane: string; 
   const moveTitle = normalized(move.title);
   if (!taskText || !moveTitle) return false;
   if (taskText === moveTitle || taskText.includes(moveTitle) || moveTitle.includes(taskText)) return true;
+  if (move.trackId && task.relatedTrackId === move.trackId && task.list === "today" && task.readiness !== "blocked") return true;
   if (move.trackId && task.relatedTrackId === move.trackId && task.category === move.lane) return true;
 
   const moveWords = moveTitle.split(" ").filter((word) => word.length > 4);

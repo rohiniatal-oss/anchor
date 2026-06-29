@@ -22,6 +22,7 @@ import { registerAnchorTodayRoutes } from "./anchorToday";
 import { registerStrategyBuilderRoutes } from "./strategyBuilderRoutes";
 import { registerMarketabilityRoutes } from "./marketabilityRoutes";
 import { registerCompetenceEcosystemRoutes } from "./competenceEcosystemRoutes";
+import { registerCompletionContractRoutes } from "./completionContractRoutes";
 import { registerTrackSpineRoutes } from "./trackSpineRoutes";
 import { registerBrainSpineRoutes } from "./brainSpineRoutes";
 import { registerTaskBreakdownRoutes } from "./taskBreakdownRoutes";
@@ -128,6 +129,10 @@ app.use((req, res, next) => {
   // before task generation so future planners can reason from capability systems,
   // not isolated learning tasks.
   registerCompetenceEcosystemRoutes(app);
+
+  // Completion contracts are read-only and app-wide. They tell Today/Learn what
+  // kind of completion a task needs without creating another workflow engine.
+  registerCompletionContractRoutes(app);
 
   // These boundaries are intentionally first. Existing URLs remain compatible,
   // while reads become pure and all task transitions share one lifecycle.

@@ -52,6 +52,7 @@ export type AnchorBrainInput = {
 };
 
 const DEADLINE_HORIZON_DAYS = 5;
+const EXISTING_TASK_EXECUTION_BONUS = 6;
 
 function compact(value: unknown, max = 240) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, max);
@@ -200,7 +201,7 @@ function buildCandidates(input: AnchorBrainInput, signals: BrainSignal[]): Brain
       const task = taskById.get(item.taskId);
       if (!task) return null;
       const signalBoost = signals.filter((signal) => signal.sourceType === "task" && signal.sourceId === task.id).reduce((sum, signal) => sum + signal.weight, 0);
-      return taskCandidate(task, item.score + signalBoost, item.reason, item.firstStep);
+      return taskCandidate(task, item.score + EXISTING_TASK_EXECUTION_BONUS + signalBoost, item.reason, item.firstStep);
     })
     .filter((item): item is BrainCandidate => Boolean(item));
 

@@ -36,6 +36,14 @@ function idempotencyKey(req: Request): string {
   return String(req.header("Idempotency-Key") || req.body?.idempotencyKey || "").trim().slice(0, 160);
 }
 
+function completionFields(req: Request): Partial<TaskLifecycleInput> {
+  return {
+    completionOutcome: typeof req.body?.completionOutcome === "string" ? req.body.completionOutcome : typeof req.body?.outcome === "string" ? req.body.outcome : undefined,
+    completionRating: typeof req.body?.completionRating === "string" ? req.body.completionRating : typeof req.body?.rating === "string" ? req.body.rating : undefined,
+    completionNote: typeof req.body?.completionNote === "string" ? req.body.completionNote : typeof req.body?.note === "string" ? req.body.note : undefined,
+  };
+}
+
 function lifecycleInput(req: Request, extra: Partial<TaskLifecycleInput> = {}): TaskLifecycleInput {
   return {
     taskId: taskId(req),
@@ -127,7 +135,7 @@ export function registerTaskLifecycleRoutes(app: Express) {
       const completing = (patch.done === true || patch.status === "done") && !before.done && before.status !== "done";
       const reopening = (patch.done === false || (typeof patch.status === "string" && patch.status !== "done")) && (before.done || before.status === "done");
       if (completing) {
-        const result = completeTask(lifecycleInput(req, { patch }));
+        const result = completeTask(lifecycleInput(req, { patch, ...completionFields(req) }));
         return res.json(result.task);
       }
       if (reopening) {
@@ -156,7 +164,7 @@ export function registerTaskLifecycleRoutes(app: Express) {
 
   app.post("/api/tasks/:id/complete", async (req, res) => {
     try {
-      return res.json(completeTask(lifecycleInput(req)));
+      return res.json(completeTask(lifecycleInput(req, completionFields(req))));
     } catch (error) {
       return sendError(res, error);
     }
@@ -218,31 +226,48 @@ export function registerTaskLifecycleRoutes(app: Express) {
         planItemId: item.id,
         idempotencyKey: idempotencyKey(req),
       });
-      return res.json({ ok: true, task: result.task, idempotent: result.idempotent });
+      await storage.updatePlanItem(item.id, { taskId: result.task.id, status: "started", startedAt: Date.now() } as any);
+      return res.json(result);
     } catch (error) {
       return sendError(res, error);
     }
   });
 
-  // A lifecycle completion already creates one task-linked win. Preserve the
-  // historical POST contract while deduplicating the immediate legacy follow-up
-  // used by compact task rows.
-  app.post("/api/wins", async (req, res) => {
+  app.post("/api/plan-items/:id/complete", async (req, res) => {
     try {
-      const parsed = insertWinSchema.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-      const title = String(parsed.data.text || "").trim().toLowerCase();
-      const explicitKind = String(req.body?.kind || "").trim();
-      if (!explicitKind || explicitKind === "manual") {
-        const recent = (await storage.getWins()).find((win) =>
-          win.kind === "planned"
-          && win.sourceEntityType === "task"
-          && win.text.trim().toLowerCase() === title
-          && Date.now() - win.createdAt < 60_000,
-        );
-        if (recent) return res.json(recent);
-      }
-      return res.json(await storage.createWin(parsed.data));
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+      const item = await storage.getPlanItem(id);
+      if (!item) return res.status(404).json({ error: "Plan item not found" });
+      const task = await materializeTaskForPlanItem(item);
+      const result = completeTask({
+        taskId: task.id,
+        day: String(req.body?.day || item.plannedFor || new Date().toISOString().slice(0, 10)),
+        planItemId: item.id,
+        idempotencyKey: idempotencyKey(req),
+        ...completionFields(req),
+      });
+      return res.json(result);
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  app.post("/api/plan-items/:id/skip", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Bad id" });
+      const item = await storage.getPlanItem(id);
+      if (!item) return res.status(404).json({ error: "Plan item not found" });
+      const task = await materializeTaskForPlanItem(item);
+      const result = skipTask({
+        taskId: task.id,
+        day: String(req.body?.day || item.plannedFor || new Date().toISOString().slice(0, 10)),
+        planItemId: item.id,
+        reason: String(req.body?.reason || ""),
+        idempotencyKey: idempotencyKey(req),
+      });
+      return res.json(result);
     } catch (error) {
       return sendError(res, error);
     }

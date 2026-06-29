@@ -41,10 +41,6 @@ function label(value: string, labels: Record<string, string>) {
   return labels[value] || value.replace(/_/g, " ");
 }
 
-function shouldShow(contract: CompletionContract) {
-  return contract.contract !== "maintenance" || contract.residueLevel !== "marker";
-}
-
 function notePlaceholder(contract: CompletionContract) {
   if (contract.residueLevel === "none" || contract.residueLevel === "marker") return "Optional note";
   if (contract.residueLevel === "one_line") return "Optional one-line takeaway";
@@ -52,6 +48,11 @@ function notePlaceholder(contract: CompletionContract) {
   if (contract.residueLevel === "external_signal") return "Optional signal or follow-up";
   if (contract.residueLevel === "artifact") return "Optional artifact note or link";
   return "Optional note";
+}
+
+function actionOptions(contract: CompletionContract) {
+  if (contract.assessmentMode === "none" || contract.assessmentMode === "binary") return ["completed"];
+  return contract.afterActionOptions.slice(0, 4);
 }
 
 export function CompletionContractNudge() {
@@ -65,10 +66,9 @@ export function CompletionContractNudge() {
   const pinned = tasks.find((task) => task.pinned && !task.done);
   if (!pinned) return null;
   const contract = completionContractForTask(pinned);
-  if (!shouldShow(contract)) return null;
-
   const artifactLabel = contract.requiresArtifact ? "Artifact required" : "No artifact required";
   const ArtifactIcon = contract.requiresArtifact ? FileText : CheckCircle2;
+  const options = actionOptions(contract);
 
   async function completeWith(option: string) {
     if (!pinned) return;
@@ -97,19 +97,20 @@ export function CompletionContractNudge() {
 
   return (
     <aside
-      className="fixed bottom-4 left-4 z-40 hidden w-[22rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-card-border bg-card/95 p-3.5 shadow-xl backdrop-blur sm:block"
+      className="fixed bottom-3 left-3 right-3 z-40 rounded-2xl border border-card-border bg-card/95 p-3.5 shadow-xl backdrop-blur sm:bottom-4 sm:left-4 sm:right-auto sm:w-[22rem] sm:max-w-[calc(100vw-2rem)]"
       data-testid="completion-contract-nudge"
       aria-label="Completion contract for current task"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          <HelpCircle className="h-3.5 w-3.5" /> Completion mode
+          <HelpCircle className="h-3.5 w-3.5" /> Finish mode
         </div>
         <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
           {label(contract.contract, CONTRACT_LABEL)}
         </span>
       </div>
       <p className="text-sm font-medium leading-snug text-foreground">{contract.completionPrompt}</p>
+      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">Use one of these buttons to finish the task with the right record.</p>
       <div className="mt-2 flex flex-wrap gap-1.5">
         <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
           <ArtifactIcon className="h-3 w-3" /> {artifactLabel}
@@ -126,7 +127,7 @@ export function CompletionContractNudge() {
         data-testid="completion-contract-note"
       />
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {contract.afterActionOptions.slice(0, 4).map((option) => (
+        {options.map((option) => (
           <button
             key={option}
             type="button"
@@ -136,7 +137,7 @@ export function CompletionContractNudge() {
             className="inline-flex items-center gap-1 rounded-full bg-secondary/70 px-2.5 py-1 text-[10px] font-semibold text-secondary-foreground hover:bg-secondary disabled:opacity-60"
           >
             {busyOption === option ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-            Complete as {label(option, {})}
+            Finish as {label(option, {})}
           </button>
         ))}
       </div>

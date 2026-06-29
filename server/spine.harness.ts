@@ -51,7 +51,6 @@ export async function makeHarness(): Promise<Harness> {
   const { registerObjectOwnershipRoutes } = await import("./objectOwnershipRoutes");
   const { registerCompetenceEcosystemRoutes } = await import("./competenceEcosystemRoutes");
   const { registerCompletionContractRoutes } = await import("./completionContractRoutes");
-  const { registerTaskLifecycleRoutes } = await import("./taskLifecycleRoutes");
   const { registerRoutes } = await import("./routes");
   const { initStorage, storage } = await import("./storage");
   // Reset/inspect through the same handle the harness initialized for this DB.
@@ -73,7 +72,6 @@ export async function makeHarness(): Promise<Harness> {
   registerObjectOwnershipRoutes(app);
   registerCompetenceEcosystemRoutes(app);
   registerCompletionContractRoutes(app);
-  registerTaskLifecycleRoutes(app);
   await registerRoutes(httpServer, app);
 
   await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));

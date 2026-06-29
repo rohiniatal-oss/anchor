@@ -7,6 +7,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { CompletionContractNudge } from "@/components/home/CompletionContractNudge";
 import { HOME_ROUTE_PATHS, routeBase } from "@/lib/homeTypes";
 import Home from "@/pages/home";
 import NotFound from "@/pages/not-found";
@@ -153,6 +154,7 @@ function App() {
           <Toaster />
           <Router hook={useNormalizedHashLocation}>
             <AppRouter />
+            <CompletionContractNudge />
             <RestartFromHereButton />
           </Router>
         </TooltipProvider>

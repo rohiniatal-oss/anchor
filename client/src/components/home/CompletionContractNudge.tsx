@@ -75,7 +75,7 @@ export function CompletionContractNudge() {
         day: todayKey(),
         completionNote: note,
       };
-      if (RUBRIC_OPTIONS.has(option) || contract.assessmentMode === "rubric") {
+      if (RUBRIC_OPTIONS.has(option)) {
         payload.completionRating = option;
       } else {
         payload.completionOutcome = option;

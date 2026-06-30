@@ -168,7 +168,7 @@ function roleMarketScanSteps(title: string) {
   return [
     `Run Anchor search "${rolePath}" for current roles, teams, and hiring signals`,
     "Review the ranked options and reject anything stale, generic, or irrelevant",
-    "Activate only the option you actually want to pursue; after approval, save the first real posting in Jobs; save one real posting with the link and JD text, not just the title",
+    "Activate only the option you actually want to pursue; after approval, save the first real posting in Jobs. Save one real posting in Jobs with the link and JD text, not just the title",
   ];
 }
 
@@ -176,8 +176,8 @@ function titleText(title: string) {
   return String(title || "").replace(/\s+/g, " ").trim();
 }
 
-function cleanPhrase(value: string) {
-  return value
+function cleanPhrase(value: unknown) {
+  return String(value || "")
     .replace(/\b(and ask|ask for|asking for|to ask|about|regarding|re:)\b.*$/i, "")
     .replace(/\b(message|email|note|outreach|follow-up|follow up)\b/gi, "")
     .replace(/\s+/g, " ")

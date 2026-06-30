@@ -6,6 +6,7 @@ import { deterministicUnstickStep, prependStep } from "./planningFeedback";
 import { buildDeterministicTaskBreakdown, normalizeExistingTaskBreakdown } from "./taskBreakdownRoutes";
 import { completeRecommendationMilestone, setRecommendationMilestoneStatus } from "./recommendationMilestoneProgress";
 import { completeDayById, skipDayById } from "./curriculum/materializer";
+import { ensurePathwayRoleDiscoveryTasks } from "./pathwayRoleDiscovery";
 import { storage } from "./storage";
 import { insertEventSchema, type InsertActivityLog, type InsertDayPlanItem } from "@shared/schema";
 
@@ -102,7 +103,7 @@ async function buildShrinkContext(task: { id: number; title: string; sourceType?
 export function buildCantStartMicroStepPrompt(shrinkContext: string) {
   return [
     "This task keeps slipping because the first step isn't clear enough. Break it into 3-4 micro-steps.",
-    "The first step must be under 2 minutes, immediately startable, and physical: open something, write one line, send one thing, save one item, or mark one choice.",
+    "The first step must be under 2 minutes, immediately startable, and physical: open something, write one line, send one thing, or mark one choice.",
     "Use this usefulness test for every step: name the concrete object, the action to take on it, and the output or checkpoint that proves the step is done.",
     "Use real names from the context below (company, role, contact, learning item) — never 'review materials' or 'do some research'.",
     "Prefer reducing the user's decision load over asking them to think, review, or research from scratch.",
@@ -153,7 +154,7 @@ async function diagnoseSkipReason(task: any): Promise<{ reason: SkipReason; conf
 }
 
 function isStructuredTask(task: { sourceType?: string | null; category?: string | null }) {
-  return ["job", "learn", "contact", "hustle", "goal"].includes(String(task.sourceType || ""))
+  return ["job", "learn", "contact", "hustle", "goal", "career_track"].includes(String(task.sourceType || ""))
     || ["job", "learning", "substack", "hustle", "afterline", "interview"].includes(String(task.category || ""));
 }
 
@@ -178,6 +179,7 @@ export function categoryForPlanItem(item: {
   if (item.sourceType === "hustle") return "hustle";
   if (item.sourceType === "contact") return "admin";
   if (item.sourceType === "curriculum_day") return "learning";
+  if (item.sourceType === "career_track") return "job";
   if (item.sourceType === "goal") {
     const sourceStatus = String(item.sourceStatus || "").toLowerCase();
     if (sourceStatus === "broad_parallel_pursuit_network_support") return "admin";
@@ -295,7 +297,7 @@ async function busyMinutesFor(day: string): Promise<number> {
 }
 
 async function buildPlan(day: string, energy: Energy) {
-  const [tasks, jobs, learn, hustles, contacts, tracks, jobContactLinks, profile, wins] = await Promise.all([
+  const [initialTasks, jobs, learn, hustles, contacts, tracks, jobContactLinks, profile, wins] = await Promise.all([
     storage.getTasks(),
     storage.getJobs(),
     storage.getLearn(),
@@ -306,6 +308,7 @@ async function buildPlan(day: string, energy: Energy) {
     storage.getProfile(),
     storage.getWins(),
   ]);
+  const tasks = await ensurePathwayRoleDiscoveryTasks({ tasks: initialTasks, jobs, tracks });
   const busy = await busyMinutesFor(day);
   const r = planDay(tasks, jobs, learn, hustles, energy, busy, contacts, tracks, new Map(), jobContactLinks, profile, wins);
   let plan = await storage.getPlanByDate(day);
@@ -401,7 +404,7 @@ export function registerPlanningRoutes(app: Express) {
       const m = /^(\d{1,2}):(\d{2})/.exec(e.start || "");
       const n = /^(\d{1,2}):(\d{2})/.exec(e.end || "");
       if (m && n) {
-        const mins = (Number(n[1]) * 60 + Number(n[2])) - (Number(m[1]) * 60 + Number(m[2]));
+        const mins = (Number(n[1]) * 60 + Number(n[2])) - (Number(m[1]) * 60 + Number(n[2]));
         if (mins > 0 && mins < 12 * 60) busy += mins;
       } else {
         busy += 45;

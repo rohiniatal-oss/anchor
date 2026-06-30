@@ -404,7 +404,7 @@ export function registerPlanningRoutes(app: Express) {
       const m = /^(\d{1,2}):(\d{2})/.exec(e.start || "");
       const n = /^(\d{1,2}):(\d{2})/.exec(e.end || "");
       if (m && n) {
-        const mins = (Number(n[1]) * 60 + Number(n[2])) - (Number(m[1]) * 60 + Number(n[2]));
+        const mins = (Number(n[1]) * 60 + Number(n[2])) - (Number(m[1]) * 60 + Number(m[2]));
         if (mins > 0 && mins < 12 * 60) busy += mins;
       } else {
         busy += 45;

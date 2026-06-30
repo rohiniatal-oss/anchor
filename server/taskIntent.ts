@@ -67,8 +67,8 @@ export function isRoleMarketScanInput(input: TaskIntentInput) {
   const strategySource = /strategy_builder|career_track|marketability_engine/i.test(String(input.sourceType || ""));
   const taskishSource = !input.sourceKind || input.sourceKind === "task";
   const directionLane = normalizeLaneName(String(input.lane || "")) === LANE_NAME.DIRECTION;
-  const roleSignal = /\b(role|roles|job|jobs|posting|postings|hiring|team|teams|application|applications|company|companies)\b/.test(text);
-  const scanSignal = /\b(find|search|save|scan|map|identify|inspect|review|explor|lay of the land|what they ask for|requirement|requirements|assess candidates|credible|pattern|prove|back up|evidence|gap)\b/.test(text);
+  const roleSignal = /\b(role|roles|job|jobs|posting|postings|hiring|team|teams|application|applications|company|companies|target|targets)\b/.test(text);
+  const scanSignal = /\b(find|search|save|scan|map|identify|inspect|review|explor|discover|rank|ranked|lay of the land|what they ask for|requirement|requirements|assess candidates|credible|pattern|prove|back up|evidence|gap)\b/.test(text);
   return roleSignal && scanSignal && (strategySource || taskishSource || directionLane);
 }
 
@@ -90,12 +90,13 @@ export function inferTaskIntent(input: TaskIntentInput): TaskIntentKind {
 
 export function roleMarketScanLabel(title: string) {
   const cleaned = String(title || "")
-    .replace(/^(save|find|review|explore|research|identify|inspect|map)\s+(one|two|three|four|five|1|2|3|4|5|a|an|the)?\s*(real\s+)?/i, "")
+    .replace(/^(have\s+anchor\s+)?(save|find|review|explore|research|identify|inspect|map|discover|rank)\s+(one|two|three|four|five|1|2|3|4|5|a|an|the)?\s*(real\s+)?/i, "")
     .replace(/\s+and\s+(note|write down|map|decide|choose|capture|extract)\b.*$/i, "")
     .replace(/\s+and\s+note\s+what.*$/i, "")
     .replace(/\s+and\s+extract\s+what.*$/i, "")
     .replace(/\s+and\s+note\s+the\s+requirements.*$/i, "")
     .replace(/\s+roles?\b.*$/i, " roles")
+    .replace(/\s+targets?\b.*$/i, " targets")
     .replace(/\s+/g, " ")
     .trim();
   return cleaned.slice(0, 80) || "the role path";
@@ -140,8 +141,8 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
       label,
       gapType,
       gapTypeLabel: gapLabel,
-      assessmentStep: `After the posting is saved, let Anchor compare its must-have asks with your evidence and suggest whether ${label} is the weakest requirement`,
-      learningMoveStep: `Do one 10-minute ${label} drill against the posting and save the answer, example, or checklist it produces`,
+      assessmentStep: `After role targets are ranked, let Anchor compare their must-have asks with your evidence and suggest whether ${label} is the weakest requirement`,
+      learningMoveStep: `Do one 10-minute ${label} drill against the strongest role target and save the answer, example, or checklist it produces`,
     };
   }
   if (gapType === "proof") {
@@ -149,7 +150,7 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
       label,
       gapType,
       gapTypeLabel: gapLabel,
-      assessmentStep: `After the posting is saved, let Anchor compare its must-have asks with your evidence and suggest whether ${label} is the weakest proof point`,
+      assessmentStep: `After role targets are ranked, let Anchor compare their must-have asks with your evidence and suggest whether ${label} is the weakest proof point`,
       learningMoveStep: `Draft one proof example for ${label}; if the proof is missing, save the exact evidence asset to create`,
     };
   }
@@ -157,7 +158,7 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
     label,
     gapType,
     gapTypeLabel: gapLabel,
-    assessmentStep: `After the posting is saved, let Anchor compare its must-have asks with your evidence and suggest whether ${label} is the weakest knowledge area`,
+    assessmentStep: `After role targets are ranked, let Anchor compare their must-have asks with your evidence and suggest whether ${label} is the weakest knowledge area`,
     learningMoveStep: `Read one targeted source on ${label} and save the explanation you would use in an interview answer`,
   };
 }
@@ -165,9 +166,9 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
 function roleMarketScanSteps(title: string) {
   const rolePath = roleMarketScanLabel(title);
   return [
-    `Open LinkedIn or the target job board and search "${rolePath}"`,
-    "Save one real posting in Jobs with the link and JD text, not just the title",
-    "Add the role type and mark it as a role to explore, not an application yet",
+    `Let Anchor search for current "${rolePath}" roles, teams, and hiring signals`,
+    "Review the ranked options and reject anything stale, generic, or irrelevant",
+    "Activate only the option you actually want to pursue; Anchor can then save it as a Job with source evidence",
   ];
 }
 
@@ -251,10 +252,10 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
     return {
       intent,
       category: "job",
-      doneWhen: "One real posting is saved with enough JD text for Anchor to compare it to your profile and suggest the first requirement to learn, practise, or prove",
+      doneWhen: "Current role targets are ranked from evidence and the next action is clear; only user-approved options become Jobs",
       firstStep: steps[0],
       steps,
-      stopCondition: "Stop once the posting has enough JD text for Anchor to compare it to your profile",
+      stopCondition: "Stop once Anchor has ranked real role targets and you have either activated one, saved one for later, or rejected the set",
       maxSteps: 3,
     };
   }
@@ -364,7 +365,11 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
 
 export function hasRoleMarketScanContract(texts: string[]) {
   const joined = texts.join(" | ").toLowerCase();
-  return /\bsave\b.*\b(real|posting|role|job)\b/.test(joined)
+  const manualPostingContract = /\bsave\b.*\b(real|posting|role|job)\b/.test(joined)
     && /\b(jd text|job description|link)\b/.test(joined)
     && /\b(anchor|compare|profile|explore)\b/.test(joined);
+  const discoveryContract = /\b(anchor|discover|rank|ranked|search)\b/.test(joined)
+    && /\b(real|current|role|roles|job|posting|target|targets|team|teams)\b/.test(joined)
+    && /\b(evidence|options|activate|job)\b/.test(joined);
+  return manualPostingContract || discoveryContract;
 }

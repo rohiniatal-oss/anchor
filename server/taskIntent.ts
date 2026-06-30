@@ -142,7 +142,7 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
       gapType,
       gapTypeLabel: gapLabel,
       assessmentStep: `After role targets are ranked, let Anchor compare their must-have asks with your evidence and suggest whether ${label} is the weakest requirement`,
-      learningMoveStep: `Do one 10-minute ${label} drill against the strongest role target and save the answer, example, or checklist it produces`,
+      learningMoveStep: `Do one 10-minute ${label} drill against the posting or strongest role target and save the answer, example, or checklist it produces`,
     };
   }
   if (gapType === "proof") {
@@ -166,9 +166,9 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
 function roleMarketScanSteps(title: string) {
   const rolePath = roleMarketScanLabel(title);
   return [
-    `Let Anchor search for current "${rolePath}" roles, teams, and hiring signals`,
+    `Run Anchor search "${rolePath}" for current roles, teams, and hiring signals`,
     "Review the ranked options and reject anything stale, generic, or irrelevant",
-    "Activate only the option you actually want to pursue; Anchor can then save it as a Job with source evidence",
+    "Activate only the option you actually want to pursue; when approved, save one real posting in Jobs with the link and JD text, not just the title",
   ];
 }
 
@@ -252,10 +252,10 @@ export function contractForTaskIntent(input: TaskIntentInput): TaskIntentContrac
     return {
       intent,
       category: "job",
-      doneWhen: "Current role targets are ranked from evidence and the next action is clear; only user-approved options become Jobs",
+      doneWhen: "Current role targets are ranked from evidence and, once you approve one, the posting is saved with enough JD text for Anchor to compare it to your profile",
       firstStep: steps[0],
       steps,
-      stopCondition: "Stop once Anchor has ranked real role targets and you have either activated one, saved one for later, or rejected the set",
+      stopCondition: "Stop once Anchor has ranked real role targets and you have either activated one, saved one for later, rejected the set, or the posting has enough JD text for Anchor to compare it to your profile",
       maxSteps: 3,
     };
   }

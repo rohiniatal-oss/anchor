@@ -166,9 +166,9 @@ export function likelyLearningGapPlan(input: { rolePath?: string | null; label?:
 function roleMarketScanSteps(title: string) {
   const rolePath = roleMarketScanLabel(title);
   return [
-    `Run Anchor search "${rolePath}" for current roles, teams, and hiring signals; do not open LinkedIn or the target job board and search "${rolePath}" manually unless Anchor cannot fetch results`,
+    `Run Anchor search "${rolePath}" for current roles, teams, and hiring signals`,
     "Review the ranked options and reject anything stale, generic, or irrelevant",
-    "Activate only the option you actually want to pursue; when approved, save one real posting in Jobs with the link and JD text, not just the title",
+    "Activate only the option you actually want to pursue; after approval, save the first real posting in Jobs; save one real posting with the link and JD text, not just the title",
   ];
 }
 

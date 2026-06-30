@@ -106,7 +106,18 @@ export function buildTrackPlan(track: CareerTrack, data: { tasks: Task[]; jobs: 
   if (appliedJobs.length > 0) stage = "maintain";
 
   const needs: TrackNeed[] = [];
-  if (jobs.length < 3) needs.push({ lane: "Direction", priority: 100, stage: "signal", kind: "anchor", move: `Save one real ${track.name} posting with JD text for Anchor to compare`, doneWhen: "One real posting is saved with enough JD text for Anchor to compare it to your profile", reason: "The track does not yet have enough real role evidence." });
+  if (jobs.length < 3) {
+    const target = track.targetRoleArchetype || track.name;
+    needs.push({
+      lane: "Direction",
+      priority: 100,
+      stage: "signal",
+      kind: "anchor",
+      move: `Have Anchor discover real ${target} role targets`,
+      doneWhen: "At least three current role targets or target organizations are ranked from public evidence; only user-approved options become Jobs.",
+      reason: "The track is a pathway, not a manual data-entry request. Anchor needs to discover real role evidence before asking the user to save or pursue anything.",
+    });
+  }
   if (highFitJobs.length > 0) needs.push({ lane: "Applications", priority: 110, stage: "convert", kind: "anchor", move: `Convert one high-fit ${track.name} role into an application step`, doneWhen: "One tailored application step is done", reason: "Applications do not need to wait for optional projects or public work when role fit/readiness is clear." });
   if (!networkActive) needs.push({ lane: "Network", priority: highFitJobs.length > 0 ? 76 : 84, stage: "network", kind: "support", move: `Find one ${track.name} insider for a reality-check conversation`, doneWhen: "One person type or named person is saved with a clear ask", reason: "Network helps sharpen and access the track, but should not block selective applications." });
   if (!proofInMotion) needs.push({ lane: "Proof assets", priority: 55, stage: "convert", kind: "ongoing", move: `Only if useful, define one lightweight project, writing, or brand idea for ${track.name}`, doneWhen: "One optional idea, note, or bullet exists", reason: "Projects, writing, and brand-building are optional compounding assets, not prerequisites for applications." });

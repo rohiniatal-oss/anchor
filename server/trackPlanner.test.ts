@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildTrackPlan } from "./trackPlanner";
 
-test("thin tracks ask for one real posting with enough detail for Anchor analysis", () => {
+test("thin tracks ask Anchor to discover real role targets before manual job entry", () => {
   const plan = buildTrackPlan({
     id: 1,
     slug: "ai-strategy",
@@ -17,7 +17,7 @@ test("thin tracks ask for one real posting with enough detail for Anchor analysi
     contacts: [],
   });
 
-  assert.match(plan.primaryNeed.move, /save one real AI strategy posting with JD text for Anchor to compare/i);
-  assert.match(plan.primaryNeed.doneWhen, /posting is saved with enough JD text/i);
-  assert.doesNotMatch(plan.primaryNeed.move, /review three|three .*roles/i);
+  assert.match(plan.primaryNeed.move, /Anchor discover real AI strategy role targets/i);
+  assert.match(plan.primaryNeed.doneWhen, /ranked from public evidence/i);
+  assert.doesNotMatch(plan.primaryNeed.move, /save one real AI strategy posting/i);
 });

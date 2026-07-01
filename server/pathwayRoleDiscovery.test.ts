@@ -2,7 +2,7 @@ import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { contractForTaskIntent } from "./taskIntent";
 import { buildTrackPlan } from "./trackPlanner";
-import { makeHarness, type Harness } from "./spine.harness";
+import { api, makeHarness, type Harness } from "./spine.harness";
 import { ensurePathwayRoleDiscoveryTasks, PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS } from "./pathwayRoleDiscovery";
 
 let h: Harness;
@@ -53,6 +53,24 @@ test("pathway helper autopopulates one role discovery task from an active pathwa
   assert.equal(discoveryTasks[0].list, "today");
   assert.match(discoveryTasks[0].title, /Anchor discover real AI governance strategy role targets/i);
   assert.match(discoveryTasks[0].doneWhen, /only user-approved options become Jobs/i);
+});
+
+test("plan recompute seeds pathway role discovery in the active Today path", async () => {
+  const track = await createAiGovernanceTrack();
+
+  const res = await api(h.base, "POST", "/api/plan/recompute", {
+    day: "2026-07-01",
+    energy: "medium",
+    availableMinutes: 240,
+  });
+
+  assert.equal(res.status, 200);
+  const discoveryTasks = (await h.storage.getTasks()).filter((task) => task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
+
+  assert.equal(discoveryTasks.length, 1);
+  assert.equal(discoveryTasks[0].relatedTrackId, track.id);
+  assert.ok(res.json.items.some((item: any) => item.taskId === discoveryTasks[0].id));
+  assert.match(res.json.items.map((item: any) => item.title).join(" | "), /Anchor discover real AI governance strategy role targets/i);
 });
 
 test("pathway helper reuses the active pathway discovery task", async () => {

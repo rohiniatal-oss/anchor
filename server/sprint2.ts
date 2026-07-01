@@ -5,17 +5,16 @@ import { explainPersistedPlanItem, planDay } from "./brain";
 import { dayPlans, dayPlanItems, insertTaskSchema, type DayPlan, type Task, type CareerTrack } from "@shared/schema";
 import { isOpportunityActionable } from "@shared/domainState";
 import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey, refinedEstimateFromSteps, stepsWithEstimatedMinutes } from "./planningFeedback";
-import {
-  broadPursuitMissingRolesPlanSummary,
-  broadPursuitMissingRolesPlanWhy,
-  broadPursuitMissingRolesPlannerNote,
-  broadPursuitMissingRolesSupportingReasons,
-} from "./broadPursuitCopy";
 import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 import { buildTaskIntakeDefaults, contextualizeTask, intakeWords, llmEnrichTask } from "./taskIntakeInference";
 import { getDueCurriculumAnchors, linkDayToPlanItem } from "./curriculum/repository";
-import { ensurePathwayRoleDiscoveryTasks, PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS } from "./pathwayRoleDiscovery";
+import {
+  ensurePathwayRoleDiscoveryRuns,
+  isPathwayRoleDiscoveryTask,
+  PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE,
+  type PathwayRoleDiscoverySnapshot,
+} from "./pathwayRoleDiscovery";
 
 // Plan-item sourceType for an injected curriculum day (the daily anchor).
 const CURRICULUM_DAY_SOURCE = "curriculum_day";
@@ -171,6 +170,7 @@ async function saveStarterStep(task: Task) {
 function needsExecutionPlan(task: Task) {
   const title = `${task.title || ""} ${task.doneWhen || ""}`.toLowerCase();
   if (task.done || parseTaskSteps(task.steps || "[]").length > 0) return false;
+  if (isPathwayRoleDiscoveryTask(task)) return false;
   if (task.size === "deep") return true;
   if (["job", "learn", "contact", "hustle"].includes(String(task.sourceType || ""))) return true;
   if ((task.skipped || 0) >= 1) return true;
@@ -279,106 +279,126 @@ async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes
   return { plan: corrected, trimmed: fitted.length < plan.length };
 }
 
-function isPathwayRoleDiscoveryPlanItem(item: any) {
-  return item?.candidate?.source === "task" && item?.candidate?.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS;
+function isPathwayDiscoveryStatusPlanItem(item: any) {
+  return item?.candidate?.source === PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE
+    || item?.sourceType === PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE;
+}
+
+function isLegacyPathwayRoleDiscoveryPlanItem(item: any) {
+  return item?.candidate?.source === "task" && String(item?.candidate?.sourceStatus || "") === "role_discovery_needed";
 }
 
 function isBroadPursuitMissingRoleGoalItem(item: any) {
   return item?.candidate?.source === "goal" && item?.candidate?.sourceStatus === "broad_parallel_pursuit";
 }
 
-function firstOpenStep(task: Task) {
-  return parseTaskSteps(task.steps || "[]").find((step) => !step.done)?.text
-    || "Let Anchor search current role targets and return an evidence-backed shortlist.";
+function discoveryTitle(snapshot: PathwayRoleDiscoverySnapshot) {
+  if (snapshot.status === "complete" && snapshot.inferredOpportunity) return `Anchor found the next ${snapshot.targetRoleArchetype} lever`;
+  if (snapshot.status === "complete") return `Anchor mapped ${snapshot.targetRoleArchetype} market evidence`;
+  if (snapshot.status === "stuck_needs_question") return `Anchor needs one answer to continue ${snapshot.targetRoleArchetype} discovery`;
+  if (snapshot.status === "failed_retryable") return `Anchor could not finish ${snapshot.targetRoleArchetype} discovery yet`;
+  return `Anchor is mapping ${snapshot.targetRoleArchetype} role evidence`;
 }
 
-function pathwayRoleDiscoveryPlanItem(task: Task) {
+function discoveryDoneWhen(snapshot: PathwayRoleDiscoverySnapshot) {
+  if (snapshot.status === "complete" && snapshot.inferredOpportunity) return snapshot.inferredOpportunity.nextAction;
+  if (snapshot.status === "complete") return `Anchor found ${snapshot.roles.length} public role signal${snapshot.roles.length === 1 ? "" : "s"} and extracted repeated requirements.`;
+  if (snapshot.status === "stuck_needs_question") return snapshot.stuckQuestion?.question || "Anchor needs one focused answer before continuing.";
+  if (snapshot.status === "failed_retryable") return "Anchor will retry or ask one focused question if the public search stays noisy.";
+  return "Anchor is gathering public role evidence without needing manual job hunting.";
+}
+
+function discoveryFirstStep(snapshot: PathwayRoleDiscoverySnapshot) {
+  if (snapshot.status === "complete" && snapshot.inferredOpportunity) return snapshot.inferredOpportunity.nextAction;
+  if (snapshot.status === "complete") return "No action needed from you yet — Anchor will use this market evidence to choose the next improvement move.";
+  if (snapshot.status === "stuck_needs_question") return snapshot.stuckQuestion?.question || "Answer one focused question so Anchor can narrow the search.";
+  if (snapshot.status === "failed_retryable") return "No manual search needed — Anchor can retry discovery or ask a focused narrowing question.";
+  return "No action from you right now — Anchor is searching and ranking public evidence.";
+}
+
+function pathwayRoleDiscoveryStatusPlanItem(snapshot: PathwayRoleDiscoverySnapshot) {
+  const supportingReasons = [
+    snapshot.roles.length ? `Anchor found ${snapshot.roles.length} public role signal${snapshot.roles.length === 1 ? "" : "s"}.` : "Anchor is using public evidence instead of asking you to hunt for postings.",
+    snapshot.repeatedRequirements.length ? `Repeated requirements: ${snapshot.repeatedRequirements.slice(0, 3).join("; ")}.` : "If the search is noisy, Anchor will ask one focused question instead of handing you a review task.",
+  ];
+  if (snapshot.inferredOpportunity?.rationale) supportingReasons.unshift(snapshot.inferredOpportunity.rationale);
   return {
     slot: "now",
-    isMVD: true,
-    why: "Anchor can gather the missing role evidence before you choose what to pursue.",
+    isMVD: false,
+    why: "Anchor is doing the evidence-gathering work itself.",
     explanation: {
-      summary: "This pathway needs Anchor-led role discovery before Today asks for manual role work.",
-      whyNow: "There is not enough role evidence yet to judge the pathway properly.",
-      whyThis: "It replaces manual job hunting with an Anchor-owned discovery run and one review decision.",
-      supportingReasons: [
-        "The pathway is active but has too few live roles in view.",
-        "Discovery can be run without creating Jobs until the user approves an option.",
-      ],
-      firstStep: firstOpenStep(task),
-      stopRule: task.doneWhen || "Stop when Anchor has produced a ranked role shortlist for review.",
+      summary: snapshot.status === "complete"
+        ? "Anchor has run market discovery and is using it to infer the next improvement move."
+        : snapshot.status === "stuck_needs_question"
+          ? "Anchor got stuck and needs one focused answer, not a manual search."
+          : "Anchor is running role discovery internally; no manual job hunting is needed.",
+      whyNow: snapshot.status === "complete"
+        ? "Thin role evidence was the blocker; Anchor has now turned public evidence into a next-move signal."
+        : "Thin role evidence is the blocker, and Anchor can gather that evidence itself.",
+      whyThis: snapshot.status === "complete"
+        ? "This replaces a ranked-options review chore with Anchor's best inferred next lever."
+        : "This keeps the research burden with Anchor rather than asking the user to manage the discovery workflow.",
+      supportingReasons,
+      firstStep: discoveryFirstStep(snapshot),
+      stopRule: discoveryDoneWhen(snapshot),
     },
     candidate: {
-      source: "task",
-      sourceId: task.id,
-      taskId: task.id,
-      title: task.title,
-      doneWhen: task.doneWhen || task.minimumOutcome || "Anchor has produced a ranked role shortlist for review.",
-      sourceNote: task.sourceNote || "",
-      sourceStatus: task.sourceStatus || "",
+      source: PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE,
+      sourceId: snapshot.trackId,
+      taskId: null,
+      title: discoveryTitle(snapshot),
+      doneWhen: discoveryDoneWhen(snapshot),
+      sourceNote: JSON.stringify(snapshot),
+      sourceStatus: snapshot.status,
     },
   };
 }
 
-function preferPathwayDiscoveryOverManualBroadGoal(plan: any[], tasks: Task[]) {
-  const discoveryTask = tasks.find((task) => !task.done && task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
-  if (!discoveryTask) return plan;
+function preferInternalDiscoveryOverManualBroadGoal(plan: any[], discoveries: PathwayRoleDiscoverySnapshot[]) {
+  const discovery = discoveries.find((item) => item.status === "complete")
+    || discoveries.find((item) => item.status === "stuck_needs_question")
+    || discoveries[0];
+  if (!discovery) return plan;
 
-  const existingDiscoveryItem = plan.find(isPathwayRoleDiscoveryPlanItem) || pathwayRoleDiscoveryPlanItem(discoveryTask);
+  const statusItem = pathwayRoleDiscoveryStatusPlanItem(discovery);
   const withoutDiscoveryOrManualGoal = plan.filter((item) =>
-    !isPathwayRoleDiscoveryPlanItem(item)
+    !isPathwayDiscoveryStatusPlanItem(item)
+    && !isLegacyPathwayRoleDiscoveryPlanItem(item)
     && !isBroadPursuitMissingRoleGoalItem(item),
   );
 
-  return [existingDiscoveryItem, ...withoutDiscoveryOrManualGoal];
+  return [statusItem, ...withoutDiscoveryOrManualGoal];
 }
 
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
   const [initialTasks, jobs, learn, hustles, contacts, tracks, jobContactLinks] = await Promise.all([
     storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(), storage.getAllJobContactLinks(),
   ]);
-  const tasks = await ensurePathwayRoleDiscoveryTasks({ tasks: initialTasks, jobs, tracks });
+  const discoveryResult = await ensurePathwayRoleDiscoveryRuns({ tasks: initialTasks, jobs, tracks });
+  const tasks = discoveryResult.tasks;
   const budget = await remainingBudgetFor(day, opts.availableMinutes ?? null);
   const memory = await planningMemoryFor(day);
   const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts, hustles, tracks);
   const broadPursuitCoverage = deriveBroadPursuitCoverage(tasks, jobs, [], learn, contacts, hustles, tracks);
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
-  const missingCombinationText = broadPursuitCoverage.missing.join("; ");
   const result = planDay(tasks, jobs, learn, hustles, energy, { remainingMinutes: budget.remainingMinutes }, contacts, tracks, new Map(), jobContactLinks);
   const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
   const corrected = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
-  const preferredPlan = broadPursuitNeedsRealRoles
-    ? preferPathwayDiscoveryOverManualBroadGoal(corrected.plan, tasks)
-    : corrected.plan;
   const correctedPlan = broadPursuitNeedsRealRoles
-    ? preferredPlan.map((item, index) => {
-        if (item.candidate.source !== "goal") return item;
-        return {
-          ...item,
-          why: broadPursuitMissingRolesPlanWhy(broadPursuitCoverage.missing),
-          explanation: {
-            ...item.explanation,
-            summary: broadPursuitMissingRolesPlanSummary(),
-            whyNow: "You said to apply across several plausible directions in parallel, and some of those path combinations still have no saved role at all.",
-            whyThis: index === 0
-              ? "It beats narrower comparison work because the market can only separate the lanes once real roles are in the pipeline."
-              : item.explanation.whyThis,
-            supportingReasons: broadPursuitMissingRolesSupportingReasons(broadPursuitCoverage.missing),
-          },
-        };
-      })
-    : preferredPlan;
+    ? preferInternalDiscoveryOverManualBroadGoal(corrected.plan, discoveryResult.discoveries)
+    : corrected.plan;
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
   const feedbackNote = feedbackSummary(memory);
   // Surface the cut-down note whenever time pressure shrank the day below the
   // actionable load — either the time-fit step dropped an item, OR the brain
   // itself capped the plan smaller than the number of live today-tasks because
   // the available time was tight. Both mean: today got trimmed to fit.
-  const actionableToday = tasks.filter((t) => t.list === "today" && !t.done).length;
-  const trimmedForTime = corrected.trimmed || (correctedPlan.length < actionableToday && budget.remainingMinutes > 0 && budget.remainingMinutes < 120);
+  const actionableToday = tasks.filter((t) => t.list === "today" && !t.done && !isPathwayRoleDiscoveryTask(t)).length;
+  const startablePlanItems = correctedPlan.filter((item) => item.candidate?.source !== PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE);
+  const trimmedForTime = corrected.trimmed || (startablePlanItems.length < actionableToday && budget.remainingMinutes > 0 && budget.remainingMinutes < 120);
   const overloadNote = trimmedForTime ? "Today was cut down to what can realistically fit." : "";
-  const plannerNote = broadPursuitNeedsRealRoles
-    ? broadPursuitMissingRolesPlannerNote(broadPursuitCoverage.missing)
+  const plannerNote = broadPursuitNeedsRealRoles && discoveryResult.discoveries.length
+    ? "Anchor is mapping missing role evidence itself; no manual job hunting is needed."
     : result.note;
   const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, plannerNote].filter(Boolean).join(" ");
 
@@ -449,7 +469,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         parkedAt: previousAction?.parkedAt ?? null,
         createdAt: now,
       } as any).returning().get();
-      if (item.isMVD || sequence === 1) minimumViableItemId = created.id;
+      if (c.source !== PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE && (item.isMVD || minimumViableItemId == null)) minimumViableItemId = created.id;
       if (c.source === CURRICULUM_DAY_SOURCE && c.sourceId != null) {
         curriculumLinks.push({ dayId: c.sourceId, planItemId: created.id });
       }
@@ -486,10 +506,11 @@ async function shouldRefreshBroadPursuitPlan(items: Array<{ sourceType?: string 
   if (goalFrame.decisionMode !== "broad-parallel-pursuit") return false;
   const broadPursuitCoverage = deriveBroadPursuitCoverage(tasks, jobs, [], learn, contacts, hustles, tracks);
   if (broadPursuitCoverage.missing.length === 0) return false;
+  if (items.some((item) => item.sourceType === PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE)) return false;
   const goalItem = items.find((item) => item.sourceType === "goal");
   if (!goalItem) return true;
   const oldCopy = `${goalItem.title || ""} ${goalItem.whySelected || ""}`;
-  return /plausible lane that still looks real|plausible role type that still looks real|still-empty combination/i.test(oldCopy);
+  return /plausible lane that still looks real|plausible role type that still looks real|still-empty combination|save one real|add one real role/i.test(oldCopy);
 }
 
 function readAvailableMinutes(raw: unknown) {
@@ -499,12 +520,12 @@ function readAvailableMinutes(raw: unknown) {
 }
 
 function findTaskForUnstick(tasks: Task[], stepText: string) {
-  const pinned = tasks.find((t) => t.pinned && !t.done);
+  const pinned = tasks.find((t) => t.pinned && !t.done && !isPathwayRoleDiscoveryTask(t));
   if (pinned) return pinned;
   const needle = stepText.trim().toLowerCase();
-  if (!needle) return tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress") || null;
-  return tasks.find((t) => !t.done && parseTaskSteps(t.steps).some((s) => !s.done && s.text.trim().toLowerCase() === needle))
-    || tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress")
+  if (!needle) return tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress" && !isPathwayRoleDiscoveryTask(t)) || null;
+  return tasks.find((t) => !t.done && !isPathwayRoleDiscoveryTask(t) && parseTaskSteps(t.steps).some((s) => !s.done && s.text.trim().toLowerCase() === needle))
+    || tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress" && !isPathwayRoleDiscoveryTask(t))
     || null;
 }
 

@@ -15,6 +15,7 @@ import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 import { buildTaskIntakeDefaults, contextualizeTask, intakeWords, llmEnrichTask } from "./taskIntakeInference";
 import { getDueCurriculumAnchors, linkDayToPlanItem } from "./curriculum/repository";
+import { ensurePathwayRoleDiscoveryTasks } from "./pathwayRoleDiscovery";
 
 // Plan-item sourceType for an injected curriculum day (the daily anchor).
 const CURRICULUM_DAY_SOURCE = "curriculum_day";
@@ -279,9 +280,10 @@ async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes
 }
 
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
-  const [tasks, jobs, learn, hustles, contacts, tracks, jobContactLinks] = await Promise.all([
+  const [initialTasks, jobs, learn, hustles, contacts, tracks, jobContactLinks] = await Promise.all([
     storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(), storage.getAllJobContactLinks(),
   ]);
+  const tasks = await ensurePathwayRoleDiscoveryTasks({ tasks: initialTasks, jobs, tracks });
   const budget = await remainingBudgetFor(day, opts.availableMinutes ?? null);
   const memory = await planningMemoryFor(day);
   const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts, hustles, tracks);

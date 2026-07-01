@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Switch, Route, Router, useLocation } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { apiRequest, queryClient } from "./lib/queryClient";
@@ -19,6 +19,37 @@ function normalizeRoutePath(path: string) {
 function useNormalizedHashLocation() {
   const [location, navigate] = useHashLocation();
   return [normalizeRoutePath(location), navigate] as [string, typeof navigate];
+}
+
+function LegacyPathwayDiscoveryTaskRepair() {
+  const [location] = useLocation();
+  useEffect(() => {
+    if (routeBase(location) !== "/") return;
+    let cancelled = false;
+    async function repair() {
+      try {
+        const res = await apiRequest("GET", "/api/tasks");
+        const tasks = await res.json().catch(() => []);
+        if (!Array.isArray(tasks)) return;
+        const legacy = tasks.filter((task: any) =>
+          !task.done
+          && (task.pinned || task.list === "today")
+          && (task.sourceStatus === "role_discovery_needed" || task.sourceStepType === "role_discovery"),
+        );
+        if (!legacy.length || cancelled) return;
+        await Promise.all(legacy.map((task: any) =>
+          apiRequest("PATCH", `/api/tasks/${task.id}`, { pinned: false, list: "inbox", status: "not_started" }),
+        ));
+        await queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+        await queryClient.invalidateQueries({ queryKey: ["/api/plan/current"] });
+      } catch {
+        // Non-fatal: the next plan recompute will still use Anchor-owned discovery.
+      }
+    }
+    repair();
+    return () => { cancelled = true; };
+  }, [location]);
+  return null;
 }
 
 function RestartFromHereButton() {
@@ -153,6 +184,7 @@ function App() {
           <TodayPlanHierarchyStyles />
           <Toaster />
           <Router hook={useNormalizedHashLocation}>
+            <LegacyPathwayDiscoveryTaskRepair />
             <AppRouter />
             <CompletionContractNudge />
             <RestartFromHereButton />

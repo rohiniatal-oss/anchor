@@ -100,6 +100,26 @@ test("composeCurriculum fails clearly when OPENAI_API_KEY is absent and using th
   }
 });
 
+test("composeCurriculum preserves redacted upstream OpenAI failures", async () => {
+  const upstream = Object.assign(new Error("Incorrect API key provided: sk-test_secret_123456789"), {
+    status: 401,
+    code: "invalid_api_key",
+  });
+  const mock = async () => { throw upstream; };
+
+  await assert.rejects(
+    () => composeCurriculum(TRACK, INPUT, mock as any),
+    (err: unknown) => {
+      assert.ok(err instanceof CurriculumComposeError);
+      assert.equal(err.code, "openai_request_failed");
+      assert.match(err.message, /status 401/);
+      assert.match(err.message, /invalid_api_key/);
+      assert.doesNotMatch(err.message, /sk-test_secret_123456789/);
+      return true;
+    },
+  );
+});
+
 test("buildComposePrompt includes track name and shape parameters", () => {
   const prompt = buildComposePrompt(TRACK, INPUT);
   assert.match(prompt, /AI strategy, governance, and policy/);

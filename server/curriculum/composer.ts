@@ -8,11 +8,11 @@
  * Design notes:
  * - The LLM call is injectable (module-level override + per-call argument) so tests
  *   can feed a canned ComposedCurriculum without a network call.
- * - With no OPENAI_API_KEY the real llmJSON returns null (it swallows the auth
- *   error); we surface that as a clear CurriculumComposeError rather than a vague
- *   null, so the route can return an actionable message.
+ * - With no OPENAI_API_KEY we fail before the model call. When Railway has a key
+ *   but OpenAI rejects it, we preserve a redacted upstream diagnostic so key,
+ *   quota, or model-access failures do not look like empty model output.
  */
-import { llmJSON as defaultLlmJSON, MODEL_PRIMARY } from "../llm";
+import { llmJSONStrict as defaultLlmJSON, MODEL_PRIMARY } from "../llm";
 import type { CareerTrack } from "@shared/schema";
 import { composedCurriculumSchema, type ComposedCurriculum, type ComposeInput } from "./types";
 import { CANONICAL_TECHNIQUES, isCanonicalTechnique } from "./techniques";
@@ -37,6 +37,29 @@ let activeLlmJSON: LlmJSONFn = defaultLlmJSON;
 
 export function __setCurriculumLlmForTest(fn: LlmJSONFn | null): void {
   activeLlmJSON = fn || defaultLlmJSON;
+}
+
+function redactSecrets(value: string): string {
+  return value
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-...[redacted]")
+    .replace(/OPENAI_API_KEY\s*=\s*\S+/gi, "OPENAI_API_KEY=[redacted]");
+}
+
+function formatModelError(err: unknown): string {
+  const error = err as any;
+  const parts: string[] = [];
+  const status = typeof error?.status === "number"
+    ? error.status
+    : typeof error?.statusCode === "number"
+      ? error.statusCode
+      : null;
+  const code = String(error?.code || error?.error?.code || "").trim();
+  const message = redactSecrets(String(error?.message || err || "unknown error").trim()).slice(0, 500);
+
+  if (status) parts.push(`status ${status}`);
+  if (code) parts.push(`code ${redactSecrets(code)}`);
+  if (message) parts.push(message);
+  return parts.join(" - ");
 }
 
 function clamp(n: number, lo: number, hi: number): number {
@@ -231,9 +254,9 @@ function composedContractIssues(curriculum: ComposedCurriculum, input: ComposeIn
 }
 
 /**
- * Compose + validate. Throws CurriculumComposeError on null/invalid model output
- * (which is also what a missing OPENAI_API_KEY produces). Returns a validated
- * ComposedCurriculum on success.
+ * Compose + validate. Throws CurriculumComposeError on missing key, upstream model
+ * failure, null/invalid model output, or schema-valid output that violates the
+ * requested contract. Returns a validated ComposedCurriculum on success.
  */
 export async function composeCurriculum(
   track: CareerTrack,
@@ -253,14 +276,17 @@ export async function composeCurriculum(
   try {
     raw = await llmFn(prompt, { model: MODEL_PRIMARY });
   } catch (err) {
+    const detail = formatModelError(err);
     throw new CurriculumComposeError(
-      `The model call failed while composing the curriculum: ${(err as Error)?.message || err}`,
+      `OpenAI request failed while composing the curriculum${detail ? `: ${detail}` : "."}`,
+      "openai_request_failed",
+      502,
     );
   }
 
   if (raw == null) {
     throw new CurriculumComposeError(
-      "The model returned no usable curriculum (empty or non-JSON response). This is expected when no OPENAI_API_KEY is configured.",
+      "The model returned no usable curriculum (empty or non-JSON response).",
       "empty_model_output",
     );
   }

@@ -79,11 +79,18 @@ export async function llm(input: string, opts: LlmOptions = {}): Promise<string>
   throw lastError;
 }
 
+export function parseLlmJsonText<T = any>(raw: string): T {
+  const text = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  return JSON.parse(text);
+}
+
+export async function llmJSONStrict<T = any>(input: string, opts: LlmOptions = {}): Promise<T> {
+  return parseLlmJsonText<T>(await llm(input, opts));
+}
+
 export async function llmJSON<T = any>(input: string, opts: LlmOptions = {}): Promise<T | null> {
   try {
-    const raw = await llm(input, opts);
-    const text = raw.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-    return JSON.parse(text);
+    return await llmJSONStrict<T>(input, opts);
   } catch {
     return null;
   }

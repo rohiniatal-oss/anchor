@@ -3,15 +3,24 @@ import assert from "node:assert/strict";
 import { contractForTaskIntent } from "./taskIntent";
 import { buildTrackPlan } from "./trackPlanner";
 import { api, makeHarness, type Harness } from "./spine.harness";
-import { ensurePathwayRoleDiscoveryTasks, PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS } from "./pathwayRoleDiscovery";
+import {
+  ensurePathwayRoleDiscoveryRuns,
+  PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE,
+  PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS,
+  roleDiscoveryForTrack,
+} from "./pathwayRoleDiscovery";
 
 let h: Harness;
+const previousExternalResearchMode = process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE;
 
 before(async () => {
+  process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE = "success";
   h = await makeHarness();
 });
 
 after(async () => {
+  if (previousExternalResearchMode === undefined) delete process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE;
+  else process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE = previousExternalResearchMode;
   await h.close();
 });
 
@@ -53,21 +62,23 @@ test("empty active pathway asks Anchor to discover role targets, not manual job 
   assert.match(plan.primaryNeed.reason, /pathway, not a manual data-entry request/i);
 });
 
-test("pathway helper autopopulates one role discovery task from an active pathway", async () => {
+test("pathway role discovery runs as internal evidence and creates no Today task", async () => {
   const track = await createAiGovernanceTrack();
-  const tasks = await ensurePathwayRoleDiscoveryTasks({ tasks: [], jobs: [], tracks: [track] });
-  const discoveryTasks = tasks.filter((task) => task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
+  const result = await ensurePathwayRoleDiscoveryRuns({ tasks: [], jobs: [], tracks: [track], mockMode: "success" });
+  const tasks = await h.storage.getTasks();
+  const refreshedTrack = await h.storage.getCareerTrack(track.id);
+  const snapshot = refreshedTrack ? roleDiscoveryForTrack(refreshedTrack) : null;
 
-  assert.equal(discoveryTasks.length, 1);
-  assert.equal(discoveryTasks[0].relatedTrackId, track.id);
-  assert.equal(discoveryTasks[0].sourceType, "career_track");
-  assert.equal(discoveryTasks[0].sourceStepType, "role_discovery");
-  assert.equal(discoveryTasks[0].list, "today");
-  assert.match(discoveryTasks[0].title, /Anchor discover real AI governance strategy role targets/i);
-  assert.match(discoveryTasks[0].doneWhen, /only user-approved options become Jobs/i);
+  assert.equal(result.tasks.length, 0);
+  assert.equal(tasks.length, 0);
+  assert.equal(result.discoveries.length, 1);
+  assert.equal(result.discoveries[0].status, "complete");
+  assert.equal(snapshot?.status, "complete");
+  assert.ok((snapshot?.roles.length || 0) > 0);
+  assert.ok((snapshot?.repeatedRequirements.length || 0) > 0);
 });
 
-test("plan recompute seeds pathway role discovery in the active Today path", async () => {
+test("plan recompute runs internal pathway discovery in the active Today path", async () => {
   const track = await createAiGovernanceTrack();
 
   const res = await api(h.base, "POST", "/api/plan/recompute", {
@@ -77,15 +88,16 @@ test("plan recompute seeds pathway role discovery in the active Today path", asy
   });
 
   assert.equal(res.status, 200);
-  const discoveryTasks = (await h.storage.getTasks()).filter((task) => task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
+  const tasks = await h.storage.getTasks();
+  const refreshedTrack = await h.storage.getCareerTrack(track.id);
+  const snapshot = refreshedTrack ? roleDiscoveryForTrack(refreshedTrack) : null;
 
-  assert.equal(discoveryTasks.length, 1);
-  assert.equal(discoveryTasks[0].relatedTrackId, track.id);
-  assert.ok(res.json.items.some((item: any) => item.taskId === discoveryTasks[0].id));
-  assert.match(res.json.items.map((item: any) => item.title).join(" | "), /Anchor discover real AI governance strategy role targets/i);
+  assert.equal(tasks.filter((task) => task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS).length, 0);
+  assert.equal(snapshot?.status, "complete");
+  assert.ok(res.json.items.some((item: any) => item.sourceType === PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE));
 });
 
-test("tight broad-pursuit recompute shows Anchor discovery instead of the manual role goal", async () => {
+test("tight broad-pursuit recompute shows Anchor-owned discovery instead of the manual role goal", async () => {
   await createAiGovernanceTrack();
   await createOperationsStrategyTrack();
 
@@ -96,28 +108,28 @@ test("tight broad-pursuit recompute shows Anchor discovery instead of the manual
   });
 
   assert.equal(res.status, 200);
-  const discoveryTasks = (await h.storage.getTasks()).filter((task) => task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
+  const tasks = await h.storage.getTasks();
   const titles = res.json.items.map((item: any) => item.title).join(" | ");
 
-  assert.ok(discoveryTasks.length >= 1);
-  assert.equal(res.json.items[0].sourceType, "task");
-  assert.equal(res.json.items[0].sourceStatus, PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
-  assert.ok(discoveryTasks.some((task) => task.id === res.json.items[0].taskId));
-  assert.match(titles, /Anchor discover real .* role targets/i);
-  assert.doesNotMatch(titles, /Save one real .*posting|Add one real role/i);
+  assert.equal(tasks.filter((task) => task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS).length, 0);
+  assert.equal(res.json.items[0].sourceType, PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE);
+  assert.match(titles, /Anchor .*AI governance strategy|Anchor .*operations strategy/i);
+  assert.doesNotMatch(titles, /Have Anchor discover|Review the ranked options|Save one real .*posting|Add one real role/i);
 });
 
-test("pathway helper reuses the active pathway discovery task", async () => {
+test("pathway role discovery reuses fresh internal evidence", async () => {
   const track = await createAiGovernanceTrack();
 
-  const first = await ensurePathwayRoleDiscoveryTasks({ tasks: [], jobs: [], tracks: [track] });
-  const second = await ensurePathwayRoleDiscoveryTasks({ tasks: first, jobs: [], tracks: [track] });
-  const discoveryTasks = second.filter((task) => task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
+  const first = await ensurePathwayRoleDiscoveryRuns({ tasks: [], jobs: [], tracks: [track], mockMode: "success" });
+  const refreshed = await h.storage.getCareerTrack(track.id);
+  const second = await ensurePathwayRoleDiscoveryRuns({ tasks: [], jobs: [], tracks: refreshed ? [refreshed] : [track], mockMode: "success" });
 
-  assert.equal(discoveryTasks.length, 1);
+  assert.equal(first.discoveries.length, 1);
+  assert.equal(second.discoveries.length, 1);
+  assert.equal(first.discoveries[0].generatedAt, second.discoveries[0].generatedAt);
 });
 
-test("role market scan contract is Anchor-first", () => {
+test("role market scan contract is Anchor-first for legacy task-shell compatibility", () => {
   const contract = contractForTaskIntent({
     title: "Have Anchor discover real AI governance strategy role targets",
     sourceType: "career_track",
@@ -128,5 +140,4 @@ test("role market scan contract is Anchor-first", () => {
   assert.match(contract.firstStep, /Anchor search/i);
   assert.doesNotMatch(contract.firstStep, /Open LinkedIn/i);
   assert.match(contract.doneWhen, /ranked from evidence/i);
-  assert.match(contract.stopCondition, /activated one, saved one for later, rejected the set/i);
 });

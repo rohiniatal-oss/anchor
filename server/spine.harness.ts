@@ -41,6 +41,7 @@ export async function makeHarness(): Promise<Harness> {
   const express = (await import("express")).default;
   const { registerCaptureDiscoveryRoutes } = await import("./captureDiscoveryRoutes");
   const { registerCaptureRoutes } = await import("./capture");
+  const { registerPathwayRoleDiscoveryRoutes } = await import("./pathwayRoleDiscoveryRoutes");
   const { registerSprint2Routes } = await import("./sprint2");
   const { registerSprint1Routes } = await import("./sprint1");
   const { registerJobTruthRoutes } = await import("./jobTruth");
@@ -63,6 +64,7 @@ export async function makeHarness(): Promise<Harness> {
   const httpServer = createServer(app);
   registerCaptureDiscoveryRoutes(app);
   registerCaptureRoutes(app);
+  registerPathwayRoleDiscoveryRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);
   registerJobTruthRoutes(app);

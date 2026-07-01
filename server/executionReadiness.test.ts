@@ -1,6 +1,7 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { makeHarness, api, type Harness } from "./spine.harness";
+import { PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE } from "./pathwayRoleDiscovery";
 
 let h: Harness;
 const DAY = "2026-06-04";
@@ -132,7 +133,7 @@ test("plan-item start keeps broad-pursuit prep-support goal items as learning ta
   assert.match(String(steps[0]?.text || ""), /AI Chief of Staff at Model Lab|open one live role|saved role note|jd/i);
 });
 
-test("broad-pursuit adaptive plan names missing paths when some lanes already have live roles", async () => {
+test("broad-pursuit adaptive plan uses Anchor-owned discovery when lanes need role evidence", async () => {
   await h.storage.createCareerTrack({
     name: "AI strategy",
     slug: "ai-strategy",
@@ -179,10 +180,10 @@ test("broad-pursuit adaptive plan names missing paths when some lanes already ha
   assert.equal(recompute.status, 200);
   const current = await api(h.base, "GET", `/api/plan/current?day=${DAY}`);
   assert.equal(current.status, 200);
-  assert.match(current.json.plan.note, /missing path/i);
-  assert.match(current.json.plan.note, /Geopolitics/i);
-  assert.match(current.json.items[0].title, /missing path|real .*posting/i);
-  assert.match(current.json.items[0].doneWhen, /posting is saved with enough JD text/i);
+  assert.match(current.json.plan.note, /no manual job hunting/i);
+  assert.equal(current.json.items[0].sourceType, PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE);
+  assert.doesNotMatch(current.json.items[0].title, /missing path|real .*posting|Have Anchor discover/i);
+  assert.doesNotMatch(current.json.items[0].doneWhen, /posting is saved with enough JD text/i);
 });
 
 test("plan recompute preserves goal-source planner metadata on broad-pursuit support items", async () => {

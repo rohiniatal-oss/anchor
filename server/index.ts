@@ -39,6 +39,7 @@ import { ensureWorkSchema } from "./workRepository";
 import { ensureObjectOwnershipSchema } from "./objectOwnership";
 import { ensureCurriculumSchema } from "./curriculum/schema";
 import { registerObjectOwnershipRoutes } from "./objectOwnershipRoutes";
+import { registerPathwayRoleDiscoveryRoutes } from "./pathwayRoleDiscoveryRoutes";
 import { serveStatic } from "./static";
 import { initStorage, getStorageRuntime } from "./storage";
 import { seedInitialData } from "./seed";
@@ -156,6 +157,7 @@ app.use((req, res, next) => {
   registerTrackResearchExecutionPriorityRoutes(app);
   registerCaptureResearchRoutes(app);
   registerCaptureRoutes(app);
+  registerPathwayRoleDiscoveryRoutes(app);
   registerSprint2Routes(app);
   registerSprint1Routes(app);
   registerJobTruthRoutes(app);

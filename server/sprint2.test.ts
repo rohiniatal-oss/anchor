@@ -6,6 +6,7 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { makeHarness, api, type Harness } from "./spine.harness";
+import { PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE } from "./pathwayRoleDiscovery";
 
 let h: Harness;
 const DAY = "2026-06-02";
@@ -129,8 +130,9 @@ test("current plan refreshes stale single-lane carry-forward work when broad par
 
   const refreshed = await api(h.base, "GET", `/api/plan/current?day=${DAY}&energy=medium&availableMinutes=180`);
   assert.equal(refreshed.status, 200);
-  assert.equal(refreshed.json.items[0]?.sourceType, "goal");
-  assert.match(refreshed.json.items[0]?.title || "", /missing path|real .*posting/i);
+  assert.equal(refreshed.json.items[0]?.sourceType, PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE);
+  assert.match(refreshed.json.items[0]?.title || "", /Anchor .*AI strategy|Anchor .*Geopolitics/i);
+  assert.doesNotMatch(refreshed.json.items[0]?.title || "", /missing path|real .*posting|Have Anchor discover/i);
 });
 
 test("current plan does not invent broad-pursuit lane-filling over a single live lane", async () => {

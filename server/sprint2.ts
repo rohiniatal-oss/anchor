@@ -5,24 +5,19 @@ import { explainPersistedPlanItem, planDay } from "./brain";
 import { dayPlans, dayPlanItems, insertTaskSchema, type DayPlan, type Task, type CareerTrack } from "@shared/schema";
 import { isOpportunityActionable } from "@shared/domainState";
 import { applyPlanningFeedback, buildPlanningMemory, deterministicUnstickStep, feedbackSummary, prependStep, previousDayKey, refinedEstimateFromSteps, stepsWithEstimatedMinutes } from "./planningFeedback";
-import {
-  broadPursuitMissingRolesPlanSummary,
-  broadPursuitMissingRolesPlanWhy,
-  broadPursuitMissingRolesPlannerNote,
-  broadPursuitMissingRolesSupportingReasons,
-} from "./broadPursuitCopy";
 import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 import { buildTaskIntakeDefaults, contextualizeTask, intakeWords, llmEnrichTask } from "./taskIntakeInference";
 import { getDueCurriculumAnchors, linkDayToPlanItem } from "./curriculum/repository";
-import { ensurePathwayRoleDiscoveryTasks, PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS } from "./pathwayRoleDiscovery";
+import {
+  ensurePathwayRoleDiscoveryRuns,
+  isPathwayRoleDiscoveryTask,
+  PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE,
+  type PathwayRoleDiscoverySnapshot,
+} from "./pathwayRoleDiscovery";
 
-// Plan-item sourceType for an injected curriculum day (the daily anchor).
 const CURRICULUM_DAY_SOURCE = "curriculum_day";
 
-// Build the "now"-slot anchor items for any curriculum days that are due today.
-// Each due active curriculum contributes one item; they outrank synthesised
-// coverage prompts, which get demoted from "now" to "next".
 function curriculumAnchorItems(day: string) {
   return getDueCurriculumAnchors(day).map((a) => ({
     slot: "now",
@@ -47,18 +42,6 @@ function curriculumAnchorItems(day: string) {
     },
   }));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SPRINT 2+ — Today becomes adaptive, especially mid-day restarts, and now uses
-// behavioural feedback so repeated skips, missed MVDs, and blocked items change
-// the next plan rather than resurfacing unchanged.
-//
-// Sprint 5A adds lightweight task-intake inference. Estimates are deliberately
-// rough: intake_guess + low confidence. Breakdown and actuals can refine later.
-// Sprint 5B lets task breakdown refine the estimate from step-level estimates.
-// Sprint 6 keeps Today behaviour-first for ADHD execution: fewer items, smaller
-// starts, no deep task without a first step.
-// ─────────────────────────────────────────────────────────────────────────────
 
 type Energy = "low" | "medium" | "high";
 const WAKING_MINUTES = 10 * 60;
@@ -171,6 +154,7 @@ async function saveStarterStep(task: Task) {
 function needsExecutionPlan(task: Task) {
   const title = `${task.title || ""} ${task.doneWhen || ""}`.toLowerCase();
   if (task.done || parseTaskSteps(task.steps || "[]").length > 0) return false;
+  if (isPathwayRoleDiscoveryTask(task)) return false;
   if (task.size === "deep") return true;
   if (["job", "learn", "contact", "hustle"].includes(String(task.sourceType || ""))) return true;
   if ((task.skipped || 0) >= 1) return true;
@@ -199,18 +183,14 @@ async function saveExecutionReadySteps(task: Task) {
           return updated;
         }
       }
-    } catch {
-      // Fall through to the simpler starter-step fallback.
-    }
+    } catch {}
   }
   return await saveStarterStep(task) || task;
 }
 
 function shrinkReason(task: Task) {
   if ((task.skipped || 0) >= 1) return "This kept slipping, so it was made smaller before it stalled again.";
-  if (["job", "learn", "contact", "hustle"].includes(String(task.sourceType || ""))) {
-    return "This had enough context to split into easier steps.";
-  }
+  if (["job", "learn", "contact", "hustle"].includes(String(task.sourceType || ""))) return "This had enough context to split into easier steps.";
   if (task.size === "deep") return "This was a bit big, so it got a smaller starting step.";
   return "This looked heavy, so it was made smaller to start more easily.";
 }
@@ -230,7 +210,6 @@ function estimateForPlanItem(item: any, task: Task | undefined) {
 function fitPlanToRemainingTime(plan: any[], tasks: Task[], remainingMinutes: number) {
   if (plan.length <= 1) return plan;
   if (!Number.isFinite(remainingMinutes) || remainingMinutes <= 0) return plan.slice(0, 1);
-
   const byId = new Map(tasks.map((t) => [t.id, t]));
   let used = 0;
   const kept: any[] = [];
@@ -274,117 +253,124 @@ async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes
       },
     };
   });
-  // Report whether time pressure actually dropped anything, so the note layer
-  // can explain a cut-down day without guessing from length comparisons.
   return { plan: corrected, trimmed: fitted.length < plan.length };
 }
 
-function isPathwayRoleDiscoveryPlanItem(item: any) {
-  return item?.candidate?.source === "task" && item?.candidate?.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS;
+function isPathwayDiscoveryStatusPlanItem(item: any) {
+  return item?.candidate?.source === PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE || item?.sourceType === PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE;
+}
+
+function isLegacyPathwayRoleDiscoveryPlanItem(item: any) {
+  return item?.candidate?.source === "task" && String(item?.candidate?.sourceStatus || "") === "role_discovery_needed";
 }
 
 function isBroadPursuitMissingRoleGoalItem(item: any) {
   return item?.candidate?.source === "goal" && item?.candidate?.sourceStatus === "broad_parallel_pursuit";
 }
 
-function firstOpenStep(task: Task) {
-  return parseTaskSteps(task.steps || "[]").find((step) => !step.done)?.text
-    || "Let Anchor search current role targets and return an evidence-backed shortlist.";
+function discoveryTitle(snapshot: PathwayRoleDiscoverySnapshot) {
+  if (snapshot.status === "complete" && snapshot.inferredOpportunity) return `Anchor found the next ${snapshot.targetRoleArchetype} lever`;
+  if (snapshot.status === "complete") return `Anchor mapped ${snapshot.targetRoleArchetype} market evidence`;
+  if (snapshot.status === "stuck_needs_question") return `Anchor needs one answer to continue ${snapshot.targetRoleArchetype} discovery`;
+  if (snapshot.status === "failed_retryable") return `Anchor could not finish ${snapshot.targetRoleArchetype} discovery yet`;
+  return `Anchor is mapping ${snapshot.targetRoleArchetype} role evidence`;
 }
 
-function pathwayRoleDiscoveryPlanItem(task: Task) {
+function discoveryDoneWhen(snapshot: PathwayRoleDiscoverySnapshot) {
+  if (snapshot.status === "complete" && snapshot.inferredOpportunity) return snapshot.inferredOpportunity.nextAction;
+  if (snapshot.status === "complete") return `Anchor found ${snapshot.roles.length} public role signal${snapshot.roles.length === 1 ? "" : "s"} and extracted repeated requirements.`;
+  if (snapshot.status === "stuck_needs_question") return snapshot.stuckQuestion?.question || "Anchor needs one focused answer before continuing.";
+  if (snapshot.status === "failed_retryable") return "Anchor will retry or ask one focused question if the public search stays noisy.";
+  return "Anchor is gathering public role evidence without needing manual job hunting.";
+}
+
+function discoveryFirstStep(snapshot: PathwayRoleDiscoverySnapshot) {
+  if (snapshot.status === "complete" && snapshot.inferredOpportunity) return snapshot.inferredOpportunity.nextAction;
+  if (snapshot.status === "complete") return "No action needed from you yet — Anchor will use this market evidence to choose the next improvement move.";
+  if (snapshot.status === "stuck_needs_question") return snapshot.stuckQuestion?.question || "Answer one focused question so Anchor can narrow the search.";
+  if (snapshot.status === "failed_retryable") return "No manual search needed — Anchor can retry discovery or ask a focused narrowing question.";
+  return "No action from you right now — Anchor is searching and ranking public evidence.";
+}
+
+function pathwayRoleDiscoveryStatusPlanItem(snapshot: PathwayRoleDiscoverySnapshot) {
+  const supportingReasons = [
+    snapshot.roles.length ? `Anchor found ${snapshot.roles.length} public role signal${snapshot.roles.length === 1 ? "" : "s"}.` : "Anchor is using public evidence instead of asking you to hunt for postings.",
+    snapshot.repeatedRequirements.length ? `Repeated requirements: ${snapshot.repeatedRequirements.slice(0, 3).join("; ")}.` : "If the search is noisy, Anchor will ask one focused question instead of handing you a review task.",
+  ];
+  if (snapshot.inferredOpportunity?.rationale) supportingReasons.unshift(snapshot.inferredOpportunity.rationale);
   return {
     slot: "now",
-    isMVD: true,
-    why: "Anchor can gather the missing role evidence before you choose what to pursue.",
+    isMVD: false,
+    why: "Anchor is doing the evidence-gathering work itself.",
     explanation: {
-      summary: "This pathway needs Anchor-led role discovery before Today asks for manual role work.",
-      whyNow: "There is not enough role evidence yet to judge the pathway properly.",
-      whyThis: "It replaces manual job hunting with an Anchor-owned discovery run and one review decision.",
-      supportingReasons: [
-        "The pathway is active but has too few live roles in view.",
-        "Discovery can be run without creating Jobs until the user approves an option.",
-      ],
-      firstStep: firstOpenStep(task),
-      stopRule: task.doneWhen || "Stop when Anchor has produced a ranked role shortlist for review.",
+      summary: snapshot.status === "complete"
+        ? "Anchor has run market discovery and is using it to infer the next improvement move."
+        : snapshot.status === "stuck_needs_question"
+          ? "Anchor got stuck and needs one focused answer, not a manual search."
+          : "Anchor is running role discovery internally; no manual job hunting is needed.",
+      whyNow: snapshot.status === "complete"
+        ? "Thin role evidence was the blocker; Anchor has now turned public evidence into a next-move signal."
+        : "Thin role evidence is the blocker, and Anchor can gather that evidence itself.",
+      whyThis: snapshot.status === "complete"
+        ? "This replaces a ranked-options review chore with Anchor's best inferred next lever."
+        : "This keeps the research burden with Anchor rather than asking the user to manage the discovery workflow.",
+      supportingReasons,
+      firstStep: discoveryFirstStep(snapshot),
+      stopRule: discoveryDoneWhen(snapshot),
     },
     candidate: {
-      source: "task",
-      sourceId: task.id,
-      taskId: task.id,
-      title: task.title,
-      doneWhen: task.doneWhen || task.minimumOutcome || "Anchor has produced a ranked role shortlist for review.",
-      sourceNote: task.sourceNote || "",
-      sourceStatus: task.sourceStatus || "",
+      source: PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE,
+      sourceId: snapshot.trackId,
+      taskId: null,
+      title: discoveryTitle(snapshot),
+      doneWhen: discoveryDoneWhen(snapshot),
+      sourceNote: JSON.stringify(snapshot),
+      sourceStatus: snapshot.status,
     },
   };
 }
 
-function preferPathwayDiscoveryOverManualBroadGoal(plan: any[], tasks: Task[]) {
-  const discoveryTask = tasks.find((task) => !task.done && task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
-  if (!discoveryTask) return plan;
-
-  const existingDiscoveryItem = plan.find(isPathwayRoleDiscoveryPlanItem) || pathwayRoleDiscoveryPlanItem(discoveryTask);
+function preferInternalDiscoveryOverManualBroadGoal(plan: any[], discoveries: PathwayRoleDiscoverySnapshot[]) {
+  const discovery = discoveries.find((item) => item.status === "complete") || discoveries.find((item) => item.status === "stuck_needs_question") || discoveries[0];
+  if (!discovery) return plan;
+  const statusItem = pathwayRoleDiscoveryStatusPlanItem(discovery);
   const withoutDiscoveryOrManualGoal = plan.filter((item) =>
-    !isPathwayRoleDiscoveryPlanItem(item)
+    !isPathwayDiscoveryStatusPlanItem(item)
+    && !isLegacyPathwayRoleDiscoveryPlanItem(item)
     && !isBroadPursuitMissingRoleGoalItem(item),
   );
-
-  return [existingDiscoveryItem, ...withoutDiscoveryOrManualGoal];
+  return [statusItem, ...withoutDiscoveryOrManualGoal];
 }
 
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
   const [initialTasks, jobs, learn, hustles, contacts, tracks, jobContactLinks] = await Promise.all([
     storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(), storage.getAllJobContactLinks(),
   ]);
-  const tasks = await ensurePathwayRoleDiscoveryTasks({ tasks: initialTasks, jobs, tracks });
+  const discoveryResult = await ensurePathwayRoleDiscoveryRuns({ tasks: initialTasks, jobs, tracks });
+  const tasks = discoveryResult.tasks;
   const budget = await remainingBudgetFor(day, opts.availableMinutes ?? null);
   const memory = await planningMemoryFor(day);
   const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts, hustles, tracks);
   const broadPursuitCoverage = deriveBroadPursuitCoverage(tasks, jobs, [], learn, contacts, hustles, tracks);
   const broadPursuitNeedsRealRoles = goalFrame.decisionMode === "broad-parallel-pursuit" && broadPursuitCoverage.missing.length > 0;
-  const missingCombinationText = broadPursuitCoverage.missing.join("; ");
+  const needsInternalDiscoveryPlan = discoveryResult.discoveries.length > 0;
   const result = planDay(tasks, jobs, learn, hustles, energy, { remainingMinutes: budget.remainingMinutes }, contacts, tracks, new Map(), jobContactLinks);
   const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
   const corrected = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
-  const preferredPlan = broadPursuitNeedsRealRoles
-    ? preferPathwayDiscoveryOverManualBroadGoal(corrected.plan, tasks)
+  const correctedPlan = needsInternalDiscoveryPlan
+    ? preferInternalDiscoveryOverManualBroadGoal(corrected.plan, discoveryResult.discoveries)
     : corrected.plan;
-  const correctedPlan = broadPursuitNeedsRealRoles
-    ? preferredPlan.map((item, index) => {
-        if (item.candidate.source !== "goal") return item;
-        return {
-          ...item,
-          why: broadPursuitMissingRolesPlanWhy(broadPursuitCoverage.missing),
-          explanation: {
-            ...item.explanation,
-            summary: broadPursuitMissingRolesPlanSummary(),
-            whyNow: "You said to apply across several plausible directions in parallel, and some of those path combinations still have no saved role at all.",
-            whyThis: index === 0
-              ? "It beats narrower comparison work because the market can only separate the lanes once real roles are in the pipeline."
-              : item.explanation.whyThis,
-            supportingReasons: broadPursuitMissingRolesSupportingReasons(broadPursuitCoverage.missing),
-          },
-        };
-      })
-    : preferredPlan;
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
   const feedbackNote = feedbackSummary(memory);
-  // Surface the cut-down note whenever time pressure shrank the day below the
-  // actionable load — either the time-fit step dropped an item, OR the brain
-  // itself capped the plan smaller than the number of live today-tasks because
-  // the available time was tight. Both mean: today got trimmed to fit.
-  const actionableToday = tasks.filter((t) => t.list === "today" && !t.done).length;
-  const trimmedForTime = corrected.trimmed || (correctedPlan.length < actionableToday && budget.remainingMinutes > 0 && budget.remainingMinutes < 120);
+  const actionableToday = tasks.filter((t) => t.list === "today" && !t.done && !isPathwayRoleDiscoveryTask(t)).length;
+  const startablePlanItems = correctedPlan.filter((item) => item.candidate?.source !== PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE);
+  const trimmedForTime = corrected.trimmed || (startablePlanItems.length < actionableToday && budget.remainingMinutes > 0 && budget.remainingMinutes < 120);
   const overloadNote = trimmedForTime ? "Today was cut down to what can realistically fit." : "";
-  const plannerNote = broadPursuitNeedsRealRoles
-    ? broadPursuitMissingRolesPlannerNote(broadPursuitCoverage.missing)
+  const plannerNote = needsInternalDiscoveryPlan
+    ? "Anchor is mapping missing path role evidence itself; no manual job hunting is needed."
     : result.note;
   const note = [opts.restart ? "Restart from here." : "", feedbackNote, overloadNote, plannerNote].filter(Boolean).join(" ");
 
-  // Inject due curriculum days as the day's anchors. They sit ahead of the
-  // synthesised coverage prompts (demoted from "now" to "next") so the curriculum
-  // drives Today. Users with no active curriculum see the plan unchanged.
   const anchorItems = curriculumAnchorItems(day);
   const finalPlan = anchorItems.length
     ? [...anchorItems, ...correctedPlan.map((it) => (it.slot === "now" ? { ...it, slot: "next" } : it))]
@@ -395,32 +381,13 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
     const now = Date.now();
     let current = tx.select().from(dayPlans).where(eq(dayPlans.date, day)).get() as DayPlan | undefined;
     if (!current) {
-      current = tx.insert(dayPlans).values({
-        date: day,
-        mode: planMode,
-        energy,
-        status: "active",
-        enoughForToday: false,
-        note,
-        createdAt: now,
-        updatedAt: now,
-      } as any).returning().get() as DayPlan;
+      current = tx.insert(dayPlans).values({ date: day, mode: planMode, energy, status: "active", enoughForToday: false, note, createdAt: now, updatedAt: now } as any).returning().get() as DayPlan;
     } else {
-      current = tx.update(dayPlans).set({
-        mode: planMode,
-        energy,
-        note,
-        status: opts.restart ? "active" : current.status,
-        enoughForToday: opts.restart ? false : current.enoughForToday,
-        updatedAt: now,
-      } as any).where(eq(dayPlans.id, current.id)).returning().get() as DayPlan;
+      current = tx.update(dayPlans).set({ mode: planMode, energy, note, status: opts.restart ? "active" : current.status, enoughForToday: opts.restart ? false : current.enoughForToday, updatedAt: now } as any).where(eq(dayPlans.id, current.id)).returning().get() as DayPlan;
     }
 
     const previous = tx.select().from(dayPlanItems).where(eq(dayPlanItems.planId, current.id)).all();
-    const actioned = new Map(previous
-      .filter((i) => i.status !== "planned")
-      .map((i) => [`${i.sourceType}:${i.sourceId}`, i] as const));
-
+    const actioned = new Map(previous.filter((i) => i.status !== "planned").map((i) => [`${i.sourceType}:${i.sourceId}`, i] as const));
     tx.delete(dayPlanItems).where(eq(dayPlanItems.planId, current.id)).run();
 
     let minimumViableItemId: number | null = null;
@@ -449,47 +416,31 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
         parkedAt: previousAction?.parkedAt ?? null,
         createdAt: now,
       } as any).returning().get();
-      if (item.isMVD || sequence === 1) minimumViableItemId = created.id;
-      if (c.source === CURRICULUM_DAY_SOURCE && c.sourceId != null) {
-        curriculumLinks.push({ dayId: c.sourceId, planItemId: created.id });
-      }
+      if (c.source !== PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE && (item.isMVD || minimumViableItemId == null)) minimumViableItemId = created.id;
+      if (c.source === CURRICULUM_DAY_SOURCE && c.sourceId != null) curriculumLinks.push({ dayId: c.sourceId, planItemId: created.id });
     }
 
-    current = tx.update(dayPlans).set({
-      minimumViableItemId,
-      updatedAt: Date.now(),
-    } as any).where(eq(dayPlans.id, current.id)).returning().get() as DayPlan;
+    current = tx.update(dayPlans).set({ minimumViableItemId, updatedAt: Date.now() } as any).where(eq(dayPlans.id, current.id)).returning().get() as DayPlan;
     return current;
   });
 
-  // Bidirectional link: record which day_plan_item each curriculum day produced.
   for (const link of curriculumLinks) linkDayToPlanItem(link.dayId, link.planItemId);
-
-  const items = (await storage.getPlanItems(plan.id)).map((item) => ({
-    ...item,
-    explanation: explainPersistedPlanItem(item),
-  }));
+  const items = (await storage.getPlanItems(plan.id)).map((item) => ({ ...item, explanation: explainPersistedPlanItem(item) }));
   const events = await storage.getEvents(day);
   return { plan, items, events, budget, memory: { yesterday: memory.yesterday, missedMvd: !!memory.missedMvdKey, skipped: memory.skippedKeys.size, parked: memory.parkedKeys.size }, restart: !!opts.restart };
 }
 
 async function shouldRefreshBroadPursuitPlan(items: Array<{ sourceType?: string | null; title?: string | null; whySelected?: string | null }>) {
-  const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([
-    storage.getTasks(),
-    storage.getJobs(),
-    storage.getLearn(),
-    storage.getHustles(),
-    storage.getContacts(),
-    storage.getCareerTracks(),
-  ]);
+  const [tasks, jobs, learn, hustles, contacts, tracks] = await Promise.all([storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks()]);
   const goalFrame = deriveCareerGoalFrame(tasks, jobs, [], learn, contacts, hustles, tracks);
   if (goalFrame.decisionMode !== "broad-parallel-pursuit") return false;
   const broadPursuitCoverage = deriveBroadPursuitCoverage(tasks, jobs, [], learn, contacts, hustles, tracks);
   if (broadPursuitCoverage.missing.length === 0) return false;
+  if (items.some((item) => item.sourceType === PATHWAY_ROLE_DISCOVERY_PLAN_SOURCE)) return false;
   const goalItem = items.find((item) => item.sourceType === "goal");
   if (!goalItem) return true;
   const oldCopy = `${goalItem.title || ""} ${goalItem.whySelected || ""}`;
-  return /plausible lane that still looks real|plausible role type that still looks real|still-empty combination/i.test(oldCopy);
+  return /plausible lane that still looks real|plausible role type that still looks real|still-empty combination|save one real|add one real role/i.test(oldCopy);
 }
 
 function readAvailableMinutes(raw: unknown) {
@@ -499,26 +450,19 @@ function readAvailableMinutes(raw: unknown) {
 }
 
 function findTaskForUnstick(tasks: Task[], stepText: string) {
-  const pinned = tasks.find((t) => t.pinned && !t.done);
+  const pinned = tasks.find((t) => t.pinned && !t.done && !isPathwayRoleDiscoveryTask(t));
   if (pinned) return pinned;
   const needle = stepText.trim().toLowerCase();
-  if (!needle) return tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress") || null;
-  return tasks.find((t) => !t.done && parseTaskSteps(t.steps).some((s) => !s.done && s.text.trim().toLowerCase() === needle))
-    || tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress")
+  if (!needle) return tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress" && !isPathwayRoleDiscoveryTask(t)) || null;
+  return tasks.find((t) => !t.done && !isPathwayRoleDiscoveryTask(t) && parseTaskSteps(t.steps).some((s) => !s.done && s.text.trim().toLowerCase() === needle))
+    || tasks.find((t) => t.list === "today" && !t.done && t.status === "in_progress" && !isPathwayRoleDiscoveryTask(t))
     || null;
 }
 
 async function saveUnstickStep(task: Task, step: string) {
   const steps = prependStep(task.steps || "[]", step);
   const updated = await storage.updateTask(task.id, { steps, status: "in_progress" } as any);
-  await storage.logActivity({
-    eventType: "unstick_used",
-    sourceType: task.sourceType || "task",
-    sourceId: task.sourceId ?? undefined,
-    taskId: task.id,
-    planItemId: task.planItemId ?? undefined,
-    metadata: JSON.stringify({ step }),
-  } as any);
+  await storage.logActivity({ eventType: "unstick_used", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: task.id, planItemId: task.planItemId ?? undefined, metadata: JSON.stringify({ step }) } as any);
   return updated;
 }
 
@@ -536,35 +480,17 @@ function inferTrackId(title: string, tracks: CareerTrack[]) {
 export async function enrichTaskInput(raw: any) {
   const inferred = buildTaskIntakeDefaults(raw || {});
   const relatedTrackId = raw?.relatedTrackId ?? inferTrackId(inferred.title, await storage.getCareerTracks());
-  const enriched = {
-    ...raw,
-    ...inferred,
-    relatedTrackId,
-  };
+  const enriched = { ...raw, ...inferred, relatedTrackId };
   return insertTaskSchema.parse(enriched);
 }
 
 async function refineTaskEstimate(task: Task, opts: { inferMissing?: boolean } = {}) {
   let steps = task.steps || "[]";
-  if (opts.inferMissing) {
-    steps = JSON.stringify(stepsWithEstimatedMinutes(steps));
-  }
+  if (opts.inferMissing) steps = JSON.stringify(stepsWithEstimatedMinutes(steps));
   const refined = refinedEstimateFromSteps(steps);
   if (!refined) return { task, refined: null };
-  const updated = await storage.updateTask(task.id, {
-    steps,
-    estimateMinutes: refined.estimateMinutes,
-    estimateConfidence: refined.estimateConfidence,
-    estimateReason: refined.estimateReason,
-  } as any);
-  await storage.logActivity({
-    eventType: "estimate_refined",
-    sourceType: task.sourceType || "task",
-    sourceId: task.sourceId ?? undefined,
-    taskId: task.id,
-    planItemId: task.planItemId ?? undefined,
-    metadata: JSON.stringify(refined),
-  } as any);
+  const updated = await storage.updateTask(task.id, { steps, estimateMinutes: refined.estimateMinutes, estimateConfidence: refined.estimateConfidence, estimateReason: refined.estimateReason } as any);
+  await storage.logActivity({ eventType: "estimate_refined", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: task.id, planItemId: task.planItemId ?? undefined, metadata: JSON.stringify(refined) } as any);
   return { task: updated, refined };
 }
 
@@ -572,13 +498,7 @@ export function registerSprint2Routes(app: Express) {
   app.post("/api/tasks", async (req, res) => {
     try {
       const task = await storage.createTask(await enrichTaskInput(req.body || {}));
-      await storage.logActivity({
-        eventType: "created",
-        sourceType: task.sourceType || "task",
-        sourceId: task.sourceId ?? undefined,
-        taskId: task.id,
-        metadata: JSON.stringify({ estimateMinutes: task.estimateMinutes, estimateReason: task.estimateReason, category: task.category }),
-      } as any);
+      await storage.logActivity({ eventType: "created", sourceType: task.sourceType || "task", sourceId: task.sourceId ?? undefined, taskId: task.id, metadata: JSON.stringify({ estimateMinutes: task.estimateMinutes, estimateReason: task.estimateReason, category: task.category }) } as any);
       const steps = JSON.parse(task.steps || "[]");
       if (steps.length === 0) {
         await contextualizeTask(task.id);
@@ -586,9 +506,7 @@ export function registerSprint2Routes(app: Express) {
         if (refreshed) return res.json(refreshed);
       }
       res.json(task);
-      if (task.estimateConfidence === "low") {
-        llmEnrichTask(task.id).catch(() => {});
-      }
+      if (task.estimateConfidence === "low") llmEnrichTask(task.id).catch(() => {});
     } catch (e: any) {
       res.status(e?.status || 400).json({ error: e?.message || "Invalid task" });
     }
@@ -624,13 +542,8 @@ export function registerSprint2Routes(app: Express) {
     const plan = await storage.getPlanByDate(day);
     if (!plan) return res.json(await buildAdaptivePlan(day, energy));
     const persistedItems = await storage.getPlanItems(plan.id);
-    if (await shouldRefreshBroadPursuitPlan(persistedItems)) {
-      return res.json(await buildAdaptivePlan(day, energy, { availableMinutes: readAvailableMinutes(req.query.availableMinutes), restart: false }));
-    }
-    const items = persistedItems.map((item) => ({
-      ...item,
-      explanation: explainPersistedPlanItem(item),
-    }));
+    if (await shouldRefreshBroadPursuitPlan(persistedItems)) return res.json(await buildAdaptivePlan(day, energy, { availableMinutes: readAvailableMinutes(req.query.availableMinutes), restart: false }));
+    const items = persistedItems.map((item) => ({ ...item, explanation: explainPersistedPlanItem(item) }));
     const events = await storage.getEvents(day);
     const budget = await remainingBudgetFor(day, readAvailableMinutes(req.query.availableMinutes));
     const memory = await planningMemoryFor(day);
@@ -646,18 +559,12 @@ export function registerSprint2Routes(app: Express) {
     const blocked = task.readiness === "blocked" || !!task.blockerReason;
     const deep = task.size === "deep";
     const pattern = blocked ? "blocked" : skipped >= 2 ? "avoided" : deep ? "large" : "normal";
-    const recommendedAction = blocked ? "unblock"
-      : skipped >= 2 ? "shrink_or_redefine"
-      : deep ? "make_first_step"
-      : "continue";
+    const recommendedAction = blocked ? "unblock" : skipped >= 2 ? "shrink_or_redefine" : deep ? "make_first_step" : "continue";
     res.json({
       taskId: task.id,
       pattern,
       recommendedAction,
-      message: blocked ? "This is blocked, not a motivation problem. Name the missing input."
-        : skipped >= 2 ? "This has slipped more than once. Shrink it, redefine it, or park it deliberately."
-        : deep ? "This is big enough to need a first-step plan before starting."
-        : "No avoidance pattern yet.",
+      message: blocked ? "This is blocked, not a motivation problem. Name the missing input." : skipped >= 2 ? "This has slipped more than once. Shrink it, redefine it, or park it deliberately." : deep ? "This is big enough to need a first-step plan before starting." : "No avoidance pattern yet.",
       options: ["make_smaller", "park", "mark_blocked", "continue"],
     });
   });

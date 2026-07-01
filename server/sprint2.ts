@@ -15,7 +15,7 @@ import { deriveBroadPursuitCoverage, deriveCareerGoalFrame } from "./goalState";
 import { buildDeterministicTaskBreakdown } from "./taskBreakdownRoutes";
 import { buildTaskIntakeDefaults, contextualizeTask, intakeWords, llmEnrichTask } from "./taskIntakeInference";
 import { getDueCurriculumAnchors, linkDayToPlanItem } from "./curriculum/repository";
-import { ensurePathwayRoleDiscoveryTasks } from "./pathwayRoleDiscovery";
+import { ensurePathwayRoleDiscoveryTasks, PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS } from "./pathwayRoleDiscovery";
 
 // Plan-item sourceType for an injected curriculum day (the daily anchor).
 const CURRICULUM_DAY_SOURCE = "curriculum_day";
@@ -279,6 +279,60 @@ async function selfCorrectPlanItems(plan: any[], tasks: Task[], remainingMinutes
   return { plan: corrected, trimmed: fitted.length < plan.length };
 }
 
+function isPathwayRoleDiscoveryPlanItem(item: any) {
+  return item?.candidate?.source === "task" && item?.candidate?.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS;
+}
+
+function isBroadPursuitMissingRoleGoalItem(item: any) {
+  return item?.candidate?.source === "goal" && item?.candidate?.sourceStatus === "broad_parallel_pursuit";
+}
+
+function firstOpenStep(task: Task) {
+  return parseTaskSteps(task.steps || "[]").find((step) => !step.done)?.text
+    || "Let Anchor search current role targets and return an evidence-backed shortlist.";
+}
+
+function pathwayRoleDiscoveryPlanItem(task: Task) {
+  return {
+    slot: "now",
+    isMVD: true,
+    why: "Anchor can gather the missing role evidence before you choose what to pursue.",
+    explanation: {
+      summary: "This pathway needs Anchor-led role discovery before Today asks for manual role work.",
+      whyNow: "There is not enough role evidence yet to judge the pathway properly.",
+      whyThis: "It replaces manual job hunting with an Anchor-owned discovery run and one review decision.",
+      supportingReasons: [
+        "The pathway is active but has too few live roles in view.",
+        "Discovery can be run without creating Jobs until the user approves an option.",
+      ],
+      firstStep: firstOpenStep(task),
+      stopRule: task.doneWhen || "Stop when Anchor has produced a ranked role shortlist for review.",
+    },
+    candidate: {
+      source: "task",
+      sourceId: task.id,
+      taskId: task.id,
+      title: task.title,
+      doneWhen: task.doneWhen || task.minimumOutcome || "Anchor has produced a ranked role shortlist for review.",
+      sourceNote: task.sourceNote || "",
+      sourceStatus: task.sourceStatus || "",
+    },
+  };
+}
+
+function preferPathwayDiscoveryOverManualBroadGoal(plan: any[], tasks: Task[]) {
+  const discoveryTask = tasks.find((task) => !task.done && task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
+  if (!discoveryTask) return plan;
+
+  const existingDiscoveryItem = plan.find(isPathwayRoleDiscoveryPlanItem) || pathwayRoleDiscoveryPlanItem(discoveryTask);
+  const withoutDiscoveryOrManualGoal = plan.filter((item) =>
+    !isPathwayRoleDiscoveryPlanItem(item)
+    && !isBroadPursuitMissingRoleGoalItem(item),
+  );
+
+  return [existingDiscoveryItem, ...withoutDiscoveryOrManualGoal];
+}
+
 async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableMinutes?: number | null; restart?: boolean } = {}) {
   const [initialTasks, jobs, learn, hustles, contacts, tracks, jobContactLinks] = await Promise.all([
     storage.getTasks(), storage.getJobs(), storage.getLearn(), storage.getHustles(), storage.getContacts(), storage.getCareerTracks(), storage.getAllJobContactLinks(),
@@ -293,8 +347,11 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
   const result = planDay(tasks, jobs, learn, hustles, energy, { remainingMinutes: budget.remainingMinutes }, contacts, tracks, new Map(), jobContactLinks);
   const feedbackPlan = applyPlanningFeedback(result.plan, memory, tasks);
   const corrected = await selfCorrectPlanItems(feedbackPlan, tasks, budget.remainingMinutes);
+  const preferredPlan = broadPursuitNeedsRealRoles
+    ? preferPathwayDiscoveryOverManualBroadGoal(corrected.plan, tasks)
+    : corrected.plan;
   const correctedPlan = broadPursuitNeedsRealRoles
-    ? corrected.plan.map((item, index) => {
+    ? preferredPlan.map((item, index) => {
         if (item.candidate.source !== "goal") return item;
         return {
           ...item,
@@ -310,7 +367,7 @@ async function buildAdaptivePlan(day: string, energy: Energy, opts: { availableM
           },
         };
       })
-    : corrected.plan;
+    : preferredPlan;
   const planMode = result.mode === "low" ? "low_energy" : result.mode;
   const feedbackNote = feedbackSummary(memory);
   // Surface the cut-down note whenever time pressure shrank the day below the

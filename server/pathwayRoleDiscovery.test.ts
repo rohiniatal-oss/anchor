@@ -31,6 +31,18 @@ async function createAiGovernanceTrack() {
   } as any);
 }
 
+async function createOperationsStrategyTrack() {
+  return h.storage.createCareerTrack({
+    slug: "operations-strategy",
+    name: "Operations Strategy",
+    description: "Explore operations and chief of staff strategy roles as a pathway",
+    targetRoleArchetype: "operations strategy chief of staff",
+    priority: 80,
+    status: "active",
+    whyItFits: "Builds on strategy, delivery, and cross-functional operating experience",
+  } as any);
+}
+
 test("empty active pathway asks Anchor to discover role targets, not manual job entry", async () => {
   const track = await createAiGovernanceTrack();
   const plan = buildTrackPlan(track, { tasks: [], jobs: [], learn: [], hustles: [], contacts: [] });
@@ -71,6 +83,28 @@ test("plan recompute seeds pathway role discovery in the active Today path", asy
   assert.equal(discoveryTasks[0].relatedTrackId, track.id);
   assert.ok(res.json.items.some((item: any) => item.taskId === discoveryTasks[0].id));
   assert.match(res.json.items.map((item: any) => item.title).join(" | "), /Anchor discover real AI governance strategy role targets/i);
+});
+
+test("tight broad-pursuit recompute shows Anchor discovery instead of the manual role goal", async () => {
+  await createAiGovernanceTrack();
+  await createOperationsStrategyTrack();
+
+  const res = await api(h.base, "POST", "/api/plan/recompute", {
+    day: "2026-07-02",
+    energy: "low",
+    availableMinutes: 60,
+  });
+
+  assert.equal(res.status, 200);
+  const discoveryTasks = (await h.storage.getTasks()).filter((task) => task.sourceStatus === PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
+  const titles = res.json.items.map((item: any) => item.title).join(" | ");
+
+  assert.ok(discoveryTasks.length >= 1);
+  assert.equal(res.json.items[0].sourceType, "task");
+  assert.equal(res.json.items[0].sourceStatus, PATHWAY_ROLE_DISCOVERY_SOURCE_STATUS);
+  assert.ok(discoveryTasks.some((task) => task.id === res.json.items[0].taskId));
+  assert.match(titles, /Anchor discover real .* role targets/i);
+  assert.doesNotMatch(titles, /Save one real .*posting|Add one real role/i);
 });
 
 test("pathway helper reuses the active pathway discovery task", async () => {

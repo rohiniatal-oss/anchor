@@ -11,12 +11,16 @@ import {
 } from "./pathwayRoleDiscovery";
 
 let h: Harness;
+const previousExternalResearchMode = process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE;
 
 before(async () => {
+  process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE = "success";
   h = await makeHarness();
 });
 
 after(async () => {
+  if (previousExternalResearchMode === undefined) delete process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE;
+  else process.env.ANCHOR_EXTERNAL_RESEARCH_MOCK_MODE = previousExternalResearchMode;
   await h.close();
 });
 
